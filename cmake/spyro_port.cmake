@@ -1,0 +1,64 @@
+# cmake/spyro_port.cmake — build the native PC port binary `spyro_port` (SDL3 / SDL_GPU).
+#
+# This target is just the GAME: game/** + generated/** linking libpsxport.a. Every PSX-generic piece
+# (the runtime substrate, the Beetle GTE/MDEC/SPU backends, the SDL_GPU renderer, the SBS harness)
+# lives in the psxport framework library — see external/psxport/cmake/psxport.cmake.
+#
+#   cmake -S . -B build && cmake --build build --target spyro_port
+#   ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28     # after run.sh extracted it
+
+option(PSXPORT_BUILD_PORT "Build the Spyro native port binary (spyro_port)" ON)
+
+# The framework static library + its psxport_smoke agnosticism proof. Always included so `psxport` is
+# buildable even when the game target is off.
+include(${CMAKE_SOURCE_DIR}/external/psxport/cmake/psxport.cmake)
+
+if(NOT PSXPORT_BUILD_PORT)
+  return()
+endif()
+
+# ---- game sources ------------------------------------------------------------------------------
+# Phase 0 is deliberately thin: the seam (config/hooks/recomp registry) plus main(). Everything else
+# still runs as recompiled substrate. Native reimplementations get added here as they are RE'd and
+# byte-gated — see docs/re-frontier.md.
+set(GAME_SRC
+  game/core/main.cpp
+  game/core/game_config.cpp
+  game/core/game_hooks.cpp
+  game/core/recomp_register.cpp
+)
+
+# ---- the recompiled substrate --------------------------------------------------------------------
+# emit.py writes the exact TU list to generated/rec_sources.cmake (GEN_REC_SRCS, basenames), so the
+# set is deterministic — no globbing, which would wrongly pull unlinked stub TUs.
+#
+# -foptimize-sibling-calls IS REQUIRED, NOT an optimization nicety: a guest TAIL JUMP (a computed `jr`
+# routed to rec_dispatch, or a `j`/branch to a framed sibling) is emitted as `dispatch(c,x); return;`
+# in tail position, and the guest uses such tail jumps for LOOPS that iterate indefinitely. Without
+# sibling-call optimization each iteration becomes a real C call, the stack grows per loop, and the
+# process SIGSEGVs. -O1 plus this flag keeps the whole tail chain collapsing to a jump (O(1) stack).
+include(${CMAKE_SOURCE_DIR}/generated/rec_sources.cmake)
+list(TRANSFORM GEN_REC_SRCS PREPEND generated/)
+set_source_files_properties(${GEN_REC_SRCS}
+  PROPERTIES LANGUAGE CXX
+  COMPILE_OPTIONS "-O1;-foptimize-sibling-calls;-fno-strict-aliasing;-fwrapv")
+
+add_executable(spyro_port ${GAME_SRC} ${GEN_REC_SRCS})
+
+# The framework's SDL_GPU shader header is produced by a psxport custom target; gpu_vk.cpp (inside
+# libpsxport) needs it present before this target's link ordering.
+add_dependencies(spyro_port gen_gpu_shaders)
+
+set_target_properties(spyro_port PROPERTIES
+  CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON
+  ENABLE_EXPORTS ON                                    # -rdynamic: watchdog backtrace symbol names
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/scratch/bin)
+
+# Only game/* include dirs here — the framework's (runtime, generated, vendored backends, SDL,
+# freetype) are inherited PUBLICly from the psxport link below.
+target_include_directories(spyro_port PRIVATE game game/core)
+
+target_compile_options(spyro_port PRIVATE -w -O2 -g
+  ${SDL3_CFLAGS_OTHER} ${FREETYPE_CFLAGS_OTHER})
+
+target_link_libraries(spyro_port PRIVATE psxport)

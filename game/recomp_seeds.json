@@ -1,0 +1,39 @@
+// Spyro recompiler seeds — the GAME half of psxport's function discovery (emit.py --seeds).
+//
+// emit.py seeds from the binary itself (the PS-EXE entry point + the pointer/table scans) and grows
+// the set by following direct `jal` targets. This file adds only what those scans CANNOT see:
+// functions reached solely through a function pointer, and runtime-computed re-entry points.
+//
+// It is deliberately near-empty. Spyro is a single executable with no code overlays, and binary-only
+// discovery already reaches 621 functions spanning [0x8001041C,0x80074A1C] — essentially the whole
+// text (image text is [0x80010000,0x80075800)). Adding a seed we have not SEEN the substrate need
+// would be guessing: a seed that lands mid-function splits a real function at an arbitrary offset
+// and silently corrupts the recomp.
+//
+// GROW THIS FILE EMPIRICALLY. The substrate fails fast on an unrecompiled call:
+//   [recomp-MISS] 0x800xxxxx
+// When that happens, find how the address is reached (`tools/disasm.py`, the caller's `ra`), add it
+// below WITH that rationale, and re-run ./run.sh. The rationale is the point — an address with no
+// explanation is unreviewable a year from now.
+//
+// JSON with `//` line comments. Addresses are hex strings. Schema (all keys optional):
+//   main, main_reentry, overlay_bases, overlay_base_patterns, overlay_seeds
+// See external/psxport/docs/porting-a-new-psx-game.md.
+{
+  // No fn-pointer-only targets observed yet.
+  "main": [],
+
+  // No runtime-computed mid-function re-entry points observed yet. (Tomba!2 needs these for its
+  // cooperative-yield resume address; Spyro has no such overlay/task scheduler.)
+  "main_reentry": [],
+
+  // Empty because no overlay load base has been OBSERVED yet — NOT because Spyro is known to be
+  // overlay-free. The disc carries no per-overlay files, but public decomp projects describe the game
+  // as the main EXE plus 37 overlays, which would live inside WAD.WAD or be read by raw LBA. This is
+  // an open question, tracked in docs/issues/0001; settle it from a running port (PSXPORT_DEBUG=cd
+  // logs load destinations) rather than by guessing a base, since a guessed base emits a whole module
+  // at wrong addresses and is unrecoverable garbage rather than an error.
+  "overlay_bases": {},
+  "overlay_base_patterns": [],
+  "overlay_seeds": {}
+}

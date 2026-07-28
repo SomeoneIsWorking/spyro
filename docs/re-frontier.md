@@ -62,11 +62,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: 
 
 ### boot.post-cd — Get past the post-CD stall at func_8005CBB0
-- status: in-progress
+- status: re-partial
 - deps: cd.reads
-- evidence: Serving the game loader moved the stall off the CD wait: 5/5 profile samples now in gen_func_8005CBB0 <- gen_func_80014564 <- gen_func_800127C0 <- main, a different branch entirely (C021).
+- evidence: Identified by in-process probe (C022): func_8005CBB0 is a BIOS EVENT poll. a0=0, both polled globals stay 0, v0=0 on every call; the descriptor it forwards, [0x800730E8], is 0xF1000000 — a PSX event-class value. Same shape as the CD completion problem: the guest waits on an event nothing delivers.
 - where: func_8005CBB0, func_80014564
-- gap: func_8005CBB0 polls two globals (lui 0x8007 + 12528 / 13704) against 1 and calls func_8005DB84 — a readiness poll, not a compute loop. Unknown what sets those globals. Use the in-process method that worked on the CD chain (override + super-call + log real words), not static decode.
+- gap: Need to identify event class 0xF1000000 and its delivery path, then wire it as the CD completion was — by delivering the event, not by setting the polled flags. GameConfig::irqEventClasses is {0,0,0} for Spyro and is the framework seam for this.
 - notes: 
 
 

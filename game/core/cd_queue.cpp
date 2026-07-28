@@ -245,9 +245,34 @@ LOADER_PROBE(80012480, 0x80012480u)
 LOADER_PROBE(800127C0, 0x800127C0u)
 #undef LOADER_PROBE
 
+
+// ── post-CD stall probe (issue 0012) ─────────────────────────────────────────────────────────────
+// func_8005CBB0 is where the boot stalls now that the CD path is served. It polls two globals
+// against 1 and calls func_8005DB84; it also WRITES poll-B itself, so it is a state machine rather
+// than a pure predicate. Log what it actually sees — the CD chain taught that static decode 
+// mis-identifies these (four wrong conclusions), while logging real words settles them in one run.
+constexpr uint32_t kPollA = 0x800730F0u;
+constexpr uint32_t kPollB = 0x80073588u;
+constexpr uint32_t kPollArg = 0x800730E8u;
+
+void probe_8005CBB0(Core* c) {
+  static unsigned h = 0;
+  const bool on = cfg_dbg("cdq");
+  const uint32_t a0 = c->r[4];
+  if (on && h < 6)
+    cfg_logf("cdq", "stall#%u ENTER a0=%u A[0x800730F0]=%u B[0x80073588]=%u arg[0x800730E8]=0x%08X",
+             h, a0, c->mem_r32(kPollA), c->mem_r32(kPollB), c->mem_r32(kPollArg));
+  h++;
+  gen_func_8005CBB0(c);
+  if (on && h <= 6)
+    cfg_logf("cdq", "stall#%u EXIT  v0=%u A=%u B=%u", h - 1, c->r[2],
+             c->mem_r32(kPollA), c->mem_r32(kPollB));
+}
+
 }  // namespace
 
 void spyro_register_cd_queue() {
+  psxport_recomp()->shard_set_override(0x8005CBB0u, probe_8005CBB0);
   psxport_recomp()->shard_set_override(0x80016500u, cd_loader);
   psxport_recomp()->shard_set_override(0x8001250Cu, lp_8001250C);
   psxport_recomp()->shard_set_override(0x80012480u, lp_80012480);

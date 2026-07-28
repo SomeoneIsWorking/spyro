@@ -19,3 +19,6 @@ It is a DIFFERENT branch from the CD wait that held the boot for several iterati
 ## Next
 
 Identify what the two globals mean and who sets them — same in-process method that worked on the CD chain (override + super-call + log the actual words), not static decode. If it is a poll on something an interrupt would normally set, it is the same class of problem as the CD completion callback and may have the same shape of fix.
+
+### Note (2026-07-28)
+IDENTIFIED via in-process probe: this is a BIOS EVENT poll, not a generic readiness check. Every call sees a0=0, A[0x800730F0]=0, B[0x80073588]=0, returns 0 — never changing. The third global [0x800730E8] holds 0xF1000000, a PSX event-class descriptor (same 0xFxxxxxxx family as GameConfig::irqEventClasses). So the guest is waiting on an event the runtime never delivers — the SAME class of problem as the CD completion callback, which was fixed by delivering the event the hardware would have raised rather than by poking the flag. Spyro's GameConfig::irqEventClasses is still {0,0,0}; that is the framework seam for this. Next: identify which event class 0xF1000000 is and what delivers it, then wire it the same way.

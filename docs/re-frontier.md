@@ -140,8 +140,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
 - status: re-partial
 - deps: boot.guest-main
-- evidence: OVL0 recompiled and gate-green (C028). The remaining set is now enumerable STATICALLY rather than one observed load at a time: WAD.WAD's first sector is a flat (offset,length) index, 79 entries, verified against ground truth (entry 2 == the recompiled overlay; every port load matches an entry). tools/wad_index.py scores each by common-opcode share (I005) — 36 clear 90%, known overlay highest at 99.5%.
+- evidence: OVL0 recompiled, gate green (C028). Index enumerated statically: 79 entries, 36 score as code (C029, tool I005). Load bases are observable from the loader's own dest argument — three entries mapped exactly: entry 0 -> 0x801A4800, entry 2 -> 0x8007AA38 (OVL0), entry 8 -> 0x8018B800.
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: Each candidate still needs its LOAD BASE before it can be recompiled — a wrong base emits a whole module at wrong addresses. OVL0's base came from a running port's loader call; the same route (or a hardcoded jal landing inside the span) is needed per overlay. Also: the 90% threshold is chosen, so the 36 count is a candidate list, not a confirmed overlay count.
+- gap: Boot exercises only ONE code overlay (C030). The other ~35 code candidates never load during boot, so their bases cannot be observed without driving the game further. Two routes: (a) drive gameplay (needs input/replay, which the port does not have yet), or (b) find each overlay's base statically — the loader's dest comes from somewhere, so RE'ing what computes it would yield bases without needing to reach every code path. (b) is the more scalable and does not depend on exercising 35 paths.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

@@ -4,6 +4,7 @@ kind: claim
 status: holds
 created: 2026-07-28
 tags: overlay
+reconfirmed: 2026-07-28
 ---
 
 ## Claim
@@ -17,3 +18,7 @@ Two independent static routes both come back empty. (1) jal encodes its target's
 ## What would falsify it
 
 An observed loader call (PSXPORT_DEBUG=cdq logs a3 = the WAD byte offset alongside dest) whose a3 matches one of the odd entries — that single line settles the base for it. Reaching a level is what it takes.
+
+## Re-confirmed 2026-07-28
+
+STILL TRUE AS STATED, but read C039 before acting on it. C034's claim is that the base is not recoverable from the OVERLAYS' OWN BYTES, and that remains correct — they contain no internal direct calls and their embedded constants spread over ~1.6MB. What C039 shows is that the base is recoverable from somewhere else entirely: the RESIDENT text's handler-installer table at 0x8005A4BC writes 36 pointers spanning 0x80080548-0x8008B2C0, which is 67720 bytes above the arena base 0x8007AA38 and inside the level overlays' size range. So the practical warning in C034 — 'do NOT assume the arena' — is now superseded: the arena is where they load, on independent evidence. Keep C034's method lesson, drop its caution.

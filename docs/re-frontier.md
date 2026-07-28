@@ -138,10 +138,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## recomp
 
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
-- status: todo
+- status: re-partial
 - deps: boot.guest-main
-- evidence: 
+- evidence: ANSWERED (C024 re-confirmed, C026): four hardcoded direct jals from genuine game code target 0x8007AA50 / 0x8007ABAC / 0x8007BFD0 / 0x8007CEE4 — above the resident text end and clustered around heapBase. The miss instruction is 0x0C01EAEB at 0x800339DC, a DIRECT jal, not an indirect jump. So the game expects code loaded there: the overlays live in WAD.WAD, matching the public decomps.
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: STILL UNRESOLVED — a previous 'answered' entry here was retracted. The recomp-MISS at 0x8007ABAC (heapBase+0x174) was read as proof that Spyro loads code from WAD.WAD, but the words there all decode as sll (data), whereas every real function entry opens addiu/lui. So it is a call through a garbage pointer, most likely from bytes the owned loader wrote incorrectly — a LOADER-CORRECTNESS lead, not overlay evidence. Public decomps still say 37 overlays exist; the disc has no per-overlay files; unresolved. See docs/issues/0001.
+- gap: The overlay bodies are not recompiled (emit.py only ever saw SCUS_942.28), so each of these calls fails fast. Needs: extract the overlay bytes from WAD.WAD, determine each one's load base (the four call targets bracket the region), and feed them to emit.py via --overlays + overlay_bases in game/recomp_seeds.json. Separately: emit.py recompiled DATA at 0x8006C000-0x80073000 as functions (~81 bogus out-of-text call targets originate there), which is worth reporting upstream.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

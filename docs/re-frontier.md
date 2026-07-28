@@ -57,11 +57,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## cd
 
 ### cd.chokepoints — Identify Spyro's libcd chokepoints for the native CD path
-- status: in-progress
+- status: re-partial
 - deps: boot.guest-main
-- evidence: String table at 0x80011CA0-0x80011EB0 (CdInit/CdlSetmode/CdlSetloc/CD_cw/CD timeout). lui+addiu scan attributes them to: func_8006397C references "CdInit"; func_80064CEC references "CD_cw"+"CD timeout" (the command-wait); func_800647A0, func_80064A20, func_800655A0 are further "CD timeout" sites.
+- evidence: libcd identified as stock Sony bios.c v1.86 (claim C004). Two primitives wired and CONFIRMED by the running system: hle.cdInitHandshake=0x800653B4 (CD_init) removed the CdlNop/CdlReset boot loop; hle.cdDataSync=0x800655A0 (CD_datasync) removed the CD_sync timeout. plat-hle reports 2 installed.
 - where: game/core/game_config.cpp CD chokepoints group (all 0 today)
-- gap: Addresses are LOCATED but not yet role-assigned or wired. Which is CdInit vs cdCommand vs cdSync must be confirmed by reading each body, not inferred from the string it prints.
+- gap: Remaining: CD_cw still times out on REAL commands (CdlSetmode x12, CdlSetloc x4), which need the native CD READ path (the GameConfig cd* group consumed by cd_override.cpp), not a sync stub. cdReadSync is deliberately left 0: the obvious candidate CD_sync (0x800647A0) is an internal bios.c primitive, but the framework's cdreadsync handler zeroes 8 bytes at a1 as CdReadSync(mode,result), so wiring it before confirming the signature risks guest-memory corruption.
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 
@@ -73,6 +73,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: 
 - where: game/core/game_config.cpp per-frame group
 - gap: Needs Spyro's display init (SetDefDrawEnv/SetDefDispEnv callers) + its per-frame buffer flip RE'd. Until then the guest owns its own loop and the per-frame GameConfig group is honestly 0.
+- notes: 
+
+### frame.vsync — Reimplement VSync faithfully and register it
+- status: todo
+- deps: cd.chokepoints
+- evidence: 
+- where: func_8005DD0C (prints 'VSync', string @0x800115FC)
+- gap: Boot now reaches 'VSync: timeout'. hle.vsyncTrap must stay 0 — the trap encodes 'nothing may reach VSync because the native frame loop owns timing', which is false while the guest owns its own loop. A faithful VSync must be registered game-side via PlatformHle::register_ instead.
 - notes: 
 
 

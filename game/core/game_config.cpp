@@ -130,6 +130,60 @@ static const GameConfig g_spyro_config = {
   /* padSlot1Buf   */ 0u,
   /* padDriverFn   */ 0u,
   /* padSlotPtrTable */ 0u,
+
+  // ── platform HLE: the PSX hardware-sync primitives ─────────────────────────────────────────────
+  // NOT YET REVERSE-ENGINEERED — every entry 0, which initBuiltins() reads as "this game has no such
+  // primitive, or its RE is outstanding" and skips. Spelled out explicitly rather than left to
+  // trailing zero-init, because a zero here is a CLAIM about Spyro and should be visible as one.
+  //
+  // Consequence, stated plainly: with no window configured, register_() refuses every registration
+  // and says so, and no sync primitive is installed. The guest therefore spins in the REAL library
+  // spin loops — which is exactly the honest signal that this RE is outstanding, and is the shape of
+  // the CD timeouts seen at boot (docs/re-frontier.md cd.chokepoints).
+  //
+  // vsyncTrap stays 0 and MUST stay 0 for now: the trap encodes the policy "nothing may reach VSync
+  // because the native frame loop owns all timing", which is only true once that loop drives the
+  // frame. Spyro still runs the guest's own loop on the substrate (see game_hooks.cpp), so VSync must
+  // be reimplemented faithfully and registered by us — setting the trap instead would abort on the
+  // game's own legitimate timing.
+  /* hle */ {
+    // Window 0 — Spyro's libcd. Deliberately TIGHT: it spans only the region where the libcd bodies
+    // were actually located (the five functions that reference the "CD_cw"/"CD timeout"/"CD_init"
+    // strings live at 0x80063C48..0x800655A0), not a guessed "SDK region". The window exists to keep
+    // game logic out of this table, so it is widened only as more library code is genuinely RE'd.
+    // Window 1 is free for libgpu/libmdec once those are located.
+    /* windowLo */ { 0x80063000u, 0u },
+    /* windowHi */ { 0x80066000u, 0u },
+    /* codeScanLo, codeScanHi */ 0u, 0u,   // falls back to [recMainLo, recMainHi), correct here:
+                                           // no overlays are known resident above the main text
+    /* decDctInSync, decDctOutSync */ 0u, 0u,
+    // Spyro links stock Sony libcd (the image carries `$Id: bios.c,v 1.86 1997/03/28 ... $`), so the
+    // internal primitives are identifiable by the name each one prints:
+    //   func_800647A0 CD_sync   func_80064A20 CD_ready   func_80064CEC CD_cw
+    //   func_800653B4 CD_init   func_800655A0 CD_datasync
+    //
+    // cdDataSync <- CD_datasync (0x800655A0): exact name match, and the framework's handler is
+    // side-effect-free (report idle, v0=0) — the CD DMA is never started here because reads are
+    // native file I/O.
+    //
+    // cdReadSync stays 0 ON PURPOSE. The obvious candidate is CD_sync (0x800647A0), which the boot log
+    // shows spinning — but the framework's cdreadsync handler ZEROES EIGHT BYTES at a1, treating it as
+    // CdReadSync(mode, result). CD_sync is an internal bios.c primitive, not that public API, and its
+    // signature has not been confirmed. Wiring it on the strength of a similar name would hand the
+    // handler an a1 that may not be a result pointer — a guest-memory corruption whose symptom would
+    // appear far from here. Confirm the signature first (read the body; check what callers pass in a1).
+    /* cdReadSync, cdDataSync      */ 0u, 0x800655A0u,
+    // CdInit's low-level controller-ready handshake. func_800653B4 prints "CD_init:addr=" and calls
+    // CD_cw (func_80064CEC) at 0x80065510; the boot log shows it looping CdlNop -> CdlReset -> repeat,
+    // spinning on a controller-ready bit our no-IRQ runtime never sets. This is the one CD primitive
+    // whose role the running system itself demonstrates.
+    /* cdInitHandshake             */ 0x800653B4u,
+    /* gpuTimeoutArm, gpuTimeoutCheck */ 0u, 0u,
+    /* gpuTimeoutDeadlineVar */ 0u,
+    /* gpuTimeoutFlagVar     */ 0u,
+    /* changeThread          */ 0u,
+    /* vsyncTrap             */ 0u,
+  },
 };
 
 void spyro_install_game_config() { psxport_install_game(&g_spyro_config, spyro_game_hooks()); }

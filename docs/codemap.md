@@ -33,7 +33,9 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
 | Process entry | `game/core/main.cpp` | ✅ | Installs the seam, brings up GTE/MDEC/SPU/GPU/threads, loads the exe, boots via `dc_boot_init`. |
 | Build | `CMakeLists.txt`, `cmake/spyro_port.cmake` | ✅ | `spyro_port` = `game/**` + `generated/**` linked against `libpsxport`. |
 | Boot: crt0 → guest `main()` | — | ✅ | Verified by backtrace (claim C002). |
-| **CD access** | `game/core/game_config.cpp` CD group | 🔬 | **Current blocker.** Guest spins on `CD timeout: CD_cw:(CdlSetmode/CdlSetloc)`. Chokepoints located (below), roles not yet confirmed or wired. |
+| CD sync primitives | `game/core/game_config.cpp` `hle` group | 🟡 | Stock Sony libcd (`bios.c` v1.86) — primitives identified by the name each prints. `CD_init` (`0x800653B4`) and `CD_datasync` (`0x800655A0`) wired; both confirmed by the boot loop they removed. `cdReadSync` left 0 deliberately (signature unconfirmed; its handler writes 8 bytes at `a1`). |
+| **CD reads** | `game/core/game_config.cpp` CD group | 🔬 | **Current blocker.** `CD_cw` still times out on real commands (`CdlSetmode`, `CdlSetloc`) — needs the native read path, not a sync stub. |
+| VSync | — | ⬜ | Boot now reaches `VSync: timeout`. `func_8005DD0C`. Must be reimplemented faithfully and registered game-side; `hle.vsyncTrap` must stay 0 while the guest owns its loop. |
 | Native frame loop | — | ⬜ | Guest owns its own loop today; needs Spyro's display init + buffer flip RE'd. |
 | Renderer / input / audio | — | ⬜ | Runs as recompiled guest code through the framework's PSX backends. Nothing owned natively. |
 | Differential (SBS) harness | — | ⬜ | Phase 0 of the playbook wants this up *before* owning any function. Not wired. |

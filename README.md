@@ -26,7 +26,9 @@ today; it is not yet playable.
 | Build + link (`spyro_port`) | ✅ |
 | crt0 / boot (`GameConfig` boot group) | ✅ derived from the real crt0, not guessed |
 | Reaches the guest's `main()` as recompiled code | ✅ verified by backtrace |
-| CD access | ❌ **current blocker** — the guest spins on `CD timeout` |
+| CD sync primitives | 🟡 `CD_init` + `CD_datasync` wired and confirmed; `CD_cw` still spins on real commands |
+| CD reads (the actual blocker) | ❌ needs the native read path — `CdlSetmode`/`CdlSetloc` time out |
+| VSync | ❌ reached, not yet reimplemented |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
 | Code overlays | ❓ **unresolved** — see [`docs/issues/0001`](docs/issues/0001-whether-spyro-loads-code-overlays-and-from-where.md) |

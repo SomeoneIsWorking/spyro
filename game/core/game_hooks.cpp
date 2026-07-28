@@ -48,6 +48,7 @@ static void spyro_registerOverrides(Game*) {
   spyro_register_level_probes();   // TEMPORARY — see docs/issues/0017
   spyro_register_native_rand();    // OWNED natively (not a probe): rand() 0x8006272C
   spyro_register_native_leaves();  // OWNED natively: hot leaves (copy3 / zero3 / fill)
+  spyro_register_native_vec();     // OWNED natively: vadd / vsub / angle-table lookup
 }
 
 static const GameHooks g_spyro_hooks = {

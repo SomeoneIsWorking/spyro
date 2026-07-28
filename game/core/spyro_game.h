@@ -25,3 +25,6 @@ void spyro_register_native_rand();
 
 // Hot leaf functions owned outright (native_leaf.cpp), chosen with tools/own_candidates.py.
 void spyro_register_native_leaves();
+
+// 3-word vector add/sub and the libgte angle-table interpolator (native_vec.cpp).
+void spyro_register_native_vec();

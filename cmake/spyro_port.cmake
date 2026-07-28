@@ -30,6 +30,7 @@ set(GAME_SRC
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
   game/core/native_leaf.cpp
+  game/core/native_vec.cpp
   game/core/level_load_probe.cpp
 )
 

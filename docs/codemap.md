@@ -76,6 +76,21 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
 
 ---
 
+## Rendering — what actually reaches the screen
+
+- **3D and primitive-drawn screens render correctly** — title and in-level gameplay both verified
+  visually (C094, C096). Capture with `PSXPORT_REPL=1` then `shotregion <path> <x> <y> <w> <h>`, and
+  inspect with `tools/ppm_look.py` (one distinct colour = empty buffer, thousands = a real frame).
+- **UPLOAD-ONLY screens are BLACK on screen** (C099). `render_geom`'s band 1 clears to black —
+  "the PC renderer shows ONLY what a native producer submitted" — discarding the uploaded PSX VRAM
+  every present. Spyro's SCE/Universal logos are uploads with zero primitives, so nothing survives.
+  Deliberate framework design for a port whose native producer owns rendering; Spyro is not there yet.
+- **Two observers, neither complete.** `PSXPORT_GPU_DUMP` reads CPU `s_vram` and sees uploads but no
+  VK geometry (I008); the VK readback sees the composited result but not the discarded backdrop. The
+  logo speckle in issue 0016 is what the CPU buffer holds, not what a player sees.
+- **`GP1(08)` bit 4 (24bpp) is decoded but NOT honoured** (C097) — reading 24-bit VRAM as 15-bit
+  scrambles colour and shows two thirds of the width.
+
 ## Performance — where the time actually goes
 
 Measured, not assumed (`PSXPORT_PROF=1` + `tools/prof_hot.py`, I022):

@@ -42,3 +42,16 @@ Its suggestion to check whether the reference consumer shows the same behaviour 
 DONE SO FAR: the bit is decoded and reported (psxport). NOT DONE: honouring it in the readback and present paths, which is the actual fix and is a larger change — the readback assumes 15bpp throughout.
 
 NOTE ON THE EVIDENCE: the frames this issue was filed from are PSXPORT_GPU_DUMP output, which reads CPU-side s_vram and misses the VK renderer entirely (I008). The VK readback is now working (issue 0018) and is the right observer for re-checking this once the depth is honoured.
+
+### Note (2026-07-29)
+MECHANISM NOW COMPLETE, and there are TWO separate faults on these screens, not one.
+
+FAULT A (colour + truncation, C097): the game switches the display to 24bpp and GP1(08) bit 4 was decoded nowhere, so 24-bit VRAM is read as 15-bit. That explains the rainbow speckle AND the two-thirds cut. Now decoded and reported upstream; not yet honoured.
+
+FAULT B (the screens are not displayed at all, C099): psxport's render_geom clears the colour target to BLACK in band 1 — 'the PC renderer shows ONLY what a native producer submitted' — before drawing the geometry bands. The uploaded PSX VRAM backdrop is discarded every present. These logo screens are uploads with ZERO primitives, so nothing survives the clear and the port shows black.
+
+Measured, with the present index pinned from the GPU_DUMP series rather than assumed: presents 25-200 hold the SCE logo, 225-425 the Universal logo, and from 450 the guest is submitting primitives. Across 25-425 the VK readback reports 1 distinct colour in both display buffers; the GPU_DUMP frames from the same presents contain the artwork because they read CPU s_vram BEFORE the wipe.
+
+So the speckle recorded in this issue was never what a player would see. It is what the CPU-side buffer contains, viewed through an observer that also gets the depth wrong. On screen these frames are black.
+
+FAULT B is a framework/consumer mismatch rather than a defect: the black clear is correct for a port whose native producer owns rendering. Spyro still runs the guest's own drawing, and for these screens that means uploads.

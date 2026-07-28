@@ -73,11 +73,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
-- status: in-progress
+- status: re-partial
 - deps: cd.chokepoints
 - evidence: Completion delivery now correct: re-armed at the read ISSUE point, since a gate-watching trigger latches (the guest re-issues before the next sample). Result: completions 1->5, frames 8->218 in 30s — the frame loop is unblocked and the guest runs well past the splash, holding it and then blanking (claim C015). The gate/callback mechanism (C013) is confirmed end to end.
 - where: game/core/ (new), GameConfig cd group
-- gap: Destination still unknown; the cdc-model shortcut is RULED OUT (C017 falsifies C016, issue 0009 closed wrong): zero bank-0 command writes reach the model. a1 was falsified earlier (C014). Remaining approach: OBSERVE writes rather than infer — after a delivered completion the guest's own code must copy sector bytes somewhere, so watch which addresses it writes in that window.
+- gap: ROOT CAUSE FOUND (C018, issue 0010): our override point is TOO LOW. Overriding CD_cw — the command primitive libcd's read state machine is built on — makes libcd ACK and return, so it never advances to its transfer stage. Proof from the new cdcr tracer: zero data-FIFO pops, zero response reads, and mem.cpp implements DMA 0/1/2/4/6 but not 3 (CD) with no unhandled IO, so NEITHER transfer route is ever entered. This also explains why the destination could never be found by inspecting arguments — nothing was going to write it, because the writer never ran. CORRECTION: own the GAME-level loader (as the reference consumer does via cdFileLoad/cdAsyncRead), where the destination is an explicit argument. Next: walk UP from func_80065DBC through func_80016500/func_8001250C to the first function taking (destination, offset, length).
 - notes: 
 
 

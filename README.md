@@ -35,7 +35,7 @@ nothing is owned natively beyond the CD/event seams, and gameplay is unverified.
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
-| Code overlays | ✅ confirmed: hardcoded `jal`s call code loaded above the resident image ([`0001`](docs/issues/0001-whether-spyro-loads-code-overlays-and-from-where.md)); not yet recompiled |
+| Code overlays | 🟡 located: `WAD.WAD +0x5B800`, 14 KB, base `0x8007AA38`, verified as MIPS; not yet recompiled |
 
 Progress is tracked in the repo, not in a changelog:
 `tools/re_frontier.py next` says which RE step is ready, `tools/info.py brief <words>` says what has

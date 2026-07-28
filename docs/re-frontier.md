@@ -77,7 +77,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: cd.chokepoints
 - evidence: Completion delivery now correct: re-armed at the read ISSUE point, since a gate-watching trigger latches (the guest re-issues before the next sample). Result: completions 1->5, frames 8->218 in 30s — the frame loop is unblocked and the guest runs well past the splash, holding it and then blanking (claim C015). The gate/callback mechanism (C013) is confirmed end to end.
 - where: game/core/ (new), GameConfig cd group
-- gap: Destination-by-inference has failed twice (a1 falsified, C014). New evidence reframes it: the guest drives the CD controller registers DIRECTLY — 44 writes per boot from func_80065270/func_80065108 — so cdc_native.c (which already implements the register/FIFO model and load_sector from loc_lba) sees its commands regardless of our libcd overrides (C016, issue 0009). Next, verify two things before building anything: (1) does the guest READ 0x1F801802 (data-FIFO pop) after its read, i.e. is the transfer its own code? (2) does load_sector ever run, or do our overrides intercept Setloc before the model records loc_lba? If (2) is the gap the fix is to let the position reach the model — we already track it in Cd::setloc_lba — not to copy bytes into a guessed address.
+- gap: Destination still unknown; the cdc-model shortcut is RULED OUT (C017 falsifies C016, issue 0009 closed wrong): zero bank-0 command writes reach the model. a1 was falsified earlier (C014). Remaining approach: OBSERVE writes rather than infer — after a delivered completion the guest's own code must copy sector bytes somewhere, so watch which addresses it writes in that window.
 - notes: 
 
 

@@ -1,7 +1,7 @@
 ---
 id: 9
 title: The CD data path may be completable through the cdc model rather than by inferring a destination
-status: open
+status: resolved
 symptom: Two attempts to find the transfer destination by inference failed (a1 falsified, C014). Meanwhile the guest is writing CD controller registers directly.
 tags: cd,architecture
 created: 2026-07-28
@@ -27,3 +27,6 @@ That suggests the destination question may be the wrong question. Rather than di
 ## Caution
 
 This does NOT mean abandoning option A. It means the A/B line is blurrier than issue #4 assumed, and the cheapest completion may borrow the model's FIFO. Verify (1) and (2) before building either.
+
+### Resolution (2026-07-28)
+WRONG — premise does not hold. Zero bank-0 command writes reach cdc_native.c across a full boot and PSXPORT_DEBUG=cdc logs nothing; the 44 register writes are configuration only (bank selects + volume/IRQ mask). The guest issues its real commands through libcd, which our CD_cw override intercepts first, so the model never sees Setloc/ReadN and load_sector never runs. Option A (override-based) remains correct and the DESTINATION question is still the right question.

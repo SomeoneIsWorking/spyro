@@ -161,7 +161,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: boot.post-cd
 - evidence: C035
 - where: game/core/game_config.cpp pad group; psxport PlatformHle pad path
-- gap: Do NOT start here yet. C040 shows the port is stuck in stage mode 13 ([0x800757D8]) and never reaches the 4/5 arm that loads a level, which is the port's live blocker (issue 0019). Input is a PLAUSIBLE but UNTESTED explanation for why the mode never advances — mode 13 could equally be waiting on a timer, a stream, or state a native override is not setting. C035 still holds: the guest never touches the pad or the pad library anywhere in resident text or the 36 code overlays, so whatever the trigger is, input can only arrive via the BIOS/HLE layer. Settle WHY mode 13 is stuck before wiring any pad buffer address.
+- gap: REFRAMED by C062. The port now COMPLETES the attract loop (mode 13 -> 0 -> 13, overlays swapping OVL0 -> OVL1 -> OVL0) rather than stalling, and the reason the game never touches pad hardware is that attract REPLAYS A RECORDED INPUT STREAM through a walking pointer at [0x8007585C], feeding the ordinary edge-detect at [0x80077378]/[0x80077380]. C035 stands and is now explained rather than merely observed. The open question is narrower: where is REAL pad state read, i.e. the START press that leaves attract. Start from the OTHER writer of 0x80077378 (0x8005413C) — the demo replay is 0x80053AF8. Do NOT wire a pad buffer address until the producer is identified: the demo path shows input can arrive without hardware, so a plausible buffer is easy to guess wrong.
 - notes: 
 
 

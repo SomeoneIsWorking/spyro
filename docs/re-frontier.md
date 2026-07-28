@@ -96,6 +96,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: Origin of the garbage call target 0x8007ABAC is still unexplained. Not the index words themselves (they are valid). More likely the guest indexes this table with a value the port has not got right, or reads a pointer the port never populated. Also unexplained: a later load logs the same region as ALL ZEROS, so something does overwrite or re-read it differently.
 - notes: 
 
+### cd.pc-owned-stock-libcd — Move Spyro's CD path from a game-level override to psxport's PC-owned stock-libcd handlers
+- status: todo
+- deps: boot.post-cd
+- evidence: C074
+- where: game/core/cd_queue.cpp; game/core/game_config.cpp cd group; external/psxport/runtime/recomp/cd_override.cpp
+- gap: Upstream psxport now implements PC-owned stock-libcd reads (cd_getsector_stock, per-sector INT1, a sector FIFO, DMA3). Spyro uses STOCK libcd — its CD register pointer table is at [0x800750FC..0x80075108] = 0x1F801800..03 with DMA3 at [0x80075138..0x80075140], the same shape those handlers expect. Today this port instead overrides a GAME-level streaming primitive (0x80016698, cd_stream_read in cd_queue.cpp), which works but owns the wrong layer: it reimplements what the game's own loader does rather than what the HARDWARE does, so the game's loader code never runs. Moving down to GameConfig::cdGetSector + the stock handlers would let the real libcd and the real loader execute and is strictly more faithful.
+- notes: Identify Spyro's CdGetSector inside libcd (~0x80063000-0x80065000) by its use of the CD register pointer table, NOT by an immediate-address scan — C074 says those return zero for every subsystem in this game. Verify the game-level override can then be removed rather than leaving both installed.
+
 
 ## frame
 

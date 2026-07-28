@@ -29,6 +29,8 @@
 #include "recomp_iface.h"
 #include "rec_decls.h"
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
+#include "snapshot.h"     // snapshot_tick — on-demand guest RAM capture at a frame boundary
+#include "repl.h"         // class Repl — interactive inspection, pumped from this frame boundary
 
 namespace {
 
@@ -134,6 +136,30 @@ void vblank_wait(Core* c) {
     // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
     // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
     run_vblank_callback(c);
+    // A COMPLETED FRAME is the only safe place to capture guest RAM: mid-frame the OT and packet pool
+    // are half-built, which is the one state nobody wants to reason about. The guest still owns its
+    // frame loop here, so the framework cannot know where that boundary is — this wait does.
+    // PSXPORT_SNAP_AT / PSXPORT_SNAP_EVERY / kill -USR1 <pid>; see snapshot.h.
+    snapshot_tick(c);
+    // PUMP THE REPL. `PSXPORT_REPL=1` gives an interactive prompt on stdin — read/write guest memory,
+    // press pad buttons, dump RAM, step N frames. It was UNREACHABLE in this port for a structural
+    // reason, not a broken one: repl.read() is only pumped from the framework's native scheduler loop,
+    // and that loop never runs here because the guest still owns its frame loop. Pumping it from this
+    // frame boundary costs nothing and makes a live port inspectable instead of requiring a rebuild
+    // per question.
+    //
+    // read() blocks until the operator types `run N`, then returns N — a frame budget. So hold the
+    // budget across frames and only re-enter when it runs out; that is exactly the contract the
+    // native loop uses. A negative return is quit.
+    if (cfg_on("PSXPORT_REPL")) {
+      static long budget = 0;
+      static bool quit = false;
+      if (!quit && budget <= 0) {
+        while ((budget = c->game->repl.read(c, (uint32_t)cur)) == 0) { }
+        if (budget < 0) { quit = true; cfg_logi("repl", "quit — running free"); }
+      }
+      if (budget > 0) budget--;
+    }
     // One vblank = one displayed frame. present() puts the guest's drawn frame on screen; pace()
     // holds real time to the frame interval so the game runs at its intended speed rather than
     // spinning as fast as the host can.

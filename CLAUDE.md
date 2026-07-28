@@ -75,6 +75,29 @@ the tell; validate a tool by feeding it a case that MUST differ.
 
 ---
 
+## Debugging a live port
+
+Three things make a running port inspectable without a rebuild per question. Reach for them before
+adding a probe.
+
+```sh
+PSXPORT_REPL=1 ./scratch/bin/spyro_port <exe>     # interactive: r <addr>, press <btn>, run N, dumpram
+PSXPORT_SNAP_AT=1500,4000 …                       # 2 MB guest RAM at those frame boundaries
+kill -USR1 <pid>                                  # …or snapshot whenever you like
+PSXPORT_WWATCH=<lo>,<hi> PSXPORT_WWATCH_BT=1      # who wrote this address (pc, ra, frame, registers)
+python3 tools/whatis.py 0x800xxxxx --ram scratch/raw/snap_1500.bin
+```
+
+**`PSXPORT_WWATCH` before a static scan for a writer.** Address-immediate scans miss stores that go
+through a register, and that has produced a wrong answer here more than once — the sub-state writer
+was invisible to two separate scans and the watchpoint found it in one run (I016).
+
+**A crash is not required to see state.** The port dumps RAM at every recomp-MISS, but snapshots work
+on a healthy run too; that is how the OT/packet-pool values were read (C073).
+
+**Counting state transitions is not a liveness test.** A screen with no state changes can be fully
+alive — the title screen was called "hung" on that basis and was animating the whole time (C071).
+
 ## Diagnostics
 
 All diagnostics go through psxport's channel-gated logger — `PSXPORT_DEBUG=cd,gpu` (see

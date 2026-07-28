@@ -75,9 +75,9 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
 - status: in-progress
 - deps: cd.chokepoints
-- evidence: Design call taken (option A, override-based, matching the reference consumer). The wait loop in func_80016500 is fully decoded and two of its three exit conditions already hold: [0x80076BB8]==0, and CdSync(1,0)==2 via our cd_sync override (gdb-confirmed firing, claim C011).
+- evidence: Option A chosen. Wait loop decoded (func_80016500): two of three exit conditions already hold, incl. CdSync==2 via our override (gdb-confirmed firing, C011). The producer of the missing status bit is now KNOWN: func_8002BBE0 sets [0x800774B4]=0x40 when the pending-event code [0x800776C4] is 8 or 9, bit 0x200 is clear, and CdSync==2. func_800567F4 is the request processor that sets that code, drained from [0x800776C8]. Full map in docs/issues/0006.
 - where: game/core/ (new), GameConfig cd group
-- gap: The third condition — CD status bit 0x40 at 0x800774B4 — has NO producer: that byte is refreshed by libcd's interrupt callback and no guest IRQ is raised. Next: RE Spyro's libcd callback installation to fill GameConfig::cdCallbackTable + cdCallbackFn so Cd::hleInit() leaves the state the real init would, and have the native CD path update the status the way the IRQ would. Do NOT poke the bit — that is a magic constant with no producer (issue 0005).
+- gap: The enqueue->drain->complete chain does not close. Next: instrument the three globals (0x800774B4 / 0x800776C4 / 0x800776C8) from INSIDE the port via a cfg_dbg channel in the CD override — gdb has been unreliable here (a breakpoint on gen_func_8002BBE0 did not hit in 120s, contradicting an earlier stack profile; likely the dispatch goes through the func_ wrapper). Establish which link is broken before writing any handler.
 - notes: 
 
 

@@ -25,3 +25,6 @@ Couple transfer and completion: read sectors from Cd::setloc_lba into the guest'
 ## Do not
 
 Do not extend the current shortcut by faking data (zero-filling the buffer, or short-circuiting the guest's validation). The retry loop is the honest signal that the read has not happened.
+
+### Note (2026-07-28)
+TESTED AND FALSIFIED: a1 as the destination buffer. Probes gave a1=0x8007AA38 (heapBase) for both read-path functions, which looked conclusive; a per-sector copy there produced NO behavioural change (guest re-issued the same LBA 37 read, frames stayed 8). Reverted — an inferred destination that fails its predicted effect is an unvalidated 2048-byte-per-iteration guest-memory write. a1 may be a descriptor/mode block, not a buffer. SECOND finding: the completion edge-trigger LATCHES — the guest re-issues its read (re-setting the gate) before the next sample, so exactly one completion is ever delivered. Any replacement must key off the read ISSUE, not off observing the gate reach 0.

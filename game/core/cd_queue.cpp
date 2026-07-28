@@ -73,6 +73,12 @@ constexpr uint32_t kB = 0x800758CCu;
 // read is already complete by the time the guest could have been interrupted, and completion is
 // exactly the event the controller would have raised. The alternative — writing 0 to the gate
 // ourselves — would be the poke, because it would skip everything else the callback does.
+// Streaming-read state. Armed when the guest issues its read (the probe below sees the destination
+// buffer in a1) and advanced one sector per delivered completion, mirroring a ReadN stream.
+// -1 = no read in flight.
+int32_t  cd_stream_lba  = -1;
+uint32_t cd_stream_dest = 0;
+
 constexpr uint32_t kCdCallback = 0x80016490u;
 constexpr uint32_t kEventComplete = 2u;
 
@@ -102,7 +108,20 @@ void cd_retry_step(Core* c) {
   // EDGE-triggered on the in-flight gate, not level-triggered: exactly one completion per request,
   // which is what the controller raises. A level trigger would re-deliver every iteration and call
   // the guest's handler repeatedly for a single read.
-  // INCOMPLETE — completion is delivered WITHOUT the sector data having been transferred.
+  // NO SECTOR TRANSFER HERE — an earlier attempt is reverted, see below.
+  // WHY NO TRANSFER: a hypothesis was tested and NOT supported. Probes showed both read-path
+  // functions receiving a1 = 0x8007AA38 (heapBase), so a1 looked like the destination buffer, and a
+  // per-sector copy from Cd::setloc_lba into it was tried. Predicted effect: the guest advances past
+  // its first sector. Observed: it re-issued the SAME read at LBA 37 and nothing advanced — frames
+  // stayed at 8. An inferred destination that does not produce its predicted behaviour is an
+  // unvalidated 2048-byte-per-iteration write into guest memory, so it was removed rather than left
+  // in looking like progress. a1 may be a descriptor or a mode block rather than a buffer.
+  //
+  // Also learned: the edge-trigger below LATCHES. The guest re-issues its read (re-setting the gate)
+  // before the next sample, so `delivered` never re-arms and exactly one completion is ever sent.
+  // Whatever replaces this must key off the read ISSUE, not off observing the gate at 0.
+  //
+  // INCOMPLETE (unchanged): completion is delivered without data —
   //
   // This advances the state machine correctly (gate clears, the wait in func_80016500 succeeds, the
   // guest issues its next request), which is what proved the gate/callback analysis right. But it is
@@ -124,9 +143,44 @@ void cd_retry_step(Core* c) {
              n - 1, c->mem_r32(kStatus), c->mem_r32(kPending), c->mem_r32(kQueued));
 }
 
+// ── transfer-path probes ─────────────────────────────────────────────────────────────────────────
+// Which function actually moves sector bytes, and with what arguments, is the one thing still
+// unknown. Static decode has been wrong three times on this stall (issues 0005/0007), so these are
+// probes, not conclusions: each logs its arguments once and super-calls the real body. Whichever
+// fires — and with what — decides where the native read goes.
+#define CD_PROBE(NAME, ADDR)                                                             \
+  void probe_##NAME(Core* c) {                                                           \
+    static unsigned hits = 0;                                                            \
+    if (cfg_dbg("cdq") && hits < 4)                                                       \
+      cfg_logf("cdq", "probe " #NAME " (0x%08X) a0=0x%08X a1=0x%08X a2=0x%08X a3=0x%08X", \
+               (unsigned)ADDR, c->r[4], c->r[5], c->r[6], c->r[7]);                       \
+    hits++;                                                                               \
+    gen_func_##NAME(c);                                                                   \
+  }
+CD_PROBE(8006606C, 0x8006606Cu)   // sector-size selection (512 vs 585/582 words) — DMA setup shape
+CD_PROBE(800659F0, 0x800659F0u)   // "CdRead: sector error" carrier; keeps a1
+CD_PROBE(800567F4, 0x800567F4u)   // the queue's request processor
+#undef CD_PROBE
+
+// The read issue point. It receives the destination buffer in a1 (observed: 0x8007AA38 = heapBase)
+// and the mode in a2, so this is where the stream is armed: start at the position the guest last
+// Setloc'd (tracked framework-side in Cd::setloc_lba) and hand sectors over one per completion.
+void probe_80065DBC(Core* c) {
+  const uint32_t dest = c->r[5];
+  const int32_t  lba  = c->game->cd.setloc_lba;
+  if (cfg_dbg("cdq"))
+    cfg_logf("cdq", "read issued: dest=0x%08X mode=0x%X lba=%d", dest, c->r[6], lba);
+  if (lba >= 0) { cd_stream_lba = lba; cd_stream_dest = dest; }
+  gen_func_80065DBC(c);
+}
+
 }  // namespace
 
 void spyro_register_cd_queue() {
+  psxport_recomp()->shard_set_override(0x8006606Cu, probe_8006606C);
+  psxport_recomp()->shard_set_override(0x800659F0u, probe_800659F0);
+  psxport_recomp()->shard_set_override(0x80065DBCu, probe_80065DBC);
+  psxport_recomp()->shard_set_override(0x800567F4u, probe_800567F4);
   psxport_recomp()->shard_set_override(0x800163E4u, cd_retry_step);
   // Game-code overrides go through the RECOMP override registry, not PlatformHle: that table is for
   // I/O and BIOS-library primitives and validates against GameConfig::hle's windows, which

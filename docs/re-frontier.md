@@ -146,11 +146,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 
 ### recomp.midfn — Mid-function dispatch from data-computed addresses
-- status: todo
+- status: re-verified
 - deps: boot.post-cd
-- evidence: C056
+- evidence: C059,C060
 - where: docs/issues/0021; emit.py label emission
-- gap: The port's only remaining fail-fast (0x80038620) after the computed-jump family was solved in the recompiler. NOT another recogniser: the address has zero static references anywhere in the resident text or either overlay, so it is computed from data loaded off the disc and there is no dispatcher to analyse. It lands INSIDE an already-recompiled function, so it needs a mid-function LABEL and never a seed (C051: a seed splits the body, 9.4M unmapped-RAM reads even with a correct address). The honest general fix is emitting a label at every basic-block boundary so any address inside a known function is resumable — measure its size/time cost here first, since it would affect every consumer of the framework.
+- gap: RESOLVED. Was misdiagnosed as data-driven and unanalysable; it was a computed RETURN (C058/C059) plus a no-index computed jump (C060), both now handled in the recompiler. The port no longer crashes: zero recomp misses, frame count scales with wall time, gate 11/11.
 - notes: 
 
 

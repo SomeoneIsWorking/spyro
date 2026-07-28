@@ -75,9 +75,9 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
 - status: re-partial
 - deps: cd.chokepoints
-- evidence: Root cause of the post-splash stall FOUND and mechanism proven. The gate at 0x80076BB8 is cleared by the guest's CD event callback func_80016490(a0=2) — a function with no direct callers, registered via libcd's callback registration (claim C013). Delivering that event from our synchronous CD path clears the gate, the wait in func_80016500 succeeds, and the guest issues its next request. Instrumented in-process via override + super-call (game/core/cd_queue.cpp, PSXPORT_DEBUG=cdq).
+- evidence: Completion delivery now correct: re-armed at the read ISSUE point, since a gate-watching trigger latches (the guest re-issues before the next sample). Result: completions 1->5, frames 8->218 in 30s — the frame loop is unblocked and the guest runs well past the splash, holding it and then blanking (claim C015). The gate/callback mechanism (C013) is confirmed end to end.
 - where: game/core/ (new), GameConfig cd group
-- gap: Completion is delivered WITHOUT the sector data (issue 0008): the guest re-seeks LBA 37 forever instead of advancing, i.e. retrying rather than loading. The real fix couples transfer and completion — read from Cd::setloc_lba into the guest's destination, then signal. Needs func_8006606C's argument roles confirmed from its body first (it selects 512 vs 585/582 words per sector from a mode word, i.e. CD DMA sector-size setup).
+- gap: Still no DATA: only LBA 37 is ever sought, so nothing loads and the screen holds the splash then goes black. The transfer destination is UNKNOWN — a1 was tested and falsified (C014). Next: find the destination by WATCHING which guest addresses the read path writes (the framework has watch-region machinery in OtAttr for exactly this last-writer question) rather than inferring it from arguments.
 - notes: 
 
 

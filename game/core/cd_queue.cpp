@@ -79,6 +79,11 @@ constexpr uint32_t kB = 0x800758CCu;
 int32_t  cd_stream_lba  = -1;
 uint32_t cd_stream_dest = 0;
 
+// One completion per issued read. Re-armed at the READ ISSUE point, not by observing the gate reach
+// 0: the guest re-issues its read (re-setting the gate) before the retry body samples it, so a
+// gate-watching trigger latches after the first delivery and never fires again.
+bool cd_completion_pending = false;
+
 constexpr uint32_t kCdCallback = 0x80016490u;
 constexpr uint32_t kEventComplete = 2u;
 
@@ -134,9 +139,7 @@ void cd_retry_step(Core* c) {
   // destination buffer, and deliver completion only once that has happened. That needs the transfer
   // path (func_8006606C and friends) read out of its body first — see docs/issues/0003. Until then
   // this stays deliberately visible rather than dressed up as a working read.
-  static bool delivered = false;
-  if (c->mem_r32(kGate) == 0) delivered = false;          // request finished — arm for the next one
-  else if (!delivered) { delivered = true; deliver_cd_complete(c); }
+  if (cd_completion_pending) { cd_completion_pending = false; deliver_cd_complete(c); }
 
   if (on && n <= 8)
     cfg_logf("cdq", "retry#%u EXIT  status=0x%X pending=%u queued=%u",
@@ -171,6 +174,7 @@ void probe_80065DBC(Core* c) {
   if (cfg_dbg("cdq"))
     cfg_logf("cdq", "read issued: dest=0x%08X mode=0x%X lba=%d", dest, c->r[6], lba);
   if (lba >= 0) { cd_stream_lba = lba; cd_stream_dest = dest; }
+  cd_completion_pending = true;   // this read is complete the moment it is issued (synchronous CD)
   gen_func_80065DBC(c);
 }
 

@@ -13,3 +13,6 @@ void spyro_install_recomp();             // game/core/recomp_register.cpp — in
 
 // game/core/vsync.cpp — installs the vblank timebase (the libetc wait helper).
 void spyro_register_vsync(Game* g);
+
+// game/core/cd_queue.cpp — observes (and will own) the CD request queue service routine.
+void spyro_register_cd_queue();

@@ -1,7 +1,7 @@
 ---
 id: 5
 title: The read-wait exit condition: CD status bit 0x40 at 0x800774B4 has no producer
-status: open
+status: resolved
 symptom: func_80016500 polls forever after ReadN. The cd_sync override IS firing (gdb breakpoint confirms, called from gen_func_80016500), and returns 2 as the loop wants — but the loop still never exits.
 tags: cd,boot,blocker
 created: 2026-07-28
@@ -38,3 +38,6 @@ RE Spyro's libcd callback installation (the CdInit success path, around func_800
 - what the callback writes into 0x800774B4, and from which response bytes
 
 Then `Cd::hleInit()` can leave the same state the real init would, and the native CD path can update the status the way the IRQ would — which is how the reference consumer does it, and keeps ownership top-down rather than poking flags.
+
+### Resolution (2026-07-28)
+SUPERSEDED / WRONG — see issue #7. The premise was false: the CD status bit 0x40 at 0x800774B4 is NOT missing. In-process logging shows it set on every iteration from the first. The boot is blocked by the GATE at 0x80076BB8 (==1), which the wait loop tests BEFORE the status, so the status test is never even reached.

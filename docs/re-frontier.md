@@ -75,9 +75,9 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
 - status: in-progress
 - deps: cd.chokepoints
-- evidence: Option A chosen. Wait loop decoded (func_80016500): two of three exit conditions already hold, incl. CdSync==2 via our override (gdb-confirmed firing, C011). The producer of the missing status bit is now KNOWN: func_8002BBE0 sets [0x800774B4]=0x40 when the pending-event code [0x800776C4] is 8 or 9, bit 0x200 is clear, and CdSync==2. func_800567F4 is the request processor that sets that code, drained from [0x800776C8]. Full map in docs/issues/0006.
+- evidence: Option A chosen. In-process instrumentation (game/core/cd_queue.cpp, override + super-call, PSXPORT_DEBUG=cdq) now reports the real guest state each iteration: gate=[0x80076BB8]=1, status=[0x800774B4]=0x40, a=[0x800758E0]=0. So the CD status bit is ALREADY set and func_800163E4 returns cleanly — claim C012.
 - where: game/core/ (new), GameConfig cd group
-- gap: The enqueue->drain->complete chain does not close. Next: instrument the three globals (0x800774B4 / 0x800776C4 / 0x800776C8) from INSIDE the port via a cfg_dbg channel in the CD override — gdb has been unreliable here (a breakpoint on gen_func_8002BBE0 did not hit in 120s, contradicting an earlier stack profile; likely the dispatch goes through the func_ wrapper). Establish which link is broken before writing any handler.
+- gap: The blocker is the GATE at 0x80076BB8, tested first by func_80016500's wait and never zero. Writers: func_80016490 (@0x800164A8), func_80016500 (@0x80016628), func_80016698 (@0x80016754). Next: determine what the gate means (likely 'CD request in flight') and which writer is meant to clear it on completion — that writer is the one that never runs.
 - notes: 
 
 

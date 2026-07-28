@@ -27,6 +27,7 @@ set(GAME_SRC
   game/core/game_hooks.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp
+  game/core/cd_queue.cpp
 )
 
 # ---- the recompiled substrate --------------------------------------------------------------------

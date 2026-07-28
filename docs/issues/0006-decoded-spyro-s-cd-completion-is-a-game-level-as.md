@@ -52,3 +52,6 @@ A gdb breakpoint on `gen_func_8002BBE0` did NOT hit within 120s, which contradic
 ## Do not
 
 Poke `[0x800774B4] |= 0x40`. The producer is now known; faking its output would discard exactly the understanding this decode bought.
+
+### Note (2026-07-28)
+PARTIALLY SUPERSEDED — see issue #7. The decoded queue state machine (service routine, pending-event codes, request processor) is accurate as a description of that code, but it is NOT the boot blocker: the status bit it produces is already set. Keep this as the map of the CD completion path; do not treat it as the thing to fix.

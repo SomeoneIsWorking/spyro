@@ -14,6 +14,7 @@
 // unconditionally — bootInit and registerOverrides — which are implemented below.
 #include "core.h"
 #include "game_iface.h"
+#include "spyro_game.h"
 
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
 extern "C" void rec_dispatch(Core* c, uint32_t addr);
@@ -39,7 +40,12 @@ static void spyro_bootInit(Core* c) {
 // registerOverrides — install this game's native override clusters into the process-global registry.
 // Spyro has none yet: every guest function still runs its recompiled body. When the first native
 // function is taken over, it registers here (see psxport docs/recomp-overrides).
-static void spyro_registerOverrides(Game*) {}
+static void spyro_registerOverrides(Game*) {
+  // Game-function ownership goes here, installed into the process-global override registry. Each
+  // entry either observes its recompiled body via a super-call (the first step of owning it) or
+  // replaces it once the native reimplementation is byte-gated against the substrate.
+  spyro_register_cd_queue();
+}
 
 static const GameHooks g_spyro_hooks = {
   /* ctxCreate  */ nullptr,   // no per-Core game context yet — Core tolerates null and leaves gameCtx null

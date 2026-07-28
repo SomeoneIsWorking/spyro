@@ -5,44 +5,65 @@
     "overlay arena at 0x8007AA38. Offsets and lengths are the ones the loader was given, not",
     "inferred. Each name is DERIVED FROM ITS WAD OFFSET (OV_<hex>) so it never shifts when a",
     "new overlay is discovered — an index-based name would silently re-point existing seeds.",
-    "Re-run overlay_scan.py after a run that gets further; the set is merged, never replaced."
+    "Re-run overlay_scan.py after a run that gets further; the set is merged, never replaced.",
+    "entry_seeds are DERIVED, not observed: main installs each overlay's per-frame entry into",
+    "[0x80075734] (43 stores, 36 distinct addresses), and an entry is claimed by an overlay only",
+    "if it is prologue-shaped (addiu sp,sp,-N) in THAT overlay's own bytes. All overlays share one",
+    "base, so the prologue test is what stops another level's entry being seeded into this module."
   ],
   "arena_base": "0x8007AA38",
+  "entry_table_size": 36,
   "overlays": [
     {
       "name": "OV_0",
       "wad_offset": "0x0",
-      "length": 2048
+      "length": 2048,
+      "entry_seeds": []
     },
     {
       "name": "OV_5B800",
       "wad_offset": "0x5B800",
-      "length": 14336
+      "length": 14336,
+      "entry_seeds": []
     },
     {
       "name": "OV_5F000",
       "wad_offset": "0x5F000",
-      "length": 2048
+      "length": 2048,
+      "entry_seeds": []
     },
     {
       "name": "OV_B83800",
       "wad_offset": "0xB83800",
-      "length": 65536
+      "length": 65536,
+      "entry_seeds": [
+        "0x8007AF50",
+        "0x8007DA78"
+      ]
     },
     {
       "name": "OV_237D000",
       "wad_offset": "0x237D000",
-      "length": 51200
+      "length": 51200,
+      "entry_seeds": [
+        "0x8007AEB8"
+      ]
     },
     {
       "name": "OV_2F5B000",
       "wad_offset": "0x2F5B000",
-      "length": 65536
+      "length": 65536,
+      "entry_seeds": [
+        "0x8007B7A8"
+      ]
     },
     {
       "name": "OV_502F800",
       "wad_offset": "0x502F800",
-      "length": 40960
+      "length": 40960,
+      "entry_seeds": [
+        "0x8007CFB4"
+      ]
     }
   ]
 }

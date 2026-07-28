@@ -79,10 +79,13 @@ def load_overlays():
         return []
     with open(OVERLAYS_JSON) as f:
         data = json.load(f)
+    global OVERLAY_ENTRIES
+    OVERLAY_ENTRIES = {e["name"]: e.get("entry_seeds", []) for e in data["overlays"]}
     return [(e["name"], int(e["wad_offset"], 16), int(e["length"])) for e in data["overlays"]]
 
 
-OVERLAYS = None   # filled by main() once load_overlays() can report through say()
+OVERLAYS = None          # filled by main() once load_overlays() can report through say()
+OVERLAY_ENTRIES = {}     # name -> derived per-frame entry seeds (from game/overlays.json)
 
 
 def say(msg):
@@ -202,6 +205,43 @@ def extract_overlays(discdump, disc):
     return out
 
 
+MERGED_SEEDS = "generated/.recomp_seeds_merged.json"
+
+
+def merged_seeds():
+    """game/recomp_seeds.json + the per-overlay entry seeds DERIVED in game/overlays.json.
+
+    Kept as two sources on purpose. recomp_seeds.json holds seeds someone REASONED about, each with
+    the rationale that makes it reviewable a year later; the entry seeds are mechanically derived from
+    main's own [0x80075734] install table and re-derived on every run, so hand-copying them in would
+    mix a generated list into a file whose whole value is that every line was justified — and would
+    reintroduce the per-overlay hand-edit this replaced.
+
+    The merge is written to generated/ (gitignored, regenerated) so what emit.py consumed is always
+    inspectable after the fact."""
+    with open(os.path.join(ROOT, SEEDS)) as f:
+        text = f.read()
+    body = re.sub(r"^\s*//.*$", "", text, flags=re.M)      # the seed file allows // comments
+    data = json.loads(body)
+    ov_seeds = dict(data.get("overlay_seeds", {}))
+    derived = 0
+    for name, _off, _len in OVERLAYS:
+        entries = OVERLAY_ENTRIES.get(name, [])
+        if not entries:
+            continue
+        merged = sorted(set(ov_seeds.get(name, [])) | set(entries))
+        ov_seeds[name] = merged
+        derived += len(entries)
+    data["overlay_seeds"] = ov_seeds
+    out = os.path.join(ROOT, MERGED_SEEDS)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w") as f:
+        json.dump(data, f, indent=2)
+    if derived:
+        say(f"{derived} derived overlay entry seed(s) merged with {SEEDS} -> {MERGED_SEEDS}")
+    return out
+
+
 def input_hash():
     """SHA-256 over the executable + the recompiler sources + our seed file."""
     h = hashlib.sha256()
@@ -218,6 +258,10 @@ def input_hash():
             feed("OVL:" + name, p)
     for src in RECOMP_SRCS + [SEEDS]:
         feed(src, os.path.join(ROOT, src))
+    # The DERIVED entry seeds change the emitted C too, so they belong in the identity. Without this a
+    # newly-derived entry would leave generated/ looking current and the seed would silently not apply.
+    h.update(b"overlay_entries")
+    h.update(json.dumps(OVERLAY_ENTRIES, sort_keys=True).encode())
     return h.hexdigest()
 
 
@@ -233,10 +277,11 @@ def generated_complete():
 
 
 def run_emit():
+    seeds_path = merged_seeds()
     say("recompiling SCUS_942.28 -> C (the execution substrate)…")
     cmd = [sys.executable, os.path.join(ROOT, f"{RECOMP_DIR}/emit.py"),
            os.path.join(ROOT, EXE), os.path.join(ROOT, GEN_MAIN),
-           "--seeds", os.path.join(ROOT, SEEDS)]
+           "--seeds", seeds_path]
     if OVERLAYS:
         cmd += ["--overlays", os.path.join(ROOT, OVL_DIR)]
     if subprocess.run(cmd).returncode != 0:

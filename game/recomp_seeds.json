@@ -63,20 +63,15 @@
   "overlay_base_patterns": [["OV_[0-9A-F]+", "0x8007AA38"]],
   // Function-pointer-only entries inside an overlay — invisible to `jal` discovery by construction.
   //
-  // THE RECURRING SHAPE: every level overlay has ONE per-frame entry, installed by the overlay into
-  // the global [0x80075734] and called from main's stage tick at 0x80033AA4 as
-  //     lw v0, [0x80075734] ; jalr v0
-  // Nothing static points at it, so `jal` discovery cannot see it and each one surfaces as its own
-  // fail-fast with `caller ra=0x80033AAC` — the instruction right after that `jalr`.
+  // Per-overlay seeds that someone REASONED about. Empty, and that is the point: the one recurring
+  // case — each level overlay's per-frame entry, installed into [0x80075734] and called indirectly at
+  // 0x80033AA4 — is now DERIVED rather than hand-added. tools/overlay_scan.py reads main's own install
+  // table (43 stores, 36 distinct addresses, matching the 36 code overlays of C033) and claims an
+  // address for an overlay only when it is prologue-shaped in that overlay's OWN bytes; ensure_recomp.py
+  // merges the result into generated/.recomp_seeds_merged.json, which is what emit.py consumes.
   //
-  // Each is VERIFIED before being added, against the RAM dumped at the miss (the port dumps it
-  // automatically now): the address must be a real prologue in the RESIDENT bytes, and those bytes
-  // must match the overlay slice we believe is resident. Both checks matter — the arena is reused, so
-  // reading the address out of the wrong overlay's image is exactly the mistake issue 0025 records.
-  //   OV_237D000 0x8007AEB8 -> addiu sp,sp,-512
-  //   OV_2F5B000 0x8007B7A8 -> addiu sp,sp,-560, and the resident word matches the slice exactly
-  "overlay_seeds": {
-    "OV_237D000": ["0x8007AEB8"],
-    "OV_2F5B000": ["0x8007B7A8"]
-  }
+  // Add here only a seed the derivation CANNOT produce, with the reasoning that justifies it. Do not
+  // copy derived entries back in: they are regenerated every run, and mixing a generated list into a
+  // file whose whole value is that every line was justified is how that value gets lost.
+  "overlay_seeds": {}
 }

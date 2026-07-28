@@ -34,7 +34,7 @@ fi
 [ -x scratch/bin/spyro_port ] || { echo "gate: build first (cmake --build build --target spyro_port)"; exit 2; }
 
 echo "[gate] running ${SECS}s headless…"
-PSXPORT_DEBUG=cdq PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
+PSXPORT_DEBUG=cdq,ovload PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
   PSXPORT_WATCHDOG=0 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
 
@@ -67,6 +67,11 @@ MOVED=$(grep -o 'moved [0-9]* bytes' "$LOG" 2>/dev/null | awk '{s+=$2} END{print
 COMPL=$(grep -c 'delivered CD completion' "$LOG" 2>/dev/null; true)
 MISS=$(grep -c 'recomp-MISS' "$LOG" 2>/dev/null; true)
 REFUSED=$(grep -c 'REFUSED' "$LOG" 2>/dev/null; true)
+# The overlay router must IDENTIFY the overlay resident in the arena slot, not merely see a load.
+# Without GameConfig::overlaySlots[0] the slot lookup returns -1 and no identity is ever recorded —
+# yet everything still boots, because dispatch falls back to a full signature scan. That is precisely
+# the "hollow" failure this gate exists to catch, so assert on the named match, not on the load.
+OVID=$(grep -c 'ovload.*slot 0 <- OVL0' "$LOG" 2>/dev/null; true)
 
 echo "[gate] checks:"
 chk "frames presented"          "$FRAMES"   ge 300
@@ -76,6 +81,7 @@ chk "bytes loaded from disc"     "$MOVED"    ge 100000
 chk "CD completions delivered"   "$COMPL"    ge 3
 chk "recomp misses"              "$MISS"     eq 0
 chk "refused HLE registrations"  "$REFUSED"  eq 0
+chk "overlay identified in slot 0"  "$OVID"     ge 1
 
 if [ "$fail" -eq 0 ]; then echo "[gate] PASS"; else echo "[gate] FAIL — see $LOG"; fi
 exit "$fail"

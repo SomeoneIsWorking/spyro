@@ -21,6 +21,7 @@
 #include "cfg.h"
 #include "recomp_iface.h"
 #include "rec_decls.h"     // generated: gen_func_8002BBE0 — the body we super-call
+#include "overlay_router.h"  // overlay_note_load — give the arena slot a load-time identity
 #include "spyro_game.h"
 
 namespace {
@@ -229,6 +230,13 @@ void cd_loader(Core* c) {
   if (cfg_dbg("cdq"))
     cfg_logf("cdq", "loader: a0=%u dest=0x%08X len=%u a3=0x%08X arg5=0x%08X -> moved %u bytes",
              lba, dest, len, arg_off, arg5, moved);
+  // Give the overlay router its LOAD-TIME identity for the arena slot. This must happen HERE, right
+  // after the copy and before the guest's own bookkeeping runs: overlay_router.cpp is explicit that an
+  // image's signature matches the RAM at its base only until the game mutates the image's header
+  // pointer table. Routing then goes by identity rather than a re-scan, and stays correct once more
+  // than one overlay shares the arena (claim C032, docs/issues/0013). A non-overlay blob — the bulk
+  // data loads to 0x801BF800 — is not at a slot base, so this is a no-op for them.
+  if (moved) overlay_note_load(c, dest);
   gen_func_80016500(c);   // super-call: the guest's own wait/bookkeeping, now with data present
 }
 

@@ -95,15 +95,23 @@ static const GameConfig g_spyro_config = {
   /* stageGame      */ 0u,
 
   // ── overlay router slots ───────────────────────────────────────────────────────────────────────
-  // UNRESOLVED — see docs/issues/0001. The disc carries no per-overlay FILES (its whole tree is
-  // SYSTEM.CNF, SCUS_942.28, WAD.WAD, SOURCE/, S0/, PETEXA*.STR), so there is nothing for the router
-  // to point at today. But public decomp projects describe Spyro as the main EXE plus 37 overlays,
-  // which would then live inside WAD.WAD or be read by raw LBA. Do NOT read these zeros as "Spyro has
-  // no overlays" — read them as "no overlay load base has been OBSERVED yet". The way to settle it is
-  // a running port: PSXPORT_DEBUG=cd logs each load destination, and an unresolved call fail-fasts
-  // with its address.
+  // RESOLVED (docs/issues/0001, /0013; claim C032). Spyro's overlays are not disc FILES — they live
+  // inside WAD.WAD and are loaded into ONE shared staging arena, exactly the overlapping-overlay case
+  // overlay_router.cpp is built for (Tomba!2's stage overlays likewise all load to 0x80106228). Which
+  // overlay is resident is decided by matching a content SIGNATURE against guest RAM at the base, so a
+  // single slot covers all 37 of them; only ONE slot is needed here.
+  //
+  // The base is the read-only constant [0x800113A0] = 0x8007AA38, just past text_end 0x80075800. Not
+  // guessed and not sampled: all 11 static call sites of the loader 0x80016500 were read with
+  // tools/callsite_args.py, six pass it via the identical `lui a1,0x8001 / lw a1,0x13a0(a1)`, and all
+  // 11 references to that global in the resident text are LOADS with zero stores.
+  //
+  // Declaring the slot is what gives the router a LOAD-TIME identity (overlay_note_load, called from
+  // the native loader in cd_queue.cpp). Without it slot_index() returns -1 and every dispatch falls
+  // back to a full signature scan over the overlay table — which happens to work with one overlay
+  // resident and would not stay correct as more are added.
   /* overlaySlots */ {
-    { 0u, nullptr },
+    { 0x8007AA38u, "ARENA" },
     { 0u, nullptr },
     { 0u, nullptr },
   },

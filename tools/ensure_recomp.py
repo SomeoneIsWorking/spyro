@@ -54,7 +54,8 @@ OVL_DIR = "scratch/bin/overlays"
 # OVL1 is the first LEVEL overlay, and it only became observable once the streaming read primitive
 # 0x80016698 was served with real data (C046/C047) — before that the game asked for it ~10 times and
 # got dataless acks, so nothing was ever written at its address.
-OVERLAYS = [("OVL0", 0x5B800, 14336), ("OVL1", 0xB83800, 65536)]
+OVERLAYS = [("OVL0", 0x5B800, 14336), ("OVL1", 0xB83800, 65536),
+            ("OVL2", 0x237D000, 51200)]
 EXE = "scratch/bin/spyro/SCUS_942.28"
 GEN_DIR = "generated"
 GEN_MAIN = "generated/spyro_rec.c"

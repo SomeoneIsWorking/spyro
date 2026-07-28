@@ -157,12 +157,12 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## input
 
 ### input.pad — Deliver pad input — the guest cannot produce it itself
-- status: todo
+- status: re-verified
 - deps: boot.post-cd
-- evidence: C035
+- evidence: C063,C064
 - where: game/core/game_config.cpp pad group; psxport PlatformHle pad path
-- gap: REFRAMED by C062. The port now COMPLETES the attract loop (mode 13 -> 0 -> 13, overlays swapping OVL0 -> OVL1 -> OVL0) rather than stalling, and the reason the game never touches pad hardware is that attract REPLAYS A RECORDED INPUT STREAM through a walking pointer at [0x8007585C], feeding the ordinary edge-detect at [0x80077378]/[0x80077380]. C035 stands and is now explained rather than merely observed. The open question is narrower: where is REAL pad state read, i.e. the START press that leaves attract. Start from the OTHER writer of 0x80077378 (0x8005413C) — the demo replay is 0x80053AF8. Do NOT wire a pad buffer address until the producer is identified: the demo path shows input can arrive without hardware, so a plausible buffer is easy to guess wrong.
-- notes: 
+- gap: 
+- notes: RESOLVED. The producer was never a pad-buffer address to guess — it was a callback that never fired. Boot registers the game's own decoder 0x80053C68 as the VBlank handler (VSyncCallback, 0x8005DE58) and this runtime raises no IRQs, so it ran once at boot and never again (C063). Two things were missing and both are now supplied from the vblank wait (game/core/vsync.cpp): Pad::serviceFrame() writes the standard PSX packet into the buffers libpad's SIO read would have filled (0x800786A0 slot0 / 0x80078E50 slot1, registered by PadInitDirect at 0x800123E0; the driver keeps those pointers at 0x80075D48 with a 240-byte stride — GameConfig padSlot0Buf/padSlot1Buf/padSlotPtrTable/padSlotPtrStride), then the registered vblank callback runs with the register file saved and restored as an IRQ would. Measured: pad class [0x80077384] moves 0 -> 2 (digital) and the decoder goes from 1 call per run to 4106+. The game then LEAVES ATTRACT and loads a level — bytes-from-disc doubled to 9.9 MB and a third overlay (OVL2, WAD +0x237D000) loads into the arena. C035 falsified along the way: the SIO accesses were always there, reached through the pointer [0x80075220] = 0x1F801040 (C064). Remaining work is downstream: OVL2 function discovery is starved (6 fns from 1 seed) and a run fail-fasts on 0x8007CFB4.
 
 
 ## gpu
@@ -174,4 +174,15 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: issue 0015; gen_func_80061820 submit path
 - gap: RESOLVED. The render-queue drain (C037) fixed the abort. The 'black screen' that appeared to remain was a MEASUREMENT ARTEFACT, not a defect: PSXPORT_GPU_DUMP reads s_vram and VK-path polygons never touch it (instrument I008), so the dump goes black the moment real rendering starts. The guest's own prim count shows 680 frames submitting geometry in the last quarter of the run. C038, which claimed prims reached the renderer but not the screen, is falsified. Remaining unknown, tracked as issue 0018: there is no headless way to capture VK output, so 'are the pixels CORRECT' is unmeasured — a per-frame readback hangs the port and was reverted. The port's live blocker is now the recomp miss at 0x8008772C (issue 0017).
 - notes: 
+
+
+## overlay
+
+### overlay.ovl2-discovery — Level-overlay function discovery is starved — 6 functions out of a 51 KB module
+- status: todo
+- deps: input.pad
+- evidence: C063
+- where: tools/ensure_recomp.py OVERLAYS; game/recomp_seeds.json overlay_seeds; external/psxport/tools/recomp/emit.py
+- gap: Now that input works the game loads OVL2 (WAD +0x237D000, 51200 bytes, arena base 0x8007AA38), but jal-discovery finds only 6 functions in it because overlay modules get no pointer/prologue scan — main got 247 seeds -> 668 functions, OVL2 gets 1 -> 6. A run fail-fasts on 0x8007CFB4, which is inside OVL2 and appears as a stored pointer NOWHERE (0 occurrences in main or any overlay image), so it is computed at runtime; the reported caller ra=0x80033AAC is stale (catalog #14) and c->pc says the live frame is func_8002A6FC, a table-driven script VM reading [0x80078560]. Note main DOES hold the per-level entry table: 43 stores to [0x80075734] at 0x8005A4CC-0x8005B6BC yield 41 distinct overlay entry pointers, which matches the decomps' ~37 overlays. Those cannot be seeded wholesale into one module — every level overlay loads at the SAME base, so another level's entry lands mid-function in OVL2 and splits it. The generic fix is a prologue scan of each overlay IMAGE (jr ra + delay, then addiu sp,sp,-N), which is how callgraph.py and wad_index.py already split functions here.
+- notes: Do not chase this one miss at a time: each round costs a full recomp+build, and 0x8007AEB8 (a clean prologue, added as an OVL2 seed with rationale) already bought exactly one more step.
 

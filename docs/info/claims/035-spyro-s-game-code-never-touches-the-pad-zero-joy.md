@@ -1,9 +1,10 @@
 ---
 id: C035
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-28
 tags: pad,input
+falsified_on: 2026-07-28
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ Three independent scans, all exhaustive rather than sampled. (1) JOY registers 0
 ## What would falsify it
 
 Any JOY-register access or pad-library call found in code this scan did not cover — the resident text and the 36 code entries are covered, so the gap would be a 37th overlay, code loaded from a non-code-scored WAD entry, or self-modifying/computed dispatch.
+
+## FALSIFIED 2026-07-28
+
+The scan behind it only recognised addresses built with lui/addiu at the access site; Spyro reaches SIO0 through a pointer variable ([0x80075220] = 0x1F801040), so the instrument could not have returned any other answer. See C064.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

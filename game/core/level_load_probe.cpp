@@ -98,9 +98,42 @@ void probe_800144C8(Core* c) {
   gen_func_800144C8(c);
 }
 
+// The REAL pad decoder, 0x80053C68 (the demo-replay reader is the other one, 0x800539FC — C062).
+// It reads the slot-0 packet at 0x800786A0 and publishes, among others:
+//   [0x80077384] = pad class  0 none / 1 other / 2 digital (id 0x41) / 3 analog (0x53, 0x73)
+//   [0x80077378] = newly-pressed mask,  [0x8007737C] = newly-released,  [0x80077380] = held
+// Log the packet ALONGSIDE what the decoder made of it, because the failure this is watching for is
+// precisely a disagreement between the two: a packet written into the wrong place, or written with a
+// type byte the decoder rejects, both show up as "bytes present, class still 0".
+void probe_80053C68(Core* c) {
+  static uint64_t last = ~0ull;
+  static unsigned n = 0;
+  gen_func_80053C68(c);
+  if (!cfg_dbg("pad")) return;
+  const uint32_t st = c->mem_r8(0x800786A0u), id = c->mem_r8(0x800786A1u);
+  const uint32_t b2 = c->mem_r8(0x800786A2u), b3 = c->mem_r8(0x800786A3u);
+  const uint32_t cls = c->mem_r32(0x80077384u), pressed = c->mem_r32(0x80077378u);
+  const uint64_t key = ((uint64_t)st << 40) ^ ((uint64_t)id << 32) ^ (b2 << 24) ^ (b3 << 16)
+                     ^ (cls << 8) ^ pressed;
+  static unsigned calls = 0;
+  calls++;
+  // Log a bounded number of calls UNCONDITIONALLY as well as every state change. Deduping alone
+  // cannot distinguish "the state never changed" from "the decoder was only ever called once", and
+  // those two have opposite diagnoses.
+  const bool change = (key != last);
+  last = key;
+  if (calls > 8 && (!change || n >= 60)) return;
+  if (change) n++;
+  cfg_logf("pad", "call #%u packet %02X %02X %02X %02X -> class[0x80077384]=%u "
+                  "pressed[0x80077378]=0x%08X%s",
+           calls, st, id, b2, b3, cls, pressed,
+           cls == 0 ? "   <== decoder says NO CONTROLLER" : "");
+}
+
 }  // namespace
 
 void spyro_register_level_probes() {
+  psxport_recomp()->shard_set_override(0x80053C68u, probe_80053C68);
   psxport_recomp()->shard_set_override(0x8003385Cu, probe_8003385C);
   psxport_recomp()->shard_set_override(0x8002EDF0u, probe_8002EDF0);
   psxport_recomp()->shard_set_override(0x800144C8u, probe_800144C8);

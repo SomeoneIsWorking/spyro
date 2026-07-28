@@ -26,8 +26,57 @@
 #include "cfg.h"
 #include "spyro_game.h"
 #include "hle.h"      // Hle::deliverEvent — per-frame BIOS events
+#include "recomp_iface.h"
+#include "rec_decls.h"
+#include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
 
 namespace {
+
+// ── The VBlank callback ────────────────────────────────────────────────────────────────────────────
+// The boot's input setup at 0x800123C8 does three things in a row, and the third is the one that
+// matters here:
+//   0x800123E0  jal 0x8006B010          PadInitDirect(0x800786A0, 0x80078E50)  — libpad, direct SIO
+//   0x80012434  jal 0x80053C68          call the pad decoder once, to prime its state
+//   0x80012444  jal 0x8005DE58          VSyncCallback(0x80053C68)
+// so the game's real pad decoder is not called from its frame loop at all — it is INSTALLED AS THE
+// VBLANK INTERRUPT CALLBACK, and every subsequent invocation is an IRQ. This runtime raises no IRQs,
+// so the decoder ran exactly once at boot and never again (measured: probe on 0x80053C68 logs "call
+// #1" and nothing else in a 20s run). With it dead, the pad-class word [0x80077384] stays 0, the
+// decoder's "no controller" arm is the only one ever taken, and the only thing that ever publishes
+// input is the attract demo's playback path (C062) — which is why the port loops attract forever.
+//
+// So the fix is the same shape as the counter above: supply what the missing IRQ would have supplied.
+// We do NOT reimplement the decoder — we run the guest's own registered callback body, once per
+// vblank, which is exactly when the console would have run it.
+//
+// 0x8005DE58 is libetc's VSyncCallback(fn): it takes the handler in a0 and hands it to the interrupt
+// callback table via [0x800749AC]+20 with a0=4 (the VSYNC slot). Intercepting it here — rather than
+// hardcoding 0x80053C68 — means the port follows whatever the game registers, including a later
+// re-registration, and it fails visibly (no callback recorded) rather than silently running a stale
+// address if the boot path ever changes.
+uint32_t g_vblank_cb = 0;
+
+void vsync_callback_set(Core* c) {
+  const uint32_t fn = c->r[4];
+  if (fn != g_vblank_cb) {
+    g_vblank_cb = fn;
+    cfg_logi("vsync", "VSyncCallback(0x%08X) registered — this is the per-vblank handler the port "
+                      "must run, since no IRQ will.", fn);
+  }
+  gen_func_8005DE58(c);   // super-call: let libetc do its own table bookkeeping unmodified
+}
+
+// Run the registered vblank handler as an interrupt would: with the whole register file saved and
+// restored. This is called from INSIDE a guest call (the wait helper below), so the handler running
+// on the same Core would otherwise clobber the interrupted function's caller-saved registers — a
+// real IRQ saves and restores them, and skipping that produces corruption that looks like a
+// mistranslation rather than like this.
+void run_vblank_callback(Core* c) {
+  if (!g_vblank_cb) return;
+  R3000 saved = *static_cast<R3000*>(c);
+  rc0(c, g_vblank_cb);
+  *static_cast<R3000*>(c) = saved;
+}
 
 // The libetc vblank counter. Derived from the wait helper's own body: it compares
 // `[0x800749E0] < a0` as its loop condition: lui 0x8007 (=0x80070000) + lw offset 18912 (=0x49E0).
@@ -72,6 +121,19 @@ void vblank_wait(Core* c) {
     // port's per-frame boundary. Flush before present, so the frame being presented is the one the
     // guest just drew.
     c->game->rq.flush(c);
+    // FILL THE PAD BUFFERS. Spyro's libpad (0x80069000-0x8006C000) fills them from SIO0 inside the
+    // VBlank IRQ handler, and this runtime raises no IRQs — so on the port that state machine never
+    // runs and the buffers keep the 0xFF "no controller" byte its init wrote (0x8006B100). The
+    // decoder at 0x80053F00 then takes its no-pad arm every frame, which is why the only input the
+    // game ever saw was the attract demo's recorded stream (C062). serviceFrame() does exactly what
+    // the VBlank read would have: poll the host and write the standard packet into the buffers named
+    // in GameConfig. It belongs here for the same reason the present and the event delivery do —
+    // this wait IS the port's per-frame boundary — and it must run BEFORE the guest's decoder, which
+    // it does: the guest reads input inside its own frame body, after returning from this wait.
+    c->game->pad.serviceFrame();
+    // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
+    // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
+    run_vblank_callback(c);
     // One vblank = one displayed frame. present() puts the guest's drawn frame on screen; pace()
     // holds real time to the frame interval so the game runs at its intended speed rather than
     // spinning as fast as the host can.
@@ -101,4 +163,8 @@ void spyro_register_vsync(Game* g) {
   // Registration goes through PlatformHle::register_, which validates the address against
   // GameConfig::hle's windows — so this only installs if the libetc window actually covers it.
   g->platform_hle.register_(kVblankWait, vblank_wait);
+  // VSyncCallback goes through the ordinary override registry, not platform_hle: it is not a
+  // hardware-sync spin we are replacing, it is an observation point on a real library body that
+  // still runs (the super-call in vsync_callback_set).
+  psxport_recomp()->shard_set_override(0x8005DE58u, vsync_callback_set);
 }

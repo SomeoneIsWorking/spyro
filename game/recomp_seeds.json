@@ -61,7 +61,23 @@
   // and the address that was fail-fasting, 0x8008772C, falls inside [0x8007AA38, 0x8008AA38).
   // Two overlays sharing one base is exactly what psxport's slot router handles — it tells them apart
   // by content signature, so this is a second tag at the same address, not a collision.
-  "overlay_bases": { "OVL0": "0x8007AA38", "OVL1": "0x8007AA38" },
+  // OVL2 — WAD.WAD +0x237D000, 51200 bytes, same arena base. This one only became reachable once the
+  // VBlank callback started running (the game's pad decoder is registered via VSyncCallback and this
+  // runtime raises no IRQs, so until then live input never reached the game and it looped attract
+  // forever — see vsync.cpp and claim C063). With input working the game leaves attract and loads a
+  // level; the run logs
+  //   stream: a0=37 dest=0x8007AA38 len=51200 a3=0x0237D000 -> moved 51200 bytes
+  // immediately followed by ~2 MB of level data to 0x80087210 / 0x800DB224 / 0x80168A24, and the
+  // address that was fail-fasting, 0x800845F0, falls inside [0x8007AA38, 0x80087238). OBSERVED, not
+  // inferred — same standard as OVL1.
+  "overlay_bases": { "OVL0": "0x8007AA38", "OVL1": "0x8007AA38", "OVL2": "0x8007AA38" },
   "overlay_base_patterns": [],
-  "overlay_seeds": {}
+  // Function-pointer-only entries inside an overlay — invisible to `jal` discovery by construction.
+  //
+  // OVL2 0x8007AEB8: the level overlay's per-frame entry. Reached from main's stage tick at
+  // 0x80033AA4 as `lw v0,[0x80075734] ; jalr v0` — an indirect call through a global the overlay
+  // installs, so nothing static points at it. Observed, not guessed: with OVL2 resident the run
+  // fail-fasts with `no recompiled fn for 0x8007AEB8 (caller ra=0x80033AAC)`, and 0x80033AAC is the
+  // instruction after exactly that `jalr`.
+  "overlay_seeds": { "OVL2": ["0x8007AEB8"] }
 }

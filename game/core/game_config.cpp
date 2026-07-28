@@ -162,12 +162,46 @@ static const GameConfig g_spyro_config = {
   .cdCallbackFn = { 0u, 0u, 0u, 0u },
 
   // ── pad driver ─────────────────────────────────────────────────────────────────────────────────
-  // NOT YET REVERSE-ENGINEERED. Input runs through the guest's own SIO pad read until these are
-  // found (the per-VBlank pad buffer + the driver entry that fills it).
-  .padSlot0Buf = 0u,
-  .padSlot1Buf = 0u,
+  // Spyro statically links Sony's libpad (the DIRECT, non-BIOS variant) at 0x80069000-0x8006C000 and
+  // talks to SIO0 itself. It is invisible to an immediate-address scan because the register base is
+  // held in an initialised POINTER, not built with lui/addiu at each site:
+  //
+  //   [0x80075220] = 0x1F801040             (initialised data in the EXE image, never stored to)
+  //   0x8006993C  lw   v1, [0x80075220]     ; v1 = SIO0 base
+  //   0x8006994C  sh   0x0040, 10(v1)       ; JOY_CTRL  = reset
+  //   0x80069958  sh   0x000D,  8(v1)       ; JOY_MODE
+  //   0x80069960  sh   0x0088, 14(v1)       ; JOY_BAUD
+  //   0x800699A0  sh   0x1003/0x3003, 10(v1); JOY_CTRL  = TXEN|sel port 1/2
+  //
+  // That state machine is driven from the VBlank IRQ this runtime never raises, so on the port it
+  // never runs and the pad buffers keep the 0xFF ("no controller") that pad init wrote — which is
+  // why the guest only ever saw the attract demo's recorded input stream (see C062).
+  //
+  // The buffers come from the game's own PadInitDirect call at 0x800123C8:
+  //   0x800123D0  addiu a0, 0x800786A0      ; slot 0 buffer
+  //   0x800123D8  addiu a1, 0x80078E50      ; slot 1 buffer
+  //   0x800123E0  jal   0x8006B010          ; PadInitDirect(buf0, buf1)
+  // and PadInitDirect files those pointers INSIDE its per-port context records, not in a flat array:
+  //   0x8006B044  addiu s0, 0x80075D18      ; port-context array, 240 bytes per port
+  //   0x8006B0E8  sw    s1, 48(s0)          ; slot 0 ptr at 0x80075D48
+  //   0x8006B0EC  sw    s2, 288(s0)         ; slot 1 ptr at 0x80075D48 + 240
+  // hence the 240-byte stride below.
+  //
+  // The consumer is the input decoder at 0x80053F00+, and it confirms the packet layout: it rejects
+  // the pad unless byte 0 is zero (0x80053F00), switches on byte 1 as the type id — 0x41 digital,
+  // 0x53 DualShock, 0x73 analog joystick (0x80053F24-0x80053F54) — assembles the button word as
+  // ~((byte2 << 8) | byte3) (0x80053FAC-0x80053FBC), and reads the analog axes from byte 4 on
+  // (0x80053FD4). That is the standard PSX pad packet, which is what Pad::fillBuffer writes.
+  //
+  // padDriverFn stays 0: there is no single "fill the buffer" entry to override here — the fill is
+  // spread across libpad's SIO state machine (0x8006992C and the handler chain PadInitDirect installs
+  // at 0x800751BC..0x800751D0). Pad::serviceFrame writes the packet directly instead, called once per
+  // frame from the vblank wait (vsync.cpp), which is this port's frame boundary.
+  .padSlot0Buf = 0x800786A0u,
+  .padSlot1Buf = 0x80078E50u,
   .padDriverFn = 0u,
-  .padSlotPtrTable = 0u,
+  .padSlotPtrTable = 0x80075D48u,
+  .padSlotPtrStride = 240u,
 
   // ── platform HLE: the PSX hardware-sync primitives ─────────────────────────────────────────────
   // NOT YET REVERSE-ENGINEERED — every entry 0, which initBuiltins() reads as "this game has no such

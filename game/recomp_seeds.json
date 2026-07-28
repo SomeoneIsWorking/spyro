@@ -25,6 +25,11 @@
     // Reached only via a function pointer — direct-jal discovery cannot see it. Surfaced by the
     // fail-fast boot AFTER the OVL0 overlay was recompiled (the overlay's code path reaches it):
     //   [recomp-MISS] 0x80024054  caller ra=0x80078A58, a0=4, pc=0x80023AC4
+    // Do NOT read that `ra` as a code address in an undiscovered overlay region — it is not one.
+    // 0x80078A58 lies in .bss (8160 bytes below the arena base 0x8007AA38), nothing in the resident
+    // text or in OVL0 jumps to it, and it is one of the most heavily referenced globals in the level
+    // overlays (51-73 lui/addiu references each). It is a big engine struct, so the `ra` in that
+    // diagnostic was not a return address. Chasing it as a second overlay region is a dead end.
     // It lies inside the resident text [0x80010000,0x80075800), so it is a resident function the
     // scans missed, not another overlay body.
     "0x80024054"

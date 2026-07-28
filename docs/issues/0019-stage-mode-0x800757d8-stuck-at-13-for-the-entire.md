@@ -58,6 +58,23 @@ NEXT, in order:
      handler is installed and called. But NO CD READ IS EVER ISSUED: the queue logs gate=0 pending=0
      queued=0 on every tick. Not stalled — never asked.
 
-  6. NEXT: the guard [0x80078D94] reads 2 and skips the cursor reset at 0x80032B60. Find who writes
-     that global and what value the real console would have there at this point. That is the first
-     place the flow visibly diverges from what the code expects.
+  6. DONE (C043), and it corrected a wrong lead. A resident-text-only scan reported exactly ONE writer
+     of the guard [0x80078D94], storing 1 — which contradicts the observed 2 and would have sent the
+     next step hunting a phantom. The writer is in OVL0. OVL0 is in fact the WHOLE intro state machine:
+     35 absolute refs to the three state globals, all inside recompiled func_8007ABAC. Transitions:
+       guard <- 2 at 0x8007B0AC ; guard <- 0 at 0x8007B900 / 0x8007C7C8 / 0x8007C8A8 ; guard <- 1 at 0x8007CA64
+       sub   <- 2 at five sites ; sub <- 3 at 0x8007CC20 (the handoff to the resident path)
+       subsub<- 0..5 across ~25 sites
+     At runtime the guard reads 2 when 0x80032B08 runs, so OVL0 reached the handoff at 0x8007CC20 from
+     0x8007B0AC WITHOUT passing any of the four guard-reset sites — which is exactly why the resident
+     handler skips its arena-cursor reset.
+
+  7. NEXT: work out which OVL0 branch SHOULD have run between 0x8007B0AC and 0x8007CC20. The four
+     guard-reset sites are the checkpoints; find what each is conditional on. A state machine that
+     skips from 'set guard 2' to 'hand off' without any reset is the shape of a branch whose condition
+     never becomes true — and the conditions are the things a port can get wrong (a timer, a stream, a
+     completion flag, a native override not setting state).
+
+     METHOD NOTE for whoever picks this up: include overlay code in every writer/reader scan. Both
+     scans here are also blind to base-pointer (non-lui) addressing, so treat their counts as lower
+     bounds, never as complete.

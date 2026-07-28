@@ -102,10 +102,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### frame.native-loop — Take over the per-frame loop (OT/packet-pool GameConfig group)
 - status: todo
 - deps: cd.chokepoints
-- evidence: 
+- evidence: C068,C069
 - where: game/core/game_config.cpp per-frame group
-- gap: Needs Spyro's display init (SetDefDrawEnv/SetDefDispEnv callers) + its per-frame buffer flip RE'd. Until then the guest owns its own loop and the per-frame GameConfig group is honestly 0.
-- notes: 
+- gap: Display init is now RE'd (C068): 512x240 double-buffered, set up at 0x800122D0-0x8001233C via SetDefDrawEnv 0x8005EA94 (twice) and SetDefDispEnv 0x8005EB4C (twice), envs at 0x80076EE0 (draw0 +0, disp0 +92, draw1 +132, disp1 +224). The per-frame flip is 0x8001ED5C: it toggles the current-DRAWENV pointer [0x80075888] between draw0 and draw0+132, and that global has exactly one writer, so it IS the buffer state. What is still missing for the native loop is the OT/packet-pool group — where the ordering table and primitive buffers live, and their per-frame reset — plus confirming DrawOTag's call site. Note C069: the GPU registers are reached through initialised pointers (a libgpu register block at 0x80074B34), so an immediate-address scan reports zero GPU accesses; do not read that as 'the game does not touch the GPU', which is the mistake C064 records for SIO.
+- notes: Start from the flip 0x8001ED5C — it reads per-buffer fields at +112/+116/+120 beyond the DISPENV, which are the most likely home of the OT/packet-pool pointers, and it is the one function guaranteed to run once per displayed frame.
 
 ### frame.vsync — Reimplement VSync faithfully and register it
 - status: re-verified

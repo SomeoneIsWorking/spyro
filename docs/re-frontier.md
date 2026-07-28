@@ -53,15 +53,23 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: 
 - notes: 
 
+### boot.post-splash — Get past the boot splash into game init
+- status: in-progress
+- deps: cd.chokepoints, frame.vsync
+- evidence: The port renders the SCE boot splash and fades it in (8 frames dumped, nonzero pixels growing 0.7%->2.9%, 320x240 then 512x240).
+- where: func_800163E4 (game code — low addresses are game, libraries are high in this link order)
+- gap: After the splash the guest stops presenting. A 4-sample profile puts it in gen_func_800163E4 <- gen_func_80016500 <- gen_func_8001250C <- gen_func_800127C0 <- main, writing memory heavily. Unknown whether that is legitimate init work running slowly under the substrate, or a spin waiting on something still unserved. Next: determine which, e.g. by checking whether its writes advance or repeat.
+- notes: 
+
 
 ## cd
 
 ### cd.chokepoints — Identify Spyro's libcd chokepoints for the native CD path
-- status: re-partial
+- status: re-verified
 - deps: boot.guest-main
-- evidence: libcd = stock Sony bios.c v1.86 (C004). Wired + confirmed by the running system: hle.cdInitHandshake=0x800653B4 (CD_init), hle.cdDataSync=0x800655A0 (CD_datasync), cfg->cdCommand=0x80064CEC (CD_cw, signature confirmed from the body). Plus the missing game->cd.overridesInit() call. Result: ZERO CD timeouts at boot (C005).
+- evidence: libcd = stock Sony bios.c v1.86 (C004). Wired, each with its SIGNATURE CONFIRMED from the recompiled body rather than the name it prints: hle.cdInitHandshake=0x800653B4 (CD_init), hle.cdDataSync=0x800655A0 (CD_datasync), cfg->cdCommand=0x80064CEC (CD_cw: a0&255 indexes the command tables, a1=param, a2=result), cfg->cdSync=0x800647A0 (CD_sync: a0 mode in r21, a1 result in r22; it polls via VSync(-1) waiting on a ready flag only a CD IRQ would set). Plus the missing game->cd.overridesInit() call. 4 plat-hle primitives installed; zero CD timeouts; a stack profile that sat in CD_sync now shows it gone.
 - where: game/core/game_config.cpp CD chokepoints group (all 0 today)
-- gap: Commands now ACK, but that is NOT the same as reads returning correct bytes — no disc read has been verified to deliver correct data yet, because the boot does not get far enough to need one. cdReadPrim/cdFileLoad/cdAsyncRead remain 0. cdSync + cdReadSync also still 0: their handlers write 8 bytes at a1 as the PUBLIC CdSync/CdReadSync contract, while Spyro's CD_sync (0x800647A0) is the internal bios.c primitive whose signature is unconfirmed.
+- gap: 
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 

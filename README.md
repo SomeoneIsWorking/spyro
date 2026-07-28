@@ -16,9 +16,9 @@ take ownership of that recompiled substrate, each one gated byte-exact against t
 
 ## Status — honest
 
-**Phase 0: the recompiled substrate boots, runs the game's own `main()`, and drives its frame loop
-on a restored vblank timebase.** It presents frames; it is not yet playable — the CD read path is
-unproven and nothing is owned natively.
+**Phase 0: the port boots, runs the game's own `main()` on a restored vblank timebase, and renders
+the boot splash.** It is not yet playable — it stops presenting after the splash, the CD read path is
+unproven, and nothing is owned natively yet.
 
 | | state |
 |---|---|
@@ -27,8 +27,10 @@ unproven and nothing is owned natively.
 | Build + link (`spyro_port`) | ✅ |
 | crt0 / boot (`GameConfig` boot group) | ✅ derived from the real crt0, not guessed |
 | Reaches the guest's `main()` as recompiled code | ✅ verified by backtrace |
-| CD command path | ✅ no CD timeouts at boot — `CD_init`, `CD_datasync`, `CD_cw` wired (signatures confirmed) |
+| CD sync/command path | ✅ `CD_init`, `CD_datasync`, `CD_cw`, `CD_sync` wired — every signature confirmed from the body |
 | CD *reads* returning correct data | ⬜ untested — commands ACK, but no read has yet been verified to deliver bytes |
+| **Renders the boot splash** | ✅ SCE splash draws and fades in over 8 frames |
+| Past the splash into game init | 🔬 guest stops presenting; profile puts it in `func_800163E4` |
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |

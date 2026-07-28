@@ -117,10 +117,15 @@ static const GameConfig g_spyro_config = {
   // reads. This is the function the boot log shows timing out on the real commands (CdlSetmode,
   // CdlSetloc), so overriding it ACKs those commands instead of spinning on a controller we don't model.
   /* cdCommand         */ 0x80064CECu,
-  // CD_sync (0x800647A0) not wired yet — the framework's cd_sync handler zeroes 8 bytes at a1 and
-  // returns 2, which is the public CdSync(mode,result) contract; CD_sync is the internal primitive and
-  // its signature is unconfirmed. Same reasoning as cdReadSync above: confirm the body first.
-  /* cdSync            */ 0u,
+  // CD_sync (0x800647A0). SIGNATURE NOW CONFIRMED from the body — the prologue keeps a0 in r21 and
+  // a1 in r22, and a1 is used as the result buffer, matching the framework's cd_sync handler
+  // (zero 8 bytes at a1, return 2 = complete). It was left 0 until this check was actually done.
+  //
+  // Why it spins: CD_sync polls the drive by calling VSync(-1) (func_8005DBC4 with a0 = -1) in a loop,
+  // waiting on a ready flag that only a CD IRQ would set. With reads served natively and synchronously
+  // there is nothing to wait for, so reporting "complete" is the faithful answer. A 6-sample stack
+  // profile put the guest squarely in this function.
+  /* cdSync            */ 0x800647A0u,
   /* cdReadPrim        */ 0u,
   /* cdFileLoad        */ 0u,
   /* cdAsyncRead       */ 0u,

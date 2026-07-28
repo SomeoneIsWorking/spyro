@@ -178,9 +178,66 @@ void probe_80065DBC(Core* c) {
   gen_func_80065DBC(c);
 }
 
+
+// ── THE GAME-LEVEL LOADER ────────────────────────────────────────────────────────────────────────
+// func_80016500(a0 = LBA, a1 = destination, a2 = length in bytes).
+//
+// Confirmed by observation, not inference: probes logged a0=0x25 (37 — exactly WAD.WAD's LBA from
+// the disc directory) with a1=0x8007AA38 / a2=0x800 (one sector), then a1=0x801BF800 / a2=0x40000
+// (256 KB) — a second, larger load to a different buffer. That is the (offset, destination, length)
+// contract the reference consumer owns via cdFileLoad, and it is the right layer: the destination is
+// an ARGUMENT here, rather than something to reverse-engineer out of a transfer path that our own
+// lower-level override prevented from ever running (C018).
+//
+// Serve the bytes BEFORE the body runs, then super-call. The guest's own logic — its wait loop, its
+// bookkeeping, its return value — is left entirely intact; we only ensure the data it is about to
+// wait for is already there. That keeps the recompiled body live and diffable rather than replacing
+// behaviour we have not fully RE'd.
+void cd_loader(Core* c) {
+  const uint32_t lba = c->r[4], dest = c->r[5], len = c->r[6];
+  uint32_t moved = 0;
+  if (len && dest) {
+    uint8_t sec[2048];
+    for (uint32_t off = 0; off < len; off += sizeof sec) {
+      if (!disc_read_sector(&c->game->disc, lba + off / sizeof sec, sec)) break;
+      const uint32_t n = (len - off) < sizeof sec ? (len - off) : (uint32_t)sizeof sec;
+      for (uint32_t i = 0; i < n; i++) c->mem_w8(dest + off + i, sec[i]);
+      moved += n;
+    }
+  }
+  if (cfg_dbg("cdq"))
+    cfg_logf("cdq", "loader: lba=%u dest=0x%08X len=%u -> moved %u bytes", lba, dest, len, moved);
+  gen_func_80016500(c);   // super-call: the guest's own wait/bookkeeping, now with data present
+}
+
+// ── loader-hunt probes ───────────────────────────────────────────────────────────────────────────
+// Walking UP the call chain from the read issue to find the GAME-level loader — the first function
+// whose arguments look like (destination, offset, length). That is the layer the reference consumer
+// owns (cdFileLoad / cdAsyncRead), and owning it sidesteps the transfer path entirely because the
+// destination arrives as an argument. Chain observed from backtraces:
+//   main 0x80012204 -> 0x800127C0 -> 0x8001250C -> 0x80016500 -> (read issue)
+// 0x80012480 also builds the CD callback address, so it is part of the CD setup layer.
+#define LOADER_PROBE(NAME, ADDR)                                                          \
+  void lp_##NAME(Core* c) {                                                                \
+    static unsigned h = 0;                                                                 \
+    if (cfg_dbg("cdq") && h < 3)                                                            \
+      cfg_logf("cdq", "LOADER? " #NAME " a0=%08X a1=%08X a2=%08X a3=%08X sp=%08X",          \
+               c->r[4], c->r[5], c->r[6], c->r[7], c->r[29]);                                \
+    h++;                                                                                    \
+    gen_func_##NAME(c);                                                                     \
+  }
+LOADER_PROBE(8001250C, 0x8001250Cu)
+LOADER_PROBE(80012480, 0x80012480u)
+LOADER_PROBE(800127C0, 0x800127C0u)
+#undef LOADER_PROBE
+
 }  // namespace
 
 void spyro_register_cd_queue() {
+  psxport_recomp()->shard_set_override(0x80016500u, cd_loader);
+  psxport_recomp()->shard_set_override(0x8001250Cu, lp_8001250C);
+  psxport_recomp()->shard_set_override(0x80012480u, lp_80012480);
+  psxport_recomp()->shard_set_override(0x800127C0u, lp_800127C0);
   psxport_recomp()->shard_set_override(0x8006606Cu, probe_8006606C);
   psxport_recomp()->shard_set_override(0x800659F0u, probe_800659F0);
   psxport_recomp()->shard_set_override(0x80065DBCu, probe_80065DBC);

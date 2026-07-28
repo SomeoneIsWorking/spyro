@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>   // setenv — bridging our disc env var to the framework's generic one
 
 extern "C" {
   void watchdog_init(void); void mdec_init(void); void spu_init(void);
@@ -29,6 +30,12 @@ int main(int argc, char** argv) {
   // Install the seam BEFORE the first Core exists: Core's ctor snapshots psxport_game_config() and
   // psxport_game_hooks() into c->cfg / c->hooks, and the substrate reads c->cfg->field for every
   // guest-address literal.
+  // The framework resolves the disc image itself (disc.c resolve_disc_path) and looks for the
+  // REFERENCE CONSUMER's variable name plus a generic PSXPORT_DISC fallback — it cannot know ours.
+  // Without this bridge every disc_read_sector fails and reads silently return no data, which
+  // presents as the game loading nothing rather than as a configuration error.
+  if (const char* d = getenv("PSXPORT_SPYRO_DISC")) if (*d) setenv("PSXPORT_DISC", d, 0);
+
   spyro_install_game_config();
   spyro_install_recomp();
 

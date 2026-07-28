@@ -35,8 +35,18 @@
     "0x80024054"
   ],
 
-  // No runtime-computed mid-function re-entry points observed yet. (Tomba!2 needs these for its
-  // cooperative-yield resume address; Spyro has no such overlay/task scheduler.)
+  // Runtime-computed mid-function re-entry points. None PROVEN yet — see docs/issues/0020.
+  //
+  // A fail-fast at 0x8004C4EC (reached once the first level overlay loaded) looked like a re-entry
+  // case: 0x8004C4E4 is `add s2,s2,s1 ; jr s2`, a COMPUTED jump into GTE case bodies. Six case labels
+  // were tried here and had NO effect, because the enclosing code is not a recompiled function at all —
+  // and it has no ordinary entry either. 0x8004BE3C, which a `jr ra`-based entry scan reports as the
+  // function start, is really `add s7,s7,s4 ; j 0x8004AF88`: more unrolled dispatch, not a prologue.
+  // So the region 0x8004BE3C-0x8004C5F8 is one large computed-jump area that the recompiler's
+  // discovery does not model, and neither "main" nor "main_reentry" is the right lever yet.
+  //
+  // Seeding a guessed entry here would split a real function at an arbitrary offset and silently
+  // corrupt the recomp — the exact failure this file exists to prevent. Left EMPTY deliberately.
   "main_reentry": [],
 
   // Spyro's overlays are NOT separate disc files — they live inside WAD.WAD and are loaded into the
@@ -54,7 +64,14 @@
   // four of the executable's hardcoded out-of-text call targets (0x8007AA50 / 0x8007ABAC /
   // 0x8007BFD0 / 0x8007CEE4) land inside it on prologue shapes. A wrong overlay base emits a whole
   // module at wrong addresses, so this is exactly the value that must never be guessed.
-  "overlay_bases": { "OVL0": "0x8007AA38" },
+  // OVL1 — WAD.WAD +0xB83800, 65536 bytes, loaded to the SAME arena base. This is WAD index entry 11,
+  // one of the 36 code entries, and the first LEVEL overlay the port ever loads. Base is OBSERVED, not
+  // inferred: with the streaming read primitive 0x80016698 served (C047), a run logs
+  //   stream: a0=37 dest=0x8007AA38 len=65536 a3=0x00B83800 -> moved 65536 bytes
+  // and the address that was fail-fasting, 0x8008772C, falls inside [0x8007AA38, 0x8008AA38).
+  // Two overlays sharing one base is exactly what psxport's slot router handles — it tells them apart
+  // by content signature, so this is a second tag at the same address, not a collision.
+  "overlay_bases": { "OVL0": "0x8007AA38", "OVL1": "0x8007AA38" },
   "overlay_base_patterns": [],
   "overlay_seeds": {}
 }

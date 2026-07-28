@@ -50,7 +50,11 @@ EXE_DISC_PATH = "SCUS_942.28"          # its path on the disc (root dir); also t
 WAD_DISC_PATH = "WAD.WAD"
 WAD = "scratch/wad/WAD.WAD"
 OVL_DIR = "scratch/bin/overlays"
-OVERLAYS = [("OVL0", 0x5B800, 14336)]
+# (tag, byte offset into WAD.WAD, length). Every entry needs a load base in game/recomp_seeds.json.
+# OVL1 is the first LEVEL overlay, and it only became observable once the streaming read primitive
+# 0x80016698 was served with real data (C046/C047) — before that the game asked for it ~10 times and
+# got dataless acks, so nothing was ever written at its address.
+OVERLAYS = [("OVL0", 0x5B800, 14336), ("OVL1", 0xB83800, 65536)]
 EXE = "scratch/bin/spyro/SCUS_942.28"
 GEN_DIR = "generated"
 GEN_MAIN = "generated/spyro_rec.c"

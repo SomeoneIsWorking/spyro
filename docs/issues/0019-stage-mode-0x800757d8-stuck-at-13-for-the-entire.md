@@ -1,7 +1,7 @@
 ---
 id: 19
 title: Stage mode [0x800757D8] stuck at 13 for the entire run — nothing advances it
-status: open
+status: resolved
 symptom: The game never leaves the OVL0-handled stage 13, so the level-load arm (modes 4/5) never runs and no level overlay is ever loaded. Downstream this is what makes the handler call at 0x80014478 land in never-written memory (issue 0017).
 tags: blocker,stage,input
 created: 2026-07-28
@@ -78,3 +78,6 @@ NEXT, in order:
      METHOD NOTE for whoever picks this up: include overlay code in every writer/reader scan. Both
      scans here are also blind to base-pointer (non-lui) addressing, so treat their counts as lower
      bounds, never as complete.
+
+### Resolution (2026-07-28)
+ROOT CAUSE FOUND (C046). Mode 13 is not stuck in error — it is the attract/title stage doing exactly what hardware does: guard [0x80078D94]==2 selects the attract-demo path (level from table 0x8006EE7C = {11,24,55,33}: demo levels, 11=Stone Hill), deliberately skipping the arena reset so OVL0 stays resident under the demo level. The level IS being loaded — via the ASYNC read primitive 0x80016698 (19 call sites, 0x80014608..0x80015BC0), which routes through libcd (Setmode 0x80 / Setloc / 0x8006606c), NOT through the overridden sync loader 0x80016500. cd_queue.cpp's documented INCOMPLETE stopgap (probe_80065DBC arms cd_completion_pending; cd_retry_step delivers 0x80016490(2) with no data) acks every such read dataless, so the streaming pump 0x80015370's gate ([0x80076BB8]==0, 0x80063bd8(1,0)==2, status&0x40) passes, all phases advance, and the handler installed from the level table (0x8008772C) is called into never-written arena memory. Proven in scratch/logs/fable_probe.log: 'read issued: dest=0x8007DDE8 lba=484' etc with no loader: line, each acked complete, then recomp-MISS 0x8008772C. Fix: give 0x80016698 a data-serving override with the same (baseLBA,dest,len,byteOffset,arg5) contract as cd_loader, + overlay_note_load for arena-slot dests.

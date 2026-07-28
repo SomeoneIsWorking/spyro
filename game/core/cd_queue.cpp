@@ -240,6 +240,49 @@ void cd_loader(Core* c) {
   gen_func_80016500(c);   // super-call: the guest's own wait/bookkeeping, now with data present
 }
 
+// ── the ASYNC/streaming read primitive 0x80016698 ───────────────────────────────────────────────
+// THE SECOND READ PATH, and the one that actually loads levels. 0x80016500 (11 static call sites) is
+// only the SYNC boot loader; 0x80016698 has NINETEEN call sites spanning 0x80014608-0x80015BC0 and is
+// what the streaming machine 0x80015370 drives. Missing it is why "6 loader calls, none a level" read
+// as "the game never asks for the level" when in fact it asks ~10 times through here.
+//
+// Same argument contract, confirmed from the body rather than assumed — its prologue moves
+// a0->s2, a1->s4, a2->s3, a3->s1 and reads the 5th argument from sp+0x40, then at 0x800166F0 computes
+// `a0 = s2 + (s1 >> 11)`, i.e. sector = baseLBA + byteOffset/2048, exactly as 0x80016500 does. At
+// override entry (before the prologue) the 5th argument is at r[29]+0x10.
+//
+// WHY SERVING IT HERE MAKES THE EXISTING COMPLETION HONEST. This port already delivers the guest's CD
+// callback for every issued read (deliver_cd_complete). For reads that went through 0x80016500 that is
+// truthful — the bytes are there. For reads through THIS function nothing moved, so the guest was told
+// "your read finished" over an untouched buffer: it sailed through all six streaming phases with zero
+// bytes landed, installed the level handler 0x8008772C from the per-level table, and called into memory
+// no load had ever written. Serving the bytes at issue time is not a new mechanism — our disc is
+// synchronous, so the data IS available the moment the read is issued, and delivering completion after
+// it is then a true statement rather than a lie.
+void cd_stream_read(Core* c) {
+  const uint32_t lba = c->r[4], dest = c->r[5], len = c->r[6];
+  const uint32_t arg_off = c->r[7];
+  const uint32_t arg5 = c->mem_r32(c->r[29] + 16);
+  const uint32_t start = lba + (arg_off / 2048u);
+  uint32_t moved = 0;
+  if (len && dest) {
+    uint8_t sec[2048];
+    for (uint32_t off = 0; off < len; off += sizeof sec) {
+      if (!disc_read_sector(&c->game->disc, start + off / sizeof sec, sec)) break;
+      const uint32_t n = (len - off) < sizeof sec ? (len - off) : (uint32_t)sizeof sec;
+      for (uint32_t i = 0; i < n; i++) c->mem_w8(dest + off + i, sec[i]);
+      moved += n;
+    }
+  }
+  if (cfg_dbg("cdq"))
+    cfg_logf("cdq", "stream: a0=%u dest=0x%08X len=%u a3=0x%08X arg5=0x%08X -> moved %u bytes",
+             lba, dest, len, arg_off, arg5, moved);
+  // Same load-time identity the sync loader records, for the same reason: an overlay's signature only
+  // matches its slot before the game mutates the image header.
+  if (moved) overlay_note_load(c, dest);
+  gen_func_80016698(c);   // super-call: Setmode/Setloc/in-flight flag bookkeeping, now over real data
+}
+
 // ── loader-hunt probes ───────────────────────────────────────────────────────────────────────────
 // Walking UP the call chain from the read issue to find the GAME-level loader — the first function
 // whose arguments look like (destination, offset, length). That is the layer the reference consumer
@@ -315,6 +358,7 @@ void spyro_register_cd_queue() {
   psxport_recomp()->shard_set_override(0x8005DB84u, probe_8005DB84);
   psxport_recomp()->shard_set_override(0x8005CBB0u, probe_8005CBB0);
   psxport_recomp()->shard_set_override(0x80016500u, cd_loader);
+  psxport_recomp()->shard_set_override(0x80016698u, cd_stream_read);
   psxport_recomp()->shard_set_override(0x8001250Cu, lp_8001250C);
   psxport_recomp()->shard_set_override(0x80012480u, lp_80012480);
   psxport_recomp()->shard_set_override(0x800127C0u, lp_800127C0);

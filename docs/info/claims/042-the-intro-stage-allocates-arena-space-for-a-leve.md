@@ -1,9 +1,10 @@
 ---
 id: C042
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-28
 tags: overlay,blocker
+falsified_on: 2026-07-28
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ Probes (PSXPORT_DEBUG=lvl,cdq) over a full run. Sequence: boot leaves the stage 
 ## What would falsify it
 
 Any cdq line showing a non-zero queued/pending entry during the intro, which would mean a request IS outstanding and my service path is dropping it.
+
+## FALSIFIED 2026-07-28
+
+Wrong, and wrong because I instrumented the wrong read primitive. I claimed the game 'never asks' for the level read because the CD queue logged gate=0 pending=0 queued=0 on every tick. That queue (0x800776C4/C8) is the GAME-LEVEL request queue, which the streaming path never uses — it drives libcd directly through 0x80016698. That function has NINETEEN static call sites (0x80014608-0x80015BC0) against 0x80016500's eleven, and it is the real level/streaming read primitive; 0x80016500 is only the sync boot loader. The game asks ~10 times per run through it. Uniform 'queued=0' was a broken-instrument tell I recorded as a finding — the third time this session that a uniform reading was the tool, not the system. Superseded by C047.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

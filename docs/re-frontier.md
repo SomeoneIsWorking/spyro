@@ -138,11 +138,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## recomp
 
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
-- status: re-partial
+- status: re-verified
 - deps: boot.guest-main
-- evidence: C032,C033,C034,C039
+- evidence: C032,C047,C048
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: Level-overlay BASE now has strong independent evidence: the resident handler-installer at 0x8005A4BC writes 36 pointers spanning 0x80080548-0x8008B2C0 = up to 67720 bytes above the arena base 0x8007AA38, inside the measured level-overlay size range, and 36 matches the level-overlay count (C039). So level overlays load at the arena, same as OVL0, and psxport's signature-keyed slot already handles that. What blocks recompiling them is no longer the base but the fact that the game NEVER LOADS ONE: only six loader calls happen in a whole run. Find what triggers the level load — that is issue 0017's next step and it is also the port's live blocker.
+- gap: DONE for the shared-slot architecture. Two overlays (OVL0 boot, OVL1 = index entry 11, the first LEVEL overlay) now load to the SAME arena base 0x8007AA38 and psxport's content-signature router identifies each in slot 0. What unblocked it was not overlay work at all: the port was serving only the SYNC read primitive 0x80016500 (11 call sites) and not the STREAMING one 0x80016698 (19 call sites), so every level read was acked with zero bytes (C047). Remaining: the other 34 code entries are located but not extracted, and each needs its observed load before being added.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 
 

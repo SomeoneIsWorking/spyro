@@ -86,7 +86,12 @@ Measured, not assumed (`PSXPORT_PROF=1` + `tools/prof_hot.py`, I022):
   (C084). Every guest store called five out-of-line hooks; `cw_check` + `wwatch_check` were ~4.9% of
   pure call overhead, now inlined away (C085).
 - **Result: +12.6% frames in a fixed run, and more of the game reached** — bytes from disc 11.1 →
-  13.2 MB, a seventh overlay identified inside the gate's 40s (C087).
+  13.2 MB, a seventh overlay identified inside the gate's 40s (C087, variance-checked over 3 runs).
+- **Then it stopped translating.** A further ~6% removed (`cfg_dbg_generation`, `OtAttr::trackStore`)
+  bought NO measurable frames (C089). The run reaches an identical point either way. ~29% of samples
+  are outside the binary (driver/loader) and do not shrink, so this workload is likely no longer bound
+  by our CPU — unproven. **Do not start another micro-optimisation round without a workload that is
+  demonstrably CPU-bound in the code being changed.**
 - **Reading a profile: percentages self-rebase.** After a fix, untouched entries' shares RISE because
   the denominator shrank. Only end-to-end throughput sizes a win (C086).
 - Still unexamined: `cfg_dbg_generation` (~3.4%) and three of the five per-store hooks.

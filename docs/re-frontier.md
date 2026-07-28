@@ -145,3 +145,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: OVL0 is recompiled and wired into the router's arena slot; the framework side is DONE (issue 0013 resolved — psxport already models a shared arena, identified by content signature). 36 code overlays are now LOCATED in WAD.WAD: entry 2 plus odd entries 9..77, alternating code/data per level, confirmed by both an opcode-share score and a structural prologue/jr-ra test that agree on all 79 entries (C033, tools/wad_index.py). What blocks recompiling them is their LOAD BASE, and C034 shows it is NOT recoverable statically: they contain zero internal direct calls (no jal targets above text_end) so there is nothing to triangulate from, and their embedded constants spread over ~1.6MB. Do NOT assume the arena 0x8007AA38 because OVL0 lands there. The settling observation is one line: PSXPORT_DEBUG=cdq logs a3 (WAD byte offset) next to dest, so reaching a level names that level's base outright. So the real next step is GETTING PAST THE TITLE SCREEN — pad input — not more overlay analysis.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 
+
+## input
+
+### input.pad — Deliver pad input — the guest cannot produce it itself
+- status: todo
+- deps: boot.post-cd
+- evidence: C035
+- where: game/core/game_config.cpp pad group; psxport PlatformHle pad path
+- gap: C035 (exhaustive, not sampled): Spyro's game code has ZERO JOY-register accesses and ZERO pad-library calls across the resident text and all 36 code overlays, and the linked libapi pad chain (InitPAD/StartPAD/StopPAD/PAD_init) is dead — its head has no callers and is never address-taken. No code jumps directly to a BIOS vector either, so the trampoline census is complete. Therefore input CANNOT be made to appear by running more guest code; the BIOS/HLE layer has to supply it. GameConfig's pad group (padSlot0Buf/padSlot1Buf/padDriverFn/padSlotPtrTable) is all zero, so psxport currently delivers nothing. OPEN QUESTION and the actual next step: find WHERE the guest reads its button state from, given it never asks the hardware for it. Candidates to check against the binary, in order: the BIOS kernel's own pad buffer read as ordinary memory; a vblank handler installed via HookEntryInt 0x8005E4F8 (2 callers); or the scratchpad 0x1F800000 region. Do NOT wire a padSlot0Buf address until it is derived — a guessed guest address is the failure this port refuses.
+- notes: 
+

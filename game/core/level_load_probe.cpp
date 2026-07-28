@@ -54,6 +54,24 @@ void probe_8003385C(Core* c) {
   gen_func_8003385C(c);
 }
 
+// The mode-13/sub-3 handler. Its body is the LEVEL-LOAD SETUP: at 0x80032B68 it reads the arena base
+// constant [0x800113A0] = 0x8007AA38 and writes it to the arena cursors [0x800785D8]/[0x800785DC], which
+// is what func_800144C8 later loads into. So the intro stage does intend to load a level here. Two
+// guards can skip it, and their values are the whole question:
+//   0x80032B24  [0x80078D78] != 3            -> jump 0x80033170 (wrong sub-state, do nothing)
+//   0x80032B38  [0x80078D7C] != 0            -> jump 0x80032CD0 (already started?)
+//   0x80032B60  [0x80078D94] != 0            -> jump 0x80032B98 (skip the cursor reset)
+void probe_80032B08(Core* c) {
+  static unsigned n = 0;
+  if (cfg_dbg("lvl") && n < 6)
+    cfg_logf("lvl", "enter 0x80032B08 (level-load setup) #%u  sub=%u [0x80078D7C]=%u [0x80078D94]=0x%08X "
+                    "cursor=[0x%08X,0x%08X]",
+             n, c->mem_r32(0x80078D78u), c->mem_r32(0x80078D7Cu), c->mem_r32(0x80078D94u),
+             c->mem_r32(0x800785D8u), c->mem_r32(0x800785DCu));
+  n++;
+  gen_func_80032B08(c);
+}
+
 void probe_8002EDF0(Core* c) {
   static unsigned n = 0;
   if (cfg_dbg("lvl") && n < 4) cfg_logf("lvl", "enter 0x8002EDF0 (stage setup) #%u", n);
@@ -86,4 +104,5 @@ void spyro_register_level_probes() {
   psxport_recomp()->shard_set_override(0x8003385Cu, probe_8003385C);
   psxport_recomp()->shard_set_override(0x8002EDF0u, probe_8002EDF0);
   psxport_recomp()->shard_set_override(0x800144C8u, probe_800144C8);
+  psxport_recomp()->shard_set_override(0x80032B08u, probe_80032B08);
 }

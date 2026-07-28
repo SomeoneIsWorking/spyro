@@ -47,6 +47,17 @@ NEXT, in order:
      the dispatcher above it. The mode-5 writer 0x8002C888 lives in fn 0x8002C85C, whose callers are
      0x80042F10 and 0x8004A4D8. So the transition into the level-loading mode EXISTS in resident code
      and is simply never taken.
-  4. NEXT: find what gates 0x80042F10 / 0x8004A4D8 — those are the two places that would move the game
-     into the mode that loads a level. Only after that does the input question become answerable, and
-     it stays untested until then.
+  4. DONE. 0x80042F10 is in fn 0x80041670 and 0x8004A4D8 in fn 0x8004A200; both are reached only from
+     the mode 8 and mode 9 arms (and the dispatcher directly at 0x80033AD8). The mode-13 handler has no
+     direct path to either. So reaching mode 5 requires first reaching mode 8 or 9.
+
+  5. DONE, and it reframes the problem (C042). The intro stage is NOT idling — it is actively trying to
+     bring up a level. 0x80032B08 is the level-load SETUP: it reads the arena base [0x800113A0] and
+     writes the arena cursors, its sub-sub-state [0x80078D7C] advances 0->1->2, and the arena cursor
+     advances 0x8007DDE8 -> 0x8008A3B8, allocating space well past the handler address. Then the
+     handler is installed and called. But NO CD READ IS EVER ISSUED: the queue logs gate=0 pending=0
+     queued=0 on every tick. Not stalled — never asked.
+
+  6. NEXT: the guard [0x80078D94] reads 2 and skips the cursor reset at 0x80032B60. Find who writes
+     that global and what value the real console would have there at this point. That is the first
+     place the flow visibly diverges from what the code expects.

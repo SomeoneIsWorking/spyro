@@ -22,32 +22,25 @@
 {
   // No fn-pointer-only targets observed yet.
   "main": [
-    // Reached only via a function pointer — direct-jal discovery cannot see it. Surfaced by the
-    // fail-fast boot AFTER the OVL0 overlay was recompiled (the overlay's code path reaches it):
-    //   [recomp-MISS] 0x80024054  caller ra=0x80078A58, a0=4, pc=0x80023AC4
-    // Do NOT read that `ra` as a code address in an undiscovered overlay region — it is not one.
-    // 0x80078A58 lies in .bss (8160 bytes below the arena base 0x8007AA38), nothing in the resident
-    // text or in OVL0 jumps to it, and it is one of the most heavily referenced globals in the level
-    // overlays (51-73 lui/addiu references each). It is a big engine struct, so the `ra` in that
-    // diagnostic was not a return address. Chasing it as a second overlay region is a dead end.
-    // It lies inside the resident text [0x80010000,0x80075800), so it is a resident function the
-    // scans missed, not another overlay body.
+    // Reached only via a function pointer — direct-jal discovery cannot see it (docs/issues/0014
+    // explains why the `ra` printed beside that miss is not a code address).
     "0x80024054",
 
-    // Case labels of a COMPUTED-OFFSET jump (C049, docs/issues/0020). At 0x8004C4D4/D8 a lui+addiu
-    // materialises the base 0x8004C4EC, 0x8004C4B0/B4 builds idx<<4, 0x8004C4E0 adds them and
-    // 0x8004C4E4 is `jr s2` — target = base + idx*16, a jump into an unrolled run of 16-byte blocks.
-    // emit.py's find_jump_tables only recognises TABLE lookups (`lw rN,OFF(base)`), so it cannot see
-    // this idiom and the jump routes to rec_dispatch and fail-fasts at runtime.
+    // Six 16-byte `mfc2 ... j` case blocks of a COMPUTED-OFFSET jump (C049, docs/issues/0020).
+    // 0x8004C4D4/D8 materialise base 0x8004C4EC, idx<<4 is added, `jr` dispatches — no address table,
+    // so emit.py's find_jump_tables cannot see it and each case fail-fasts through rec_dispatch.
     //
-    // These are seeded as functions AND listed in main_reentry, which is this recompiler's mechanism
-    // for a mid-function entry: the seed makes the address dispatchable, and main_reentry makes the
-    // PRECEDING body fall through into it rather than `return` (see emit_func's comment on
-    // Tomba!2's 0x8010637C -> 0x801063F4). Seeding without the reentry entry would truncate the
-    // preceding block; the pair is what makes it correct.
-    "0x8004C4EC", "0x8004C4FC",
-    "0x8004C550", "0x8004C560",
-    "0x8004C5D0", "0x8004C5E0"
+    // THIS SET IS DELIBERATELY SMALL. I enumerated 91 dispatch targets across 14 stride-8 `j` runs and
+    // seeded them all; the fail-fast walked forward through the GTE region, but the port then died at
+    // BOOT with 0 frames instead of running 3931. Seeding more was strictly worse. And seeding the one
+    // 2-entry run an observed miss had PROVEN to be a dispatch target produced 9.4 MILLION unmapped-RAM
+    // reads (C051) — the address was right and the split was still fatal.
+    //
+    // The lesson: seeding a mid-function dispatch target as a FUNCTION splits the enclosing body, so the
+    // preceding code's register/stack state no longer reaches the split point. Correctness here needs an
+    // emit.py recogniser that emits a LABEL inside the existing function, the way find_jump_tables does
+    // for the table idiom. Until that exists, keep only what is measured to help.
+    "0x8004C4EC", "0x8004C4FC", "0x8004C550", "0x8004C560", "0x8004C5D0", "0x8004C5E0"
   ],
 
   // Runtime-computed mid-function re-entry points. None PROVEN yet — see docs/issues/0020.
@@ -63,16 +56,9 @@
   // Seeding a guessed entry here would split a real function at an arbitrary offset and silently
   // corrupt the recomp — the exact failure this file exists to prevent. Left EMPTY deliberately.
   "main_reentry": [
-    // Case labels of a COMPUTED-OFFSET jump (C049): 0x8004C4D4/D8 materialise base 0x8004C4EC,
-    // 0x8004C4B0/B4 build idx<<4, 0x8004C4E0 adds them and 0x8004C4E4 is `jr s2` — so the target is
-    // base + idx*16. emit.py's find_jump_tables only recognises TABLE lookups (`lw rN,OFF(base)`), so
-    // it cannot see this and the jump routes to rec_dispatch and fail-fasts.
-    // These addresses lie INSIDE the recompiled gen_func_8004BE4C (its labels span
-    // L_8004BF14..L_8004D4C4), which is exactly what this list is for: re-entry points within an
-    // existing body, NOT new function entries.
-    "0x8004C4EC", "0x8004C4FC",
-    "0x8004C550", "0x8004C560",
-    "0x8004C5D0", "0x8004C5E0"
+    // Same six. A mid-function entry needs BOTH lists: the seed makes it dispatchable, this stops a
+    // preceding body that runs off its end from returning instead of continuing into it.
+    "0x8004C4EC", "0x8004C4FC", "0x8004C550", "0x8004C560", "0x8004C5D0", "0x8004C5E0"
   ],
 
   // Spyro's overlays are NOT separate disc files — they live inside WAD.WAD and are loaded into the

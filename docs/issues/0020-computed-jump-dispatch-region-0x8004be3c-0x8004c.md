@@ -72,3 +72,30 @@ in emit.py for this idiom, but that needs the case COUNT recovered properly — 
 bounding the index somewhere, and finding that bound is the prerequisite for any recompiler change.
 Do NOT add a recogniser that guesses the count: emit.py's own comments record that unconditional
 heuristics previously BROKE already-correct table recoveries.
+
+## Outcome 2026-07-28 — seeding is a DEAD END for this idiom, use an emit.py recogniser
+
+Tried, measured, reverted. Three seed sets:
+  *  6 addresses (hand-verified 16-byte `mfc2 ... j` blocks) -> 3931 frames, miss at 0x80062960. KEPT.
+  * 91 addresses (adding 14 exactly-enumerated stride-8 `j` runs) -> the fail-fast walks forward through
+    the whole GTE region, unmapped-RAM stays 0 — but the port produces ZERO FRAMES, dying during
+    ResetGraph. Strictly worse. (C052, filed prematurely, now falsified: I measured code progress and
+    never measured frames.)
+  * 93 addresses (adding the 2-entry run 0x80062958/0x80062960 that an observed miss PROVED is a
+    dispatch target) -> 9,418,886 unmapped-RAM reads. The address was right; the split was still fatal.
+
+WHY SEEDING CANNOT WORK HERE (C051). A seed makes emit SPLIT the enclosing function at that address. For
+a mid-function dispatch target the preceding code's register and stack state no longer reaches the split
+point, so the body runs with wrong state. Being the correct target address does not make the split safe.
+find_jump_tables does the right thing for the TABLE idiom — it emits a LABEL inside the existing body —
+and that is what this idiom needs too.
+
+THE ACTUAL FIX: extend emit.py to recognise `jr rD` where rD = <lui/addiu immediate base> + (idx << k)
+and emit case labels INSIDE the enclosing function. Prerequisites, in order:
+  1. Recover the case COUNT properly. The table idiom gets it from a `sltiu cond, idx, COUNT` guard;
+     find the equivalent bound here. Do NOT guess — emit.py's own comments record that unconditional
+     heuristics BROKE already-correct table recoveries.
+  2. Enumerate runs off the instruction stream (a stride-8 `j` run is self-terminating), NOT by a fixed
+     max — tools/computed_jumps.py's stop heuristic never fires and over-reports (I010).
+  3. Note the delay slot is often NOT nop and carries the per-case work (0x8004C830 is
+     `j 0x8004C838 ; addi s1,t4,0`); a nop-only detector misses those.

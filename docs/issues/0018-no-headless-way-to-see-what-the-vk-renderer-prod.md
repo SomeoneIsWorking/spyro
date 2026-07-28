@@ -1,11 +1,11 @@
 ---
 id: 18
 title: No headless way to see what the VK renderer produced — a per-frame readback hangs the port
-status: dead-end
+status: open
 symptom: PSXPORT_GPU_DUMP cannot show rasterised geometry (I008), and the only VK readback path (gpu_vk_shot_region) is reachable solely from the interactive REPL — unusable from a batch run or a gate.
 tags: gpu,tooling,dead-end
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ATTEMPTED AND REVERTED. I added a PSXPORT_VK_DUMP=dir[:every] block to gpu_present_ex mirroring
@@ -74,3 +74,21 @@ WHAT STILL WORKS for visual checking, and should be used instead until this is f
     but say nothing about pixels;
   * PSXPORT_GPU_DUMP for anything that reaches s_vram — uploads and fills only, never rasterised
     geometry (I008).
+
+### Note (2026-07-29)
+REOPENED AND LARGELY FALSIFIED — the recorded diagnosis was wrong. It never hung.
+
+THE REAL FAULT: gpu_vk.cpp called hooks->renderFadeState UNCONDITIONALLY at five sites. That hook is OPTIONAL — two other sites in the same file already null-check it, which is what makes it optional by design — and Spyro leaves it nullptr (game_hooks.cpp line 81). So every shot/dump path segfaulted immediately. Port exit status is 139, not a hang.
+
+WHY IT READ AS A HANG, and this is the part worth keeping: a crash early in the run produces 'exactly ONE frame in 25s instead of 3931, and writes no files', which looks identical to blocking unless you check the EXIT STATUS. This project already recorded that exact trap once — the gate reported PASS on a segfaulting port for its entire existence because 'timeout -s KILL' swallows the child's status. Same mistake, different tool, four months apart. Checking rc was a one-command test that was never run.
+
+The three earlier hypotheses were all reasonable and all wrong: placement (falsified twice), image_write_rgb24 (ruled out), and 'the readback blocks' (falsified now — a step-trace through readback_vram shows enter -> targets ok -> cmd acquired -> submitted -> FENCE SIGNALLED, every time).
+
+FIXED in psxport: one null-safe accessor fade_state_of() routes every call site, absent meaning 'no fade' which is what the two guarded sites already did.
+
+HEADLESS CAPTURE NOW WORKS. 'preseq 6' from the REPL writes six 512x240 PPMs, correct resolution per C068, clean exit. The REPL itself only became reachable earlier this session (it is pumped from vsync.cpp's frame boundary), so this path was doubly blocked.
+
+WHAT REMAINS, stated as an instrument caveat rather than a conclusion: every captured frame is UNIFORMLY BLACK (1 distinct colour) at both frame 900 and frame 4000, which is precisely the broken-instrument tell. Ruled out already: the fade (fade_mode 0 takes neither branch in dump_to, so my null-safe default is a genuine no-op), the region (s_last_w/h are 512x240, correct), and 'blank moment' (two widely separated capture points). So the content is not in s_vram_tex at readback time. Next: establish where it IS — the present-source selector s_present_ires picks between s_vram_tex and the s_ires_color composite, and the CPU-side s_vram demonstrably varies (gate reports 21 distinct frame occupancies) while this GPU texture reads black.
+
+### Reopened (2026-07-29)
+reopened

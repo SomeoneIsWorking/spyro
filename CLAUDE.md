@@ -22,6 +22,18 @@ Believe these over your instinct about what is already known. End the task by wr
 proved, what you disproved, any tool you caught lying. The data lives in the repo (`docs/`), as
 greppable Markdown, so it travels with the code and reaches subagents.
 
+**Holding a guest address? `python3 tools/whatis.py 0x800xxxxx` before anything else.** It answers
+from every source at once — which module's span contains it, which overlay is actually RESIDENT there
+in the last RAM dump, what each candidate image says and **whether they disagree**, whether it is
+recompiled, whether it is one of the 36 per-overlay entries main installs, what points at it, what
+Ghidra called it, and which claim or issue already mentions it.
+
+Do not do that cross-reference by hand. Two of this session's wrong conclusions came from exactly
+that — reading an address out of an overlay image that was not the resident one (C065, issue 0025),
+and a value-extraction scan that grabbed a neighbouring instruction pair (C067). Both were
+cross-referencing slips, not reasoning slips, so being more careful is not the fix; running the
+command is.
+
 ---
 
 ## The rules that matter most here

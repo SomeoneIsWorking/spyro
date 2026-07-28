@@ -68,6 +68,7 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
 - **How to disassemble a region** → `external/psxport/tools/disasm.py <ramdump> <start> <end>`; build
   a RAM image by laying the PS-EXE text at its load address (`0x80010000`)
 - **Why a `GameConfig` field is 0** → it is un-RE'd; the comment above it says what to RE
+- **ANYTHING about a guest address** → `tools/whatis.py 0x800xxxxx` — the first command to run when holding an address. Answers from every source at once (module span, which overlay is RESIDENT there in the last RAM dump, per-image agreement, recompiled?, is it one of the 36 per-overlay entries, static refs, Ghidra, existing claims/issues) and flags where sources DISAGREE. Doing this cross-reference by hand produced two wrong conclusions this session (C065, C067)
 - **What's already been proven / ruled out** → `tools/info.py brief`, `tools/catalog.py search`
 - **What to work on next** → `tools/re_frontier.py next`
 

@@ -75,6 +75,17 @@ the tell; validate a tool by feeding it a case that MUST differ.
 
 ---
 
+## Run the gate after a REBASE, not only after your own edits
+
+`git rebase` during a push silently pulls in upstream psxport work that has never been gated against
+*this* game. That is how a CD change (`5daf2fe4`) took the port from 18809 frames to 8 without a
+single line of local code changing — see `docs/issues/0028`.
+
+It presented as "the port got slow": a capture that used to finish started timing out. Two innocent
+explanations were available (my own edit, and real external machine load) and both were wrong. What
+separated them was the gate's per-check numbers — bytes-from-disc collapsing to one sector is not
+something "slow" explains.
+
 ## Debugging a live port
 
 Three things make a running port inspectable without a rebuild per question. Reach for them before

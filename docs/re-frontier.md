@@ -145,6 +145,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: DONE for the shared-slot architecture. Two overlays (OVL0 boot, OVL1 = index entry 11, the first LEVEL overlay) now load to the SAME arena base 0x8007AA38 and psxport's content-signature router identifies each in slot 0. What unblocked it was not overlay work at all: the port was serving only the SYNC read primitive 0x80016500 (11 call sites) and not the STREAMING one 0x80016698 (19 call sites), so every level read was acked with zero bytes (C047). Remaining: the other 34 code entries are located but not extracted, and each needs its observed load before being added.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 
+### recomp.midfn — Mid-function dispatch from data-computed addresses
+- status: todo
+- deps: boot.post-cd
+- evidence: C056
+- where: docs/issues/0021; emit.py label emission
+- gap: The port's only remaining fail-fast (0x80038620) after the computed-jump family was solved in the recompiler. NOT another recogniser: the address has zero static references anywhere in the resident text or either overlay, so it is computed from data loaded off the disc and there is no dispatcher to analyse. It lands INSIDE an already-recompiled function, so it needs a mid-function LABEL and never a seed (C051: a seed splits the body, 9.4M unmapped-RAM reads even with a correct address). The honest general fix is emitting a label at every basic-block boundary so any address inside a known function is resumable — measure its size/time cost here first, since it would affect every consumer of the framework.
+- notes: 
+
 
 ## input
 

@@ -26,7 +26,7 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
 | subsystem | where | status | notes |
 |---|---|---|---|
 | Disc → executable provisioning | `tools/ensure_recomp.py`, `run.sh` | ✅ | Extracts `SCUS_942.28` via psxport's `discdump`; hash-checks the generated set against exe + recompiler sources + seed file, so every machine builds an identical substrate. |
-| Static recompilation | `game/recomp_seeds.json` → `generated/` | ✅ | 629 resident functions + 6 in the OVL0 overlay. Binary-only discovery (entry + pointer scans + `jal` graph) plus one seed: `0x80024054`, reached only through a function pointer and surfaced by a fail-fast `[recomp-MISS]`. Zero misses at boot. |
+| Static recompilation | `game/recomp_seeds.json` → `generated/` | ✅ | Seed file holds ONE entry — the genuine fn-pointer target `0x80024054`. Spyro's GTE code dispatches via computed-offset jumps (`jr base+idx*2^k`, no address table); that whole family is now handled by a recogniser IN the recompiler emitting mid-function labels, not by seeds (C054/C055). Seeding such a target splits the enclosing function and corrupts the recomp even when the address is right — C051. |
 | Framework seam — config | `game/core/game_config.cpp` | 🟡 | Boot group fully derived (claim C001). Per-frame OT/packet-pool, scheduler, CD and pad groups are honestly `0` — un-RE'd, not forgotten. |
 | Framework seam — hooks | `game/core/game_hooks.cpp` | 🟡 | Only `bootInit` + `registerOverrides` implemented; the rest deliberately null (Phase 0 runs everything on the substrate). |
 | Framework seam — recomp registry | `game/core/recomp_register.cpp` | ✅ | Wires `main_dispatch`/`rec_func_index`/override setter. Overlay setters null. |

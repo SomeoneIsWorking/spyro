@@ -1,7 +1,7 @@
 ---
 id: 18
 title: No headless way to see what the VK renderer produced — a per-frame readback hangs the port
-status: open
+status: resolved
 symptom: PSXPORT_GPU_DUMP cannot show rasterised geometry (I008), and the only VK readback path (gpu_vk_shot_region) is reachable solely from the interactive REPL — unusable from a batch run or a gate.
 tags: gpu,tooling,dead-end
 created: 2026-07-28
@@ -92,3 +92,19 @@ WHAT REMAINS, stated as an instrument caveat rather than a conclusion: every cap
 
 ### Reopened (2026-07-29)
 reopened
+
+### Resolution (2026-07-29)
+RESOLVED — and the port demonstrably renders. The captured frame is the Insomniac Games logo composited over Spyro's 3D landscape, 512x240, 93.3% non-black, 2126 distinct colours (C094).
+
+THE FULL CHAIN OF THREE FAULTS, each of which alone made this unanswerable:
+  1. The dump path called the OPTIONAL hooks->renderFadeState unguarded and Spyro leaves it null — an instant SIGSEGV. Recorded for months as "the readback BLOCKS" because an early crash produces few frames and no files, indistinguishable from a hang unless you check the exit status (139). Fixed upstream with a null-safe accessor.
+  2. The only working capture path (preseq) was reachable solely from the REPL, and the REPL was itself unreachable because it is pumped from the framework's native scheduler loop, which this port never runs. Fixed by pumping it from vsync.cpp's frame boundary.
+  3. Even then every capture was uniformly black — because the dump reads the LAST PRESENTED region, and the content lives in the OTHER buffer. C068 has draw0 at y=8 and draw1 at y=248; at frame 900 only draw1 holds a frame, and the dumps were reading draw0's region.
+
+WHAT MADE IT TRACTABLE was refusing to accept uniform output as a result. All-black is the broken-instrument tell this project already had written down, so each capture was treated as an instrument question rather than as "the port renders black".
+
+NEW TOOL: REPL "shotregion <path> <x> <y> <w> <h>" dumps an ARBITRARY VRAM region. gpu_vk_shot_region already existed and was reachable from nothing; "shot" only captures the present window, which is the right default and useless for "where in VRAM is the content". Four lines to expose, and it is what located the content.
+
+ALSO CORRECTED en route: I read the presented region as stuck at (0,0) because the GPU trace prints only every 200th present, which aliased with the buffer alternation. A 45s run actually shows 136 presents at (0,0) and 155 at (0,240) — it alternates correctly.
+
+FOLLOW-ON, filed as C095: only one buffer holds content at a time while the region alternates, so about half the presented frames come from an empty buffer. That may be an early-boot state rather than a standing defect — capture both regions at several points before treating it as one.

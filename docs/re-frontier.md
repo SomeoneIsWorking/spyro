@@ -208,8 +208,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### own.next-targets — Own more guest functions natively, each gated by PSXPORT_NDIFF
 - status: todo
 - deps: harness.sbs
-- evidence: C075,C078,C079,I019,I020,I021
+- evidence: C075,C078,C079,C080,I019,I020,I021
 - where: game/core/native_rand.cpp is the pattern; game/core/ observation wrappers are the candidates
-- gap: In progress: 11 native bodies (was 1), ~733 static call sites, all byte-exact under PSXPORT_NDIFF including full COP2 comparison, re-verified every gate run. GTE code is now ownable — the pattern is to keep the scalar logic native and call the platform's gte_op/gte_read_data rather than reimplementing the GTE, which is the platform layer's job. 266 leaf candidates remain (own_candidates.py hides owned ones).
+- gap: In progress: 13 native bodies (was 1), ~793 static call sites, all byte-exact under PSXPORT_NDIFF including full COP2 comparison, re-verified every gate run. Two are GTE bodies — the pattern is scalar logic native, COP2 via the platform's own gte_op/gte_read_data/gte_write_ctrl, so hardware results match by construction. 264 leaf candidates remain (own_candidates.py hides owned ones). Recurring lesson across five bodies now: a MIPS DELAY SLOT decides the exit state (fill's bounds, angdist's a1, veclen's two, copyw's a1-per-pass) — transcribe the slot, then let the differential confirm.
 - notes: CORRECTION to the earlier note in this entry: 0x8001ED5C is NOT a small exactly-specified flip. Its first dozen instructions are the buffer flip, then it continues into the entire per-frame stage dispatcher (a switch on [0x800757D8] calling many handlers). Owning it means owning the frame loop — not a next target. That mis-pick is why own_candidates.py exists and why it reports leaf/non-leaf. The pattern remains native_rand.cpp/native_leaf.cpp: a pure native body plus ndiff_run(c, name, native, gen_func_X), reproducing EVERY register the substrate leaves.
 

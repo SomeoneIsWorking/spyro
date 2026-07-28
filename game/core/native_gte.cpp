@@ -23,6 +23,7 @@
 // construction rather than by my re-deriving the model.
 uint32_t gte_read_data(uint32_t reg);
 void     gte_write_data(uint32_t reg, uint32_t v);
+void     gte_write_ctrl(uint32_t reg, uint32_t v);
 
 namespace {
 
@@ -103,10 +104,47 @@ void veclen_native(Core* c) {
   c->r[8] = t0v;                                      // t0
 }
 
+// ── 0x80017048 — load a 3x3 matrix from a0, transform the vector at a1, store to a2. 30 callers.
+//     lw at/v0/v1,0..8(a0)  ; ctc2 -> CR0,CR1,CR2      the rotation matrix
+//     lw at/v0,12..16(a0)   ; ctc2 -> CR3,CR4
+//     lw at/v0/v1,0..8(a1)  ; mtc2 at->IR3 ; v0 = -v0 -> IR1 ; v1 = -v1 -> IR2
+//     GTE 0x4A49E012 (MVMVA) ; mfc2 at<-MAC3, v0<-MAC1, v1<-MAC2 ; negate v0,v1 ; store to a2
+// The register PERMUTATION and the sign flips are transcribed exactly rather than rationalised into
+// whatever geometry they implement — getting the intent right is not the job, getting the bytes right
+// is, and the differential checks the bytes.
+void mvmva_native(Core* c) {
+  const uint32_t m = c->r[4], v = c->r[5], out = c->r[6];
+
+  gte_write_ctrl(0, c->mem_r32(m + 0));
+  gte_write_ctrl(1, c->mem_r32(m + 4));
+  gte_write_ctrl(2, c->mem_r32(m + 8));
+  gte_write_ctrl(3, c->mem_r32(m + 12));
+  gte_write_ctrl(4, c->mem_r32(m + 16));
+
+  const uint32_t x = c->mem_r32(v + 0);
+  const uint32_t y = 0u - c->mem_r32(v + 4);
+  const uint32_t z = 0u - c->mem_r32(v + 8);
+  gte_write_data(11, x);      // IR3
+  gte_write_data(9,  y);      // IR1
+  gte_write_data(10, z);      // IR2
+
+  gte_op(c, 0x4A49E012u);     // MVMVA
+
+  const uint32_t r_at = gte_read_data(27);            // MAC3
+  const uint32_t r_v0 = 0u - gte_read_data(25);       // MAC1, negated
+  const uint32_t r_v1 = 0u - gte_read_data(26);       // MAC2, negated
+  c->mem_w32(out + 0, r_at);
+  c->mem_w32(out + 4, r_v0);
+  c->mem_w32(out + 8, r_v1);
+  c->r[1] = r_at; c->r[2] = r_v0; c->r[3] = r_v1;
+}
+
 void veclen_owned(Core* c) { ndiff_run(c, "veclen@0x800171FC", veclen_native, gen_func_800171FC); }
+void mvmva_owned(Core* c)  { ndiff_run(c, "mvmva@0x80017048",  mvmva_native,  gen_func_80017048); }
 
 }  // namespace
 
 void spyro_register_native_gte() {
   psxport_recomp()->shard_set_override(0x800171FCu, veclen_owned);
+  psxport_recomp()->shard_set_override(0x80017048u, mvmva_owned);
 }

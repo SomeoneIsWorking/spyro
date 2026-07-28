@@ -32,7 +32,22 @@
     // diagnostic was not a return address. Chasing it as a second overlay region is a dead end.
     // It lies inside the resident text [0x80010000,0x80075800), so it is a resident function the
     // scans missed, not another overlay body.
-    "0x80024054"
+    "0x80024054",
+
+    // Case labels of a COMPUTED-OFFSET jump (C049, docs/issues/0020). At 0x8004C4D4/D8 a lui+addiu
+    // materialises the base 0x8004C4EC, 0x8004C4B0/B4 builds idx<<4, 0x8004C4E0 adds them and
+    // 0x8004C4E4 is `jr s2` — target = base + idx*16, a jump into an unrolled run of 16-byte blocks.
+    // emit.py's find_jump_tables only recognises TABLE lookups (`lw rN,OFF(base)`), so it cannot see
+    // this idiom and the jump routes to rec_dispatch and fail-fasts at runtime.
+    //
+    // These are seeded as functions AND listed in main_reentry, which is this recompiler's mechanism
+    // for a mid-function entry: the seed makes the address dispatchable, and main_reentry makes the
+    // PRECEDING body fall through into it rather than `return` (see emit_func's comment on
+    // Tomba!2's 0x8010637C -> 0x801063F4). Seeding without the reentry entry would truncate the
+    // preceding block; the pair is what makes it correct.
+    "0x8004C4EC", "0x8004C4FC",
+    "0x8004C550", "0x8004C560",
+    "0x8004C5D0", "0x8004C5E0"
   ],
 
   // Runtime-computed mid-function re-entry points. None PROVEN yet — see docs/issues/0020.
@@ -47,7 +62,18 @@
   //
   // Seeding a guessed entry here would split a real function at an arbitrary offset and silently
   // corrupt the recomp — the exact failure this file exists to prevent. Left EMPTY deliberately.
-  "main_reentry": [],
+  "main_reentry": [
+    // Case labels of a COMPUTED-OFFSET jump (C049): 0x8004C4D4/D8 materialise base 0x8004C4EC,
+    // 0x8004C4B0/B4 build idx<<4, 0x8004C4E0 adds them and 0x8004C4E4 is `jr s2` — so the target is
+    // base + idx*16. emit.py's find_jump_tables only recognises TABLE lookups (`lw rN,OFF(base)`), so
+    // it cannot see this and the jump routes to rec_dispatch and fail-fasts.
+    // These addresses lie INSIDE the recompiled gen_func_8004BE4C (its labels span
+    // L_8004BF14..L_8004D4C4), which is exactly what this list is for: re-entry points within an
+    // existing body, NOT new function entries.
+    "0x8004C4EC", "0x8004C4FC",
+    "0x8004C550", "0x8004C560",
+    "0x8004C5D0", "0x8004C5E0"
+  ],
 
   // Spyro's overlays are NOT separate disc files — they live inside WAD.WAD and are loaded into the
   // heap. Confirmed from the binary: four hardcoded jals call addresses above the resident text end

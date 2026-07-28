@@ -160,10 +160,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## gpu
 
 ### gpu.ot-crash — Port aborts at frame 3781 — runaway OT linked-list DMA
-- status: re-partial
+- status: re-verified
 - deps: boot.post-cd
-- evidence: C037,C038
+- evidence: C037,I008
 - where: issue 0015; gen_func_80061820 submit path
-- gap: ABORT FIXED, black screen NOT. Cause was that nothing drained the render queue: rq.flush() is only reached from the framework's native_boot/Engine::drawOTag path, which this port never runs, and push() only resets once something has consumed the queue — so it grew ~449 polys/frame to RQ_MAX 65536 and fail-fasted (C037). Fixed in game/core/vsync.cpp by flushing before gpu_present in the vblank wait; the 65536 cap was NOT raised, it is the fail-fast not the bug. Run advances 3781 -> 3931 frames and the rq:error is gone. My prediction that this one cause explained the black screen too was WRONG (C038): content still ends at frame 434 and every later frame is 0.00 percent occupancy, so prims reach the renderer but not the screen. NEXT: check whether present scans the page the engine batch draws into — the framework's native path pairs its draw with gpu_set_disp_origin(c,0,0) for exactly that reason, while Spyro's guest double-buffers with disp alternating (0,0)/(0,240). New downstream blocker: recomp-MISS at 0x8008772C, which is NOT a missing overlay (issue 0017).
+- gap: RESOLVED. The render-queue drain (C037) fixed the abort. The 'black screen' that appeared to remain was a MEASUREMENT ARTEFACT, not a defect: PSXPORT_GPU_DUMP reads s_vram and VK-path polygons never touch it (instrument I008), so the dump goes black the moment real rendering starts. The guest's own prim count shows 680 frames submitting geometry in the last quarter of the run. C038, which claimed prims reached the renderer but not the screen, is falsified. Remaining unknown, tracked as issue 0018: there is no headless way to capture VK output, so 'are the pixels CORRECT' is unmeasured — a per-frame readback hangs the port and was reverted. The port's live blocker is now the recomp miss at 0x8008772C (issue 0017).
 - notes: 
 

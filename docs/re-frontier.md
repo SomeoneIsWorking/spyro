@@ -140,8 +140,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
 - status: re-partial
 - deps: boot.guest-main
-- evidence: OVL0 recompiled, gate green (C028). Index enumerated statically: 79 entries, 36 score as code (C029, tool I005). Load bases are observable from the loader's own dest argument — three entries mapped exactly: entry 0 -> 0x801A4800, entry 2 -> 0x8007AA38 (OVL0), entry 8 -> 0x8018B800.
+- evidence: Route (b) VALIDATED (C031): overlay load bases are readable from the static image. At call site 0x80012924 the loader's dest is loaded from [0x800113A0], and that word in SCUS_942.28 is 0x8007AA38 — exactly the base observed from the running port. The loader has 8 static call sites, so bases can be recovered without exercising 35 gameplay paths. Index enumeration (C029) already gives offsets/lengths.
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: Boot exercises only ONE code overlay (C030). The other ~35 code candidates never load during boot, so their bases cannot be observed without driving the game further. Two routes: (a) drive gameplay (needs input/replay, which the port does not have yet), or (b) find each overlay's base statically — the loader's dest comes from somewhere, so RE'ing what computes it would yield bases without needing to reach every code path. (b) is the more scalable and does not depend on exercising 35 paths.
+- gap: Remaining: read the other 7 call sites' dest sources, pair them with index entries, then extend tools/ensure_recomp.py OVERLAYS + overlay_bases in game/recomp_seeds.json. Caveat: a site whose dest is COMPUTED at runtime rather than loaded from a constant will not yield to static reading and needs the observed-load route instead.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

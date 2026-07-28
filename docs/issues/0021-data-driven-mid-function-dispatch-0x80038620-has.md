@@ -35,5 +35,19 @@ OPTIONS, none chosen — this needs a design decision, not a patch:
   3. RE the data table and seed what it contains. Fragile: it is level data, so the set changes per
      level and the port would chase it forever.
 
-Option 1 is the honest general fix. Measure its size/time cost on this game before proposing it
-upstream, since it affects every consumer.
+Option 1 is the honest general fix. COST NOW MEASURED (C057), via a PSXPORT_LABEL_ALL=1 flag added to
+emit.py for exactly this:
+
+                        baseline        universal labels     delta
+    generated .c        5,078,995 B     6,395,908 B          +25.9%
+    binary             19,498,776 B    22,578,000 B          +15.8%
+    build (wall)             5.0 s         10.3 s            ~2x
+    build (user)            18.0 s         44.3 s            ~2.5x
+
+The port behaves identically with them on (same single fail-fast), which confirms labels are INERT by
+themselves — and that is the caveat on these numbers. This measures only the LABEL half. Entering a
+function at a computed label additionally needs a dispatch switch at the top of every function, whose
+cost is not in the table. Treat the figures as a floor, not the price.
+
+Whether that is acceptable is a judgement for the framework owner, not something to decide from this
+one game: +16% binary is mild, ~2x build time is not, and both land on every consumer.

@@ -31,7 +31,16 @@ if [ -z "$DISC" ] && [ -f .env ]; then
   DISC="$(sed -n 's/^[[:space:]]*PSXPORT_SPYRO_DISC[[:space:]]*=[[:space:]]*//p' .env | head -1)"
 fi
 [ -n "$DISC" ] && [ -f "$DISC" ] || { echo "gate: no disc image (set PSXPORT_SPYRO_DISC or .env)"; exit 2; }
-[ -x scratch/bin/spyro_port ] || { echo "gate: build first (cmake --build build --target spyro_port)"; exit 2; }
+# BUILD FIRST, and refuse to run on a stale binary. Twice in one session an upstream psxport rebase
+# grew GameConfig, this port's initializer broke, and the gate happily ran the PREVIOUS binary and
+# reported its numbers — once into a commit message. A gate that measures a build that does not exist
+# is worse than no gate, and "I ran cmake and read the error COUNT" is how it happened both times.
+if ! cmake --build build --target spyro_port -j"$(nproc)" > "$OUT/build.log" 2>&1; then
+  echo "gate: BUILD FAILED — refusing to measure a stale binary. Last errors:"
+  grep -iE "error" "$OUT/build.log" | head -5 | sed -n 's/^/    /p'
+  exit 2
+fi
+[ -x scratch/bin/spyro_port ] || { echo "gate: no binary after a successful build?"; exit 2; }
 
 echo "[gate] running ${SECS}s headless…"
 PSXPORT_DEBUG=cdq,ovload,gpu PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \

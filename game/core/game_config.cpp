@@ -36,29 +36,34 @@ static const GameConfig g_spyro_config = {
   //
   // Note bssZeroLo (0x80075640) sits just below the PS-EXE's text_end (0x80075800): the header's
   // text_size is 2048-aligned, so the tail of the image is padding and .bss starts inside it.
-  /* bssZeroLo      */ 0x80075640u,
-  /* bssZeroHi      */ 0x8007AA38u,
-  /* stackTopBase   */ 0x800755A8u,   // sp   = [this] - 8
-  /* stackTopBase2  */ 0x800755A4u,   // heapsz = (sp+8-8) - [this] - heapBase
-  /* heapBase       */ 0x8007AA38u,   // == bssZeroHi (heap starts where .bss ends)
-  /* heapSizePtr    */ 0x800730C4u,
-  /* heapBasePtr    */ 0x800730C0u,
-  /* gp             */ 0x80075264u,
-  /* libcInit       */ 0x8005DB14u,
-  /* gameMain       */ 0x80012204u,   // main(), tail-called by crt0
-  /* crt0           */ 0x8005B8E0u,   // == the PS-EXE entry point
+  .bssZeroLo = 0x80075640u,
+  .bssZeroHi = 0x8007AA38u,
+  .stackTopBase = 0x800755A8u,   // sp   = [this] - 8
+  .stackTopBase2 = 0x800755A4u,   // heapsz = (sp+8-8) - [this] - heapBase
+  .heapBase = 0x8007AA38u,   // == bssZeroHi (heap starts where .bss ends)
+  .heapSizePtr = 0x800730C4u,
+  .heapBasePtr = 0x800730C0u,
+  .gp = 0x80075264u,
+  .libcInit = 0x8005DB14u,
+  .gameMain = 0x80012204u,   // main(), tail-called by crt0
+  .crt0 = 0x8005B8E0u,   // == the PS-EXE entry point
 
   // Recompiled .text range (physical, addr & 0x1FFFFFFF), taken from our own recompiler run via
   // generated/overlay_table.h so it can never drift from the substrate it describes.
-  /* recMainLo      */ REC_MAIN_LO,
-  /* recMainHi      */ REC_MAIN_HI,
+  .recMainLo = REC_MAIN_LO,
+  .recMainHi = REC_MAIN_HI,
 
   // The .env key / environment variable naming this game's disc image. The framework's resolver reads
   // it directly now, which replaces the setenv bridge main.cpp used to do (PSXPORT_SPYRO_DISC ->
   // PSXPORT_DISC). Upstream added this field after a second consumer set its own variable, the
   // framework never read it, and the CD model ran with NO DISC MOUNTED while the logs looked normal —
   // exactly the silent-wrong-answer failure this port keeps running into from the other side.
-  /* discEnvVar     */ "PSXPORT_SPYRO_DISC",
+  .discEnvVar = "PSXPORT_SPYRO_DISC",
+
+  // Boot intro movies played by the FRAMEWORK's native .STR player. All null for Spyro, and that is a
+  // real state rather than an un-RE'd gap: this port's boot runs entirely on the recompiled substrate,
+  // so the guest plays its own movies. The framework must not invent an intro it was never asked for.
+  .bootFmv = { nullptr, nullptr, nullptr, nullptr },
 
   // ── per-frame OT / packet-pool dance ───────────────────────────────────────────────────────────
   // NOT YET REVERSE-ENGINEERED. These drive the framework's NATIVE per-frame loop
@@ -69,37 +74,37 @@ static const GameConfig g_spyro_config = {
   // "fake the output before the RE is done" failure the porting playbook warns about.
   // RE these when moving to the native frame loop: find Spyro's display init (SetDefDrawEnv/
   // SetDefDispEnv callers) and its per-frame buffer flip.
-  /* otRegionBase     */ 0u,
-  /* otRegionStride   */ 0u,
-  /* packetPoolBase   */ 0u,
-  /* packetPoolStride */ 0u,
-  /* otBasePtr        */ 0u,
-  /* dwellCounter     */ 0u,
-  /* poolPtrCur       */ 0u,
-  /* poolPtrLast      */ 0u,
-  /* clearOtagR       */ 0u,
-  /* putDrawEnv       */ 0u,
-  /* drawSync         */ 0u,
+  .otRegionBase = 0u,
+  .otRegionStride = 0u,
+  .packetPoolBase = 0u,
+  .packetPoolStride = 0u,
+  .otBasePtr = 0u,
+  .dwellCounter = 0u,
+  .poolPtrCur = 0u,
+  .poolPtrLast = 0u,
+  .clearOtagR = 0u,
+  .putDrawEnv = 0u,
+  .drawSync = 0u,
   // Per-frame IRQ-driven event classes the guest's waits poll via TestEvent. DISCOVERED from a run,
   // not guessed: PSXPORT_DEBUG=ev logs `OpenEvent class=0xF0000009 spec=0x20 -> handle=0xF1000000`,
   // and func_8005CBB0 then polls exactly that handle forever (claim C022). One class is opened, so
   // the other two slots stay 0 — deliverEvent(0) is a no-op.
-  /* irqEventClasses  */ { 0xF0000009u, 0u, 0u },
-  /* dualviewRenderOrch */ 0u,
-  /* dualviewSubmit     */ 0u,
+  .irqEventClasses = { 0xF0000009u, 0u, 0u },
+  .dualviewRenderOrch = 0u,
+  .dualviewSubmit = 0u,
 
   // ── scheduler task layout ──────────────────────────────────────────────────────────────────────
   // NOT APPLICABLE AS-IS. These describe Tomba!2's cooperative task table and its three stage-entry
   // PCs (START/DEMO/GAME overlays). Spyro is a SINGLE executable with no overlays and no such stage
   // split, so there is nothing to point them at. They stay 0 until (and unless) Spyro's own main
   // loop structure is RE'd and shown to need them.
-  /* taskTableBase  */ 0u,
-  /* taskSlotStride */ 0u,
-  /* taskCount      */ 0u,
-  /* curTaskPtr     */ 0u,
-  /* stageStart     */ 0u,
-  /* stageDemo      */ 0u,
-  /* stageGame      */ 0u,
+  .taskTableBase = 0u,
+  .taskSlotStride = 0u,
+  .taskCount = 0u,
+  .curTaskPtr = 0u,
+  .stageStart = 0u,
+  .stageDemo = 0u,
+  .stageGame = 0u,
 
   // ── overlay router slots ───────────────────────────────────────────────────────────────────────
   // RESOLVED (docs/issues/0001, /0013; claim C032). Spyro's overlays are not disc FILES — they live
@@ -117,7 +122,7 @@ static const GameConfig g_spyro_config = {
   // the native loader in cd_queue.cpp). Without it slot_index() returns -1 and every dispatch falls
   // back to a full signature scan over the overlay table — which happens to work with one overlay
   // resident and would not stay correct as more are added.
-  /* overlaySlots */ {
+  .overlaySlots = {
     { 0x8007AA38u, "ARENA" },
     { 0u, nullptr },
     { 0u, nullptr },
@@ -128,14 +133,14 @@ static const GameConfig g_spyro_config = {
   // serve reads from the CHD directly. Until they are RE'd, CD access runs through the recompiled
   // libcd code on the substrate. RE these by finding the CdReadFile/CdlSetloc call sites that pull
   // from WAD.WAD.
-  /* cdInit            */ 0u,
+  .cdInit = 0u,
   // CD_cw (0x80064CEC) — libcd's command-issue-and-wait. SIGNATURE CONFIRMED by reading the body, not
   // inferred from the name: the prologue keeps a0 in r16 and uses `r16 & 255` to index the command
   // tables at 0x800750xx, keeps a1 in r17 (tested against 0 = "no param"), a2 in r21 (result) and a3
   // in r18 — i.e. CD_cw(com, param, result, mode), exactly what the framework's cd_command handler
   // reads. This is the function the boot log shows timing out on the real commands (CdlSetmode,
   // CdlSetloc), so overriding it ACKs those commands instead of spinning on a controller we don't model.
-  /* cdCommand         */ 0x80064CECu,
+  .cdCommand = 0x80064CECu,
   // CD_sync (0x800647A0). SIGNATURE NOW CONFIRMED from the body — the prologue keeps a0 in r21 and
   // a1 in r22, and a1 is used as the result buffer, matching the framework's cd_sync handler
   // (zero 8 bytes at a1, return 2 = complete). It was left 0 until this check was actually done.
@@ -144,25 +149,25 @@ static const GameConfig g_spyro_config = {
   // waiting on a ready flag that only a CD IRQ would set. With reads served natively and synchronously
   // there is nothing to wait for, so reporting "complete" is the faithful answer. A 6-sample stack
   // profile put the guest squarely in this function.
-  /* cdSync            */ 0x800647A0u,
-  /* cdReadPrim        */ 0u,
-  /* cdFileLoad        */ 0u,
-  /* cdAsyncRead       */ 0u,
-  /* voicePlay         */ 0u,
-  /* voiceStop         */ 0u,
-  /* lastSectorTracker */ 0u,
-  /* cdInlineLoad      */ 0u,
-  /* cdCmdStream       */ 0u,
-  /* cdCallbackTable   */ { 0u, 0u, 0u, 0u },
-  /* cdCallbackFn      */ { 0u, 0u, 0u, 0u },
+  .cdSync = 0x800647A0u,
+  .cdReadPrim = 0u,
+  .cdFileLoad = 0u,
+  .cdAsyncRead = 0u,
+  .voicePlay = 0u,
+  .voiceStop = 0u,
+  .lastSectorTracker = 0u,
+  .cdInlineLoad = 0u,
+  .cdCmdStream = 0u,
+  .cdCallbackTable = { 0u, 0u, 0u, 0u },
+  .cdCallbackFn = { 0u, 0u, 0u, 0u },
 
   // ── pad driver ─────────────────────────────────────────────────────────────────────────────────
   // NOT YET REVERSE-ENGINEERED. Input runs through the guest's own SIO pad read until these are
   // found (the per-VBlank pad buffer + the driver entry that fills it).
-  /* padSlot0Buf   */ 0u,
-  /* padSlot1Buf   */ 0u,
-  /* padDriverFn   */ 0u,
-  /* padSlotPtrTable */ 0u,
+  .padSlot0Buf = 0u,
+  .padSlot1Buf = 0u,
+  .padDriverFn = 0u,
+  .padSlotPtrTable = 0u,
 
   // ── platform HLE: the PSX hardware-sync primitives ─────────────────────────────────────────────
   // NOT YET REVERSE-ENGINEERED — every entry 0, which initBuiltins() reads as "this game has no such
@@ -179,7 +184,7 @@ static const GameConfig g_spyro_config = {
   // frame. Spyro still runs the guest's own loop on the substrate (see game_hooks.cpp), so VSync must
   // be reimplemented faithfully and registered by us — setting the trap instead would abort on the
   // game's own legitimate timing.
-  /* hle */ {
+  .hle = {
     // Window 0 — Spyro's libcd. Deliberately TIGHT: it spans only the region where the libcd bodies
     // were actually located (the five functions that reference the "CD_cw"/"CD timeout"/"CD_init"
     // strings live at 0x80063C48..0x800655A0), not a guessed "SDK region". The window exists to keep
@@ -190,11 +195,11 @@ static const GameConfig g_spyro_config = {
     // (VSync 0x8005DBC4, its wait helper 0x8005DD0C) and libcInit 0x8005DB14. Spyro's link order
     // puts game code low (main is at 0x80012204) and the Sony libraries high, so this does not
     // overlap game logic — which is the property the window exists to guarantee.
-    /* windowLo */ { 0x80063000u, 0x8005B000u },
-    /* windowHi */ { 0x80066000u, 0x80063000u },
-    /* codeScanLo, codeScanHi */ 0u, 0u,   // falls back to [recMainLo, recMainHi), correct here:
+    .windowLo = { 0x80063000u, 0x8005B000u },
+    .windowHi = { 0x80066000u, 0x80063000u },
+    .codeScanLo = 0u, .codeScanHi = 0u,   // falls back to [recMainLo, recMainHi), correct here:
                                            // no overlays are known resident above the main text
-    /* decDctInSync, decDctOutSync */ 0u, 0u,
+    .decDctInSync = 0u, .decDctOutSync = 0u,
     // Spyro links stock Sony libcd (the image carries `$Id: bios.c,v 1.86 1997/03/28 ... $`), so the
     // internal primitives are identifiable by the name each one prints:
     //   func_800647A0 CD_sync   func_80064A20 CD_ready   func_80064CEC CD_cw
@@ -210,17 +215,17 @@ static const GameConfig g_spyro_config = {
     // signature has not been confirmed. Wiring it on the strength of a similar name would hand the
     // handler an a1 that may not be a result pointer — a guest-memory corruption whose symptom would
     // appear far from here. Confirm the signature first (read the body; check what callers pass in a1).
-    /* cdReadSync, cdDataSync      */ 0u, 0x800655A0u,
+    .cdReadSync = 0u, .cdDataSync = 0x800655A0u,
     // CdInit's low-level controller-ready handshake. func_800653B4 prints "CD_init:addr=" and calls
     // CD_cw (func_80064CEC) at 0x80065510; the boot log shows it looping CdlNop -> CdlReset -> repeat,
     // spinning on a controller-ready bit our no-IRQ runtime never sets. This is the one CD primitive
     // whose role the running system itself demonstrates.
-    /* cdInitHandshake             */ 0x800653B4u,
-    /* gpuTimeoutArm, gpuTimeoutCheck */ 0u, 0u,
-    /* gpuTimeoutDeadlineVar */ 0u,
-    /* gpuTimeoutFlagVar     */ 0u,
-    /* changeThread          */ 0u,
-    /* vsyncTrap             */ 0u,
+    .cdInitHandshake = 0x800653B4u,
+    .gpuTimeoutArm = 0u, .gpuTimeoutCheck = 0u,
+    .gpuTimeoutDeadlineVar = 0u,
+    .gpuTimeoutFlagVar = 0u,
+    .changeThread = 0u,
+    .vsyncTrap = 0u,
   },
 };
 

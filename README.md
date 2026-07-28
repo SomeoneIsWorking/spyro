@@ -30,7 +30,7 @@ unproven, and nothing is owned natively yet.
 | CD sync/command path | ✅ `CD_init`, `CD_datasync`, `CD_cw`, `CD_sync` wired — every signature confirmed from the body |
 | CD *reads* returning data | 🔬 root-caused: the override point is too low — own the game's loader, not libcd ([`0010`](docs/issues/0010-the-override-point-is-too-low-own-the-game-s-loa.md)) |
 | **Renders the boot splash** | ✅ SCE splash draws and fades in over 8 frames |
-| Past the splash into game init | 🟡 frame loop unblocked (8 → 218 frames); no asset data loads yet ([`0008`](docs/issues/0008-completion-is-delivered-without-data-the-guest-r.md)) |
+| Past the splash into game init | 🟡 loader owned, data loads at correct offsets; stall moved to `func_8005CBB0` ([`0012`](docs/issues/0012-new-stall-after-the-cd-fix-func-8005cbb0-a-libra.md)) |
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |

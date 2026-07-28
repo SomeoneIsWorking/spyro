@@ -61,6 +61,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: Blocked on cd.reads: Spyro uses stock libcd (Setloc-then-read), so the LBA is not an argument to the read and psxport's cd_read(blocks,lba,buf) contract does not fit. See docs/issues/0003.
 - notes: 
 
+### boot.post-cd — Get past the post-CD stall at func_8005CBB0
+- status: in-progress
+- deps: cd.reads
+- evidence: Serving the game loader moved the stall off the CD wait: 5/5 profile samples now in gen_func_8005CBB0 <- gen_func_80014564 <- gen_func_800127C0 <- main, a different branch entirely (C021).
+- where: func_8005CBB0, func_80014564
+- gap: func_8005CBB0 polls two globals (lui 0x8007 + 12528 / 13704) against 1 and calls func_8005DB84 — a readiness poll, not a compute loop. Unknown what sets those globals. Use the in-process method that worked on the CD chain (override + super-call + log real words), not static decode.
+- notes: 
+
 
 ## cd
 

@@ -89,11 +89,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: 
 
 ### cd.loader-content — Verify the loader writes the RIGHT bytes
-- status: in-progress
+- status: re-partial
 - deps: cd.reads
-- evidence: The loader moves plausible volumes (2048/262144/14336/110592) at offsets derived from a3, but nothing has ever checked the CONTENT. A recomp-MISS to 0x8007ABAC — an address whose words are data, not code — indicates the guest read a garbage function pointer out of the region the loader filled.
+- evidence: The loaded content is structurally valid: the words at heapBase+0x174 are all exactly 0x800-aligned sector offsets (1196/28645/26/28671), i.e. a WAD index — precisely what the archive's first sector should hold (C025). So the loader is placing plausible archive data, and the earlier 'writes wrong bytes' suspicion is NOT supported.
 - where: 
-- gap: Check whether the bytes written match WAD.WAD at that offset. Suspects: (a) a3 is not a raw byte offset into the archive, (b) a0 is not the archive base LBA, (c) WAD.WAD content needs decompression or an index lookup rather than a flat sector copy. Note a later load logs the same region as ALL ZEROS, so the content is not stable across calls — that alone says something is wrong.
+- gap: Origin of the garbage call target 0x8007ABAC is still unexplained. Not the index words themselves (they are valid). More likely the guest indexes this table with a value the port has not got right, or reads a pointer the port never populated. Also unexplained: a later load logs the same region as ALL ZEROS, so something does overwrite or re-read it differently.
 - notes: 
 
 

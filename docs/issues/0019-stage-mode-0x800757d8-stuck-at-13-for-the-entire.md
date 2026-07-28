@@ -38,7 +38,15 @@ loads — the port is not in a corrupt state, it is in the correct one and simpl
 writer for the level-load mode does exist: 0x8002C888 stores 5.
 
 NEXT, in order:
-  2. Read [0x80078D78] at runtime — it selects between 0x8007ABAC and 0x80032B08 within mode 13, so it
-     is the sub-state and may itself be the thing that is stuck.
-  3. Only then decide whether input is the gate. Wiring pad input on a hunch would be the fake-the-
-     output failure the project rules forbid.
+  2. DONE. [0x80078D78] is NOT stuck: probes show it advancing 0 -> 3, after which the mode-13 arm
+     calls 0x80032B08 instead of OVL0's 0x8007ABAC, and the handler pointer [0x800758CC] is then
+     installed as 0x8008772C and called — which is the crash. So the game is progressing through the
+     stage and SELECTING A LEVEL; it is not frozen at one point. C040 refined accordingly.
+  3. DONE (C041, tools/callgraph.py). 0x80032B08 has no direct path to the CD loader or to the level
+     load; OVL0 calls neither; the only callers of the level load 0x800144C8 are the mode 4/5 arm and
+     the dispatcher above it. The mode-5 writer 0x8002C888 lives in fn 0x8002C85C, whose callers are
+     0x80042F10 and 0x8004A4D8. So the transition into the level-loading mode EXISTS in resident code
+     and is simply never taken.
+  4. NEXT: find what gates 0x80042F10 / 0x8004A4D8 — those are the two places that would move the game
+     into the mode that loads a level. Only after that does the input question become answerable, and
+     it stays untested until then.

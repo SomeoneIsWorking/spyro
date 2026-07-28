@@ -4,6 +4,7 @@ kind: claim
 status: holds
 created: 2026-07-28
 tags: overlay,blocker,input
+reconfirmed: 2026-07-28
 ---
 
 ## Claim
@@ -17,3 +18,7 @@ main calls the stage dispatcher 0x8003385C unconditionally at 0x80012230, and th
 ## What would falsify it
 
 A run where [0x800757D8] takes any other value, which would mean the mode is not stuck but merely slow to advance.
+
+## Re-confirmed 2026-07-28
+
+REFINED — one detail in the original wording was wrong. 'The port sits forever in an OVL0-handled stage' overstates it: the MODE [0x800757D8] is indeed stuck at 13 for the whole run, but the SUB-STATE [0x80078D78] does advance, 0 -> 3, and at 3 the mode-13 arm stops calling 0x8007ABAC (OVL0) and calls 0x80032B08 instead. The handler pointer [0x800758CC] then goes 0 -> 0x8008772C and the port dies calling it. So the game is progressing through the stage, selecting a level and installing that level's handler — it is not frozen waiting at a single point. Everything else in C040 stands: only the mode 4/5 arm reaches the level load, and it is never entered.

@@ -34,13 +34,22 @@ namespace {
 // So "does the level load" reduces to "does the mode ever reach 4". Log every mode CHANGE rather than
 // every entry: this runs per stage tick, and the transitions are the signal.
 void probe_8003385C(Core* c) {
-  static uint32_t last = 0xFFFFFFFFu;
+  static uint64_t last = ~0ull;
   static unsigned changes = 0;
   const uint32_t mode = c->mem_r32(0x800757D8u);
-  if (cfg_dbg("lvl") && mode != last && changes < 24) {
-    cfg_logf("lvl", "stage mode [0x800757D8] %u -> %u%s", last, mode,
+  // Mode 13's arm reads [0x80078D78] and calls 0x8007ABAC (OVL0) unless it is 3, in which case it calls
+  // 0x80032B08 — so that global is the SUB-STATE inside the stuck mode and is the more likely thing
+  // actually failing to advance. [0x800758CC] is the handler pointer whose stale value is what finally
+  // crashes the port (C039), so watching it alongside shows whether it is installed before or after the
+  // sub-state moves. Key on the PAIR: a mode that never changes could still hide a live sub-state.
+  const uint32_t sub  = c->mem_r32(0x80078D78u);
+  const uint32_t hptr = c->mem_r32(0x800758CCu);
+  const uint64_t key  = ((uint64_t)mode << 40) ^ ((uint64_t)sub << 8) ^ hptr;
+  if (cfg_dbg("lvl") && key != last && changes < 40) {
+    cfg_logf("lvl", "stage mode=%u sub[0x80078D78]=%u handler[0x800758CC]=0x%08X%s",
+             mode, sub, hptr,
              (mode == 4 || mode == 5) ? "   <== the level-load branch" : "");
-    last = mode; changes++;
+    last = key; changes++;
   }
   gen_func_8003385C(c);
 }

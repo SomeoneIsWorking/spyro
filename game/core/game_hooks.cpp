@@ -45,6 +45,7 @@ static void spyro_registerOverrides(Game*) {
   // entry either observes its recompiled body via a super-call (the first step of owning it) or
   // replaces it once the native reimplementation is byte-gated against the substrate.
   spyro_register_cd_queue();
+  spyro_register_level_probes();   // TEMPORARY — see docs/issues/0017
 }
 
 static const GameHooks g_spyro_hooks = {

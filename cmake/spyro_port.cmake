@@ -28,6 +28,7 @@ set(GAME_SRC
   game/core/recomp_register.cpp
   game/core/vsync.cpp
   game/core/cd_queue.cpp
+  game/core/level_load_probe.cpp
 )
 
 # ---- the recompiled substrate --------------------------------------------------------------------

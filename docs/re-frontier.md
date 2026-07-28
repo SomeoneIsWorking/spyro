@@ -156,3 +156,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: C035 (exhaustive, not sampled): Spyro's game code has ZERO JOY-register accesses and ZERO pad-library calls across the resident text and all 36 code overlays, and the linked libapi pad chain (InitPAD/StartPAD/StopPAD/PAD_init) is dead — its head has no callers and is never address-taken. No code jumps directly to a BIOS vector either, so the trampoline census is complete. Therefore input CANNOT be made to appear by running more guest code; the BIOS/HLE layer has to supply it. GameConfig's pad group (padSlot0Buf/padSlot1Buf/padDriverFn/padSlotPtrTable) is all zero, so psxport currently delivers nothing. OPEN QUESTION and the actual next step: find WHERE the guest reads its button state from, given it never asks the hardware for it. Candidates to check against the binary, in order: the BIOS kernel's own pad buffer read as ordinary memory; a vblank handler installed via HookEntryInt 0x8005E4F8 (2 callers); or the scratchpad 0x1F800000 region. Do NOT wire a padSlot0Buf address until it is derived — a guessed guest address is the failure this port refuses.
 - notes: 
 
+
+## gpu
+
+### gpu.ot-crash — Port aborts at frame 3781 — runaway OT linked-list DMA
+- status: todo
+- deps: boot.post-cd
+- evidence: C036
+- where: issue 0015; gen_func_80061820 submit path
+- gap: THE CURRENT BLOCKER, ahead of input and overlays. The port aborts deterministically at frame 3781 in the framework's fail-fast '[rq:error] render queue full (65536 items)', walking a malformed/unterminated ordering table via gpu_dma2_linked_list. Frame-bound, not time-bound (20s and 70s both give exactly 3781). Everything before it submits ZERO prims — the logos are VRAM uploads — so this is the game first entering its real OT render path. Do NOT raise the 65536 cap to make it go away; the cap is the fail-fast, not the bug. Start by finding whether the OT is ever cleared and what base the guest hands to DMA2.
+- notes: 
+

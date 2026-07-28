@@ -37,6 +37,14 @@ echo "[gate] running ${SECS}s headless…"
 PSXPORT_DEBUG=cdq,ovload PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
   PSXPORT_WATCHDOG=0 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
+RC=$?
+# THE MOST IMPORTANT CHECK, AND THE ONE THIS GATE SPENT ITS WHOLE LIFE MISSING. `timeout -s KILL`
+# swallows the child's exit status, so a port that ABORTS looks exactly like one that ran the full
+# duration — and every other check here is a log/frame count that a crashed run still satisfies. This
+# gate reported PASS on a segfaulting port for its entire existence, and "3781 frames" was quoted as a
+# progress metric in several commits when it is in fact the frame the crash happens on (identical
+# under a 20s and a 70s timeout — it is not time-bound at all).
+# A healthy run is one this script had to KILL: 137. Anything else is the port dying on its own.
 
 fail=0
 chk() { # chk <name> <actual> <op> <expected>
@@ -74,6 +82,13 @@ REFUSED=$(grep -c 'REFUSED' "$LOG" 2>/dev/null; true)
 OVID=$(grep -c 'ovload.*slot 0 <- OVL0' "$LOG" 2>/dev/null; true)
 
 echo "[gate] checks:"
+if [ "$RC" -eq 137 ]; then
+  printf '  \033[32mPASS\033[0m %-34s %s\n' "port still running at timeout" "killed by gate (rc=137)"
+else
+  printf '  \033[31mFAIL\033[0m %-34s %s\n' "port still running at timeout" "port exited on its own (rc=$RC)"
+  grep -m1 -A2 'FATAL\|FAULT' "$LOG" | sed -n 's/^/        /p'
+  fail=1
+fi
 chk "frames presented"          "$FRAMES"   ge 300
 chk "distinct frame occupancies" "$DISTINCT" ge 8      # >2 means content moves, not a held screen
 chk "CD loader invocations"      "$LOADS"    ge 3

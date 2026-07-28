@@ -75,9 +75,9 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
 - status: re-partial
 - deps: cd.chokepoints
-- evidence: Completion delivery now correct: re-armed at the read ISSUE point, since a gate-watching trigger latches (the guest re-issues before the next sample). Result: completions 1->5, frames 8->218 in 30s — the frame loop is unblocked and the guest runs well past the splash, holding it and then blanking (claim C015). The gate/callback mechanism (C013) is confirmed end to end.
+- evidence: Loader identified and owned: func_80016500(a0=base LBA 37, a1=dest, a2=len, a3=byte offset), confirmed by logging every call (C019, C020). Serving it reads sector a0+a3/2048 into dest and super-calls, so the guest's own wait/bookkeeping stay intact. Real data now moves with correct per-request offsets: 2048 / 262144 / 14336 / 110592 bytes to three distinct destinations.
 - where: game/core/ (new), GameConfig cd group
-- gap: ROOT CAUSE FOUND (C018, issue 0010): our override point is TOO LOW. Overriding CD_cw — the command primitive libcd's read state machine is built on — makes libcd ACK and return, so it never advances to its transfer stage. Proof from the new cdcr tracer: zero data-FIFO pops, zero response reads, and mem.cpp implements DMA 0/1/2/4/6 but not 3 (CD) with no unhandled IO, so NEITHER transfer route is ever entered. This also explains why the destination could never be found by inspecting arguments — nothing was going to write it, because the writer never ran. CORRECTION: own the GAME-level loader (as the reference consumer does via cdFileLoad/cdAsyncRead), where the destination is an explicit argument. Next: walk UP from func_80065DBC through func_80016500/func_8001250C to the first function taking (destination, offset, length).
+- gap: Frames only 218 -> 226: the reads are served but the game still does not progress visually. Content correctness is UNVERIFIED — nothing yet checks the loaded bytes against what the guest expects (no checksum observed). Next: verify content (compare a loaded region against the disc independently) and find what the guest does with it after load, since fixing the offset did not unblock it.
 - notes: 
 
 

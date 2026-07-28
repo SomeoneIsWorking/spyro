@@ -194,19 +194,33 @@ void probe_80065DBC(Core* c) {
 // wait for is already there. That keeps the recompiled body live and diffable rather than replacing
 // behaviour we have not fully RE'd.
 void cd_loader(Core* c) {
+  // NOTE: this function takes a FIFTH argument on the stack. Its prologue does `sp -= 56` and then
+  // reads sp+72, i.e. caller_sp+16 — so at override entry (before the body's prologue runs) it is at
+  // r[29]+16. a0 is CONSTANT at 37 across every call while lengths and destinations vary, so a0 is
+  // not a per-call offset; the stack argument is the prime candidate for the real one.
   const uint32_t lba = c->r[4], dest = c->r[5], len = c->r[6];
+  const uint32_t arg_off = c->r[7];            // a3 = byte offset into the archive
+  const uint32_t arg5 = c->mem_r32(c->r[29] + 16);
+  // a3 is the BYTE OFFSET into the archive, and a0 is its base LBA (constant 37 = WAD.WAD).
+  // Observed a3 values are always 2048-aligned — 0x00000, 0x5F000, 0x5F800, 0x5B800, 0x00800 — i.e.
+  // whole sectors, which is what makes the mapping unambiguous:
+  //     sector = a0 + a3 / 2048
+  // Reading from a0 alone (ignoring a3) fetched the archive's first sectors for every request: the
+  // right destination and length, but the wrong CONTENT. Bytes moved, so it looked like it worked.
+  const uint32_t start = lba + (arg_off / 2048u);
   uint32_t moved = 0;
   if (len && dest) {
     uint8_t sec[2048];
     for (uint32_t off = 0; off < len; off += sizeof sec) {
-      if (!disc_read_sector(&c->game->disc, lba + off / sizeof sec, sec)) break;
+      if (!disc_read_sector(&c->game->disc, start + off / sizeof sec, sec)) break;
       const uint32_t n = (len - off) < sizeof sec ? (len - off) : (uint32_t)sizeof sec;
       for (uint32_t i = 0; i < n; i++) c->mem_w8(dest + off + i, sec[i]);
       moved += n;
     }
   }
   if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "loader: lba=%u dest=0x%08X len=%u -> moved %u bytes", lba, dest, len, moved);
+    cfg_logf("cdq", "loader: a0=%u dest=0x%08X len=%u a3=0x%08X arg5=0x%08X -> moved %u bytes",
+             lba, dest, len, arg_off, arg5, moved);
   gen_func_80016500(c);   // super-call: the guest's own wait/bookkeeping, now with data present
 }
 

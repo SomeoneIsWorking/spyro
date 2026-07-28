@@ -496,6 +496,22 @@ def gen_rules(cwd):
         "",
     ]
     for lit in ordered:
+        # SAFETY GATE — never emit a rule too unspecific to be applied blindly.
+        #
+        # The capture above rstrips trailing punctuation, which can shrink a literal down to
+        # something catastrophic as a global text replacement. Real case: the string ~/... inside a
+        # CODE COMMENT captured as "~/..." and rstripped of "/." down to a bare "~", which was then
+        # emitted as `~==><HOME>`. Fed to filter-repo that rewrites EVERY tilde in EVERY blob of the
+        # whole history — every C++ destructor (~Class()), every bitwise NOT (~mask) — silently
+        # corrupting the entire codebase to "fix" a comment. It was caught by eye, one command short
+        # of being run against a 221-commit public repo.
+        #
+        # A replace-text rule is only safe if it is specific enough that an accidental match is
+        # implausible: it must look like a PATH (contain a separator) and carry real length. Anything
+        # else is dropped here rather than left for a reviewer to notice, because this file's whole
+        # purpose is to be piped straight into filter-repo.
+        if "/" not in lit or len(lit) < 6:
+            continue
         # heuristic default replacement — ALWAYS review before running
         if "/repo/" in lit or lit.endswith("/sunbright"):
             repl = "."
@@ -509,9 +525,14 @@ def gen_rules(cwd):
             repl = "<HOME>"
         lines.append(f"{lit}==>{repl}")
     lines.append("")
-    lines.append(f"# also consider bare account names (resolved at runtime, not baked in):")
-    for n in HUNT_NAMES:
-        lines.append(f"{n}==>user")
+    # Bare-username rules are COMMENTED OUT, not live. A bare token replaced across every blob in
+    # history also rewrites it inside unrelated words, paths and prose, and the surrounding text has
+    # always said "consider" — emitting them active contradicted that and made an opt-in read as a
+    # default. Uncomment deliberately, after checking what the token actually matches.
+    lines.append("# also consider bare usernames (uncomment ONLY after checking what they match:")
+    lines.append("#   git grep -I -n <name> $(git rev-list --all) -- | head)")
+    lines.append(f"# {USERNAME}==>user")
+    lines.append(f"# {USERNAME_ALT}==>user")
     return "\n".join(lines)
 
 

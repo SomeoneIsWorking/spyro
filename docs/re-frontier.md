@@ -73,11 +73,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
-- status: re-partial
+- status: todo
 - deps: cd.chokepoints
 - evidence: First half DONE and verified in the framework: Cd::setloc_lba records the CdlSetloc position (BCD MSF -> LBA). A boot logs '[cd] setloc 00:02:37 -> LBA 37' and the disc directory lists WAD.WAD at LBA 37 (claim C009) — so the conversion is correct and the post-splash spin is the guest waiting on its main asset archive.
 - where: game/core/ (new), GameConfig cd group
-- gap: Second half outstanding: the read primitive itself. Spyro's candidates take (mode, buf) — func_800659F0 masks a0 to a byte and stores a1 to the global 0x8007517C; func_80065DBC keeps only a0 — NOT the (blocks, lba, buf) shape psxport's cd_read expects. Needs the transfer path read out of those bodies (how many sectors, where the destination comes from) before anything is wired; a wrong buf writes 2048-byte sectors into arbitrary guest memory.
+- gap: BLOCKED ON AN ARCHITECTURAL DECISION (docs/issues/0004), not on more RE. The guest's exact sequence is now known from a live trace: Setmode 0x80 x2, Setloc LBA 37 (=WAD.WAD), Setmode 0xA0, ReadN, then spin. Two routes: (A) keep overriding libcd and serve sectors ourselves from Cd::setloc_lba — cheap, matches the reference consumer, but bypasses the framework's own CD controller model; (B) let the guest drive the modelled controller in cdc_native.c, which ALREADY fetches sectors (load_sector) and queues INT1 — but needs guest-visible IRQ delivery, which this runtime does not have (claim C010). Picking A may mean unpicking it later.
 - notes: 
 
 

@@ -73,11 +73,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
-- status: todo
+- status: in-progress
 - deps: cd.chokepoints
-- evidence: First half DONE and verified in the framework: Cd::setloc_lba records the CdlSetloc position (BCD MSF -> LBA). A boot logs '[cd] setloc 00:02:37 -> LBA 37' and the disc directory lists WAD.WAD at LBA 37 (claim C009) — so the conversion is correct and the post-splash spin is the guest waiting on its main asset archive.
+- evidence: Design call taken (option A, override-based, matching the reference consumer). The wait loop in func_80016500 is fully decoded and two of its three exit conditions already hold: [0x80076BB8]==0, and CdSync(1,0)==2 via our cd_sync override (gdb-confirmed firing, claim C011).
 - where: game/core/ (new), GameConfig cd group
-- gap: BLOCKED ON AN ARCHITECTURAL DECISION (docs/issues/0004), not on more RE. The guest's exact sequence is now known from a live trace: Setmode 0x80 x2, Setloc LBA 37 (=WAD.WAD), Setmode 0xA0, ReadN, then spin. Two routes: (A) keep overriding libcd and serve sectors ourselves from Cd::setloc_lba — cheap, matches the reference consumer, but bypasses the framework's own CD controller model; (B) let the guest drive the modelled controller in cdc_native.c, which ALREADY fetches sectors (load_sector) and queues INT1 — but needs guest-visible IRQ delivery, which this runtime does not have (claim C010). Picking A may mean unpicking it later.
+- gap: The third condition — CD status bit 0x40 at 0x800774B4 — has NO producer: that byte is refreshed by libcd's interrupt callback and no guest IRQ is raised. Next: RE Spyro's libcd callback installation to fill GameConfig::cdCallbackTable + cdCallbackFn so Cd::hleInit() leaves the state the real init would, and have the native CD path update the status the way the IRQ would. Do NOT poke the bit — that is a magic constant with no producer (issue 0005).
 - notes: 
 
 

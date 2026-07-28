@@ -73,7 +73,11 @@ static const GameConfig g_spyro_config = {
   /* clearOtagR       */ 0u,
   /* putDrawEnv       */ 0u,
   /* drawSync         */ 0u,
-  /* irqEventClasses  */ { 0u, 0u, 0u },
+  // Per-frame IRQ-driven event classes the guest's waits poll via TestEvent. DISCOVERED from a run,
+  // not guessed: PSXPORT_DEBUG=ev logs `OpenEvent class=0xF0000009 spec=0x20 -> handle=0xF1000000`,
+  // and func_8005CBB0 then polls exactly that handle forever (claim C022). One class is opened, so
+  // the other two slots stay 0 — deliverEvent(0) is a no-op.
+  /* irqEventClasses  */ { 0xF0000009u, 0u, 0u },
   /* dualviewRenderOrch */ 0u,
   /* dualviewSubmit     */ 0u,
 

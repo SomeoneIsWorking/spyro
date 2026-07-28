@@ -16,9 +16,9 @@ take ownership of that recompiled substrate, each one gated byte-exact against t
 
 ## Status — honest
 
-**Phase 0: the port boots, runs the game's own `main()` on a restored vblank timebase, and renders
-the boot splash.** It is not yet playable — it stops presenting after the splash, the CD read path is
-unproven, and nothing is owned natively yet.
+**Phase 0: the port boots, runs the game's own `main()` on a restored vblank timebase, renders the
+boot splash, loads assets off the disc, and advances into changing content.** It is not yet playable —
+nothing is owned natively beyond the CD/event seams, and gameplay is unverified.
 
 | | state |
 |---|---|
@@ -30,7 +30,8 @@ unproven, and nothing is owned natively yet.
 | CD sync/command path | ✅ `CD_init`, `CD_datasync`, `CD_cw`, `CD_sync` wired — every signature confirmed from the body |
 | CD *reads* returning data | 🔬 root-caused: the override point is too low — own the game's loader, not libcd ([`0010`](docs/issues/0010-the-override-point-is-too-low-own-the-game-s-loa.md)) |
 | **Renders the boot splash** | ✅ SCE splash draws and fades in over 8 frames |
-| Past the splash into game init | 🟡 loader owned, data loads at correct offsets; stall moved to `func_8005CBB0` ([`0012`](docs/issues/0012-new-stall-after-the-cd-fix-func-8005cbb0-a-libra.md)) |
+| Past the splash into game init | ✅ boot advances; content changes across 436 frames (18 distinct occupancies) |
+| BIOS event delivery | ✅ class `0xF0000009` delivered per-frame from the vblank wait |
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |

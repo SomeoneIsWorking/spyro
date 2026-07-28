@@ -25,6 +25,7 @@
 #include "platform_hle.h"
 #include "cfg.h"
 #include "spyro_game.h"
+#include "hle.h"      // Hle::deliverEvent — per-frame BIOS events
 
 namespace {
 
@@ -60,6 +61,15 @@ void vblank_wait(Core* c) {
     // spinning as fast as the host can.
     gpu_present(c);
     gpu_pace_frame(c);
+    // Deliver the per-frame IRQ-driven BIOS events. The framework normally does this in
+    // native_step_frame — but that loop NEVER RUNS here, because the guest still owns its own frame
+    // loop (game_hooks.cpp). This wait is the port's real per-frame point, so it is where the events
+    // a game's TestEvent waits poll must be raised. Without it the classes in GameConfig are
+    // configured but never delivered, and any such wait spins forever — which is exactly the stall
+    // at func_8005CBB0 (it polls handle 0xF1000000, opened on class 0xF0000009).
+    for (uint32_t cls : { c->cfg->irqEventClasses[0], c->cfg->irqEventClasses[1],
+                          c->cfg->irqEventClasses[2] })
+      if (cls) c->game->hle.deliverEvent(cls, 0xFFFFFFFFu);
     cur++;
     advanced++;
   }

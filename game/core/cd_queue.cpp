@@ -269,9 +269,34 @@ void probe_8005CBB0(Core* c) {
              c->mem_r32(kPollA), c->mem_r32(kPollB));
 }
 
+
+// Who OPENED the event whose handle (0xF1000000-based) func_8005CBB0 polls? func_8005BB78 is the
+// sole writer of that handle global, so it is the OpenEvent site. Its arguments name the event:
+// PSX OpenEvent(class, spec, mode, handler). Log them, plus what the poll primitive is handed.
+void probe_8005BB78(Core* c) {
+  if (cfg_dbg("cdq"))
+    cfg_logf("cdq", "EVENT-OPEN site a0=0x%08X a1=0x%08X a2=0x%08X a3=0x%08X", c->r[4], c->r[5], c->r[6], c->r[7]);
+  gen_func_8005BB78(c);
+  if (cfg_dbg("cdq"))
+    cfg_logf("cdq", "EVENT-OPEN -> handle=0x%08X stored=0x%08X", c->r[2], c->mem_r32(0x800730E8u));
+}
+
+// The poll primitive func_8005CBB0 calls with the handle — TestEvent-shaped.
+void probe_8005DB84(Core* c) {
+  static unsigned h = 0;
+  if (cfg_dbg("cdq") && h < 4)
+    cfg_logf("cdq", "EVENT-TEST a0=0x%08X", c->r[4]);
+  h++;
+  gen_func_8005DB84(c);
+  if (cfg_dbg("cdq") && h <= 4)
+    cfg_logf("cdq", "EVENT-TEST -> v0=%u", c->r[2]);
+}
+
 }  // namespace
 
 void spyro_register_cd_queue() {
+  psxport_recomp()->shard_set_override(0x8005BB78u, probe_8005BB78);
+  psxport_recomp()->shard_set_override(0x8005DB84u, probe_8005DB84);
   psxport_recomp()->shard_set_override(0x8005CBB0u, probe_8005CBB0);
   psxport_recomp()->shard_set_override(0x80016500u, cd_loader);
   psxport_recomp()->shard_set_override(0x8001250Cu, lp_8001250C);

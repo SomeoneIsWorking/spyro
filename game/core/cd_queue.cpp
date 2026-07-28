@@ -61,6 +61,30 @@ void cd_service(Core* c) {
 constexpr uint32_t kA = 0x800758E0u;
 constexpr uint32_t kB = 0x800758CCu;
 
+// The guest's CD event callback, 0x80016490. It has NO direct callers — its address is only ever
+// BUILT and handed to libcd's callback registration (func_8006623C), which is the signature of an
+// interrupt handler. Called with a0 = event type; a0 == 2 is completion, and that path clears the
+// gate at 0x80076BB8 plus its two companion globals.
+//
+// On hardware libcd invokes it from the CD interrupt. This runtime raises no guest interrupts, so it
+// is never called and the gate is never cleared — which is the whole of the post-splash stall.
+//
+// Delivering it is REPRODUCING THE HARDWARE EVENT, not faking a value: our CD is synchronous, so a
+// read is already complete by the time the guest could have been interrupted, and completion is
+// exactly the event the controller would have raised. The alternative — writing 0 to the gate
+// ourselves — would be the poke, because it would skip everything else the callback does.
+constexpr uint32_t kCdCallback = 0x80016490u;
+constexpr uint32_t kEventComplete = 2u;
+
+void deliver_cd_complete(Core* c) {
+  const uint32_t saved_a0 = c->r[4], saved_ra = c->r[31];
+  c->r[4] = kEventComplete;
+  gen_func_80016490(c);
+  c->r[4] = saved_a0; c->r[31] = saved_ra;
+  if (cfg_dbg("cdq"))
+    cfg_logf("cdq", "delivered CD completion -> gate now %u", c->mem_r32(kGate));
+}
+
 void cd_retry_step(Core* c) {
   static unsigned n = 0;
   const bool on = cfg_dbg("cdq");
@@ -70,6 +94,30 @@ void cd_retry_step(Core* c) {
   n++;
 
   gen_func_800163E4(c);   // super-call
+
+  // Our CD is synchronous: by the time the guest reaches its polling loop, any issued read has
+  // already completed. This retry body IS that polling point — where the CD interrupt would have
+  // been noticed on hardware — so deliver the completion event here.
+  //
+  // EDGE-triggered on the in-flight gate, not level-triggered: exactly one completion per request,
+  // which is what the controller raises. A level trigger would re-deliver every iteration and call
+  // the guest's handler repeatedly for a single read.
+  // INCOMPLETE — completion is delivered WITHOUT the sector data having been transferred.
+  //
+  // This advances the state machine correctly (gate clears, the wait in func_80016500 succeeds, the
+  // guest issues its next request), which is what proved the gate/callback analysis right. But it is
+  // only half of a read: the guest is told "your read finished" when nothing landed in its buffer.
+  // Observable consequence, and the reason this is not mistaken for working: the guest re-seeks the
+  // SAME sector every time — PSXPORT_DEBUG=cd shows only "LBA 37", never an advancing position — so
+  // it is retrying, not loading.
+  //
+  // THE REAL FIX couples the two: transfer the sectors from Cd::setloc_lba into the guest's
+  // destination buffer, and deliver completion only once that has happened. That needs the transfer
+  // path (func_8006606C and friends) read out of its body first — see docs/issues/0003. Until then
+  // this stays deliberately visible rather than dressed up as a working read.
+  static bool delivered = false;
+  if (c->mem_r32(kGate) == 0) delivered = false;          // request finished — arm for the next one
+  else if (!delivered) { delivered = true; deliver_cd_complete(c); }
 
   if (on && n <= 8)
     cfg_logf("cdq", "retry#%u EXIT  status=0x%X pending=%u queued=%u",

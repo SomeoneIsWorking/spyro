@@ -73,11 +73,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
-- status: in-progress
+- status: re-partial
 - deps: cd.chokepoints
-- evidence: Option A chosen. In-process instrumentation (game/core/cd_queue.cpp, override + super-call, PSXPORT_DEBUG=cdq) now reports the real guest state each iteration: gate=[0x80076BB8]=1, status=[0x800774B4]=0x40, a=[0x800758E0]=0. So the CD status bit is ALREADY set and func_800163E4 returns cleanly — claim C012.
+- evidence: Root cause of the post-splash stall FOUND and mechanism proven. The gate at 0x80076BB8 is cleared by the guest's CD event callback func_80016490(a0=2) — a function with no direct callers, registered via libcd's callback registration (claim C013). Delivering that event from our synchronous CD path clears the gate, the wait in func_80016500 succeeds, and the guest issues its next request. Instrumented in-process via override + super-call (game/core/cd_queue.cpp, PSXPORT_DEBUG=cdq).
 - where: game/core/ (new), GameConfig cd group
-- gap: The blocker is the GATE at 0x80076BB8, tested first by func_80016500's wait and never zero. Writers: func_80016490 (@0x800164A8), func_80016500 (@0x80016628), func_80016698 (@0x80016754). Next: determine what the gate means (likely 'CD request in flight') and which writer is meant to clear it on completion — that writer is the one that never runs.
+- gap: Completion is delivered WITHOUT the sector data (issue 0008): the guest re-seeks LBA 37 forever instead of advancing, i.e. retrying rather than loading. The real fix couples transfer and completion — read from Cd::setloc_lba into the guest's destination, then signal. Needs func_8006606C's argument roles confirmed from its body first (it selects 512 vs 585/582 words per sector from a mode word, i.e. CD DMA sector-size setup).
 - notes: 
 
 

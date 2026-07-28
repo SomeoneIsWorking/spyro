@@ -178,11 +178,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ## overlay
 
-### overlay.ovl2-discovery — Level-overlay function discovery is starved — 6 functions out of a 51 KB module
+### overlay.ovl2-discovery — What is 0x8007CFB4? — the level overlay's remaining fail-fast
 - status: todo
 - deps: input.pad
 - evidence: C063
 - where: tools/ensure_recomp.py OVERLAYS; game/recomp_seeds.json overlay_seeds; external/psxport/tools/recomp/emit.py
-- gap: Now that input works the game loads OVL2 (WAD +0x237D000, 51200 bytes, arena base 0x8007AA38), but jal-discovery finds only 6 functions in it because overlay modules get no pointer/prologue scan — main got 247 seeds -> 668 functions, OVL2 gets 1 -> 6. A run fail-fasts on 0x8007CFB4, which is inside OVL2 and appears as a stored pointer NOWHERE (0 occurrences in main or any overlay image), so it is computed at runtime; the reported caller ra=0x80033AAC is stale (catalog #14) and c->pc says the live frame is func_8002A6FC, a table-driven script VM reading [0x80078560]. Note main DOES hold the per-level entry table: 43 stores to [0x80075734] at 0x8005A4CC-0x8005B6BC yield 41 distinct overlay entry pointers, which matches the decomps' ~37 overlays. Those cannot be seeded wholesale into one module — every level overlay loads at the SAME base, so another level's entry lands mid-function in OVL2 and splits it. The generic fix is a prologue scan of each overlay IMAGE (jr ra + delay, then addiu sp,sp,-N), which is how callgraph.py and wad_index.py already split functions here.
-- notes: Do not chase this one miss at a time: each round costs a full recomp+build, and 0x8007AEB8 (a clean prologue, added as an OVL2 seed with rationale) already bought exactly one more step.
+- gap: Measurement reframed this (issue 0025). The overlays are mostly LEVEL DATA, not starved code modules: OVL1 and OVL2 have ZERO in-span jal targets and 5-9 jr-ra across 64 KB / 51 KB, and OVL1 carries level text. So 6 recompiled functions may be most of OVL2's actual code, and the open question is what 0x8007CFB4 IS — it is not prologue-shaped (lui at / addu at,at,v0 / lw v0,0x6378(at), the shape of a switch-case tail) and emit.py prunes 113 jump-table case labels from this module. Decide by reading the dispatch in func_8002A6FC (a table-driven script VM over [0x80078560]) and establishing whether 0x8007CFB4 is reached by a call or a computed jr — that chooses between overlay_seeds and the re-entry/case-label problem of issue 0020.
+- notes: DEAD END, already tested: seeding from the overlay's leading count+pointer array. Both images start with a plausible count and in-span addresses, but none of the 33 targets is a prologue and OVL1's entries 8-11 are ASCII — it is data, not an export table.
 

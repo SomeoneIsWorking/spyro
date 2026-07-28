@@ -68,6 +68,10 @@ int main(int argc, char** argv) {
   // dropped. Must run before initBuiltins' count is read, and before any guest code touches the CD.
   game->cd.overridesInit();
   game->platform_hle.initBuiltins(); // HW sync/wait stalls -> native non-stall (VSync/CdSync/MDEC)
+  // Spyro's vblank timebase. Registered AFTER initBuiltins so it is visible in the same table;
+  // hle.vsyncTrap stays 0 (the trap asserts the native frame loop owns timing, which is false
+  // while the guest owns its own loop). See game/core/vsync.cpp.
+  spyro_register_vsync(game);
   threads_init(c);                   // native BIOS threads (ucontext); main = slot 0
   threads_register_overrides();
 

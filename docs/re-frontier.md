@@ -76,11 +76,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: 
 
 ### frame.vsync — Reimplement VSync faithfully and register it
-- status: todo
+- status: re-partial
 - deps: cd.chokepoints
-- evidence: 
-- where: func_8005DD0C (prints 'VSync', string @0x800115FC)
-- gap: Boot now reaches 'VSync: timeout'. hle.vsyncTrap must stay 0 — the trap encodes 'nothing may reach VSync because the native frame loop owns timing', which is false while the guest owns its own loop. A faithful VSync must be registered game-side via PlatformHle::register_ instead.
+- evidence: libetc VSync (func_8005DBC4) delegates to a wait helper (0x8005DD0C) whose loop condition is [0x800749E0] < a0 — the vblank counter, frozen because no IRQ increments it. Overridden game-side in game/core/vsync.cpp: advance the counter toward the target, presenting+pacing one frame per vblank. Chose the HELPER over VSync itself so VSync's own return value and GPU polling keep running on the real recompiled body — nothing library behaviour gets reimplemented, only the missing hardware timebase.
+- where: game/core/vsync.cpp; hle window 1 [0x8005B000,0x80063000) covers libetc
+- gap: Boot now advances further than ever (SDL_GPU device comes up) then SIGSEGVs — docs/issues/0002. Only one wait has fired so far (target=0, 0 frames advanced), so present() has not actually been exercised yet; the pacing path is UNVERIFIED. Backtrace is truncated to 2 frames and needs a debug/ASan build to localise.
 - notes: 
 
 

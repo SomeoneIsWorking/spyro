@@ -161,8 +161,13 @@ static const GameConfig g_spyro_config = {
     // strings live at 0x80063C48..0x800655A0), not a guessed "SDK region". The window exists to keep
     // game logic out of this table, so it is widened only as more library code is genuinely RE'd.
     // Window 1 is free for libgpu/libmdec once those are located.
-    /* windowLo */ { 0x80063000u, 0u },
-    /* windowHi */ { 0x80066000u, 0u },
+    // Window 1 — libc/libetc. Anchored on crt0 (0x8005B8E0), the lowest library address confirmed
+    // so far, and stopping where window 0 begins. It covers the libetc vblank machinery
+    // (VSync 0x8005DBC4, its wait helper 0x8005DD0C) and libcInit 0x8005DB14. Spyro's link order
+    // puts game code low (main is at 0x80012204) and the Sony libraries high, so this does not
+    // overlap game logic — which is the property the window exists to guarantee.
+    /* windowLo */ { 0x80063000u, 0x8005B000u },
+    /* windowHi */ { 0x80066000u, 0x80063000u },
     /* codeScanLo, codeScanHi */ 0u, 0u,   // falls back to [recMainLo, recMainHi), correct here:
                                            // no overlays are known resident above the main text
     /* decDctInSync, decDctOutSync */ 0u, 0u,

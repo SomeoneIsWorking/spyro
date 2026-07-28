@@ -28,7 +28,7 @@ today; it is not yet playable.
 | Reaches the guest's `main()` as recompiled code | ✅ verified by backtrace |
 | CD command path | ✅ no CD timeouts at boot — `CD_init`, `CD_datasync`, `CD_cw` wired (signatures confirmed) |
 | CD *reads* returning correct data | ⬜ untested — commands ACK, but no read has yet been verified to deliver bytes |
-| VSync | ❌ **current blocker** — reached, not yet reimplemented |
+| VSync timebase | 🟡 vblank counter `0x800749E0` found + wait helper overridden; boot now reaches GPU init, then SIGSEGVs ([`0002`](docs/issues/0002-vsync-timebase-correct-counter-address-advances.md)) |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
 | Code overlays | ❓ **unresolved** — see [`docs/issues/0001`](docs/issues/0001-whether-spyro-loads-code-overlays-and-from-where.md) |

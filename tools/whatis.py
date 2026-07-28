@@ -207,6 +207,19 @@ def main():
         print("      CANNOT be attributed to an overlay — that is the mistake C065 records.")
     else:
         ram = open(ram_path, "rb").read()
+        # A STALE DUMP LIES SILENTLY. The dump is written at a recomp-MISS; once that miss is fixed no
+        # new one is written, so the file keeps answering "resident" with whatever was live at a
+        # fail-fast that no longer happens. That is the same wrong-image failure this tool exists to
+        # prevent, just aged instead of misfiled. Compare it against the binary that produced it.
+        import time
+        age_h = (time.time() - os.path.getmtime(ram_path)) / 3600.0
+        bin_p = os.path.join(REPO, "scratch", "bin", "spyro_port")
+        newer_bin = os.path.exists(bin_p) and os.path.getmtime(bin_p) > os.path.getmtime(ram_path)
+        if newer_bin:
+            print(f"  {C['warn']}STALE: the port binary is NEWER than this dump ({age_h:.1f}h old)."
+                  f"{C['off']}")
+            print("      Residency below describes a fail-fast that the current build may not even")
+            print("      reach. Treat it as a hint, not an answer, until a fresh dump exists.")
         resident_word = word_at(ram, addr & 0x1FFFFF)
         print(f"  {a.ram}: word = 0x{resident_word:08X}   ({decode(addr, resident_word).op})"
               f"   prologue={'YES' if is_prologue(addr, resident_word) else 'no'}")

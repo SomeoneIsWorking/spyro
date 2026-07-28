@@ -65,8 +65,7 @@ void vsub_native(Core* c) {
 //
 // The zero-fraction path is a separate arm (0x80016CF4) with its own register effects, so it is read
 // from the substrate rather than guessed; both arms are reproduced below.
-void angtbl_native(Core* c) {
-  constexpr uint32_t kTbl = 0x8006CC78u;   // lui 0x8007 + addiu -13192 = 0x80070000 - 0x3388
+void angtbl_body(Core* c, uint32_t kTbl) {
   const uint32_t ang = c->r[4] & 0x0FFFu;
   const uint32_t frac = ang & 0x0Fu;
   if (frac == 0) {
@@ -99,14 +98,58 @@ void angtbl_native(Core* c) {
   c->r[2] = (uint32_t)(scaled + lo);    // v0 = result
 }
 
+// 0x80016CB0 and 0x80016C58 are the SAME body against different tables — 0x8006CC78 and 0x8006CBF8,
+// exactly 128 bytes (64 entries) apart, i.e. a quarter turn: the cos/sin pair of one table. Shared
+// rather than duplicated, with the base passed in, so a fix to the interpolation cannot be applied to
+// one and forgotten in the other.
+void angtbl_a_native(Core* c) { angtbl_body(c, 0x8006CC78u); }   // lui 0x8007 ; addiu -13192
+void angtbl_b_native(Core* c) { angtbl_body(c, 0x8006CBF8u); }   // lui 0x8007 ; addiu -13320
+
+// ── 0x80017928 — shortest angular distance between two 12-bit angles. 26 static callers.
+//     sub a0,a0,a1 ; andi a0,a0,0x0FFF ; addi a1,a0,-2048
+//     bltz a1, +2 ; addi a1,zero,4096   <- delay slot, ALWAYS executed
+//     sub a0,a1,a0 ; jr ra ; addi v0,a0,0
+// The delay slot is the whole subtlety: `bltz` tests the OLD a1 (= d - 2048), and the slot then
+// overwrites a1 with 4096 on BOTH paths. So a1 is 4096 on exit regardless of which arm ran, and the
+// fold `d = 4096 - d` happens only for d >= 2048.
+void angdist_native(Core* c) {
+  const uint32_t d0 = (c->r[4] - c->r[5]) & 0x0FFFu;
+  const uint32_t d = (d0 >= 2048u) ? (4096u - d0) : d0;
+  c->r[4] = d;
+  c->r[5] = 4096u;      // a1 — set in the delay slot on both paths
+  c->r[2] = d;          // v0
+}
+
+// ── 0x800176C8 — arithmetic-shift a 3-word vector IN PLACE by a1. 24 static callers.
+//     lw at/v0/v1 from a0 ; srav each by a1 ; sw back to a0
+// `srav rd,rt,rs` takes the amount from rs (a1) masked to 5 bits, and it is ARITHMETIC — a logical
+// shift would differ on every negative component, which for a signed vector is half the inputs.
+void vsra_native(Core* c) {
+  const uint32_t p = c->r[4];
+  const int sh = (int)(c->r[5] & 31u);
+  const int32_t w0 = (int32_t)c->mem_r32(p + 0) >> sh;
+  const int32_t w1 = (int32_t)c->mem_r32(p + 4) >> sh;
+  const int32_t w2 = (int32_t)c->mem_r32(p + 8) >> sh;
+  c->mem_w32(p + 0, (uint32_t)w0);
+  c->mem_w32(p + 4, (uint32_t)w1);
+  c->mem_w32(p + 8, (uint32_t)w2);
+  c->r[1] = (uint32_t)w0; c->r[2] = (uint32_t)w1; c->r[3] = (uint32_t)w2;
+}
+
 void vadd_owned(Core* c)   { ndiff_run(c, "vadd@0x80017758",   vadd_native,   gen_func_80017758); }
 void vsub_owned(Core* c)   { ndiff_run(c, "vsub@0x8001778C",   vsub_native,   gen_func_8001778C); }
-void angtbl_owned(Core* c) { ndiff_run(c, "angtbl@0x80016CB0", angtbl_native, gen_func_80016CB0); }
+void angtblA_owned(Core* c) { ndiff_run(c, "angtblA@0x80016CB0", angtbl_a_native, gen_func_80016CB0); }
+void angtblB_owned(Core* c) { ndiff_run(c, "angtblB@0x80016C58", angtbl_b_native, gen_func_80016C58); }
+void angdist_owned(Core* c) { ndiff_run(c, "angdist@0x80017928", angdist_native, gen_func_80017928); }
+void vsra_owned(Core* c)    { ndiff_run(c, "vsra@0x800176C8",    vsra_native,    gen_func_800176C8); }
 
 }  // namespace
 
 void spyro_register_native_vec() {
   psxport_recomp()->shard_set_override(0x80017758u, vadd_owned);
   psxport_recomp()->shard_set_override(0x8001778Cu, vsub_owned);
-  psxport_recomp()->shard_set_override(0x80016CB0u, angtbl_owned);
+  psxport_recomp()->shard_set_override(0x80016CB0u, angtblA_owned);
+  psxport_recomp()->shard_set_override(0x80016C58u, angtblB_owned);
+  psxport_recomp()->shard_set_override(0x80017928u, angdist_owned);
+  psxport_recomp()->shard_set_override(0x800176C8u, vsra_owned);
 }

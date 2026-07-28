@@ -33,6 +33,7 @@ Usage:
 """
 import argparse
 import os
+import re
 import sys
 from collections import Counter
 
@@ -79,6 +80,22 @@ def analyse(exe, lo, hi):
     return n, leaf, len(mem)
 
 
+def already_owned():
+    """Addresses this port ALREADY owns, read from the ndiff_run sites in game/core/.
+
+    Without this the ranking keeps recommending functions that are done — it listed all seven owned
+    bodies at the top of its own queue, which would waste a pick every iteration. Derived from the
+    source rather than a hand-kept list, so it cannot drift out of date."""
+    owned = set()
+    d = os.path.join(REPO, "game", "core")
+    for fn in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        if not fn.endswith(".cpp"):
+            continue
+        for m in re.finditer(r"ndiff_run\(c,\s*\"[^\"]*@0x([0-9A-Fa-f]+)\"", open(os.path.join(d, fn)).read()):
+            owned.add(int(m.group(1), 16))
+    return owned
+
+
 def call_counts(exe):
     c = Counter()
     for a in range(exe.load, exe.text_end - 4, 4):
@@ -99,6 +116,7 @@ def main():
     exe = psexe.load(os.path.join(REPO, EXE))
     calls = call_counts(exe)
     funcs = functions(exe)
+    owned = already_owned()
 
     if a.addr:
         want = int(a.addr, 0)
@@ -121,14 +139,16 @@ def main():
             continue
         if not leaf and not a.all:
             continue
-        rows.append((calls.get(lo, 0), -n, lo, n, leaf, mem))
+        rows.append((calls.get(lo, 0), -n, lo, n, leaf, mem, lo in owned))
     rows.sort(reverse=True)
 
+    todo = [r for r in rows if not r[6]]
     print(f"{'addr':<12}{'callers':>8}{'size':>6}{'leaf':>6}{'mem':>5}   "
           f"(callers is a LOWER BOUND — indirect calls are invisible)")
-    for callers, _, lo, n, leaf, mem in rows[:a.top]:
+    for callers, _, lo, n, leaf, mem, _own in todo[:a.top]:
         print(f"0x{lo:08X}{callers:>8}{n:>6}{'yes' if leaf else 'NO':>6}{mem:>5}")
-    print(f"\n{len(rows)} candidate(s) at size<={a.maxsize}"
+    print(f"\n{len(rows) - len(todo)} already owned (hidden — derived from ndiff_run sites in game/core/)")
+    print(f"{len(todo)} candidate(s) remaining at size<={a.maxsize}"
           f"{'' if a.all else ' (leaf only; pass --all to include non-leaves)'}.")
     print("Review the body before transcribing — and let PSXPORT_NDIFF decide whether it matched.")
     return 0

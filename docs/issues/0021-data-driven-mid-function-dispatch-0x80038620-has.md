@@ -51,3 +51,35 @@ cost is not in the table. Treat the figures as a floor, not the price.
 
 Whether that is acceptable is a judgement for the framework owner, not something to decide from this
 one game: +16% binary is mild, ~2x build time is not, and both land on every consumer.
+
+
+## RESOLVED AS MISDIAGNOSED (C058) — it is a RETURN, not a call
+
+Everything above analyses the wrong problem, and the options it lists (universal basic-block labels,
+a per-function entry switch, RE'ing a data table) would not have fixed it. Recording that here rather
+than deleting it, because the reasoning looked sound and the next person deserves to see why it was not.
+
+WHAT IT ACTUALLY IS. gen_func_80053570's emitted body ends with `rec_dispatch(c, c->r[7]); return;` —
+a `jr $a3`. At runtime a3 holds 0x80038620, which is EXACTLY the instruction after `jal 0x800530C0`
+at 0x80038618 in func_800385BC. So a3 carries a RETURN CONTINUATION and the `jr` is a tail-return.
+The recompiler cannot distinguish that from a computed call, so it routes it to rec_dispatch, where a
+mid-function address is not a function entry and fail-fasts by design.
+
+That explains every clue that made this look exotic:
+  * no static reference anywhere — a return address is computed, never stored;
+  * the target being a function EPILOGUE — it is the continuation of a call, so of course it is;
+  * the RAM scan finding the value nowhere (new guest_find_word_to diagnostic).
+
+WHAT THE FIX IS NOT: labels. No amount of labelling helps when a return is being treated as a call.
+The measured cost of universal labels (C057) stands as a useful number for the framework, but it is
+not the price of fixing THIS.
+
+WHAT THE FIX IS: the recompiler (or the runtime) must recognise a tail-return through a register that
+is not `ra`. Two shapes worth considering, neither implemented:
+  1. Emit-time: if the register feeding a terminal `jr` was loaded from `ra` (directly or via the
+     stack) anywhere in the function, emit `return` instead of rec_dispatch — the C stack then unwinds
+     to the real caller, which is exactly right.
+  2. Runtime: rec_dispatch could treat an address strictly INSIDE a recompiled function (not its entry)
+     as a tail-return and simply return, letting the C stack unwind. Broader, and it would mask a
+     genuine mid-function call — but a genuine one is fatal today anyway.
+Prefer (1): it is decidable statically and cannot mask anything.

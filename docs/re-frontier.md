@@ -88,6 +88,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: Frames only 218 -> 226: the reads are served but the game still does not progress visually. Content correctness is UNVERIFIED — nothing yet checks the loaded bytes against what the guest expects (no checksum observed). Next: verify content (compare a loaded region against the disc independently) and find what the guest does with it after load, since fixing the offset did not unblock it.
 - notes: 
 
+### cd.loader-content — Verify the loader writes the RIGHT bytes
+- status: in-progress
+- deps: cd.reads
+- evidence: The loader moves plausible volumes (2048/262144/14336/110592) at offsets derived from a3, but nothing has ever checked the CONTENT. A recomp-MISS to 0x8007ABAC — an address whose words are data, not code — indicates the guest read a garbage function pointer out of the region the loader filled.
+- where: 
+- gap: Check whether the bytes written match WAD.WAD at that offset. Suspects: (a) a3 is not a raw byte offset into the archive, (b) a0 is not the archive base LBA, (c) WAD.WAD content needs decompression or an index lookup rather than a flat sector copy. Note a later load logs the same region as ALL ZEROS, so the content is not stable across calls — that alone says something is wrong.
+- notes: 
+
 
 ## frame
 
@@ -130,10 +138,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## recomp
 
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
-- status: re-partial
+- status: todo
 - deps: boot.guest-main
-- evidence: ANSWERED: Spyro loads CODE from WAD.WAD into the HEAP and calls it. The new regression gate caught a recomp-MISS at 0x8007ABAC — above the resident text end (0x80075800), at heapBase+0x174, inside the 2048 bytes the owned loader had just read from WAD.WAD (claim C024). That is why the disc tree showed no per-overlay files: the overlays live inside WAD.WAD, consistent with the public decomps' '37 overlays'.
+- evidence: 
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: Those overlays are NOT in the recompiled set (emit.py only saw SCUS_942.28), so every call into them fails fast. Recompiling them needs their bytes extracted from WAD.WAD plus their load base — now known to be the heap (0x8007AA38+). One check still outstanding: confirm the bytes at heapBase+0x174 decode as a MIPS prologue (the falsifier on C024); discdump has no sector subcommand, so dump them from the loader override instead.
+- gap: STILL UNRESOLVED — a previous 'answered' entry here was retracted. The recomp-MISS at 0x8007ABAC (heapBase+0x174) was read as proof that Spyro loads code from WAD.WAD, but the words there all decode as sll (data), whereas every real function entry opens addiu/lui. So it is a call through a garbage pointer, most likely from bytes the owned loader wrote incorrectly — a LOADER-CORRECTNESS lead, not overlay evidence. Public decomps still say 37 overlays exist; the disc has no per-overlay files; unresolved. See docs/issues/0001.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

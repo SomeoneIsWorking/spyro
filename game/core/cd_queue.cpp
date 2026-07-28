@@ -218,6 +218,14 @@ void cd_loader(Core* c) {
       moved += n;
     }
   }
+  // C024's falsifier: the guest calls 0x8007ABAC = heapBase+0x174, inside what this loader places.
+  // If that region really is CODE loaded from WAD.WAD, those words decode as MIPS; if it is data
+  // reached through a corrupt pointer, they will not. Log the raw words and decode them offline —
+  // cheaper than embedding a disassembler here, and the words are the evidence either way.
+  if (cfg_dbg("cdq") && moved > 0x174 + 16)
+    cfg_logf("cdq", "  callsite-words @0x%08X: %08X %08X %08X %08X",
+             dest + 0x174, c->mem_r32(dest + 0x174), c->mem_r32(dest + 0x178),
+             c->mem_r32(dest + 0x17C), c->mem_r32(dest + 0x180));
   if (cfg_dbg("cdq"))
     cfg_logf("cdq", "loader: a0=%u dest=0x%08X len=%u a3=0x%08X arg5=0x%08X -> moved %u bytes",
              lba, dest, len, arg_off, arg5, moved);

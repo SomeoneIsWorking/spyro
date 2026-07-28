@@ -35,7 +35,7 @@ nothing is owned natively beyond the CD/event seams, and gameplay is unverified.
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
-| Code overlays | ❓ **unresolved** — see [`docs/issues/0001`](docs/issues/0001-whether-spyro-loads-code-overlays-and-from-where.md) |
+| Code overlays | ❓ **unresolved** — one 'answered' finding was retracted after checking its own falsifier ([`0001`](docs/issues/0001-whether-spyro-loads-code-overlays-and-from-where.md)) |
 
 Progress is tracked in the repo, not in a changelog:
 `tools/re_frontier.py next` says which RE step is ready, `tools/info.py brief <words>` says what has

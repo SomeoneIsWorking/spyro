@@ -21,19 +21,29 @@
 // See external/psxport/docs/porting-a-new-psx-game.md.
 {
   // No fn-pointer-only targets observed yet.
-  "main": [],
+  "main": [
+    // Reached only via a function pointer — direct-jal discovery cannot see it. Surfaced by the
+    // fail-fast boot AFTER the OVL0 overlay was recompiled (the overlay's code path reaches it):
+    //   [recomp-MISS] 0x80024054  caller ra=0x80078A58, a0=4, pc=0x80023AC4
+    // It lies inside the resident text [0x80010000,0x80075800), so it is a resident function the
+    // scans missed, not another overlay body.
+    "0x80024054"
+  ],
 
   // No runtime-computed mid-function re-entry points observed yet. (Tomba!2 needs these for its
   // cooperative-yield resume address; Spyro has no such overlay/task scheduler.)
   "main_reentry": [],
 
-  // Empty because no overlay load base has been OBSERVED yet — NOT because Spyro is known to be
-  // overlay-free. The disc carries no per-overlay files, but public decomp projects describe the game
-  // as the main EXE plus 37 overlays, which would live inside WAD.WAD or be read by raw LBA. This is
-  // an open question, tracked in docs/issues/0001; settle it from a running port (PSXPORT_DEBUG=cd
-  // logs load destinations) rather than by guessing a base, since a guessed base emits a whole module
-  // at wrong addresses and is unrecoverable garbage rather than an error.
-  "overlay_bases": {},
+  // Spyro's overlays are NOT separate disc files — they live inside WAD.WAD and are loaded into the
+  // heap. Confirmed from the binary: four hardcoded jals call addresses above the resident text end
+  // (docs/issues/0001). The public decomps describe 37 overlays; one is located so far.
+  // OVL0 — the first overlay located: WAD.WAD +0x5B800, 14336 bytes, loaded to 0x8007AA38.
+  // Base VERIFIED statically, not guessed: at this base the region decodes 100% valid MIPS with a
+  // real-code opcode profile, and all four of the executable's hardcoded out-of-text call targets
+  // (0x8007AA50 / 0x8007ABAC / 0x8007BFD0 / 0x8007CEE4) land inside it on prologue shapes. A wrong
+  // overlay base emits a whole module at wrong addresses, so this is exactly the value that must
+  // never be guessed.
+  "overlay_bases": { "OVL0": "0x8007AA38" },
   "overlay_base_patterns": [],
   "overlay_seeds": {}
 }

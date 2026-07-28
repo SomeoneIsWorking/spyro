@@ -30,12 +30,12 @@ nothing is owned natively beyond the CD/event seams, and gameplay is unverified.
 | CD sync/command path | ✅ `CD_init`, `CD_datasync`, `CD_cw`, `CD_sync` wired — every signature confirmed from the body |
 | CD *reads* returning data | 🔬 root-caused: the override point is too low — own the game's loader, not libcd ([`0010`](docs/issues/0010-the-override-point-is-too-low-own-the-game-s-loa.md)) |
 | **Renders the boot splash** | ✅ SCE splash draws and fades in over 8 frames |
-| Past the splash into game init | ✅ boot advances; content changes across 436 frames (18 distinct occupancies) |
+| Past the splash into game init | ✅ boot advances; 3781 frames, 18 distinct occupancies, zero recomp misses |
 | BIOS event delivery | ✅ class `0xF0000009` delivered per-frame from the vblank wait |
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
-| Code overlays | 🟡 located: `WAD.WAD +0x5B800`, 14 KB, base `0x8007AA38`, verified as MIPS; not yet recompiled |
+| Code overlays | ✅ OVL0 extracted from `WAD.WAD` and recompiled (1 of ~37 located) |
 
 Progress is tracked in the repo, not in a changelog:
 `tools/re_frontier.py next` says which RE step is ready, `tools/info.py brief <words>` says what has

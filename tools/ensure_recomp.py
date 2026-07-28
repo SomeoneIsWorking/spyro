@@ -7,16 +7,18 @@ here rather than scattered through the shell script.
 
 What it does, in order:
   1. Resolve the disc image (CLI arg > $PSXPORT_SPYRO_DISC > .env > *.chd drop-in — mirrors run.sh).
-  2. Extract SCUS_942.28 from the disc via psxport's `discdump`.
+  2. Extract SCUS_942.28 via psxport's `discdump`, plus WAD.WAD, and slice the overlays out of it.
   3. Compute the recomp IDENTITY = emit.py's RECOMP_VERSION + a hash of the INPUTS (the executable +
      the recompiler module sources + OUR SEED FILE). If the stored identity matches, the on-disk
      version stamp matches, and the generated set is complete, do nothing. Otherwise re-run emit.py.
 
-Spyro is structurally simpler than psxport's reference consumer (Tomba!2): the disc holds a SINGLE
-executable and no \\BIN\\*.BIN code overlays, so there is no overlay extraction step and no boot stub
-to recompile separately. SCUS_942.28 is both the boot target named in SYSTEM.CNF and the whole game;
-everything else on the disc is data (WAD.WAD) or the bundled Crash demo (S0/, PETEXA*.STR), neither
-of which the recompiler touches.
+Spyro differs from psxport's reference consumer (Tomba!2) in where its overlays live. The disc holds
+a SINGLE executable and no \\BIN\\*.BIN files, but the game is NOT overlay-free: its overlays sit
+INSIDE WAD.WAD and are loaded into the heap, which is why the disc's file tree shows none. Confirmed
+from the binary — four hardcoded jals call addresses above the resident text end (docs/issues/0001).
+So step 2 also extracts WAD.WAD and slices each overlay out of it (see OVERLAYS); their load bases
+live in game/recomp_seeds.json. SCUS_942.28 is the boot target named in SYSTEM.CNF; S0/ and
+PETEXA*.STR are the bundled Crash demo and are not touched.
 
 Usage: python3 tools/ensure_recomp.py [/path/to/disc.chd]
 Env:   PSXPORT_SPYRO_DISC (disc path), PSXPORT_DISCDUMP (discdump binary override),
@@ -40,6 +42,15 @@ RECOMP_SRCS = [f"{RECOMP_DIR}/emit.py", f"{RECOMP_DIR}/decode.py", f"{RECOMP_DIR
 SEEDS = "game/recomp_seeds.json"
 
 EXE_DISC_PATH = "SCUS_942.28"          # its path on the disc (root dir); also the SYSTEM.CNF BOOT target
+
+# Overlays. Spyro's are not separate disc files: they live INSIDE WAD.WAD and are loaded into the
+# heap (docs/issues/0001). Each entry is (name, byte offset into WAD.WAD, length); the matching load
+# base lives in game/recomp_seeds.json under overlay_bases, because a base is what keys a module's
+# addresses and must never be guessed.
+WAD_DISC_PATH = "WAD.WAD"
+WAD = "scratch/wad/WAD.WAD"
+OVL_DIR = "scratch/bin/overlays"
+OVERLAYS = [("OVL0", 0x5B800, 14336)]
 EXE = "scratch/bin/spyro/SCUS_942.28"
 GEN_DIR = "generated"
 GEN_MAIN = "generated/spyro_rec.c"
@@ -125,6 +136,35 @@ def extract_exe(discdump, disc):
     return out
 
 
+def extract_overlays(discdump, disc):
+    """Slice each overlay out of WAD.WAD. The archive is extracted once and cached (110 MB), then
+    sliced — discdump works in whole files, and re-pulling it every build would be wasteful."""
+    if not OVERLAYS:
+        return []
+    wad = os.path.join(ROOT, WAD)
+    if not os.path.isfile(wad):
+        os.makedirs(os.path.dirname(wad), exist_ok=True)
+        say(f"extracting {WAD_DISC_PATH} (large, one-time)…")
+        r = subprocess.run([discdump, "get", WAD_DISC_PATH, disc, os.path.dirname(wad)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if r.returncode != 0 or not os.path.isfile(wad):
+            die(f"could not extract {WAD_DISC_PATH}: {(r.stderr or b'').decode(errors='replace').strip()}")
+    os.makedirs(os.path.join(ROOT, OVL_DIR), exist_ok=True)
+    out = []
+    with open(wad, "rb") as f:
+        for name, off, length in OVERLAYS:
+            dst = os.path.join(ROOT, OVL_DIR, name + ".BIN")
+            if not os.path.isfile(dst) or os.path.getsize(dst) != length:
+                f.seek(off)
+                data = f.read(length)
+                if len(data) != length:
+                    die(f"{name}: wanted {length} bytes at WAD+0x{off:X}, got {len(data)}")
+                open(dst, "wb").write(data)
+            out.append(dst)
+    say(f"{len(out)} overlay(s) ready in {OVL_DIR}")
+    return out
+
+
 def input_hash():
     """SHA-256 over the executable + the recompiler sources + our seed file."""
     h = hashlib.sha256()
@@ -135,6 +175,10 @@ def input_hash():
             h.update(f.read())
 
     feed("SCUS_942.28", os.path.join(ROOT, EXE))
+    for name, off, length in OVERLAYS:      # an overlay's bytes change the emitted C
+        p = os.path.join(ROOT, OVL_DIR, name + ".BIN")
+        if os.path.isfile(p):
+            feed("OVL:" + name, p)
     for src in RECOMP_SRCS + [SEEDS]:
         feed(src, os.path.join(ROOT, src))
     return h.hexdigest()
@@ -156,6 +200,8 @@ def run_emit():
     cmd = [sys.executable, os.path.join(ROOT, f"{RECOMP_DIR}/emit.py"),
            os.path.join(ROOT, EXE), os.path.join(ROOT, GEN_MAIN),
            "--seeds", os.path.join(ROOT, SEEDS)]
+    if OVERLAYS:
+        cmd += ["--overlays", os.path.join(ROOT, OVL_DIR)]
     if subprocess.run(cmd).returncode != 0:
         die("emit.py failed")
 
@@ -165,6 +211,7 @@ def main():
     say(f"disc: {disc}")
     discdump = find_discdump()
     extract_exe(discdump, disc)
+    extract_overlays(discdump, disc)
 
     os.makedirs(os.path.join(ROOT, GEN_DIR), exist_ok=True)
     version = recomp_version()

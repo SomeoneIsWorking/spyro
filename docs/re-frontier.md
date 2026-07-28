@@ -138,10 +138,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## recomp
 
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
-- status: re-partial
+- status: re-verified
 - deps: boot.guest-main
-- evidence: Overlay LOCATED and verified statically (C027): WAD.WAD +0x5B800, 14336 bytes, load base 0x8007AA38. Decodes 100% valid MIPS with a real-code opcode distribution, and all four hardcoded call targets land inside it on prologue shapes. This supersedes the runtime sampling that misled three earlier iterations — the disc bytes answer it independently of timing.
+- evidence: OVL0 located, extracted and RECOMPILED. WAD.WAD +0x5B800, 14336 bytes, base 0x8007AA38 (verified statically: 100% valid MIPS, all four hardcoded call targets land inside on prologue shapes). Extraction wired into ensure_recomp.py and hashed as a recomp input; base declared in game/recomp_seeds.json. Gate fully green afterwards — 7/7, zero recomp misses, frames 436 -> 3781 (C028).
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: Not yet recompiled. Next: extract that span to a .BIN, add overlay_bases {overlay: 0x8007AA38} to game/recomp_seeds.json, extend tools/ensure_recomp.py to pass --overlays, and re-emit. Then the four calls resolve instead of failing fast. NOTE this is ONE overlay; the public decomps say 37, so the WAD index (the sector-offset table at its first sector) likely lists the rest.
+- gap: Only ONE overlay is located. The public decomps describe 37, and the archive's first sector is a sector-offset index (C025) that likely lists the rest — so the extraction should eventually be driven from that table rather than from a single observed load. No new misses in a 30s run, but a longer/deeper run may surface them.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

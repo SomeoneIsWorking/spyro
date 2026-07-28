@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # gate.sh — the port's regression gate.
 #
-# WHY THIS EXISTS. Six guest functions are now owned natively (the CD loader, the vblank wait, the CD
-# completion delivery, the BIOS event delivery, plus observation overrides). Every one of them was
-# justified by a log line read by hand. That is not a gate: nothing mechanical would notice if one
-# stopped firing, and this session has repeatedly shown hand-reading to be the weak link.
+# WHY THIS EXISTS. Overrides are installed by hand and justified by a log line read by hand. That is
+# not a gate: nothing mechanical would notice if one stopped firing, and hand-reading has repeatedly
+# been the weak link here.
+#
+# HOW MUCH THIS PORT ACTUALLY OWNS, stated plainly because the old text overstated it: 20 of the 21
+# installed overrides SUPER-CALL the recompiled body — they observe, and the guest code still does the
+# work. The CD and pad ones are platform-level SUPPLY (they provide what the hardware would have, then
+# run the guest body). Genuinely native bodies: the vblank wait, and rand() 0x8006272C. See C075.
 #
 # WHAT THIS IS, STATED HONESTLY. This is a BOOT-PROGRESS gate, not the byte-exact SBS differential the
 # porting playbook asks for. It cannot prove the native path matches the substrate instruction for
@@ -14,7 +18,10 @@
 #   * the CD path regressing to zero bytes moved,
 #   * the boot regressing to the held-splash state,
 #   * a new recomp-MISS or a refused HLE registration appearing.
-# The real SBS harness remains outstanding (frontier: harness.sbs) and this does not replace it.
+# What it now ALSO does is byte-exact: every natively-owned body is re-verified against the recompiled
+# body it replaced, on its first 8 calls, every run (PSXPORT_NDIFF). That is the real gate on native
+# ownership. A whole-run SBS differential is still worth having for cross-function drift, but it is no
+# longer the prerequisite for owning a function.
 #
 # Usage: tools/gate.sh [seconds]        (default 40)
 # Exit:  0 = all checks pass, 1 = at least one regression.
@@ -51,7 +58,8 @@ fi
 BIN_ID_BEFORE=$(stat -c '%s:%Y' scratch/bin/spyro_port)
 
 echo "[gate] running ${SECS}s headless…"
-PSXPORT_DEBUG=cdq,ovload,gpu PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
+PSXPORT_DEBUG=cdq,ovload,gpu,ndiff PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
+  PSXPORT_NDIFF=8 \
   PSXPORT_WATCHDOG=0 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
 RC=$?
@@ -124,6 +132,11 @@ OVID=$(grep -oE 'ovload.*slot 0 <- [A-Za-z0-9_]+' "$LOG" 2>/dev/null | awk '{pri
 # one overlay's successes, so a run could identify OVL0 and then load three unknown overlays and still
 # pass. Zero is the requirement; when it trips, run tools/overlay_scan.py to pick up the new ones.
 OVUNMATCHED=$(grep -c 'ovload.*none/unmatched' "$LOG" 2>/dev/null; true)
+NDIFF=$(grep -c 'DIVERGES from the recompiled body' "$LOG" 2>/dev/null; true)
+# Count the PASSING verifications too. "0 divergences" is also what a run with no native bodies at
+# all reports, and those two states must not look identical — that is the hollow-gate trap this file
+# already warns about, in a new place.
+NDIFFOK=$(grep -c 'matches the recompiled body exactly' "$LOG" 2>/dev/null; true)
 
 echo "[gate] checks:"
 if [ "$RC" -eq 137 ]; then
@@ -140,6 +153,13 @@ chk "CD loader invocations"      "$LOADS"    ge 3
 chk "bytes loaded from disc"     "$MOVED"    ge 100000
 chk "CD completions delivered"   "$COMPL"    ge 3
 chk "recomp misses"              "$MISS"     eq 0
+# NATIVE BODIES MUST STILL MATCH THE SUBSTRATE. Every function this port OWNS is re-verified against
+# the recompiled body it replaced, on its first 8 calls, every gate run (PSXPORT_NDIFF=8 above). This
+# is the regression guard for the whole native-ownership programme: a replacement that drifts — or a
+# recompiler change that alters the body underneath it — fails here instead of becoming a subtle
+# behavioural difference nobody attributes to the port. Zero is the only acceptable number.
+chk "native/substrate divergences" "$NDIFF"   eq 0
+chk "native bodies verified"       "$NDIFFOK" ge 1
 chk "refused HLE registrations"  "$REFUSED"  eq 0
 chk "distinct overlays identified" "$OVID"        ge 1
 chk "arena loads UNMATCHED"        "$OVUNMATCHED" eq 0

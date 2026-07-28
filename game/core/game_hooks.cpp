@@ -46,6 +46,7 @@ static void spyro_registerOverrides(Game*) {
   // replaces it once the native reimplementation is byte-gated against the substrate.
   spyro_register_cd_queue();
   spyro_register_level_probes();   // TEMPORARY — see docs/issues/0017
+  spyro_register_native_rand();    // OWNED natively (not a probe): rand() 0x8006272C
 }
 
 static const GameHooks g_spyro_hooks = {

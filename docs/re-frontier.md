@@ -96,13 +96,13 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: Origin of the garbage call target 0x8007ABAC is still unexplained. Not the index words themselves (they are valid). More likely the guest indexes this table with a value the port has not got right, or reads a pointer the port never populated. Also unexplained: a later load logs the same region as ALL ZEROS, so something does overwrite or re-read it differently.
 - notes: 
 
-### cd.pc-owned-stock-libcd — Move Spyro's CD path from a game-level override to psxport's PC-owned stock-libcd handlers
+### cd.pc-owned-stock-libcd — OWN Spyro's loader natively — do NOT move the CD path down to hardware-level handlers
 - status: todo
 - deps: boot.post-cd
 - evidence: C074
 - where: game/core/cd_queue.cpp; game/core/game_config.cpp cd group; external/psxport/runtime/recomp/cd_override.cpp
-- gap: Upstream psxport now implements PC-owned stock-libcd reads (cd_getsector_stock, per-sector INT1, a sector FIFO, DMA3). Spyro uses STOCK libcd — its CD register pointer table is at [0x800750FC..0x80075108] = 0x1F801800..03 with DMA3 at [0x80075138..0x80075140], the same shape those handlers expect. Today this port instead overrides a GAME-level streaming primitive (0x80016698, cd_stream_read in cd_queue.cpp), which works but owns the wrong layer: it reimplements what the game's own loader does rather than what the HARDWARE does, so the game's loader code never runs. Moving down to GameConfig::cdGetSector + the stock handlers would let the real libcd and the real loader execute and is strictly more faithful.
-- notes: Identify Spyro's CdGetSector inside libcd (~0x80063000-0x80065000) by its use of the CD register pointer table, NOT by an immediate-address scan — C074 says those return zero for every subsystem in this game. Verify the game-level override can then be removed rather than leaving both installed.
+- gap: REVERSED, and the original entry had it backwards. I filed 'move down to psxport's stock-libcd handlers' as 'strictly more faithful', letting faithful stand in for better. It is not the goal: at the hardware layer the guest's libcd AND the guest's loader both still run as recompiled MIPS, so moving down GIVES UP ownership. The direction is up — replace guest bodies with native ones. Today the port owns almost nothing: 21 overrides installed, 20 of which super-call the recompiled body (observation wrappers), and exactly one native body (vblank_wait). The CD and pad overrides are platform-level SUPPLY — they provide what the hardware would have and then run the guest code. So the port is a recompiled game with instrumentation, not a PC port that owns its engine.
+- notes: BLOCKED ON VERIFICATION, not on effort. psxport's methodology is that each native reimplementation is gated byte-exact against the substrate it replaces (sbs.cpp); this port has never wired that harness (frontier harness.sbs, outstanding all session). Replacing a loader body natively without it is unverifiable, which CLAUDE.md's own 'verify on real data, distrust green' rule forbids. So harness.sbs is the real prerequisite for the whole native-ownership programme, and it is what to build next — not another CD layer decision.
 
 
 ## frame
@@ -127,12 +127,12 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## harness
 
 ### harness.sbs — Stand up the differential (SBS) harness against an oracle
-- status: todo
-- deps: frame.native-loop
-- evidence: 
+- status: re-verified
+- deps: 
+- evidence: I019,C075
 - where: 
-- gap: Phase 0 of the playbook wants the byte-compare harness up BEFORE owning any function. Not yet wired for Spyro.
-- notes: 
+- gap: 
+- notes: UNBLOCKED by a different route, and the old dependency on frame.native-loop was the wrong shape. psxport's SBS harness is whole-run and its stepper (dc_step_frame) hardcodes the first consumer's addresses (GAME_ENTRY 0x8010637C, TASK0_ENTRY 0x801fe00c), so it cannot be wired for Spyro without a framework generalisation. But full-run SBS is not what validating ONE replacement needs. native_diff.cpp (PSXPORT_NDIFF=n) does a PER-CALL differential: snapshot RAM+scratchpad+registers, run the native body, rewind, run the recompiled body, compare. It is stronger for this purpose than a whole-run diff — it asks 'does this function, from THIS exact input state, produce exactly what the substrate produces' and answers on every call. Validated both directions (I019): it catches a one-byte perturbation, and it caught a real inequivalence in the first native function (an unreproduced $at clobber) that reading the code did not. The whole-run harness is still worth having eventually for cross-function drift; it is no longer the prerequisite for owning functions.
 
 ### harness.gate — Boot-progress regression gate (tools/gate.sh)
 - status: re-verified
@@ -201,4 +201,15 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: tools/overlay_scan.py; game/recomp_seeds.json overlay_seeds
 - gap: 
 - notes: DONE. The rule works and the earlier doubt was my own bad measurement: I had reported that the confirmed entries were NOT in main's install table, which was wrong — the value-extraction scan was grabbing a neighbouring store's lui/addiu pair. Redone correctly, the table has 43 store sites yielding 36 DISTINCT addresses, matching the 36 code overlays of C033 and the ~37 the decomps describe, and every confirmed entry is in it. An address is claimed by an overlay only when it is prologue-shaped (addiu sp,sp,-N) in THAT overlay's own bytes, which is what stops another level's entry being seeded into the wrong module — all overlays share one base, so 35 of 36 would otherwise land mid-function. The test separates cleanly: each level overlay claims exactly one (OV_237D000 0x8007AEB8, OV_2F5B000 0x8007B7A8, OV_502F800 0x8007CFB4), the two small data-only reads claim none, and OV_B83800 claims two. tools/overlay_scan.py derives them into game/overlays.json; ensure_recomp.py merges them with the hand-reasoned seeds into generated/.recomp_seeds_merged.json and hashes them into the recomp identity so a newly-derived entry cannot leave generated/ looking current. The hand file's overlay_seeds is now empty by design. 0x8007CFB4 — the address that cost a whole wrong diagnosis — is now supplied automatically.
+
+
+## ownership
+
+### own.next-targets — Own more guest functions natively, each gated by PSXPORT_NDIFF
+- status: todo
+- deps: harness.sbs
+- evidence: C075,I019
+- where: game/core/native_rand.cpp is the pattern; game/core/ observation wrappers are the candidates
+- gap: The port is 20 observation wrappers to 1 native body (C075). Now that replacements can be verified per call, convert them. Good next targets, roughly by value: the buffer flip 0x8001ED5C (small, exactly specified, runs once per displayed frame, and C068 already has its full contract); then the CD queue service 0x8002BBE0 and retry step 0x800163E4, which this port already half-owns via super-call wrappers that inject completion events — owning them outright removes the hybrid. Do NOT start with the loader: it is large and its contract is not yet fully RE'd.
+- notes: The pattern is native_rand.cpp: a pure native body plus ndiff_run(c, name, native, gen_func_X). Reproduce EVERY register the substrate leaves, including scratch ones like $at — the differential is only worth having if nothing is allowed to differ 'where it does not matter'.
 

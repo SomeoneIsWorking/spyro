@@ -118,14 +118,22 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: Phase 0 of the playbook wants the byte-compare harness up BEFORE owning any function. Not yet wired for Spyro.
 - notes: 
 
+### harness.gate — Boot-progress regression gate (tools/gate.sh)
+- status: re-verified
+- deps: boot.post-cd
+- evidence: tools/gate.sh runs the port headless and asserts seven measurable properties: frames >=300, DISTINCT frame occupancies >=8 (catches a regression to a held screen, which frame count alone cannot — it was 218 for a static splash), loader invocations, bytes actually read from disc, completions delivered, and zero recomp-misses / refused HLE registrations. Caught a real recomp-MISS on its FIRST run that manual log reading had missed.
+- where: 
+- gap: This is a BOOT-PROGRESS gate, not the byte-exact SBS differential the playbook asks for; it cannot prove the native path matches the substrate instruction-for-instruction. harness.sbs remains outstanding.
+- notes: 
+
 
 ## recomp
 
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
-- status: todo
+- status: re-partial
 - deps: boot.guest-main
-- evidence: 
+- evidence: ANSWERED: Spyro loads CODE from WAD.WAD into the HEAP and calls it. The new regression gate caught a recomp-MISS at 0x8007ABAC — above the resident text end (0x80075800), at heapBase+0x174, inside the 2048 bytes the owned loader had just read from WAD.WAD (claim C024). That is why the disc tree showed no per-overlay files: the overlays live inside WAD.WAD, consistent with the public decomps' '37 overlays'.
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: UNRESOLVED (docs/issues/0001). Public decomp projects describe 37 overlays; the disc has no per-overlay files, so they would be inside WAD.WAD or read by raw LBA. The recomp currently covers ONLY the resident executable.
+- gap: Those overlays are NOT in the recompiled set (emit.py only saw SCUS_942.28), so every call into them fails fast. Recompiling them needs their bytes extracted from WAD.WAD plus their load base — now known to be the heap (0x8007AA38+). One check still outstanding: confirm the bytes at heapBase+0x174 decode as a MIPS prologue (the falsifier on C024); discdump has no sector subcommand, so dump them from the loader override instead.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

@@ -29,3 +29,6 @@ It decides whether `tools/ensure_recomp.py` must grow a WAD.WAD extraction + ove
 ## How to actually settle it
 
 Run the port until it fails, and read the failure: the substrate fail-fasts with `[recomp-MISS] 0x800xxxxx` on any call it cannot resolve. A miss to a consistent address region ABOVE the resident text is the overlay load slot, and `PSXPORT_DEBUG=cd` logs the load destination directly — the same way psxport's reference consumer captured its overlay bases. That is ground truth from a running system, unlike a static scan.
+
+### Note (2026-07-28)
+ANSWERED (pending one decode check): the guest loads CODE from WAD.WAD into the HEAP and calls it. Evidence: recomp-MISS at 0x8007ABAC = heapBase+0x174, inside the 2048 bytes the owned loader read from WAD.WAD at LBA 37; caller ra=0x800339E4. This is why the disc file tree showed no per-overlay files — the overlays are inside WAD.WAD, exactly as the public decomp projects' '37 overlays' implied. Consequence for the port: those overlays are NOT in the recompiled set (emit.py only saw SCUS_942.28), so every call into them will fail fast. Recompiling them needs their bytes extracted from WAD.WAD plus their load base, which is now known to be the heap.

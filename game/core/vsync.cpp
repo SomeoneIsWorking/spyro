@@ -56,6 +56,22 @@ void vblank_wait(Core* c) {
       cur = target;   // satisfy the caller rather than hang, but the warning above is the real output
       break;
     }
+    // DRAIN THE RENDER QUEUE. The guest's DrawOTag walks its OT and QUEUES each prim
+    // (gpu_dma2_linked_list -> gpu_gp0 -> rq.push), but nothing emits that queue to the renderer:
+    // rq.flush() is only reached from the framework's native_boot / Engine::drawOTag path, which this
+    // port never runs. The queue only resets lazily on the push AFTER it was consumed, so with no
+    // consumer it grows without bound.
+    //
+    // That single omission produced BOTH of the port's symptoms. Nothing reached the VK renderer, so
+    // every frame after the logo fade was BLACK; and the queue accumulated ~449 polys/frame until it
+    // hit RQ_MAX 65536 about 146 drawing-frames later and the framework fail-fasted, which is the
+    // abort at frame 3781 (issue 0015). psxport's own history records the identical bug with the
+    // identical black-front-end symptom — see the comment in native_boot.cpp.
+    //
+    // Here is the right place for the same reason the event delivery below is: this wait IS the
+    // port's per-frame boundary. Flush before present, so the frame being presented is the one the
+    // guest just drew.
+    c->game->rq.flush(c);
     // One vblank = one displayed frame. present() puts the guest's drawn frame on screen; pace()
     // holds real time to the frame interval so the game runs at its intended speed rather than
     // spinning as fast as the host can.

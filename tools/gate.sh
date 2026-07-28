@@ -70,6 +70,25 @@ for f in sorted(glob.glob(os.path.join(sys.argv[1], "*.ppm"))):
 print(len(seen))
 PY
 )
+# Content in the LAST QUARTER of the run. "distinct occupancies >= 8" was satisfied entirely by the
+# first 600 frames and then sat through 3346 BLACK ones without complaint — a boot that renders its
+# logos and then draws nothing looked identical to a healthy run. Asserting on LATE frames is what
+# distinguishes "the game is running" from "the game rendered a logo once".
+LATE=$(python3 - "$OUT/frames" <<'PY2' 2>/dev/null || echo 0
+import sys, glob, os
+fs = sorted(glob.glob(os.path.join(sys.argv[1], "*.ppm")))
+n = 0
+for f in fs[int(len(fs) * 0.75):]:
+    d = open(f, 'rb').read()
+    i = t = 0
+    while t < 4 and i < len(d):
+        while i < len(d) and d[i:i+1].isspace(): i += 1
+        while i < len(d) and not d[i:i+1].isspace(): i += 1
+        t += 1
+    if sum(1 for b in d[i+1:] if b) > 0: n += 1
+print(n)
+PY2
+)
 LOADS=$(grep -c 'loader:' "$LOG" 2>/dev/null; true)
 MOVED=$(grep -o 'moved [0-9]* bytes' "$LOG" 2>/dev/null | awk '{s+=$2} END{print s+0}')
 COMPL=$(grep -c 'delivered CD completion' "$LOG" 2>/dev/null; true)
@@ -91,6 +110,7 @@ else
 fi
 chk "frames presented"          "$FRAMES"   ge 300
 chk "distinct frame occupancies" "$DISTINCT" ge 8      # >2 means content moves, not a held screen
+chk "frames with content (last 25%)" "$LATE"    ge 1
 chk "CD loader invocations"      "$LOADS"    ge 3
 chk "bytes loaded from disc"     "$MOVED"    ge 100000
 chk "CD completions delivered"   "$COMPL"    ge 3

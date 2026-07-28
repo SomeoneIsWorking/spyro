@@ -1,9 +1,10 @@
 ---
 id: C031
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-28
 tags: recomp
+falsified_on: 2026-07-28
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ At the loader call site 0x80012924, a1 (dest) is not computed but LOADED: lui r5
 ## What would falsify it
 
 if another call site's dest source holds 0 or a non-RAM value in the static image, that site computes its dest at runtime and static reading does not generalise
+
+## FALSIFIED 2026-07-28
+
+The TECHNIQUE holds (static call-site argument recovery works, now packaged as tools/callsite_args.py = I006), but the claim's FRAMING is wrong and would mislead: it says 'overlay load BASES' plural, implying each overlay has its own base to be read. C032 shows there is only ONE base — a single shared staging arena at 0x8007AA38 from the read-only constant [0x800113A0]. Nothing downstream had yet been built on C031; the planned next step (extend ensure_recomp.py OVERLAYS + overlay_bases with one base per overlay) was about to be, and is now known to be the wrong shape. Superseded by C032.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

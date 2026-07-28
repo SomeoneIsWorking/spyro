@@ -36,13 +36,19 @@
 
   // Spyro's overlays are NOT separate disc files — they live inside WAD.WAD and are loaded into the
   // heap. Confirmed from the binary: four hardcoded jals call addresses above the resident text end
-  // (docs/issues/0001). The public decomps describe 37 overlays; one is located so far.
-  // OVL0 — the first overlay located: WAD.WAD +0x5B800, 14336 bytes, loaded to 0x8007AA38.
-  // Base VERIFIED statically, not guessed: at this base the region decodes 100% valid MIPS with a
-  // real-code opcode profile, and all four of the executable's hardcoded out-of-text call targets
-  // (0x8007AA50 / 0x8007ABAC / 0x8007BFD0 / 0x8007CEE4) land inside it on prologue shapes. A wrong
-  // overlay base emits a whole module at wrong addresses, so this is exactly the value that must
-  // never be guessed.
+  // (docs/issues/0001). The public decomps describe 37 overlays; one is recompiled so far.
+  //
+  // 0x8007AA38 is NOT "OVL0's base" — it is a single shared staging ARENA that every overlay is
+  // loaded into, sourced from the read-only constant [0x800113A0] (claim C032, tools/callsite_args.py).
+  // OVL0 simply occupies it during boot. This is why THIS LIST CANNOT SIMPLY BE EXTENDED: a second
+  // entry here would emit a second module at the same base and collide. See docs/issues/0013 — the
+  // fix is a keying decision in the substrate, not another line in this file.
+  //
+  // OVL0 — WAD.WAD +0x5B800, 14336 bytes, loaded to the arena at 0x8007AA38. The base is VERIFIED,
+  // not guessed: at it the region decodes 100% valid MIPS with a real-code opcode profile, and all
+  // four of the executable's hardcoded out-of-text call targets (0x8007AA50 / 0x8007ABAC /
+  // 0x8007BFD0 / 0x8007CEE4) land inside it on prologue shapes. A wrong overlay base emits a whole
+  // module at wrong addresses, so this is exactly the value that must never be guessed.
   "overlay_bases": { "OVL0": "0x8007AA38" },
   "overlay_base_patterns": [],
   "overlay_seeds": {}

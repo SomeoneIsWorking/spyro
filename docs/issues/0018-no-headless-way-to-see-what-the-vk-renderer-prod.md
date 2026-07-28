@@ -44,3 +44,33 @@ has been submitted in this consumer's headless path, or a transfer buffer that i
 the windowed present. Note the REPL path is NOT proof the mechanism works here — the REPL is only reachable
 in an interactive session, which is windowed, so it may never have run headless in this consumer at all.
 Do not treat "documented as headless-safe" as evidence; it was not evidence.
+
+
+## ATTEMPT 3, ALSO REVERTED — three call sites, three distinct failures (C061)
+
+Called gpu_native_shot from the port's OWN vblank handler, AFTER gpu_present returns, on the theory
+that the earlier hangs were caused by a command buffer still being in flight. Result: SIGSEGV right
+after renderer init when armed early, and no fire at all when armed for a later frame.
+
+So the three attempts fail in three different ways — hang, hang, segfault — from three different call
+sites, including the framework's own chosen one. That is enough to stop treating this as a placement
+problem. The transfer buffer is created during 3D init (the log confirms it), so it is not a missing-
+buffer lifecycle bug either. Something in readback_vram's sequence
+(AcquireGPUCommandBuffer -> copy pass -> DownloadFromGPUTexture -> SubmitAndAcquireFence ->
+WaitForGPUFences -> MapGPUTransferBuffer) does not work under PSXPORT_VK_HEADLESS here.
+
+And the REPL's working `shot` is NOT counter-evidence: repl.read() is only called from native_boot's
+scheduler, which this port never runs, so that path has likely never executed headless in this
+consumer at all.
+
+STOPPING HERE deliberately. Three reverted attempts is the point at which more variations are waste;
+this needs someone to debug the VK backend's headless readback directly, with a Vulkan validation
+layer enabled, which is a different kind of task from porting a game. The port itself is unaffected —
+this only blocks answering "are the pixels CORRECT", which remains genuinely unanswered.
+
+WHAT STILL WORKS for visual checking, and should be used instead until this is fixed:
+  * a WINDOWED run (PSXPORT_VK_WINDOW=1) — a human can simply look at it;
+  * prim submission counts from PSXPORT_DEBUG=gpu, which prove the guest is DRAWING (gate check 4)
+    but say nothing about pixels;
+  * PSXPORT_GPU_DUMP for anything that reaches s_vram — uploads and fills only, never rasterised
+    geometry (I008).

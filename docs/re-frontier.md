@@ -138,10 +138,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## recomp
 
 ### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
-- status: re-verified
+- status: re-partial
 - deps: boot.guest-main
-- evidence: OVL0 located, extracted and RECOMPILED. WAD.WAD +0x5B800, 14336 bytes, base 0x8007AA38 (verified statically: 100% valid MIPS, all four hardcoded call targets land inside on prologue shapes). Extraction wired into ensure_recomp.py and hashed as a recomp input; base declared in game/recomp_seeds.json. Gate fully green afterwards — 7/7, zero recomp misses, frames 436 -> 3781 (C028).
+- evidence: OVL0 recompiled and gate-green (C028). The remaining set is now enumerable STATICALLY rather than one observed load at a time: WAD.WAD's first sector is a flat (offset,length) index, 79 entries, verified against ground truth (entry 2 == the recompiled overlay; every port load matches an entry). tools/wad_index.py scores each by common-opcode share (I005) — 36 clear 90%, known overlay highest at 99.5%.
 - where: tools/ensure_recomp.py (would need a WAD.WAD step), game/recomp_seeds.json (overlay_bases)
-- gap: Only ONE overlay is located. The public decomps describe 37, and the archive's first sector is a sector-offset index (C025) that likely lists the rest — so the extraction should eventually be driven from that table rather than from a single observed load. No new misses in a 30s run, but a longer/deeper run may surface them.
+- gap: Each candidate still needs its LOAD BASE before it can be recompiled — a wrong base emits a whole module at wrong addresses. OVL0's base came from a running port's loader call; the same route (or a hardcoded jal landing inside the span) is needed per overlay. Also: the 90% threshold is chosen, so the 36 count is a candidate list, not a confirmed overlay count.
 - notes: Settle from a RUNNING port: PSXPORT_DEBUG=cd logs each load destination and an unresolved call fail-fasts with its address. Do not guess a base — a wrong overlay base emits a whole module at wrong addresses, which is garbage rather than an error.
 

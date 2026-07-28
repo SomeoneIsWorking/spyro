@@ -53,6 +53,13 @@ static const GameConfig g_spyro_config = {
   /* recMainLo      */ REC_MAIN_LO,
   /* recMainHi      */ REC_MAIN_HI,
 
+  // The .env key / environment variable naming this game's disc image. The framework's resolver reads
+  // it directly now, which replaces the setenv bridge main.cpp used to do (PSXPORT_SPYRO_DISC ->
+  // PSXPORT_DISC). Upstream added this field after a second consumer set its own variable, the
+  // framework never read it, and the CD model ran with NO DISC MOUNTED while the logs looked normal —
+  // exactly the silent-wrong-answer failure this port keeps running into from the other side.
+  /* discEnvVar     */ "PSXPORT_SPYRO_DISC",
+
   // ── per-frame OT / packet-pool dance ───────────────────────────────────────────────────────────
   // NOT YET REVERSE-ENGINEERED. These drive the framework's NATIVE per-frame loop
   // (native_step_frame): the double-buffered ordering-table + packet-pool addresses the game's

@@ -206,10 +206,18 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## ownership
 
 ### own.next-targets — Own more guest functions natively, each gated by PSXPORT_NDIFF
-- status: todo
+- status: re-verified
 - deps: harness.sbs
-- evidence: C075,C078,C079,C080,I019,I020,I021
+- evidence: C075,C080,C081,I019,I020,I021
 - where: game/core/native_rand.cpp is the pattern; game/core/ observation wrappers are the candidates
-- gap: In progress: 13 native bodies (was 1), ~793 static call sites, all byte-exact under PSXPORT_NDIFF including full COP2 comparison, re-verified every gate run. Two are GTE bodies — the pattern is scalar logic native, COP2 via the platform's own gte_op/gte_read_data/gte_write_ctrl, so hardware results match by construction. 264 leaf candidates remain (own_candidates.py hides owned ones). Recurring lesson across five bodies now: a MIPS DELAY SLOT decides the exit state (fill's bounds, angdist's a1, veclen's two, copyw's a1-per-pass) — transcribe the slot, then let the differential confirm.
-- notes: CORRECTION to the earlier note in this entry: 0x8001ED5C is NOT a small exactly-specified flip. Its first dozen instructions are the buffer flip, then it continues into the entire per-frame stage dispatcher (a switch on [0x800757D8] calling many handlers). Owning it means owning the frame loop — not a next target. That mis-pick is why own_candidates.py exists and why it reports leaf/non-leaf. The pattern remains native_rand.cpp/native_leaf.cpp: a pure native body plus ndiff_run(c, name, native, gen_func_X), reproducing EVERY register the substrate leaves.
+- gap: 
+- notes: PHASE DONE: the high-caller LEAF work is complete. 15 native bodies (was 1), ~834 static call sites, 600 verified calls per run at NDIFF=40, zero divergences, re-checked every gate run. Four are GTE bodies, owned without reimplementing the GTE — scalar logic native, COP2 via the platform's gte_op/gte_read_data/gte_write_ctrl, integer divide via cpu_div (C++ division is UB exactly where MIPS defines behaviour: /0 and INT_MIN/-1). own_candidates.py now hides owned functions and its best remaining LEAF has 15 callers, down from 136, so this seam has given what it has to give. CAVEAT on 'exhausted': the caller count is STATIC, so indirect calls are invisible and a low count is not proof of coldness — a runtime call histogram would be the honest next measurement. Continuing means non-leaf functions, which need their callees owned first; see own.non-leaf.
+
+### own.non-leaf — Own NON-LEAF functions, bottom-up from the leaves already owned
+- status: todo
+- deps: own.next-targets
+- evidence: C081,I019
+- where: game/core/native_*.cpp; tools/own_candidates.py --all
+- gap: The leaf seam is exhausted at 15 callers. Everything above it calls something, so a native body must reproduce its callees' behaviour too — unless those callees are ALREADY owned, in which case the native body can simply call the native versions. That is the bottom-up path: 15 leaves are owned, so functions whose only calls are into those 15 are now themselves leaf-like. own_candidates.py --all lists non-leaves; it should be extended to score 'calls only already-owned functions', which is the real readiness signal.
+- notes: Before assuming the leaf work bought anything, MEASURE it: static caller counts ignore indirect calls, and nothing here has profiled the port. A runtime call histogram would say which of the 15 actually run hot and whether the next tier is worth owning at all.
 

@@ -83,5 +83,16 @@ chk "recomp misses"              "$MISS"     eq 0
 chk "refused HLE registrations"  "$REFUSED"  eq 0
 chk "overlay identified in slot 0"  "$OVID"     ge 1
 
+# Ledger self-consistency. Not a runtime property, but this is the one thing that runs every
+# iteration, and a contradictory ledger (a refutation recorded without flipping the claim it kills)
+# is silently served as fact by every later `info.py brief`. Cheap, so it rides along here.
+if ! python3 tools/info.py check > "$OUT/info.txt" 2>&1; then
+  printf '  \033[31mFAIL\033[0m %-34s %s\n' "info ledger self-consistent" "$(grep -c INCONSISTENT\\\|'NO FALSIFIER' "$OUT/info.txt"; true) problem(s)"
+  sed -n 's/^/        /p' "$OUT/info.txt" | grep -E 'INCONSISTENT|NO FALSIFIER'
+  fail=1
+else
+  printf '  \033[32mPASS\033[0m %-34s %s\n' "info ledger self-consistent" "ok"
+fi
+
 if [ "$fail" -eq 0 ]; then echo "[gate] PASS"; else echo "[gate] FAIL — see $LOG"; fi
 exit "$fail"

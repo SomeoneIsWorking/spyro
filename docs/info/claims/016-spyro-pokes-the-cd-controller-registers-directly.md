@@ -1,9 +1,10 @@
 ---
 id: C016
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-28
 tags: cd
+falsified_on: 2026-07-28
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ PSXPORT_DEBUG=cdcw (upstream CD-register tracer) logs 44 register writes in a 25
 ## What would falsify it
 
 if a run shows zero [cdcw] lines, the guest is not touching the registers and this is wrong
+
+## FALSIFIED 2026-07-28
+
+Falsified by C017, which was recorded at the time WITHOUT flipping this claim's status — so the ledger carried a known-dead claim as [holds] for the rest of the session. The [cdcw] writes C016 cited are real, but they are bank selects and param pushes that never carry a command through to the model; C017 measured zero bank-0 command writes reaching cdc_native.c. See C017 for the measurement.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

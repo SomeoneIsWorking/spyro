@@ -39,7 +39,8 @@ USAGE
   info.py instrument list [--distrusted]
   info.py check                 # non-zero if a distrusted instrument or falsified claim is in play
 """
-import argparse, datetime, os, re, subprocess, sys, textwrap
+import argparse
+import re, datetime, os, re, subprocess, sys, textwrap
 
 ROOT = os.getcwd()
 INFO = os.path.join(ROOT, "docs", "info")
@@ -246,16 +247,57 @@ def cmd_brief(a):
     print("\n  (nothing above ⇒ genuinely new ground; record what you learn with `info.py claim add`)")
 
 
+# A claim recorded as "FALSIFIES C0xx" only does its job if the claim it kills is actually MARKED dead.
+# Recording the killer and forgetting to flip the victim leaves a known-dead claim reading [holds] in
+# every future brief — which is strictly worse than never having recorded it, because it now carries
+# the ledger's authority. This happened: C017 ("FALSIFIES C016") was filed while C016 stayed [holds],
+# and C016 went on being served as a live result for the rest of the session.
+# Direction matters and the two phrasings mean OPPOSITE things: "this FALSIFIES C016" names a victim,
+# while "FALSIFIED BY C017" names a killer of the claim you are reading. A single pattern for both
+# reported C016 as falsifying C017 — its own falsify note said "Falsified by C017" — so they are split.
+KILLS_RE  = re.compile(r"\bfalsifies\s+(C\d+)", re.I)          # this claim kills <victim>
+KILLED_RE = re.compile(r"\bfalsified by\s+(C\d+)", re.I)       # this claim is killed by <killer>
+
+
 def cmd_check(a):
+    claims = entries(CLAIMS)
+    status = {e.get("id"): e.get("status") for e in claims}
     bad = [e for e in entries(INSTR) if e.get("status") == "DISTRUSTED"]
-    fal = [e for e in entries(CLAIMS) if e.get("status") == "falsified"]
+    fal = [e for e in claims if e.get("status") == "falsified"]
     for e in bad:
         print(f"DISTRUSTED INSTRUMENT {e.get('id')} — results using it are suspect")
     for e in fal:
         print(f"FALSIFIED CLAIM {e.get('id')} — anything citing it needs re-checking")
-    if not bad and not fal:
-        print("info: no distrusted instruments, no falsified claims")
-    return 0
+
+    problems = 0
+    # (a) a claim declares it falsifies another, but that other one still reads as holding
+    for e in claims:
+        if e.get("status") != "holds":
+            continue
+        body = e.get("_body", "")
+        for victim in KILLS_RE.findall(body):
+            if status.get(victim.upper()) == "holds":
+                problems += 1
+                print(f"INCONSISTENT: {e.get('id')} says it falsifies {victim.upper()}, but "
+                      f"{victim.upper()} still reads [holds] — run: info.py claim falsify "
+                      f"{victim.upper()} --why '...'")
+        for killer in KILLED_RE.findall(body):
+            problems += 1
+            print(f"INCONSISTENT: {e.get('id')} says it is falsified by {killer.upper()}, yet "
+                  f"{e.get('id')} itself still reads [holds] — run: info.py claim falsify "
+                  f"{e.get('id')} --why '...'")
+    # (b) a claim with no stated falsifier is a belief, not a result (CLAIMS ledger rule)
+    nofals = [e.get("id") for e in claims
+              if e.get("status") == "holds" and "## What would falsify it" in e.get("_body", "")
+              and not e.get("_body", "").split("## What would falsify it", 1)[1].strip()]
+    for cid in nofals:
+        problems += 1
+        print(f"NO FALSIFIER: {cid} states no observation that would disprove it — that is a belief, "
+              f"not a result")
+
+    if not bad and not fal and not problems:
+        print("info: no distrusted instruments, no falsified claims, ledger self-consistent")
+    return 1 if problems else 0
 
 
 def main():

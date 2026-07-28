@@ -75,6 +75,22 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
 
 ---
 
+## Performance — where the time actually goes
+
+Measured, not assumed (`PSXPORT_PROF=1` + `tools/prof_hot.py`, I022):
+
+- **Guest code is only ~5-6% of CPU** (C082). Native ownership buys correctness and architecture,
+  not speed — pursue it for that reason, and pick speed targets from the profile instead.
+- **The diagnostics layer cost ~10% while doing nothing.** lucent's `channel_enabled` was 6.06% with
+  logging switched OFF (a mutex plus a `std::string` per call) — fixed in lucent itself, now 0.33%
+  (C084). Every guest store called five out-of-line hooks; `cw_check` + `wwatch_check` were ~4.9% of
+  pure call overhead, now inlined away (C085).
+- **Result: +12.6% frames in a fixed run, and more of the game reached** — bytes from disc 11.1 →
+  13.2 MB, a seventh overlay identified inside the gate's 40s (C087).
+- **Reading a profile: percentages self-rebase.** After a fix, untouched entries' shares RISE because
+  the denominator shrank. Only end-to-end throughput sizes a win (C086).
+- Still unexamined: `cfg_dbg_generation` (~3.4%) and three of the five per-store hooks.
+
 ## Known framework warts (upstream, not ours to paper over)
 
 - `RecompRegistry` names *per-overlay* override setters (`ov_a00_set_override`,

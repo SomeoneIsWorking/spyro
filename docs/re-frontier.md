@@ -225,10 +225,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## perf
 
 ### perf.diagnostics-overhead — The logger costs ~6% of CPU with logging switched OFF
-- status: todo
+- status: re-verified
 - deps: 
-- evidence: C083,I022
+- evidence: C083,C084,C085,I022,I023
 - where: lucent (external, the user's own library); external/psxport/runtime/recomp/cfg.cpp; Core::wwatch_check
-- gap: Measured, and the falsifier was tested rather than assumed: lucent::detail::channel_enabled(string_view) is 6.76% of CPU with one debug channel enabled and STILL 6.06% with PSXPORT_DEBUG entirely unset — so it is an unconditional per-log-site cost, not a per-enabled-channel one. With Core::wwatch_check (1.79%, running even with no watchpoint armed) and cfg_dbg_generation (1.62%) that is ~10% of the port's CPU spent deciding not to log. The disabled path should be a cached boolean rather than a string_view lookup at each evaluated site.
-- notes: This is more real performance than the entire native-ownership programme can deliver: all guest code together is under 5% (C082). Worth fixing in lucent itself, which is the user's own library, rather than working around it in psxport.
+- gap: 
+- notes: DONE for the two largest items, both MEASURED rather than reasoned about. (1) lucent's channel_enabled cost 6.06% of CPU with logging switched OFF — a mutex plus a std::string construction before it could answer 'no'. Fixed IN LUCENT (the shared library, so every consumer benefits) with an atomic empty-set fast path: 6.06% -> 0.33%, its own tests pass, pushed. (2) Every guest store called five out-of-line diagnostic hooks unconditionally; cw_check (3.14%) and wwatch_check (1.79%) were almost entirely CALL overhead to reach a function that returns immediately. The armed test is now inline in core.h with only the armed case out-of-line — both vanish from the profile, and PSXPORT_WWATCH was verified to still fire (18 hits) so the optimisation did not silently disable the feature. TWO PROCESS NOTES WORTH KEEPING: the first version of the lucent fix measured as NO CHANGE because load_channels_locked() early-returns on an empty list, exactly the case the fast path existed for — correct-looking code that did nothing, caught only by re-profiling. And re-resolving a pre-fix profile against a post-fix binary is meaningless because symbol addresses move on relink; prof_hot.py now refuses (I023). REMAINING: cfg_dbg_generation ~3.4%, and the other three store hooks (display_pass_write_guard, pkt_track, journal_track) have not been examined.
 

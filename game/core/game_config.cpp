@@ -110,7 +110,16 @@ static const GameConfig g_spyro_config = {
   // libcd code on the substrate. RE these by finding the CdReadFile/CdlSetloc call sites that pull
   // from WAD.WAD.
   /* cdInit            */ 0u,
-  /* cdCommand         */ 0u,
+  // CD_cw (0x80064CEC) — libcd's command-issue-and-wait. SIGNATURE CONFIRMED by reading the body, not
+  // inferred from the name: the prologue keeps a0 in r16 and uses `r16 & 255` to index the command
+  // tables at 0x800750xx, keeps a1 in r17 (tested against 0 = "no param"), a2 in r21 (result) and a3
+  // in r18 — i.e. CD_cw(com, param, result, mode), exactly what the framework's cd_command handler
+  // reads. This is the function the boot log shows timing out on the real commands (CdlSetmode,
+  // CdlSetloc), so overriding it ACKs those commands instead of spinning on a controller we don't model.
+  /* cdCommand         */ 0x80064CECu,
+  // CD_sync (0x800647A0) not wired yet — the framework's cd_sync handler zeroes 8 bytes at a1 and
+  // returns 2, which is the public CdSync(mode,result) contract; CD_sync is the internal primitive and
+  // its signature is unconfirmed. Same reasoning as cdReadSync above: confirm the body first.
   /* cdSync            */ 0u,
   /* cdReadPrim        */ 0u,
   /* cdFileLoad        */ 0u,

@@ -59,9 +59,9 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### cd.chokepoints — Identify Spyro's libcd chokepoints for the native CD path
 - status: re-partial
 - deps: boot.guest-main
-- evidence: libcd identified as stock Sony bios.c v1.86 (claim C004). Two primitives wired and CONFIRMED by the running system: hle.cdInitHandshake=0x800653B4 (CD_init) removed the CdlNop/CdlReset boot loop; hle.cdDataSync=0x800655A0 (CD_datasync) removed the CD_sync timeout. plat-hle reports 2 installed.
+- evidence: libcd = stock Sony bios.c v1.86 (C004). Wired + confirmed by the running system: hle.cdInitHandshake=0x800653B4 (CD_init), hle.cdDataSync=0x800655A0 (CD_datasync), cfg->cdCommand=0x80064CEC (CD_cw, signature confirmed from the body). Plus the missing game->cd.overridesInit() call. Result: ZERO CD timeouts at boot (C005).
 - where: game/core/game_config.cpp CD chokepoints group (all 0 today)
-- gap: Remaining: CD_cw still times out on REAL commands (CdlSetmode x12, CdlSetloc x4), which need the native CD READ path (the GameConfig cd* group consumed by cd_override.cpp), not a sync stub. cdReadSync is deliberately left 0: the obvious candidate CD_sync (0x800647A0) is an internal bios.c primitive, but the framework's cdreadsync handler zeroes 8 bytes at a1 as CdReadSync(mode,result), so wiring it before confirming the signature risks guest-memory corruption.
+- gap: Commands now ACK, but that is NOT the same as reads returning correct bytes — no disc read has been verified to deliver correct data yet, because the boot does not get far enough to need one. cdReadPrim/cdFileLoad/cdAsyncRead remain 0. cdSync + cdReadSync also still 0: their handlers write 8 bytes at a1 as the PUBLIC CdSync/CdReadSync contract, while Spyro's CD_sync (0x800647A0) is the internal bios.c primitive whose signature is unconfirmed.
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 

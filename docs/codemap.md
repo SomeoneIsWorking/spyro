@@ -33,9 +33,9 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
 | Process entry | `game/core/main.cpp` | ✅ | Installs the seam, brings up GTE/MDEC/SPU/GPU/threads, loads the exe, boots via `dc_boot_init`. |
 | Build | `CMakeLists.txt`, `cmake/spyro_port.cmake` | ✅ | `spyro_port` = `game/**` + `generated/**` linked against `libpsxport`. |
 | Boot: crt0 → guest `main()` | — | ✅ | Verified by backtrace (claim C002). |
-| CD sync primitives | `game/core/game_config.cpp` `hle` group | 🟡 | Stock Sony libcd (`bios.c` v1.86) — primitives identified by the name each prints. `CD_init` (`0x800653B4`) and `CD_datasync` (`0x800655A0`) wired; both confirmed by the boot loop they removed. `cdReadSync` left 0 deliberately (signature unconfirmed; its handler writes 8 bytes at `a1`). |
-| **CD reads** | `game/core/game_config.cpp` CD group | 🔬 | **Current blocker.** `CD_cw` still times out on real commands (`CdlSetmode`, `CdlSetloc`) — needs the native read path, not a sync stub. |
-| VSync | — | ⬜ | Boot now reaches `VSync: timeout`. `func_8005DD0C`. Must be reimplemented faithfully and registered game-side; `hle.vsyncTrap` must stay 0 while the guest owns its loop. |
+| CD command path | `game/core/game_config.cpp` `hle` + CD groups | ✅ | Stock Sony libcd (`bios.c` v1.86); primitives identified by the name each prints. Wired: `CD_init` `0x800653B4`, `CD_datasync` `0x800655A0`, `CD_cw` `0x80064CEC` (signature confirmed from the body: `a0&255`→command tables, `a1`=param, `a2`=result). Plus the `game->cd.overridesInit()` call, absent at first, without which the whole cd* group never installed. **Zero CD timeouts at boot.** |
+| CD *reads* delivering correct bytes | — | ⬜ | Untested. Commands ACK, which is NOT the same as a read returning correct data; the boot doesn't yet get far enough to need one. `cdReadPrim`/`cdFileLoad`/`cdAsyncRead` still 0, as are `cdSync`/`cdReadSync` (their handlers write 8 bytes at `a1` per the *public* CdSync/CdReadSync contract, while Spyro's `CD_sync` `0x800647A0` is the internal primitive — signature unconfirmed). |
+| **VSync** | — | 🔬 | **Current blocker.** `func_8005DD0C`. Must be reimplemented faithfully and registered game-side; `hle.vsyncTrap` stays 0 while the guest owns its loop. |
 | Native frame loop | — | ⬜ | Guest owns its own loop today; needs Spyro's display init + buffer flip RE'd. |
 | Renderer / input / audio | — | ⬜ | Runs as recompiled guest code through the framework's PSX backends. Nothing owned natively. |
 | Differential (SBS) harness | — | ⬜ | Phase 0 of the playbook wants this up *before* owning any function. Not wired. |
@@ -53,9 +53,10 @@ and ruled out), `docs/info/` (claims + instruments ledgers).
   `spyro_bootInit` in `game/core/game_hooks.cpp`
 - **Every Spyro guest address we've committed to** → `game/core/game_config.cpp` (each with its
   derivation)
-- **libcd** → `~0x80063000-0x80065000`. `func_8006397C` refs `"CdInit"`; `func_80064CEC` refs
-  `"CD_cw"`/`"CD timeout"` (command-wait); `func_800647A0`, `func_80064A20`, `func_800655A0` are
-  further `"CD timeout"` sites. libcd string table: `0x80011CA0-0x80011EB0`.
+- **libcd** (stock Sony `bios.c` v1.86; RCS id at `0x80011EB8`) → internal primitives, each
+  identified by the name it prints: `CD_sync` `0x800647A0` · `CD_ready` `0x80064A20` ·
+  `CD_cw` `0x80064CEC` · `CD_init` `0x800653B4` · `CD_datasync` `0x800655A0`.
+  String table: `0x80011C98-0x80011F50`. The HLE window is `[0x80063000,0x80066000)`.
 - **How to add a missing recompiled function** → `game/recomp_seeds.json` (never patch `generated/`)
 - **How to disassemble a region** → `external/psxport/tools/disasm.py <ramdump> <start> <end>`; build
   a RAM image by laying the PS-EXE text at its load address (`0x80010000`)

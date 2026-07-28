@@ -61,6 +61,12 @@ int main(int argc, char** argv) {
   spu_init();                        // SPU audio core
   game->spu_audio.init();            // SDL audio sink (PSXPORT_NOAUDIO=1 to disable)
   game->gpu.gpu_native_init();       // native GPU renderer (parses the guest's GP0 stream)
+  // Native CD: installs handlers at the guest chokepoints named in GameConfig's cd* group, so CD
+  // commands ACK and reads are served from the disc image instead of spinning on a controller we do
+  // not model. Registration goes through PlatformHle::register_, which validates each address against
+  // GameConfig::hle's window — so a cd* address outside that window is REFUSED (loudly), not silently
+  // dropped. Must run before initBuiltins' count is read, and before any guest code touches the CD.
+  game->cd.overridesInit();
   game->platform_hle.initBuiltins(); // HW sync/wait stalls -> native non-stall (VSync/CdSync/MDEC)
   threads_init(c);                   // native BIOS threads (ucontext); main = slot 0
   threads_register_overrides();

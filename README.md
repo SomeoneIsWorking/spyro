@@ -28,9 +28,9 @@ unproven, and nothing is owned natively yet.
 | crt0 / boot (`GameConfig` boot group) | ✅ derived from the real crt0, not guessed |
 | Reaches the guest's `main()` as recompiled code | ✅ verified by backtrace |
 | CD sync/command path | ✅ `CD_init`, `CD_datasync`, `CD_cw`, `CD_sync` wired — every signature confirmed from the body |
-| CD *reads* returning correct data | ⬜ untested — commands ACK, but no read has yet been verified to deliver bytes |
+| CD *reads* returning data | ❌ Spyro uses stock libcd (Setloc-then-read); needs a Setloc-tracking read path |
 | **Renders the boot splash** | ✅ SCE splash draws and fades in over 8 frames |
-| Past the splash into game init | 🔬 guest stops presenting; profile puts it in `func_800163E4` |
+| Past the splash into game init | ❌ **current blocker** — spins waiting on CD data ([`0003`](docs/issues/0003-spyro-uses-stock-libcd-reads-setloc-then-read-th.md)) |
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |

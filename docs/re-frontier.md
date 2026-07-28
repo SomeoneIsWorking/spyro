@@ -54,11 +54,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: 
 
 ### boot.post-splash — Get past the boot splash into game init
-- status: in-progress
+- status: re-partial
 - deps: cd.chokepoints, frame.vsync
-- evidence: The port renders the SCE boot splash and fades it in (8 frames dumped, nonzero pixels growing 0.7%->2.9%, 320x240 then 512x240).
+- evidence: Root-caused. The stall is a SPIN, not slow init (claim C008): sampled mem_w32 addresses repeat at 0x801FFDB0/B4 — adjacent slots below the stack top 0x801FFFF0, i.e. one frame re-pushed — with the profile pinned to func_800163E4 <- 80016500 <- 8001250C <- 800127C0 <- main. It spins because no CD read ever delivers data.
 - where: func_800163E4 (game code — low addresses are game, libraries are high in this link order)
-- gap: After the splash the guest stops presenting. A 4-sample profile puts it in gen_func_800163E4 <- gen_func_80016500 <- gen_func_8001250C <- gen_func_800127C0 <- main, writing memory heavily. Unknown whether that is legitimate init work running slowly under the substrate, or a spin waiting on something still unserved. Next: determine which, e.g. by checking whether its writes advance or repeat.
+- gap: Blocked on cd.reads: Spyro uses stock libcd (Setloc-then-read), so the LBA is not an argument to the read and psxport's cd_read(blocks,lba,buf) contract does not fit. See docs/issues/0003.
 - notes: 
 
 
@@ -71,6 +71,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: game/core/game_config.cpp CD chokepoints group (all 0 today)
 - gap: 
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
+
+### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
+- status: todo
+- deps: cd.chokepoints
+- evidence: Read path located: func_80065DBC carries 'CdRead: Shell open...'/'CdRead: retry...', func_800659F0 carries 'CdRead: sector error'. func_80065DBC keeps only a0 (r17) — it is NOT the framework's (blocks,lba,buf) primitive.
+- where: game/core/ (new), GameConfig cd group
+- gap: Needs a Spyro-specific path: capture the LBA from CdlSetloc (cd_command currently routes cmd 0x02 to xa_stream_setloc only, retaining no data-read position), convert BCD MSF -> LBA, and serve the read into the guest's buffer using stock libcd's own argument order — which must be read out of the bodies, not assumed. Wiring cfg->cdReadPrim to func_80065DBC would corrupt guest memory (handler would treat a1/a2 as lba/buf).
+- notes: 
 
 
 ## frame

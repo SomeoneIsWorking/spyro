@@ -216,8 +216,19 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### own.non-leaf — Own NON-LEAF functions, bottom-up from the leaves already owned
 - status: todo
 - deps: own.next-targets
-- evidence: C081,I019
+- evidence: C081,C082,I019,I022
 - where: game/core/native_*.cpp; tools/own_candidates.py --all
-- gap: The leaf seam is exhausted at 15 callers. Everything above it calls something, so a native body must reproduce its callees' behaviour too — unless those callees are ALREADY owned, in which case the native body can simply call the native versions. That is the bottom-up path: 15 leaves are owned, so functions whose only calls are into those 15 are now themselves leaf-like. own_candidates.py --all lists non-leaves; it should be extended to score 'calls only already-owned functions', which is the real readiness signal.
+- gap: REFRAMED BY MEASUREMENT. A host-PC profile (C082) says guest code is only 4.5-4.9% of CPU time; 95.5% is the port's own runtime. So further native ownership buys CORRECTNESS and architecture, not speed — a fine goal, but it should be pursued for that reason and not sold as performance work. It also invalidates the selection method: the hottest guest function (0x800258F0, 1.74%) has just TWO static callers, so own_candidates.py's caller ranking would never have surfaced it, and none of the 15 already-owned bodies appears in the profile at all. Pick future targets from the PROFILE (tools/prof_hot.py) when the goal is speed, and from the static queue only when the goal is coverage.
 - notes: Before assuming the leaf work bought anything, MEASURE it: static caller counts ignore indirect calls, and nothing here has profiled the port. A runtime call histogram would say which of the 15 actually run hot and whether the next tier is worth owning at all.
+
+
+## perf
+
+### perf.diagnostics-overhead — The logger costs ~6% of CPU with logging switched OFF
+- status: todo
+- deps: 
+- evidence: C083,I022
+- where: lucent (external, the user's own library); external/psxport/runtime/recomp/cfg.cpp; Core::wwatch_check
+- gap: Measured, and the falsifier was tested rather than assumed: lucent::detail::channel_enabled(string_view) is 6.76% of CPU with one debug channel enabled and STILL 6.06% with PSXPORT_DEBUG entirely unset — so it is an unconditional per-log-site cost, not a per-enabled-channel one. With Core::wwatch_check (1.79%, running even with no watchpoint armed) and cfg_dbg_generation (1.62%) that is ~10% of the port's CPU spent deciding not to log. The disabled path should be a cached boolean rather than a string_view lookup at each evaluated site.
+- notes: This is more real performance than the entire native-ownership programme can deliver: all guest code together is under 5% (C082). Worth fixing in lucent itself, which is the user's own library, rather than working around it in psxport.
 

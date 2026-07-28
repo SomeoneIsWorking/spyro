@@ -15,6 +15,7 @@
 #include "core.h"
 #include "game_iface.h"
 #include "spyro_game.h"
+#include "hostprof.h"
 
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
 extern "C" void rec_dispatch(Core* c, uint32_t addr);
@@ -38,12 +39,18 @@ static void spyro_bootInit(Core* c) {
 }
 
 // registerOverrides — install this game's native override clusters into the process-global registry.
-// Spyro has none yet: every guest function still runs its recompiled body. When the first native
-// function is taken over, it registers here (see psxport docs/recomp-overrides).
+//
+// The mix here is the honest picture of how far the port has come. MOST entries are OBSERVERS: they
+// log and then super-call the recompiled body, so the guest code still does the work. The CD and pad
+// ones are platform-level SUPPLY — they provide what the hardware would have and then run the guest
+// body. The native_* clusters are the only real OWNERSHIP: their recompiled bodies never run, and
+// each is verified byte-exact against the body it replaced on every gate run (PSXPORT_NDIFF).
 static void spyro_registerOverrides(Game*) {
   // Game-function ownership goes here, installed into the process-global override registry. Each
   // entry either observes its recompiled body via a super-call (the first step of owning it) or
   // replaces it once the native reimplementation is byte-gated against the substrate.
+  hostprof_init();                 // PSXPORT_PROF=1 — host-PC sampling, to pick ownership targets by
+                                   // MEASURED time rather than by static caller counts
   spyro_register_cd_queue();
   spyro_register_level_probes();   // TEMPORARY — see docs/issues/0017
   spyro_register_native_rand();    // OWNED natively (not a probe): rand() 0x8006272C

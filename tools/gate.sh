@@ -41,12 +41,28 @@ if ! cmake --build build --target spyro_port -j"$(nproc)" > "$OUT/build.log" 2>&
   exit 2
 fi
 [ -x scratch/bin/spyro_port ] || { echo "gate: no binary after a successful build?"; exit 2; }
+# Pin the binary we are about to measure. The gate takes minutes and is naturally run in the
+# background, so a parallel rebuild can replace scratch/bin/spyro_port MID-RUN — and then every
+# number below describes a mixture of two builds with nothing saying so. That happened (issue 0026):
+# an upstream rebase landed, the port was rebuilt, and the in-flight gate had to be killed rather
+# than quoted. Same failure class as the exit-status bug above — measuring something other than what
+# the reader thinks. Refuse to report rather than block: a lock would stop legitimate parallel work,
+# whereas this only stops a false conclusion being drawn from it.
+BIN_ID_BEFORE=$(stat -c '%s:%Y' scratch/bin/spyro_port)
 
 echo "[gate] running ${SECS}s headless…"
 PSXPORT_DEBUG=cdq,ovload,gpu PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
   PSXPORT_WATCHDOG=0 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
 RC=$?
+BIN_ID_AFTER=$(stat -c '%s:%Y' scratch/bin/spyro_port 2>/dev/null || echo gone)
+if [ "$BIN_ID_AFTER" != "$BIN_ID_BEFORE" ]; then
+  echo "gate: THE BINARY WAS REPLACED MID-RUN ($BIN_ID_BEFORE -> $BIN_ID_AFTER)."
+  echo "      Something rebuilt scratch/bin/spyro_port while this gate was measuring it, so these"
+  echo "      numbers would describe a mixture of two builds. Refusing to report — re-run the gate"
+  echo "      once the other build has settled. See docs/issues/0026."
+  exit 2
+fi
 # THE MOST IMPORTANT CHECK, AND THE ONE THIS GATE SPENT ITS WHOLE LIFE MISSING. `timeout -s KILL`
 # swallows the child's exit status, so a port that ABORTS looks exactly like one that ran the full
 # duration — and every other check here is a log/frame count that a crashed run still satisfies. This
@@ -96,7 +112,18 @@ REFUSED=$(grep -c 'REFUSED' "$LOG" 2>/dev/null; true)
 # Without GameConfig::overlaySlots[0] the slot lookup returns -1 and no identity is ever recorded —
 # yet everything still boots, because dispatch falls back to a full signature scan. That is precisely
 # the "hollow" failure this gate exists to catch, so assert on the named match, not on the load.
-OVID=$(grep -c 'ovload.*slot 0 <- OVL0' "$LOG" 2>/dev/null; true)
+#
+# Count DISTINCT overlays identified, by name pattern rather than one hardcoded name. The previous
+# form grepped for the literal "OVL0" and so silently reported 0 the moment the overlays were renamed
+# (they are now OV_<wad-offset>, see tools/overlay_scan.py) — a check pinned to one name tests the
+# name, not the router.
+OVID=$(grep -oE 'ovload.*slot 0 <- [A-Za-z0-9_]+' "$LOG" 2>/dev/null | awk '{print $NF}' | sort -u | wc -l; true)
+# THE COMPLEMENT, AND THE MORE USEFUL SIGNAL: an arena load the router could NOT match to any known
+# overlay. That is what "the game loads an overlay we have not extracted" looks like, and it is the
+# thing that precedes a fail-fast inside it. The old check could not see it at all — it only counted
+# one overlay's successes, so a run could identify OVL0 and then load three unknown overlays and still
+# pass. Zero is the requirement; when it trips, run tools/overlay_scan.py to pick up the new ones.
+OVUNMATCHED=$(grep -c 'ovload.*none/unmatched' "$LOG" 2>/dev/null; true)
 
 echo "[gate] checks:"
 if [ "$RC" -eq 137 ]; then
@@ -114,7 +141,8 @@ chk "bytes loaded from disc"     "$MOVED"    ge 100000
 chk "CD completions delivered"   "$COMPL"    ge 3
 chk "recomp misses"              "$MISS"     eq 0
 chk "refused HLE registrations"  "$REFUSED"  eq 0
-chk "overlay identified in slot 0"  "$OVID"     ge 1
+chk "distinct overlays identified" "$OVID"        ge 1
+chk "arena loads UNMATCHED"        "$OVUNMATCHED" eq 0
 
 # Ledger self-consistency. Not a runtime property, but this is the one thing that runs every
 # iteration, and a contradictory ledger (a refutation recorded without flipping the claim it kills)

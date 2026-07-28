@@ -178,11 +178,19 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ## overlay
 
-### overlay.ovl2-discovery — What is 0x8007CFB4? — the level overlay's remaining fail-fast
-- status: todo
+### overlay.ovl2-discovery — Overlay set + per-overlay entry seeds
+- status: re-verified
 - deps: input.pad
-- evidence: C063
-- where: tools/ensure_recomp.py OVERLAYS; game/recomp_seeds.json overlay_seeds; external/psxport/tools/recomp/emit.py
-- gap: Measurement reframed this (issue 0025). The overlays are mostly LEVEL DATA, not starved code modules: OVL1 and OVL2 have ZERO in-span jal targets and 5-9 jr-ra across 64 KB / 51 KB, and OVL1 carries level text. So 6 recompiled functions may be most of OVL2's actual code, and the open question is what 0x8007CFB4 IS — it is not prologue-shaped (lui at / addu at,at,v0 / lw v0,0x6378(at), the shape of a switch-case tail) and emit.py prunes 113 jump-table case labels from this module. Decide by reading the dispatch in func_8002A6FC (a table-driven script VM over [0x80078560]) and establishing whether 0x8007CFB4 is reached by a call or a computed jr — that chooses between overlay_seeds and the re-entry/case-label problem of issue 0020.
-- notes: DEAD END, already tested: seeding from the overlay's leading count+pointer array. Both images start with a plausible count and in-span addresses, but none of the 33 targets is a prologue and OVL1's entries 8-11 are ASCII — it is data, not an export table.
+- evidence: C065,C066
+- where: tools/overlay_scan.py; game/overlays.json; tools/ensure_recomp.py; game/recomp_seeds.json overlay_seeds
+- gap: 
+- notes: RESOLVED, and the original framing was wrong. 0x8007CFB4 was never in the overlay it was being read from: the arena is reloaded constantly, so the last IDENTIFIED overlay is not the resident one at a fail-fast (C065). Both earlier conclusions — 'jump-table case label' and 'the overlays are mostly data' — were artifacts of reading the wrong image. The port now dumps guest RAM at every miss (I012), which settles residency by searching WAD.WAD for the resident bytes. tools/overlay_scan.py (I011) recovers the whole set from a run's arena loads into game/overlays.json; overlays are named by WAD offset so the set grows without renaming and re-pointing existing seeds; ensure_recomp.py now also deletes slices that leave the set, since emit.py walks the directory and a stale slice emits a whole module at the live arena base. Seven overlays extracted, all identified at load, zero unmatched. Per-overlay what remains is ONE seed each — the per-frame entry installed into [0x80075734], called indirectly at 0x80033AA4 (C066) — each verified as a real prologue in the RESIDENT bytes before being added. With OV_237D000 0x8007AEB8 and OV_2F5B000 0x8007B7A8 seeded the port runs a full 45s at rc=137 with zero recomp misses.
+
+### overlay.entry-seeds-auto — Automate the per-overlay entry seed instead of one fail-fast per rebuild
+- status: todo
+- deps: overlay.ovl2-discovery
+- evidence: C066
+- where: tools/overlay_scan.py; game/recomp_seeds.json overlay_seeds
+- gap: Each level overlay needs exactly one seed — its per-frame entry — and finding it currently costs a full recomp+build+run per overlay. The shape is regular enough to automate: the miss reports caller ra=0x80033AAC, and the address is always a clean prologue in the resident bytes. Candidate rule: for each overlay image, the entry is the address that main's per-level table (43 stores to [0x80075734] at 0x8005A4CC-0x8005B6BC, 41 distinct values) names AND that is prologue-shaped in THAT overlay's own bytes — the second test is what keeps another level's entry from being seeded into the wrong module. NOT yet verified: 0x8007B7A8 (OV_2F5B000's confirmed entry) is not in those 41 values, so the table is not the only installer and the rule as stated is incomplete.
+- notes: Do not seed the 41 table entries wholesale into every overlay — they all share one base, so another level's entry lands mid-function and splits real code.
 

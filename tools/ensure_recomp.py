@@ -26,6 +26,7 @@ Env:   PSXPORT_SPYRO_DISC (disc path), PSXPORT_DISCDUMP (discdump binary overrid
 Exit:  0 on success, non-zero with a diagnostic on any failure.
 """
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -51,16 +52,37 @@ WAD_DISC_PATH = "WAD.WAD"
 WAD = "scratch/wad/WAD.WAD"
 OVL_DIR = "scratch/bin/overlays"
 # (tag, byte offset into WAD.WAD, length). Every entry needs a load base in game/recomp_seeds.json.
-# OVL1 is the first LEVEL overlay, and it only became observable once the streaming read primitive
-# 0x80016698 was served with real data (C046/C047) — before that the game asked for it ~10 times and
-# got dataless acks, so nothing was ever written at its address.
-OVERLAYS = [("OVL0", 0x5B800, 14336), ("OVL1", 0xB83800, 65536),
-            ("OVL2", 0x237D000, 51200)]
+#
+# NOT HAND-MAINTAINED. Spyro's overlays are byte ranges inside WAD.WAD that the game streams into one
+# shared arena, and nothing in the executable enumerates them — the offset arrives in a register at
+# the call site. So the authority is a RUN: tools/overlay_scan.py reads the `cdq` log's arena loads
+# and writes game/overlays.json, which is what this reads. Each run reaches only as far as the port
+# currently gets, so the set grows as the port does; overlay_scan merges rather than replaces.
+OVERLAYS_JSON = "game/overlays.json"
+
+
+
 EXE = "scratch/bin/spyro/SCUS_942.28"
 GEN_DIR = "generated"
 GEN_MAIN = "generated/spyro_rec.c"
 HASH_FILE = "generated/.recomp.hash"
 VERSION_FILE = "generated/.recomp_version"
+
+
+def load_overlays():
+    """Read the observed overlay set. Falls back to empty (not to a guess) if the file is absent —
+    a missing set means "nobody has run overlay_scan yet", and emitting a guessed one would put a
+    whole module at a wrong offset, which is unrecoverable-looking garbage rather than an error."""
+    if not os.path.exists(OVERLAYS_JSON):
+        say(f"no {OVERLAYS_JSON} — run tools/overlay_scan.py --run 40 to record which overlays the "
+            f"port actually loads. Proceeding with none.")
+        return []
+    with open(OVERLAYS_JSON) as f:
+        data = json.load(f)
+    return [(e["name"], int(e["wad_offset"], 16), int(e["length"])) for e in data["overlays"]]
+
+
+OVERLAYS = None   # filled by main() once load_overlays() can report through say()
 
 
 def say(msg):
@@ -155,6 +177,16 @@ def extract_overlays(discdump, disc):
         if r.returncode != 0 or not os.path.isfile(wad):
             die(f"could not extract {WAD_DISC_PATH}: {(r.stderr or b'').decode(errors='replace').strip()}")
     os.makedirs(os.path.join(ROOT, OVL_DIR), exist_ok=True)
+    # DELETE SLICES THAT ARE NO LONGER IN THE SET. emit.py walks this DIRECTORY, not our list, so a
+    # leftover .BIN from an earlier set is recompiled as if it were current — and since the overlays
+    # all share one base, a stale slice emits a whole module of wrong addresses at the live arena.
+    # This is not hypothetical: renaming the set (index-based -> offset-based) left the old files
+    # behind and emit.py picked up both.
+    want = {name + ".BIN" for name, _, _ in OVERLAYS}
+    for fn in sorted(os.listdir(os.path.join(ROOT, OVL_DIR))):
+        if fn.upper().endswith(".BIN") and fn not in want:
+            os.remove(os.path.join(ROOT, OVL_DIR, fn))
+            say(f"removed stale overlay slice {fn} (no longer in {OVERLAYS_JSON})")
     out = []
     with open(wad, "rb") as f:
         for name, off, length in OVERLAYS:
@@ -212,6 +244,8 @@ def run_emit():
 
 
 def main():
+    global OVERLAYS
+    OVERLAYS = load_overlays()
     disc = resolve_disc(sys.argv)
     say(f"disc: {disc}")
     discdump = find_discdump()

@@ -39,45 +39,44 @@
   // corrupt the recomp — the exact failure this file exists to prevent. Left EMPTY deliberately.
   "main_reentry": [],
 
-  // Spyro's overlays are NOT separate disc files — they live inside WAD.WAD and are loaded into the
-  // heap. Confirmed from the binary: four hardcoded jals call addresses above the resident text end
-  // (docs/issues/0001). The public decomps describe 37 overlays; one is recompiled so far.
+  // ── overlays ──────────────────────────────────────────────────────────────────────────────────
+  // Spyro's overlays are NOT separate disc files. They are byte ranges inside WAD.WAD streamed into
+  // ONE shared staging ARENA at 0x8007AA38 — the read-only constant [0x800113A0] (claim C032), not a
+  // per-overlay base. The arena is reloaded constantly (a single run does several swaps), so psxport's
+  // slot router tells the residents apart by content signature rather than by address.
   //
-  // 0x8007AA38 is NOT "OVL0's base" — it is a single shared staging ARENA that every overlay is
-  // loaded into, sourced from the read-only constant [0x800113A0] (claim C032, tools/callsite_args.py).
-  // OVL0 simply occupies it during boot. This is why THIS LIST CANNOT SIMPLY BE EXTENDED: a second
-  // entry here would emit a second module at the same base and collide. See docs/issues/0013 — the
-  // fix is a keying decision in the substrate, not another line in this file.
+  // THE SET IS NOT LISTED HERE, AND NOT BY HAND. Nothing in the executable enumerates the overlays —
+  // the WAD offset arrives in a register at the call site — so the only authority is a RUN.
+  // tools/overlay_scan.py reads the `cdq` log's arena loads and writes game/overlays.json (offset +
+  // length exactly as the loader received them); tools/ensure_recomp.py slices those out of WAD.WAD.
+  // Re-run it after any run that gets further and the set grows; it merges, never replaces.
   //
-  // OVL0 — WAD.WAD +0x5B800, 14336 bytes, loaded to the arena at 0x8007AA38. The base is VERIFIED,
-  // not guessed: at it the region decodes 100% valid MIPS with a real-code opcode profile, and all
-  // four of the executable's hardcoded out-of-text call targets (0x8007AA50 / 0x8007ABAC /
-  // 0x8007BFD0 / 0x8007CEE4) land inside it on prologue shapes. A wrong overlay base emits a whole
-  // module at wrong addresses, so this is exactly the value that must never be guessed.
-  // OVL1 — WAD.WAD +0xB83800, 65536 bytes, loaded to the SAME arena base. This is WAD index entry 11,
-  // one of the 36 code entries, and the first LEVEL overlay the port ever loads. Base is OBSERVED, not
-  // inferred: with the streaming read primitive 0x80016698 served (C047), a run logs
-  //   stream: a0=37 dest=0x8007AA38 len=65536 a3=0x00B83800 -> moved 65536 bytes
-  // and the address that was fail-fasting, 0x8008772C, falls inside [0x8007AA38, 0x8008AA38).
-  // Two overlays sharing one base is exactly what psxport's slot router handles — it tells them apart
-  // by content signature, so this is a second tag at the same address, not a collision.
-  // OVL2 — WAD.WAD +0x237D000, 51200 bytes, same arena base. This one only became reachable once the
-  // VBlank callback started running (the game's pad decoder is registered via VSyncCallback and this
-  // runtime raises no IRQs, so until then live input never reached the game and it looped attract
-  // forever — see vsync.cpp and claim C063). With input working the game leaves attract and loads a
-  // level; the run logs
-  //   stream: a0=37 dest=0x8007AA38 len=51200 a3=0x0237D000 -> moved 51200 bytes
-  // immediately followed by ~2 MB of level data to 0x80087210 / 0x800DB224 / 0x80168A24, and the
-  // address that was fail-fasting, 0x800845F0, falls inside [0x8007AA38, 0x80087238). OBSERVED, not
-  // inferred — same standard as OVL1.
-  "overlay_bases": { "OVL0": "0x8007AA38", "OVL1": "0x8007AA38", "OVL2": "0x8007AA38" },
-  "overlay_base_patterns": [],
+  // Consequently there are no per-overlay BASES to record and none to get wrong: an entry is in the
+  // set BECAUSE its destination was the arena, so one pattern covers the whole set for good.
+  //
+  // WHY A RUN, AND NOT THE IMAGE. "Which overlay is resident" is a runtime fact, and the last overlay
+  // the router IDENTIFIED is not necessarily the one live at a fail-fast — the arena gets reloaded
+  // after it. Reading a missing address out of the previously-identified overlay's image showed
+  // unrelated bytes and produced a confidently wrong diagnosis (issue 0025). The port now dumps guest
+  // RAM at every miss (PSXPORT_MISS_RAMDUMP), which settles it: search WAD.WAD for the resident bytes.
+  "overlay_bases": {},
+  "overlay_base_patterns": [["OV_[0-9A-F]+", "0x8007AA38"]],
   // Function-pointer-only entries inside an overlay — invisible to `jal` discovery by construction.
   //
-  // OVL2 0x8007AEB8: the level overlay's per-frame entry. Reached from main's stage tick at
-  // 0x80033AA4 as `lw v0,[0x80075734] ; jalr v0` — an indirect call through a global the overlay
-  // installs, so nothing static points at it. Observed, not guessed: with OVL2 resident the run
-  // fail-fasts with `no recompiled fn for 0x8007AEB8 (caller ra=0x80033AAC)`, and 0x80033AAC is the
-  // instruction after exactly that `jalr`.
-  "overlay_seeds": { "OVL2": ["0x8007AEB8"] }
+  // THE RECURRING SHAPE: every level overlay has ONE per-frame entry, installed by the overlay into
+  // the global [0x80075734] and called from main's stage tick at 0x80033AA4 as
+  //     lw v0, [0x80075734] ; jalr v0
+  // Nothing static points at it, so `jal` discovery cannot see it and each one surfaces as its own
+  // fail-fast with `caller ra=0x80033AAC` — the instruction right after that `jalr`.
+  //
+  // Each is VERIFIED before being added, against the RAM dumped at the miss (the port dumps it
+  // automatically now): the address must be a real prologue in the RESIDENT bytes, and those bytes
+  // must match the overlay slice we believe is resident. Both checks matter — the arena is reused, so
+  // reading the address out of the wrong overlay's image is exactly the mistake issue 0025 records.
+  //   OV_237D000 0x8007AEB8 -> addiu sp,sp,-512
+  //   OV_2F5B000 0x8007B7A8 -> addiu sp,sp,-560, and the resident word matches the slice exactly
+  "overlay_seeds": {
+    "OV_237D000": ["0x8007AEB8"],
+    "OV_2F5B000": ["0x8007B7A8"]
+  }
 }

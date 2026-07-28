@@ -28,3 +28,6 @@ void spyro_register_native_leaves();
 
 // 3-word vector add/sub and the libgte angle-table interpolator (native_vec.cpp).
 void spyro_register_native_vec();
+
+// Geometry leaves that use the GTE (native_gte.cpp) — scalar logic native, COP2 via the platform model.
+void spyro_register_native_gte();

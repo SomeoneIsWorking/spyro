@@ -93,6 +93,18 @@ def main():
     if not os.path.exists(prof):
         sys.exit(f"prof_hot: no profile at {a.prof} — run with PSXPORT_PROF=1 first")
 
+    # A PROFILE ONLY MEANS ANYTHING AGAINST THE BINARY THAT PRODUCED IT. Symbol addresses move on
+    # every relink, so resolving an old profile against a new build silently attributes samples to
+    # whatever now occupies those addresses. I nearly reported a before/after comparison built exactly
+    # that way — the "before" number changed from 6.06% to 4.88% purely because the binary had been
+    # rebuilt in between, which is not a measurement of anything.
+    if os.path.getmtime(binary) > os.path.getmtime(prof):
+        print(f"REFUSING: {os.path.basename(binary)} is NEWER than {os.path.basename(prof)}.\n"
+              f"  The binary was relinked after this profile was taken, so its symbol addresses no\n"
+              f"  longer match the sampled PCs and every attribution below would be fiction.\n"
+              f"  Re-run the port with PSXPORT_PROF=1 against the current build.", file=sys.stderr)
+        return 2
+
     syms = symbols(binary)
     starts = [s[0] for s in syms]
     owned = owned_set()

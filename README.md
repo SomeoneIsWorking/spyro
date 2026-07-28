@@ -16,8 +16,9 @@ take ownership of that recompiled substrate, each one gated byte-exact against t
 
 ## Status — honest
 
-**Phase 0: the recompiled substrate boots and runs the game's own `main()`.** That is where it is
-today; it is not yet playable.
+**Phase 0: the recompiled substrate boots, runs the game's own `main()`, and drives its frame loop
+on a restored vblank timebase.** It presents frames; it is not yet playable — the CD read path is
+unproven and nothing is owned natively.
 
 | | state |
 |---|---|
@@ -28,7 +29,7 @@ today; it is not yet playable.
 | Reaches the guest's `main()` as recompiled code | ✅ verified by backtrace |
 | CD command path | ✅ no CD timeouts at boot — `CD_init`, `CD_datasync`, `CD_cw` wired (signatures confirmed) |
 | CD *reads* returning correct data | ⬜ untested — commands ACK, but no read has yet been verified to deliver bytes |
-| VSync timebase | 🟡 vblank counter `0x800749E0` found + wait helper overridden; boot now reaches GPU init, then SIGSEGVs ([`0002`](docs/issues/0002-vsync-timebase-correct-counter-address-advances.md)) |
+| VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Native frame loop, renderer, input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
 | Code overlays | ❓ **unresolved** — see [`docs/issues/0001`](docs/issues/0001-whether-spyro-loads-code-overlays-and-from-where.md) |

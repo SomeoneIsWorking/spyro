@@ -22,3 +22,6 @@ void spyro_register_level_probes();
 // The first guest function this port OWNS outright (native_rand.cpp) — the recompiled body never
 // runs once installed. Verified per call against that body under PSXPORT_NDIFF.
 void spyro_register_native_rand();
+
+// Hot leaf functions owned outright (native_leaf.cpp), chosen with tools/own_candidates.py.
+void spyro_register_native_leaves();

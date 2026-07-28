@@ -208,8 +208,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### own.next-targets — Own more guest functions natively, each gated by PSXPORT_NDIFF
 - status: todo
 - deps: harness.sbs
-- evidence: C075,I019
+- evidence: C075,C076,I019,I020
 - where: game/core/native_rand.cpp is the pattern; game/core/ observation wrappers are the candidates
-- gap: The port is 20 observation wrappers to 1 native body (C075). Now that replacements can be verified per call, convert them. Good next targets, roughly by value: the buffer flip 0x8001ED5C (small, exactly specified, runs once per displayed frame, and C068 already has its full contract); then the CD queue service 0x8002BBE0 and retry step 0x800163E4, which this port already half-owns via super-call wrappers that inject completion events — owning them outright removes the hybrid. Do NOT start with the loader: it is large and its contract is not yet fully RE'd.
-- notes: The pattern is native_rand.cpp: a pure native body plus ndiff_run(c, name, native, gen_func_X). Reproduce EVERY register the substrate leaves, including scratch ones like $at — the differential is only worth having if nothing is allowed to differ 'where it does not matter'.
+- gap: In progress. 4 native bodies now (was 1): rand + copy3/zero3/fill, 276 static call sites, all byte-exact under PSXPORT_NDIFF and re-verified every gate run. Use tools/own_candidates.py (I020) to pick the next — 277 leaf candidates at size<=60 remain.
+- notes: CORRECTION to the earlier note in this entry: 0x8001ED5C is NOT a small exactly-specified flip. Its first dozen instructions are the buffer flip, then it continues into the entire per-frame stage dispatcher (a switch on [0x800757D8] calling many handlers). Owning it means owning the frame loop — not a next target. That mis-pick is why own_candidates.py exists and why it reports leaf/non-leaf. The pattern remains native_rand.cpp/native_leaf.cpp: a pure native body plus ndiff_run(c, name, native, gen_func_X), reproducing EVERY register the substrate leaves.
 

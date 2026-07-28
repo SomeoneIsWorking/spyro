@@ -29,6 +29,7 @@ set(GAME_SRC
   game/core/vsync.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
+  game/core/native_leaf.cpp
   game/core/level_load_probe.cpp
 )
 

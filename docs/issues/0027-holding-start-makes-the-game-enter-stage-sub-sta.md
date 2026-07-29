@@ -131,3 +131,15 @@ Note the block starts at 0x8007B85C, not 0x8007B858 (that word is the branch's d
 A MEASUREMENT ERROR WORTH RECORDING, since it nearly produced a false conclusion here: aggregating watchpoint hits by (address=VALUE, pc) puts a monotonically climbing counter into one row PER VALUE, each with count 1, which sorts last and vanishes under . The first pass therefore looked like '[0x80078D84] written once after f900' while it is written 137255 times. Aggregate by ADDRESS and pc, with the value dropped, when the question is 'what code is running'.
 
 NEXT, and it is a TOOL GAP rather than an analysis step. Everything above narrows to 'which basic blocks of the sub-1 arm actually execute', and this port has no instrument that answers that: watchpoints only see blocks that STORE to a watched address, hostprof resolves host PCs to whole functions (the arm is one recompiled function), and the overlay's handler is thousands of instructions. Either build block-level execution visibility, or pick target addresses that the candidate paths write and watch those — the technique that worked here, used deliberately rather than by luck.
+
+### Note (2026-07-29)
+CONFIRMED WITH A SECOND INSTRUMENT, and the tool gap this issue reported is now closed. PSXPORT_FNTRACE (new, external/psxport/runtime/recomp/fntrace.cpp) answers 'did control REACH this function, and from where' by installing a self-clearing override that re-dispatches to the real body. It answers the BLOCK question by proxy: distinct paths make distinct calls, so trace a callee unique to the path in question.
+
+Applied here with FORCE_BUTTONS=FFF7 over 3000 frames, i.e. with the port in sub-state 1:
+    0x80032AB0  (called at 0x8007B878)  -> NEVER CALLED
+    0x8001277C  (called at 0x8007B8DC)  -> NEVER CALLED
+0x80032AB0 is invoked BEFORE the button test, so control does not enter the region at all. That agrees with the watchpoint result (no stores to [0x80078D88], which the same region writes) via a completely different mechanism, so C112 now rests on two independent instruments (C114).
+
+NEXT, and now cheap: map the LIVE path instead of guessing at the dead one. Enumerate the jal targets in the sub-1 arm (0x8007B0B8 onward) and fntrace them in batches of up to 16; the ones that report REACHED trace out the path the handler actually takes, and where that path diverges from the one reaching 0x8007B85C is the branch to investigate. Known-live already: 0x80068F44, which writes [0x80078D7C]=1 at f837 from ra=0x8007B12C.
+
+TOOL CAVEAT, learned the hard way here: fntrace claims the same override slot the port's own overrides use. The first version installed BEFORE the game's registrations, was silently displaced, and reported 'NEVER CALLED' for the CD loader — which runs 14 times a boot. It now initialises last. So do not trace an address whose override does real work (the CD loader serves disc data); tracing a differentially-verified native body is fine. Always validate a trace with a known-positive alongside the address in question — that pairing is what caught this.

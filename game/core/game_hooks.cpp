@@ -16,6 +16,7 @@
 #include "game_iface.h"
 #include "spyro_game.h"
 #include "hostprof.h"
+#include "fntrace.h"
 
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
 extern "C" void rec_dispatch(Core* c, uint32_t addr);
@@ -59,6 +60,11 @@ static void spyro_registerOverrides(Game*) {
   spyro_register_native_gte();     // OWNED natively: vector length (GTE SQR + sqrt table)
   spyro_register_native_angle();   // OWNED natively: 8-bit/12-bit angle helpers + the calibrated spin
   spyro_register_native_util();    // OWNED natively: strlen / global swaps / dist2d / display-list link
+  // LAST, deliberately: fntrace claims the same single override slot the registrations above use, so
+  // installing it earlier means the next registration silently displaces it and the trace reports
+  // "never called" for a function that runs constantly. Going last makes the collision visible
+  // instead — see the hazard note in fntrace.cpp.
+  fntrace_init();                  // PSXPORT_FNTRACE=<addr,...> — "did control REACH this function?" 
 }
 
 static const GameHooks g_spyro_hooks = {

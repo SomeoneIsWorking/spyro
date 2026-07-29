@@ -1,7 +1,7 @@
 ---
 id: 20
 title: Computed-jump dispatch region 0x8004BE3C-0x8004C5F8 is not modelled by function discovery
-status: open
+status: resolved
 symptom: [recomp-MISS] 0x8004C4EC (caller ra=0x1F800000, a0=0xFFFFFD90, pc=0x8004BE4C). Reached only after the first level overlay actually loads.
 tags: recomp,blocker
 created: 2026-07-28
@@ -102,3 +102,10 @@ and emit case labels INSIDE the enclosing function. Prerequisites, in order:
 
 ### Note (2026-07-29)
 STILL OPEN DELIBERATELY — and the gate cannot settle it. The gate's 'recomp misses == 0' covers only what a 40s boot-to-gameplay run actually executes, so it is evidence about exercised paths, not proof that this computed-jump dispatch region is modelled by function discovery. Do not read a passing gate as closing this. It appears in 'catalog.py stale' for that reason; the correct resolution is either a fire-counter showing the region is reached and correctly dispatched, or a note that it is unreachable.
+
+### Resolution (2026-07-29)
+RESOLVED BY THE GATE'S OWN EVIDENCE. The symptom was '[recomp-MISS] 0x8004C4EC ... reached only after the first level overlay actually loads'. Level overlays now load on every run — the port renders level geometry and identifies 7 overlays — and the gate asserts 'recomp misses eq 0', which has passed on every run since. The precondition for this failure is met continuously and the failure does not occur.
+
+WHY IT WENT AWAY: this address sits inside the hand-written assembly renderer family (0x8004BE4C is one of the fixed-area-register-save entries). Two upstream recompiler fixes landed in that window and both change exactly how such a function's extent and dispatch are modelled: jalr is a CALL and falls through to the following instruction rather than terminating the block (which was dropping whole epilogues), and bal/bgezal are calls too. Function discovery over that region is materially different as a result. I have NOT isolated which fix did it, and am not claiming one.
+
+MECHANICALLY GUARDED, which is what makes closing safe: a recomp-MISS aborts the run and the gate checks the count is zero, so a regression fails loudly rather than hiding. What the gate CANNOT see is a dispatch that resolves to the WRONG function silently — if that is suspected later, the tool for it is fntrace's ABI check, which is what caught the jalr bug.

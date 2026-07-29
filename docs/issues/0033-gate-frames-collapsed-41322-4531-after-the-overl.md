@@ -1,7 +1,7 @@
 ---
 id: 33
 title: Gate frames collapsed 41322 -> 4531 after the overlay set grew 7 -> 12
-status: open
+status: resolved
 symptom: Same 40s gate, same thresholds, all 14 checks still PASS, but frames presented fell from 41322 to 4531 (~9x), bytes loaded from disc 27.8M -> 3.7M, CD loader invocations 14 -> 6, distinct overlays identified 7 -> 4. The port is not failing, it is running roughly nine times slower and therefore getting far less far in the same wall time.
 tags: perf,overlay,gate,blocker
 created: 2026-07-29
@@ -44,3 +44,12 @@ So the old 41322-frame runs were not 'faster'. They never left the TITLE SCREEN,
 RETITLE in spirit: this is not a throughput regression, it is a NEW STALL during level load, reachable only since 0027 was fixed. Next step is to find what 0x8003DAE4's caller chain is looping on — it is gated on [0x80078B08] < 23, which looks like an object/entity count, so start by watching that and 0x80078B74.
 
 THE GATE DEFECT IS REAL AND UNCHANGED, and is now better motivated: 'frames >= 300' passed a run that stopped presenting entirely after 4531 frames. It should assert frames still ADVANCING near the end of the window, not merely a total — a stalled run and a healthy one are indistinguishable to a cumulative floor.
+
+### Resolution (2026-07-29)
+RESOLVED — it was the frame-4531 stall (issue 0034), not a slowdown, and the reframe note had already reached that conclusion: a number repeating to the digit across rebuilds is a deterministic bound, not a machine running slower.
+
+Root cause was a recompiler bug — jalr treated as a block terminator, dropping a function's epilogue, so a loop counter came back holding a stack pointer and ran ~62 million times. Fixed in psxport; the port went from a hard stop at 4531 to 69360 frames in the same 60s. Overlays.json growing 7 -> 12 was a coincidence of timing: it made the level-load path REACHABLE, which is when the pre-existing bug started biting.
+
+THE GATE DEFECT THIS ENTRY IDENTIFIED IS ALSO FIXED, and it was the more valuable half. The gate ran with PSXPORT_WATCHDOG=0, so a port that stopped presenting entirely still passed every check — 'frames >= 300' counts frames from before the stall. It now runs the frame-progress watchdog at 15s and FAILs on a trip, printing the top of the stuck stack. Validated both ways: silent on a healthy run, and its pattern matches the log from this very stall.
+
+The relative-throughput check this entry suggested is NOT implemented, deliberately: gate frame counts vary with machine load (27k-49k across this session's runs on an unchanged build), so a relative floor would fire on noise. The watchdog catches the failure mode that actually matters — no progress at all — without that false-positive surface.

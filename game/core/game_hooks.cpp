@@ -54,14 +54,13 @@ static void spyro_registerOverrides(Game*) {
   hostprof_init();                 // PSXPORT_PROF=1 — host-PC sampling, to pick ownership targets by
                                    // MEASURED time rather than by static caller counts
   spyro_register_cd_queue();
-  spyro_register_level_probes();   // TEMPORARY — see docs/issues/0017
   // PSXPORT_NO_NATIVE=1 — install NO natively-owned bodies, so every call runs the recompiled
   // substrate instead. This is the A/B switch for "is one of our own replacements responsible?",
   // and it is the only way to ask that on a path the per-call differential cannot reach: NDIFF
   // verifies the FIRST N calls of each site, so a body that is wrong only after millions of calls
   // (say, on inputs a later level produces and the title screen never does) is invisible to it.
-  // The probes and platform supply above are deliberately NOT gated — removing those changes what
-  // the port can do at all, which would confound the comparison.
+  // The platform supply above is deliberately NOT gated — removing it changes what the port can do
+  // at all, which would confound the comparison.
   if (cfg_on("PSXPORT_NO_NATIVE")) {
     cfg_logw("native", "PSXPORT_NO_NATIVE=1 — native bodies NOT installed; the substrate runs "
                        "everything. Diagnostic only: any behaviour difference from a normal run is "

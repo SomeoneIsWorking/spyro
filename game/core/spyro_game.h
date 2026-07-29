@@ -17,7 +17,6 @@ void spyro_register_vsync(Game* g);
 // game/core/cd_queue.cpp — observes (and will own) the CD request queue service routine.
 void spyro_register_cd_queue();
 // TEMPORARY (docs/issues/0017): probes on the level-overlay load chain. Remove once the load fires.
-void spyro_register_level_probes();
 
 // The first guest function this port OWNS outright (native_rand.cpp) — the recompiled body never
 // runs once installed. Verified per call against that body under PSXPORT_NDIFF.

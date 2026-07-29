@@ -184,14 +184,20 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: 
 
 ### gpu.upload-only-screens — Upload-only screens (logos, FMV stills) do not reach the display
-- status: todo
+- status: re-verified
 - deps: 
-- evidence: C099,C100,C097
-✅ card.event-delivery            Deliver EvMdINTR events by calling the handler — DONE
-      re-verified: The title screen's blocker was in the FRAMEWORK: Hle::deliverEvent only marked event slots fired and never invoked the handler, which is right for polled EvMdNOINTR events but wrong for EvMdINTR, where the BIOS calls it. Spyro opens eight of its nine events in callback mode (four HwCARD 0xF0000011, four SwCARD 0xF4000001) and psxport's memory-card model was ALREADY delivering SwCARD spec 4 and HwCARD spec 4 — the deliveries landed on handlers nothing called. Fixed in psxport; 0x80067DD0 goes from NEVER CALLED to reached at frame 838 and the stage machine completes f835 sub=1 -> f871 gate=2 -> f961 sub=2/gate=5 -> f995 sub=3. Gate 14/14. (C121, issue 0027 resolved.) The earlier reading of this step — that Spyro bypasses the BIOS card API and needs its own driver overridden — was WRONG; it uses the BIOS path, and only the callback invocation was missing.
+- evidence: C099,C100,C097,C104,C105
 - where: external/psxport/runtime/recomp/gpu_vk.cpp render_geom/present; game/core/game_config.cpp preserveVramBackdrop
 - gap: CLOSED. These screens had TWO stacked faults. (1) render_geom's `total == 0` early return cleared s_vram_tex unconditionally, above every other backdrop control, so preserveVramBackdrop (C100) could never reach the very frames it was added for — fixed, C104, issue 0029. (2) With them visible, they were 24bpp (GP1(08) bit 4, set frames 1-436) decoded as 1555 — fixed, C105, issue 0016. Both decoders of the display region now honour the bit: the present shader and the CPU shot/readback. Verified by looking at the pixels — frame 300 renders the correct Universal Interactive Studios logo at full width. Gate 14/14.
 - notes: Two independent faults on the same screens. Fix the visibility first — a 24bpp fix cannot be verified against a black screen.
+
+### gpu.native-depth — Native per-vertex depth from the GTE tap
+- status: re-partial
+- deps: 
+- evidence: C128,C126
+- where: external/psxport/tools/recomp/emit.py vertex_pz_stores; runtime/recomp/gte_beetle.cpp gte_hold_pz/gte_record_pz/gte_copy_pz; proj_prim.cpp
+- gap: MECHANISM RE-VERIFIED, COVERAGE IS NOT. Where a primitive's vertices resolve, they resolve exactly: sampled frames reach 210/210 prims with miss=0, and the rendered image is unchanged from before depth was enabled (C126), which is the correct result — the game's own painter order is still right for its own camera, so real depth only changes the picture once the camera moves or widens.
+- notes: Do NOT keep adding tap rules hoping for a threshold effect. The next real gain is render.own-geometry-family.
 
 
 ## overlay
@@ -241,4 +247,25 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: lucent (external, the user's own library); external/psxport/runtime/recomp/cfg.cpp; Core::wwatch_check
 - gap: 
 - notes: DONE, and STOP HERE unless a CPU-bound workload appears. Three fixes landed, all measured: lucent channel_enabled 6.06%->0.33% (fixed in the shared library); the per-store watch hooks ~4.9% (inlined armed test); the generation-counter chain ~6% (trackStore -> cfg_dbg_generation -> bootstrap_once). Frames 16508 -> ~18700, seventh overlay reached. BUT C089 is the finding that should govern what happens next: the LAST ~6% bought no measurable throughput at all, and the run reaches an identical point either way. ~29% of samples sit outside the binary (driver/loader) and do not shrink. Further micro-optimisation of this workload is optimising something that is not the constraint. TWICE in this work a fast path silently never engaged (lucent's early return, trackStore's statics vs members) and BOTH were invisible to reading and obvious to re-profiling — never accept an optimisation on the strength of the diff.
+
+
+## render
+
+### render.own-geometry-family — Own the hand-written assembly geometry renderers (the gate for widescreen AND 60fps)
+- status: todo
+- deps: gpu.native-depth
+- evidence: C127
+- where: 0x8004EBA8 (understood at instruction level), 0x800258F0 (9 vertex sites traced), + 17 more sharing the fixed-area register-save idiom
+- gap: TWO INDEPENDENT LINES OF EVIDENCE POINT HERE, which is why it is the next real step rather than a preference.
+
+(1) WIDESCREEN. The GTE already projects ~25% of vertices outside the visible 512-wide frame (C127), so the content exists — but the renderers trivially reject faces against clip bounds that are IMMEDIATE constants (lui rX,0x0200 = 512<<16 and lui rX,0x0100 = 256<<16), and at least 8 of the family carry them. The projection centre and the bounds must move together and cannot: OFX is a GTE control register the port can influence, the bounds are immediates inside recompiled guest code. Patching those constants is the magic-constant bandaid the rules ban.
+
+(2) 60FPS. psxport's fps60 re-runs the field world natively under lerped inputs and explicitly aborts-with-identity where there is no native world producer. Spyro has none — it replays guest packets.
+
+(3) And depth coverage plateaus at 2.5% because observing a multi-hop staging pipeline from outside cannot keep up with it.
+
+THE FAMILY IS 19 FUNCTIONS (fixed-area GPR save to 0x80077DD8, found with tools/writers.py): 0x8001F158 0x8001F798 0x800208FC 0x80020F34 0x80022A2C 0x80023AC4 0x800258F0 0x8004AE38 0x8004BE4C 0x8004D5EC 0x8004DF24 0x8004E3C8 0x8004EBA8 0x8004F000 0x8004F4BC 0x8004FEA0 0x80050240 0x800580F4 0x80058D64. Not all are geometry; 8 carry clip bounds.
+
+SCOPE WARNING: this is byte-exact reimplementation of hand-written assembly. Each body must pass the per-call differential against the recompiled body BEFORE any widening is switched on, or a plain rendering bug and a widescreen artefact become indistinguishable. START WITH ONE (0x8004EBA8 is fully understood — two stages, 11/11/10-bit packed vertex deltas, scratchpad cache indexed by pre-scaled byte offsets, POLY_FT3 stride 0x1C / F3 0x14) and prove the differential can validate it at all before committing to the rest.
+- notes: 
 

@@ -1,7 +1,7 @@
 ---
 id: 21
 title: Data-driven mid-function dispatch: 0x80038620 has no static reference anywhere
-status: open
+status: resolved
 symptom: [recomp-MISS] 0x80038620 (caller ra=0x80053274, a0=0x92C5). The port's only remaining fail-fast after the computed-jump recogniser landed; reached at ~4234 frames.
 tags: recomp,blocker
 created: 2026-07-28
@@ -86,3 +86,12 @@ Prefer (1): it is decidable statically and cannot mask anything.
 
 ### Note (2026-07-29)
 STILL OPEN DELIBERATELY — same reasoning as #20. 'recomp misses == 0' in the gate is a statement about the paths a 40s boot-to-gameplay run exercises. A mid-function dispatch target with no static reference anywhere is precisely the kind of thing such a run can miss entirely, so the gate's silence here is not evidence. Resolve with a reached/not-reached measurement, not with a green gate.
+
+### Resolution (2026-07-29)
+RESOLVED, and the mechanism is documented in the recompiler itself. The symptom was '[recomp-MISS] 0x80038620 (caller ra=0x80053274)'. That address is now handled by ra_tail_returns() in psxport's emit.py, whose banner cites THIS EXACT CASE: 'Spyro: 0x80053594 addi a3,ra,0 then 0x800535B8 jr a3 lands on 0x80038620, exactly the instruction after jal 0x800530C0'.
+
+So it was never a data-driven dispatch at all — it is a TAIL RETURN through a non-ra register. The guest moved ra into a3 and jumped through it, which is indistinguishable from a computed call at the jump site, and dispatching it fail-fasts because the target is mid-function (the instruction after some caller's jal) and therefore never a function entry. The fix emits  instead, letting the C stack unwind to the real caller, which is precisely the guest semantics. It is decided STATICALLY, so it cannot mask a genuine computed call.
+
+The title of this entry was wrong, which is worth recording: 'has no static reference anywhere' was true and led to the wrong conclusion. Nothing references it because nothing needs to — it is a return address, not a call target.
+
+Confirmed live: the gate asserts 'recomp misses eq 0' and passes on every run, and the port now runs far past the ~4234 frames where this used to fire.

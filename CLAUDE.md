@@ -125,6 +125,15 @@ Everything transient goes in the git-ignored `scratch/`, kept split by kind (`sc
 per-user quota on this machine, and logs/dumps fill it in a run or two, breaking all writes with
 "Disk quota exceeded". Diagnose that symptom with `quota -s`, not `df`.
 
+## Pushing the psxport submodule: `HEAD:main`, never `main`
+
+`external/psxport` is a submodule, so it normally sits on a **detached HEAD** while its local `main`
+branch stays wherever it was last left — which can be dozens of commits stale. `git push origin main`
+there pushes *that stale branch*, not the commit you just made, and the rejection reads like a
+"behind remote" problem with your work rather than what it is. Push `git push origin HEAD:main`, then
+`git branch -f main HEAD` so the local branch stops lying. Verify with `git log --oneline -1 origin/main`
+after pushing — a framework fix that only exists in this checkout is a fix the next clone does not get.
+
 ## Never commit
 
 Disc images (`*.chd`), the extracted executable, `generated/`, or machine-specific absolute paths.

@@ -15,3 +15,12 @@ The router logs resident[0..16] = 0B 00 00 00 A0 B0 07 80 04 B9 07 80 D4 BE 07 8
 Note 0x800857CC is well past the arena base 0x8007AA38 (about 0xAD94 in), so whatever occupies it is large. OV_B83800 spans [0x8007AA38,0x8008AA38) and would contain that address.
 
 First step: run with PSXPORT_DEBUG=cd,ovload and read which overlay was actually LOADED most recently before the failure — the load-time identity (overlay_note_load) is authoritative where a content signature is not, and cd_queue.cpp already records identity at load time for exactly this reason (C032, issue 0013).
+
+### Note (2026-07-29)
+CAUSE: an unextracted overlay, and the tooling already handles it. Spyro's overlays are byte ranges in WAD.WAD with nothing enumerating them, so the known set is bounded by how far a run gets — overlay_scan.py exists precisely for this and MERGES rather than truncates. Fixing issue 0027 let the port reach new code, and a rescan found FIVE more: WAD +0x18F000, +0x18F800, +0x20F800, +0x287800, +0x7F2800. The set went 7 -> 12.
+
+The two the router choked on are +0x287800 (75776 bytes) and +0x7F2800 (57344); the cdq log shows both being streamed to the arena base, and ovload had already labelled them '(none/unmatched, dest=0x8007AA38)' at load time — the load-time identity was reporting the problem before the router did.
+
+The 10/16 partial match was a red herring in the sense that mattered: the resident header is word0=11 with a pointer table from 0x8007B0A0, while OV_B83800 is word0=12 from 0x8007B150. Same STRUCTURE, different overlay — which is exactly what a partial signature match on a count-plus-pointer-table header looks like. It was not a mixture of two images, and not a corrupt load.
+
+ensure_recomp.py has emitted the 12 modules (ov_ov_7f2800 recompiled 9 functions after jal discovery). Rebuild is in progress; verification pending — do not close this until a run past the title shows no router error and no recomp-MISS.

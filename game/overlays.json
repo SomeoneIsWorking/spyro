@@ -33,6 +33,36 @@
       "entry_seeds": []
     },
     {
+      "name": "OV_18F000",
+      "wad_offset": "0x18F000",
+      "length": 2048,
+      "entry_seeds": []
+    },
+    {
+      "name": "OV_18F800",
+      "wad_offset": "0x18F800",
+      "length": 524288,
+      "entry_seeds": []
+    },
+    {
+      "name": "OV_20F800",
+      "wad_offset": "0x20F800",
+      "length": 491520,
+      "entry_seeds": []
+    },
+    {
+      "name": "OV_287800",
+      "wad_offset": "0x287800",
+      "length": 75776,
+      "entry_seeds": []
+    },
+    {
+      "name": "OV_7F2800",
+      "wad_offset": "0x7F2800",
+      "length": 57344,
+      "entry_seeds": []
+    },
+    {
       "name": "OV_B83800",
       "wad_offset": "0xB83800",
       "length": 65536,

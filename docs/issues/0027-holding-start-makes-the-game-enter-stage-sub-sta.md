@@ -224,3 +224,33 @@ DELIVERY GAP FIXED — AND IT IS NOT ENOUGH. The port now runs the guest's VBlan
 THE TITLE STILL DOES NOT ADVANCE. [0x80078D7C] still reaches only 1. 0x80067CD4 now runs but does not set [0x80075B58], and the trace says why: 0x80069030 is called 540010 times against 270006 invocations, i.e. exactly TWICE per call. Its body is 'call 0x80069030; if non-zero bail; call 0x80068FC4; call 0x80069030; if ZERO bail; set the flag'. Two calls per invocation means the first returned 0 (so it proceeded) and the second ALSO returned 0 (so it bailed without setting the flag). 0x80069030 never reports ready.
 
 HYPOTHESIS for the next layer, explicitly NOT yet measured: 0x80069030 and 0x80068FC4 sit in libpad's range (0x80069000-0x8006C000, per the note in vsync.cpp), and this port deliberately BYPASSES libpad's SIO state machine — pad.serviceFrame writes the pad buffers directly because no IRQ drives SIO. If 0x80069030 is asking about real SIO transfer state, it will never be satisfied while the buffers are filled behind libpad's back. Test that before assuming it: read 0x80069030's body and find what it actually checks, then see whether that state is modelled. Do not 'fix' it by forcing a return value — that would be faking the step this whole chain exists to reach honestly.
+
+### Note (2026-07-29)
+IT IS THE MEMORY CARD. The chain bottoms out at an event the port never delivers, and every link below is measured rather than reasoned:
+
+  [0x80078D7C] must be 5                      exit gate
+    -> 0x80067628 returns 0 while [0x80075B58] == 0
+    -> that flag's only setter, 0x80067CD4, now RUNS (C118) but bails because
+       0x80069030 returns 0 both times it is called
+    -> 0x80069030 is four instructions: return [0x800751B0] >> 31.
+       [0x800751B0] is an INDEX, measured stuck at 1 across f900/1300/1900
+    -> index 1 selects handler [0x80075C4C] = 0x800663D8, a state machine whose
+       state [0x80075C18] is stuck at 11 across f900/1700
+    -> state 11 calls 0x8006841C, which returns
+       [0x80075B2C] + ([0x80075B30]<<1) + ([0x80075B34]<<2) + ([0x80075B38]<<3).
+       All four measured 0.
+    -> the only function that sets those four to 1 is 0x80067DD0 — NEVER CALLED
+
+0x80067DD0 has no static callers and exactly one reference, a lui/addiu pair at 0x80067EC0:
+
+    a0 = 0xF4000001    ; event CLASS
+    a1 = 4             ; spec
+    a2 = 0x1000        ; mode
+    a3 = 0x80067DD0    ; handler
+    jal 0x8005DB74     ; OpenEvent
+
+Class 0xF4000001 is HwCARD, spec 4 is I/O-end, mode 0x1000 is EvMdINTR. So 0x80067DD0 is the MEMORY-CARD I/O-completion callback, and the title screen is blocked on a memory-card check that never completes because the port delivers no card events. 0x80067EA0 (which opens the event) does run — once, at frame 835.
+
+This also sharpens the earlier guess. I previously refuted 'a0=7 means the controller/memcard IRQ' as unfounded inference; the evidence has now landed on the memory card independently, from the event class rather than from IRQ numbering. Right answer, but it needed the measurement, not the guess.
+
+NEXT: decide how the port should answer a memory-card probe. The honest options are (a) model HwCARD events properly in psxport, or (b) report 'no card present' the way real hardware does when the slot is empty — which is a legitimate device state, not a fake completion, and is probably what a PC port wants by default. What is NOT acceptable is forcing 0x80069030's return or poking [0x80075B58]: that fakes the completion of a device transaction the game is entitled to observe, and would make the title screen advance while every later card operation silently misbehaves. Check first whether psxport already has any memory-card model, and what GameConfig exposes.

@@ -261,6 +261,13 @@ static const GameConfig g_spyro_config = {
     .changeThread = 0u,
     .vsyncTrap = 0u,
   },
+
+  // ── rendering policy ───────────────────────────────────────────────────────────────────────────
+  // The guest still owns drawing in this port, so its UPLOADED VRAM must stay visible under whatever
+  // primitives it submits. With the framework default (clear to black) the SCE and Universal logo
+  // screens render BLACK — they are uploads with zero primitives, so the clear discards them before
+  // anything is drawn on top (C099). Set this back to 0 if and when a native producer owns the frame.
+  .preserveVramBackdrop = 1u,
 };
 
 void spyro_install_game_config() { psxport_install_game(&g_spyro_config, spyro_game_hooks()); }

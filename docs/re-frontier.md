@@ -183,6 +183,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: RESOLVED. The render-queue drain (C037) fixed the abort. The 'black screen' that appeared to remain was a MEASUREMENT ARTEFACT, not a defect: PSXPORT_GPU_DUMP reads s_vram and VK-path polygons never touch it (instrument I008), so the dump goes black the moment real rendering starts. The guest's own prim count shows 680 frames submitting geometry in the last quarter of the run. C038, which claimed prims reached the renderer but not the screen, is falsified. Remaining unknown, tracked as issue 0018: there is no headless way to capture VK output, so 'are the pixels CORRECT' is unmeasured — a per-frame readback hangs the port and was reverted. The port's live blocker is now the recomp miss at 0x8008772C (issue 0017).
 - notes: 
 
+### gpu.upload-only-screens — Upload-only screens (logos, FMV stills) do not reach the display
+- status: todo
+- deps: 
+- evidence: C099,C100,C097
+- where: external/psxport/runtime/recomp/gpu_vk.cpp render_geom/present; game/core/game_config.cpp preserveVramBackdrop
+- gap: Spyro's SCE and Universal screens are uploads with zero primitives, and they render black. The renderer's band 1 cleared the colour target to black on the principle that only native submissions are visible (C099) — that is now a consumer choice (GameConfig::preserveVramBackdrop) and Spyro opts in, which is verified NOT to leave stale content under 3D gameplay (C100). But the screens STILL do not appear, and the cause is unknown: issue 0029 lists what is ruled out (the flag reaches the renderer, ires=1 so the target IS s_vram_tex, the upload is unconditional with the right source, CPU VRAM holds the content, the frame axes line up, both buffers were captured). SEPARATELY these screens are 24bpp and the depth bit is decoded but not honoured (C097), so even once they appear they will be mis-coloured and two-thirds wide until that is handled.
+- notes: Two independent faults on the same screens. Fix the visibility first — a 24bpp fix cannot be verified against a black screen.
+
 
 ## overlay
 

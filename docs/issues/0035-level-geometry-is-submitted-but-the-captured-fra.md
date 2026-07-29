@@ -1,7 +1,7 @@
 ---
 id: 35
 title: Level geometry is submitted but the captured frame is a flat fill
-status: open
+status: resolved
 symptom: Past the frame-4531 stall the guest submits ~1900 prims / ~13900 GP0 words per frame for long stretches, but every REPL 'shot' capture is a single uniform colour: sky-blue at f20000, tan at f50000, dark maroon at f46404 (a frame in a ~1900-prim run). No geometry is visible in any capture.
 tags: gpu,geometry,vk,blocker
 created: 2026-07-29
@@ -39,3 +39,17 @@ MEASURED, so it does not have to be re-derived:
   * The captured 512x240 held exactly TWO colours: (40,0,24) x114688 and black x8192 (a 16-row band).
 
 INSTRUMENT NOTE. PSXPORT_PRIMDUMP=<frame> writes scratch/logs/prims_f<N>.csv from the gp0 tee and is the right tool for 'what did the guest actually submit'. It produced NO file at f300 — correct, because the logo screens are uploads with no polygons. An empty result from it means 'no polys that frame', which is indistinguishable from 'not armed' unless you check the frame's prim count first.
+
+### Resolution (2026-07-29)
+NOT A RENDERING BUG AT ALL — and not the buffer-flip bug I claimed either. Both of my explanations were wrong; the measurement is in I032.
+
+VRAM dumps at f46501/46503/46505/46507 with the display origin logged per frame show the rendered image sitting in EXACTLY the buffer the log says is displayed, four times out of four. So the flip is correct and present_window() is fine. What actually happened is a capture-procedure fault with two parts:
+
+  1. Every screenshot landed on an EVEN frame, and this port submits 0 prims on even frames (~1600 on odd) because it is double buffered. A capture on an even frame is a picture of nothing.
+  2. REPL 'run N' returns AFTER frame N presented and after the display origin has flipped to the next frame's draw target, so a 'shot' at that prompt captures a fresh clear.
+
+Neither is an engine defect. Recorded as I032 with the rules that make capture reliable: use 'vram <path>' (both buffers in one image, nothing to trust) and pick an odd frame.
+
+WHAT THE PORT ACTUALLY DOES: renders Spyro's attract-mode demo in 3D — terrain, sunset sky, Spyro, two characters, 'DEMO MODE' caption (C124, scratch/screenshots/spyro_gameplay.png).
+
+CARRIED FORWARD as its own work, since it is real and this issue is not the place for it: all 1609 polys at f46501 classify is3d=0, because projprim.lookupPz never resolves a vertex for this game. No world geometry gets depth ordering, so occlusion is currently draw-order only. That is the native-depth work.

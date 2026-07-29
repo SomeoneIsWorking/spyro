@@ -15,6 +15,7 @@
 #include "core.h"
 #include "game_iface.h"
 #include "spyro_game.h"
+#include "cfg.h"
 #include "hostprof.h"
 #include "fntrace.h"
 
@@ -54,6 +55,18 @@ static void spyro_registerOverrides(Game*) {
                                    // MEASURED time rather than by static caller counts
   spyro_register_cd_queue();
   spyro_register_level_probes();   // TEMPORARY — see docs/issues/0017
+  // PSXPORT_NO_NATIVE=1 — install NO natively-owned bodies, so every call runs the recompiled
+  // substrate instead. This is the A/B switch for "is one of our own replacements responsible?",
+  // and it is the only way to ask that on a path the per-call differential cannot reach: NDIFF
+  // verifies the FIRST N calls of each site, so a body that is wrong only after millions of calls
+  // (say, on inputs a later level produces and the title screen never does) is invisible to it.
+  // The probes and platform supply above are deliberately NOT gated — removing those changes what
+  // the port can do at all, which would confound the comparison.
+  if (cfg_on("PSXPORT_NO_NATIVE")) {
+    cfg_logw("native", "PSXPORT_NO_NATIVE=1 — native bodies NOT installed; the substrate runs "
+                       "everything. Diagnostic only: any behaviour difference from a normal run is "
+                       "attributable to a natively-owned body.");
+  } else {
   spyro_register_native_rand();    // OWNED natively (not a probe): rand() 0x8006272C
   spyro_register_native_leaves();  // OWNED natively: hot leaves (copy3 / zero3 / fill)
   spyro_register_native_vec();     // OWNED natively: vadd / vsub / angle-table lookup
@@ -64,6 +77,7 @@ static void spyro_registerOverrides(Game*) {
   // installing it earlier means the next registration silently displaces it and the trace reports
   // "never called" for a function that runs constantly. Going last makes the collision visible
   // instead — see the hazard note in fntrace.cpp.
+  }
   fntrace_init();                  // PSXPORT_FNTRACE=<addr,...> — "did control REACH this function?" 
 }
 

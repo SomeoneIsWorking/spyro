@@ -60,3 +60,20 @@ ALSO RULED OUT this round: neither START alone (0xFFF7) nor START+X (0xBFF7) adv
 
 ### Note (2026-07-29)
 STILL OPEN DELIBERATELY — the gate does not press buttons. The headless gate run supplies no input at all, so it can never enter the sub-state this describes and its passing says nothing about this issue. Reproducing it needs a run that holds START (PSXPORT_REPL=1 'press start'). Flagged by 'catalog.py stale' only because it is tagged blocker; that flag is correct to raise and the answer is 'uncovered', not 'fixed'.
+
+### Note (2026-07-29)
+GATE IDENTIFIED, and half of it did NOT need a runtime probe. The previous note said 'identifying s0 and v0 at that comparison is the next concrete step, and it is a runtime question (both are loaded earlier in the function)'. That is true of s0 but WRONG for v0: 0x8007CBA0 is reached by exactly one branch, 'bne $s0,$v0 -> 0x8007CBA0' at 0x8007CAA8, whose DELAY SLOT is 'addiu $v0, $zero, 5'. The delay slot always executes, so control arrives at the gate with v0 = 5 unconditionally. The gate is simply:  s0 == 5.
+
+AND s0 IS A GLOBAL, not a computed value. Walking the single predecessor chain back: 0x8007C554 sets s1 = lui 0x8008 / addiu -0x7284 = 0x80078D7C, and 0x8007C55C does 'lw $s0, ($s1)'. Nothing rewrites s0 between there and the gate. So the exit from sub=1 requires:
+
+    [0x80078D7C] == 5
+
+MEASURED, AND IT IS NEVER 5. REPL read at the title screen with START pressed: [0x80078D7C] = 0. A write-watchpoint over the whole run (PSXPORT_WWATCH=0x80078D7C,0x80078D80 PSXPORT_WWATCH_BT=1) catches exactly TWO stores, both writing ZERO: one at f0 (boot) and one at f436 from pc=0x80016914 ra=0x8002D198 with a0=0x80078D78 a2=0x5C — a 0x5C-byte block clear of the whole stage-state area. Nothing in a full run ever writes it a non-zero value.
+
+That also means the gate region is not merely closed, it is UNREACHABLE: 0x8007C564 is 'bnez $s0 -> 0x8007C674', so with s0 == 0 control falls through and never reaches 0x8007C8B4 -> 0x8007CAA8 -> 0x8007CBA0 at all. Chasing 'why does the branch at 0x8007CBA0 go the wrong way' would have been chasing code that does not execute.
+
+NOT A SUSPECT: the 0x5C block clear runs through 0x80016914, which this port owns natively (fill), but that body is per-call differentially verified against the recompiled one (0 divergences, 64 calls) — it is faithfully reproducing a clear the guest itself performs.
+
+RESIDENCY VERIFIED before trusting any of the above, per C065: whatis.py against a fresh title-screen RAM dump reports the arena matching OV_5B800 on 256/256 first words, and the resident word at 0x8007CBA0 is 0x16020029 — the same bne read from the image.
+
+NEXT: the question is now 'what is [0x80078D7C], and what should write it 5?'. It sits inside the 0x5C-byte stage-state block at 0x80078D78 that is cleared as a unit, alongside the sub-state itself at 0x80078D78. Find its writer in the IMAGE (a store through a register, so use the numeric branch/store scan or a watchpoint on a run that gets further, not a lui/addiu immediate scan — two such scans already missed the sub-state's writer for the same reason).

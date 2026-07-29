@@ -1,7 +1,7 @@
 ---
 id: 27
 title: Holding START makes the game enter stage sub-state 1 and hang there — input works, the branch it takes does not complete
-status: open
+status: resolved
 symptom: with PSXPORT_FORCE_BUTTONS=FFF7 the port makes exactly TWO stage transitions in 90s (mode 13 sub 0 -> sub 1) and loads NO level overlays; idle makes dozens and cycles four
 tags: input,stage,blocker
 created: 2026-07-28
@@ -254,3 +254,12 @@ Class 0xF4000001 is HwCARD, spec 4 is I/O-end, mode 0x1000 is EvMdINTR. So 0x800
 This also sharpens the earlier guess. I previously refuted 'a0=7 means the controller/memcard IRQ' as unfounded inference; the evidence has now landed on the memory card independently, from the event class rather than from IRQ numbering. Right answer, but it needed the measurement, not the guess.
 
 NEXT: decide how the port should answer a memory-card probe. The honest options are (a) model HwCARD events properly in psxport, or (b) report 'no card present' the way real hardware does when the slot is empty — which is a legitimate device state, not a fake completion, and is probably what a PC port wants by default. What is NOT acceptable is forcing 0x80069030's return or poking [0x80075B58]: that fakes the completion of a device transaction the game is entitled to observe, and would make the title screen advance while every later card operation silently misbehaves. Check first whether psxport already has any memory-card model, and what GameConfig exposes.
+
+### Resolution (2026-07-29)
+FIXED. The cause was in the framework, not the game: Hle::deliverEvent only MARKED matching event slots (ev[i].fired = 1) and never invoked the handler. That is correct for polled EvMdNOINTR events, which TestEvent reads and clears, but wrong for EvMdINTR, where the BIOS CALLS the handler and the game never polls. Spyro opens eight of its nine events in callback mode — four HwCARD (0xF0000011) and four SwCARD (0xF4000001) — so all eight were registered, delivered, and silently dropped. psxport's memory-card model was already delivering SwCARD spec 4 and HwCARD spec 4; the deliveries simply landed on handlers nothing called.
+
+Hle::deliverEvent now invokes the handler for EvMdINTR slots, with the register file saved and restored (it runs inside guest execution, and a real interrupt preserves the interrupted function's registers) and a depth guard so a handler that re-delivers cannot recurse the host stack.
+
+Measured end to end with FORCE_BUTTONS: 0x80067DD0 goes from NEVER CALLED to reached at frame 838, and the stage machine then completes the exact chain this issue spent its life on — f835 sub=1, f837 gate=1, f871 gate=2, f961 sub=2 with [0x80078D7C]=5 written from ra=0x8007B8E4 (the block at 0x8007B85C that C112/C114 proved unreachable), f995 sub=3, and onward. Gate 14/14.
+
+NOTE THE GATE DOES NOT COVER THIS. It presses no buttons, so it never enters this path — the note added earlier in this issue was right, and it is why a passing gate never contradicted the bug. Past the title the port now hits a NEW failure, filed separately: the overlay router reports 'addr 0x800857CC in slot 0x8007AA38 but NO resident overlay matches'.

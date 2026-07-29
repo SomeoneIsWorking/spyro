@@ -1,11 +1,11 @@
 ---
 id: 8
 title: Completion is delivered without data: the guest re-reads LBA 37 forever
-status: open
+status: resolved
 symptom: With the CD completion event delivered, the wait loop now succeeds and the guest issues further requests — but PSXPORT_DEBUG=cd shows it seeking only LBA 37, repeatedly. It is retrying one read, not loading the WAD.
 tags: cd,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## State
@@ -28,3 +28,6 @@ Do not extend the current shortcut by faking data (zero-filling the buffer, or s
 
 ### Note (2026-07-28)
 TESTED AND FALSIFIED: a1 as the destination buffer. Probes gave a1=0x8007AA38 (heapBase) for both read-path functions, which looked conclusive; a per-sector copy there produced NO behavioural change (guest re-issued the same LBA 37 read, frames stayed 8). Reverted — an inferred destination that fails its predicted effect is an unvalidated 2048-byte-per-iteration guest-memory write. a1 may be a descriptor/mode block, not a buffer. SECOND finding: the completion edge-trigger LATCHES — the guest re-issues its read (re-setting the gate) before the next sample, so exactly one completion is ever delivered. Any replacement must key off the read ISSUE, not off observing the gate reach 0.
+
+### Resolution (2026-07-29)
+The observation was correct and became the key to the fix. a0 IS always 37 — it is WAD.WAD's base LBA, not a per-request address — so 'seeking only LBA 37' is what a correct trace of this loader looks like. The per-request selector is the a3 BYTE OFFSET, which nothing was reading at the time; sector = a0 + a3/2048 (C106). It was not retrying one read, it was issuing many reads whose distinguishing argument was invisible to the tracer. Live now: PSXPORT_DEBUG=cdq shows a3 = 0x00000/0x5F000/0x5F800/0x5B800/0x00800 on the sync path and 0x0DF800/0x127000/0x148800/0x188800/0xB83800 on the streaming path, moving 2048-292864 bytes each. 29343744 bytes total off the disc per 40s gate. Gate 14/14.

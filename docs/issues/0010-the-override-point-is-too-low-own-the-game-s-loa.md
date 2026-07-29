@@ -1,11 +1,11 @@
 ---
 id: 10
 title: The override point is too low: own the game's LOADER, not libcd's command primitive
-status: open
+status: resolved
 symptom: Four attempts to make reads deliver data have failed. New evidence: the guest never pops the CD data FIFO and never programs DMA3, so no transfer path is ever entered.
 tags: cd,architecture
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## What the new tracer showed
@@ -29,3 +29,6 @@ Spyro needs the same: find its game-level loader — the function that asks for 
 ## Concrete next step
 
 Find the caller chain above the read: which game function initiates the WAD load and what it passes. Start from the read-issue site already known (func_80065DBC, ra chain into func_80016500 / func_8001250C) and walk UP to the first function whose arguments look like (destination, offset, length).
+
+### Resolution (2026-07-29)
+DONE — and it had been done for a while, which is why this entry staying open cost a session real time. The correction this issue argued for is implemented: both game-level loaders are owned natively in game/core/cd_queue.cpp (cd_loader on 0x80016500, cd_stream_read on 0x80016698), serving the bytes from the disc before super-calling the recompiled body. The override point is no longer libcd's command primitive. Full contract in C106, including the a3 byte-offset argument this issue never knew about: sector = a0 + a3/2048, and ignoring a3 moves the right byte count to the right destination with the WRONG content — a failure that looks like success. Live evidence: PSXPORT_DEBUG=cdq shows both paths firing with varied offsets and moving 2048-292864 bytes per call; gate 14/14 with arena loads UNMATCHED == 0, which depends on this path. LESSON (workflow): this issue was still 'open' at score 14, so info.py brief ranked it top for a loader query and sent a session to re-derive the contract by disassembly when cd_queue.cpp already documented it in full, including the exact a3 bug as a fixed one. Resolve issues when the work lands, not when someone next trips over them.

@@ -5,7 +5,7 @@ status: open
 symptom: with PSXPORT_FORCE_BUTTONS=FFF7 the port makes exactly TWO stage transitions in 90s (mode 13 sub 0 -> sub 1) and loads NO level overlays; idle makes dozens and cycles four
 tags: input,stage,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 THIS IS PROGRESS, NOT A REGRESSION. It is the first evidence that the port's input reaches the game's own decision-making: two runs differing only in the button take visibly different branches, both rc=137 with zero recomp misses (C070). Idle: mode alternates 13/0, sub reaches 3, a level handler is installed at [0x800758CC], four level overlays cycle. START held: mode stays 13, sub reaches 1 — never seen idle — [0x800758CC] stays 0, and only the three boot overlays ever load.
@@ -57,3 +57,6 @@ EXIT PATH LOCATED, still gated. The transition out of sub=1 is at 0x8007CC20 (sw
 The counter test is NOT what blocks it: [0x80078D84] is observed at 0x730D+ (29453), far above 16. So control never reaches 0x8007CBF8 at all — the branch at 0x8007CBA0 takes it to 0x8007CC48 first. Identifying s0 and v0 at that comparison is the next concrete step, and it is a runtime question (both are loaded earlier in the function), so use PSXPORT_WWATCH / a probe rather than another static read.
 
 ALSO RULED OUT this round: neither START alone (0xFFF7) nor START+X (0xBFF7) advances past sub=1 — both give an identical trace, sub reaching 1 at frame 835 and staying, with only the three boot overlays loaded. So the menu is not simply waiting for one of those two buttons.
+
+### Note (2026-07-29)
+STILL OPEN DELIBERATELY — the gate does not press buttons. The headless gate run supplies no input at all, so it can never enter the sub-state this describes and its passing says nothing about this issue. Reproducing it needs a run that holds START (PSXPORT_REPL=1 'press start'). Flagged by 'catalog.py stale' only because it is tagged blocker; that flag is correct to raise and the answer is 'uncovered', not 'fixed'.

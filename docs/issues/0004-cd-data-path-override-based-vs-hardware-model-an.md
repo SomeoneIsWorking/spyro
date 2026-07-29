@@ -1,11 +1,11 @@
 ---
 id: 4
 title: CD data path: override-based vs hardware-model — an architectural fork
-status: open
+status: resolved
 symptom: Guest issues Setmode 0x80 x2, Setloc 00:02:37 (LBA 37 = WAD.WAD), Setmode 0xA0, ReadN (0x06, ra=0x80063E58), then spins forever. No sectors are ever delivered.
 tags: cd,architecture,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## The exact sequence (PSXPORT_DEBUG=cdcmd — from the running system)
@@ -29,3 +29,6 @@ Evidence B is inert today: before any overrides were wired, the boot still print
 ## Why this is a decision, not a task
 
 A is faster and matches how the reference consumer works. B is more faithful, reusable for any stock-libcd game, and removes the need to override libcd at all — but costs an interrupt path. Picking A now may mean unpicking it later.
+
+### Resolution (2026-07-29)
+Fork RESOLVED, and by the user's directive rather than by measurement: the goal is a port that is more PC-driven, not more faithful to PSX hardware. That rules out the hardware-model arm — at the hardware layer the guest's libcd AND the guest's loader both still run as recompiled MIPS, so moving down GIVES UP ownership. The override arm won and is implemented at the GAME level, not at libcd primitives: both loaders served natively (C106, issue 0010). The recorded sequence (Setmode 0x80, Setloc LBA 37 = WAD.WAD, ReadN, spin) is explained — the spin was the loader waiting on a transfer our own low-level override prevented. Now 29 MB read per 40s gate, gameplay renders, gate 14/14. Note the re-frontier entry for this once read 'move down to stock-libcd handlers is strictly more faithful'; that was filed backwards and has been reversed.

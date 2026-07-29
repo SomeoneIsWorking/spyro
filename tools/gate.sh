@@ -191,5 +191,21 @@ else
   printf '  \033[32mPASS\033[0m %-34s %s\n' "info ledger self-consistent" "ok"
 fi
 
+# Open 'blocker' entries, reported only when the gate PASSED. A blocker asserts the port cannot get
+# past it; a passing gate says otherwise, so each one is a contradiction — either it no longer blocks
+# or the gate does not cover it. WARN, never FAIL: the resolution is a human judgement and breaking
+# the build on it would just teach everyone to ignore the line. This exists because issue #10 stayed
+# open long after its work shipped, ranked top for its topic, and sent a session to re-derive a
+# contract that was already written down.
+if [ "$fail" -eq 0 ]; then
+  STALE="$(python3 tools/catalog.py stale --count 2>/dev/null || echo 0)"
+  if [ "${STALE:-0}" -gt 0 ]; then
+    printf '  \033[33mWARN\033[0m %-34s %s\n' "open 'blocker' issues" \
+      "$STALE — gate passes, so each no longer blocks or is uncovered (tools/catalog.py stale)"
+  else
+    printf '  \033[32mPASS\033[0m %-34s %s\n' "open 'blocker' issues" "none"
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then echo "[gate] PASS"; else echo "[gate] FAIL — see $LOG"; fi
 exit "$fail"

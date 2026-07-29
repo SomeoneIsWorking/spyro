@@ -1,11 +1,11 @@
 ---
 id: 12
 title: New stall after the CD fix: func_8005CBB0, a library-region poll
-status: open
+status: resolved
 symptom: After serving the game loader, the boot advances past the CD wait and now stalls with 5/5 profile samples in gen_func_8005CBB0 <- gen_func_80014564 <- gen_func_800127C0 <- main.
 tags: boot,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## Where it is
@@ -22,3 +22,6 @@ Identify what the two globals mean and who sets them — same in-process method 
 
 ### Note (2026-07-28)
 IDENTIFIED via in-process probe: this is a BIOS EVENT poll, not a generic readiness check. Every call sees a0=0, A[0x800730F0]=0, B[0x80073588]=0, returns 0 — never changing. The third global [0x800730E8] holds 0xF1000000, a PSX event-class descriptor (same 0xFxxxxxxx family as GameConfig::irqEventClasses). So the guest is waiting on an event the runtime never delivers — the SAME class of problem as the CD completion callback, which was fixed by delivering the event the hardware would have raised rather than by poking the flag. Spyro's GameConfig::irqEventClasses is still {0,0,0}; that is the framework seam for this. Next: identify which event class 0xF1000000 is and what delivers it, then wire it the same way.
+
+### Resolution (2026-07-29)
+Boot no longer stalls there. The port runs 41410 frames in a 40s gate, loads 29 MB from the disc across 14 loader invocations with 138 CD completions, renders the logo screens and reaches gameplay. func_8005CBB0 is the event-poll primitive (its handle opener func_8005BB78 is instrumented in game/core/cd_queue.cpp); it spun because the event it polls never completed while reads delivered nothing, which the game-level loader ownership fixed (C106, issue 0010). Gate 14/14.

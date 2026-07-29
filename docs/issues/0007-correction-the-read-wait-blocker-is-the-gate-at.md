@@ -1,11 +1,11 @@
 ---
 id: 7
 title: CORRECTION: the read-wait blocker is the gate at 0x80076BB8, not the CD status bit
-status: open
+status: resolved
 symptom: Boot spins after ReadN. In-process instrumentation shows gate=[0x80076BB8]=1 on every iteration, so func_80016500's wait takes the retry path unconditionally and never reaches its CdSync or status tests.
 tags: cd,boot,correction
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## This corrects two earlier conclusions of mine
@@ -47,3 +47,6 @@ Both wrong conclusions came from reading STATIC code plus stack samples. Both we
 step by logging the actual guest words from inside the port. For guest-state questions, instrument
 in-process first; static decode is for understanding what the words mean once you know which one is
 wrong.
+
+### Resolution (2026-07-29)
+Correct at the time and now moot. The gate [0x80076BB8]=1 observation was accurate — the loader sets it to 1 before issuing the read and the completion callback clears it, so it pins at 1 exactly when no data is coming. That is a symptom of the read never delivering, not an independent blocker: with the game-level loaders owned (C106) the bytes are present at issue time, completion is delivered truthfully, and the gate clears. Boot proceeds to gameplay; 138 CD completions per 40s gate. Gate 14/14.

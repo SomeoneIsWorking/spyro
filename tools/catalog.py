@@ -213,6 +213,38 @@ def cmd_show(args):
         sys.stdout.write(f.read())
 
 
+
+def cmd_stale(args):
+    """Open entries that the rest of the system says are probably DONE.
+
+    WHY THIS EXISTS. Nothing in the loop ever revisits an open issue, so an entry whose work landed
+    months ago stays open forever — and `search`/`brief` rank by score, so a stale entry sits at the
+    TOP of the results for its topic and sends the next session to re-derive solved ground. That is
+    not hypothetical: issue #10 ('own the game's LOADER') stayed open at score 14 long after both
+    loaders were owned in game/core/cd_queue.cpp, and a session disassembled the loader from scratch
+    to recover a contract that file already documented in full.
+
+    THE CHECK IS DELIBERATELY DUMB, because a clever one would not be trustworthy. An entry tagged
+    `blocker` asserts the port cannot get past it. So when the gate PASSES, every open `blocker` is a
+    contradiction on its face: either it no longer blocks, or the gate does not cover it — and both of
+    those are worth someone's attention. No parsing of symptoms, no guessing.
+    """
+    entries = [e for e in _load_all(args.dir) if e.get("status") == "open"]
+    blockers = sorted((e for e in entries if "blocker" in e["tags_list"]), key=lambda e: e["id_num"])
+    if args.count:
+        print(len(blockers))
+        return 0
+    if not blockers:
+        print(f"no open blockers ({len(entries)} open entr{'y' if len(entries)==1 else 'ies'} total)")
+        return 0
+    print(f"{len(blockers)} OPEN entr{'y' if len(blockers)==1 else 'ies'} tagged 'blocker'. If the gate "
+          f"passes, each is a contradiction:\n  either it no longer blocks (resolve it) or the gate "
+          f"does not cover it (say so in the entry).\n")
+    for e in blockers:
+        _print_row(e)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="tiny symptom-keyed issue/finding catalog")
     p.add_argument("--dir", default=DEFAULT_DIR,
@@ -237,6 +269,10 @@ def main(argv=None):
     l.add_argument("--status", choices=STATUSES)
     l.add_argument("--tag")
     l.set_defaults(func=cmd_list)
+
+    st = sub.add_parser("stale", help="open entries the rest of the system says are probably done")
+    st.add_argument("--count", action="store_true", help="print just the number (for the gate)")
+    st.set_defaults(func=cmd_stale)
 
     sh = sub.add_parser("show", help="print an entry")
     sh.add_argument("id")

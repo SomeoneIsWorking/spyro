@@ -5,7 +5,7 @@ status: open
 symptom: [recomp-MISS] 0x80038620 (caller ra=0x80053274, a0=0x92C5). The port's only remaining fail-fast after the computed-jump recogniser landed; reached at ~4234 frames.
 tags: recomp,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 See C055/C056. Distinct from docs/issues/0020 (the computed-offset jump family, now solved in the
@@ -83,3 +83,6 @@ is not `ra`. Two shapes worth considering, neither implemented:
      as a tail-return and simply return, letting the C stack unwind. Broader, and it would mask a
      genuine mid-function call — but a genuine one is fatal today anyway.
 Prefer (1): it is decidable statically and cannot mask anything.
+
+### Note (2026-07-29)
+STILL OPEN DELIBERATELY — same reasoning as #20. 'recomp misses == 0' in the gate is a statement about the paths a 40s boot-to-gameplay run exercises. A mid-function dispatch target with no static reference anywhere is precisely the kind of thing such a run can miss entirely, so the gate's silence here is not evidence. Resolve with a reached/not-reached measurement, not with a green gate.

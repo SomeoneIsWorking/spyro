@@ -1,11 +1,11 @@
 ---
 id: 3
 title: Spyro uses STOCK libcd reads (Setloc-then-read); the framework's cd_read contract does not fit
-status: open
+status: resolved
 symptom: After the boot splash the guest spins: a stack profile sits in func_800163E4 (<- 80016500 <- 8001250C <- 800127C0 <- main) and sampled write addresses repeat at 0x801FFDB0/B4 — the same stack slots, i.e. a loop re-pushing one frame, not forward-progressing init. Nothing advances because no CD read ever delivers data.
 tags: cd,reads,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## The mismatch
@@ -31,3 +31,6 @@ A Spyro-specific read path that reconstructs the missing LBA:
 ## Note on the framework
 
 This is not a framework bug; `cd_read` is a reasonable primitive for a game that has one. It is a genuine per-game difference: a stock-libcd game needs a Setloc-tracking read path. If a second stock-libcd consumer appears it may be worth generalising.
+
+### Resolution (2026-07-29)
+Symptom gone; the premise was right and the fix was to stop fighting it. Spyro does use stock libcd Setloc-then-read, and the answer was not to make the framework's cd_read contract fit but to override ABOVE libcd entirely — at the game's own loaders, where the destination is an argument (C106, issue 0010). The spin in func_800163E4 <- 80016500 was the loader waiting for bytes that the lower-level override had guaranteed would never move. Now: 41410 frames, 29343744 bytes off the disc, 138 CD completions in a 40s gate, gameplay renders. Gate 14/14.

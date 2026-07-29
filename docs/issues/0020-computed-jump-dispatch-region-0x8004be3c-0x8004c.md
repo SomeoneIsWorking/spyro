@@ -5,7 +5,7 @@ status: open
 symptom: [recomp-MISS] 0x8004C4EC (caller ra=0x1F800000, a0=0xFFFFFD90, pc=0x8004BE4C). Reached only after the first level overlay actually loads.
 tags: recomp,blocker
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 This is the port's only remaining fail-fast, and it is NOT a normal missing-function case.
@@ -99,3 +99,6 @@ and emit case labels INSIDE the enclosing function. Prerequisites, in order:
      max — tools/computed_jumps.py's stop heuristic never fires and over-reports (I010).
   3. Note the delay slot is often NOT nop and carries the per-case work (0x8004C830 is
      `j 0x8004C838 ; addi s1,t4,0`); a nop-only detector misses those.
+
+### Note (2026-07-29)
+STILL OPEN DELIBERATELY — and the gate cannot settle it. The gate's 'recomp misses == 0' covers only what a 40s boot-to-gameplay run actually executes, so it is evidence about exercised paths, not proof that this computed-jump dispatch region is modelled by function discovery. Do not read a passing gate as closing this. It appears in 'catalog.py stale' for that reason; the correct resolution is either a fire-counter showing the region is reached and correctly dispatched, or a note that it is unreachable.

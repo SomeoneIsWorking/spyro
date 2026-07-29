@@ -1,9 +1,10 @@
 ---
 id: C116
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-29
 tags: input,irq,callback
+falsified_on: 2026-07-29
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ lui/addiu pair scan of MAIN and every overlay image finds exactly one constructi
 ## What would falsify it
 
 0x8005DE8C turning out not to be an interrupt/callback registrar once its dispatch target [[0x800749AC]+0x14] is read, or a0=7 meaning something other than an interrupt number.
+
+## FALSIFIED 2026-07-29
+
+The registration half is right and is re-confirmed below; TWO readings in it are wrong. (1) I said the registration 'never ran' on the strength of slot 7 reading 0 — but that snapshot came from a run which never left sub-state 0, so the registration had not happened yet. Reading state from the wrong regime is the exact mistake issue 0027 already records once ('do not reuse readings taken in sub 0'), and I repeated it. Measured in the FORCE_BUTTONS regime, 0x800662BC runs at frame 835 and slot 7 DOES hold 0x80067CD4. (2) The a0=7 'PSX controller/memory-card IRQ' inference is refuted: 0x800749C0 is a libetc CALLBACK-SLOT table, not an IRQ table — VSyncCallback (0x8005DE58) hardcodes a0=4 for a slot holding the VSync handler, whereas PSX IRQ 4 is TIMER0. Index 7 is a libetc slot index of still-unknown meaning. Corrected and completed in C117.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

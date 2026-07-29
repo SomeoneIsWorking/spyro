@@ -198,3 +198,22 @@ That lui/addiu pair is why the earlier searches came up empty: the address is CO
 RULED OUT this round, so nobody re-walks it: the one registered InterruptElement (0x80075C58, handler 0x8006969C, verifier 0x80069634) is NOT the path. Both are NEVER CALLED, and the verifier tests I_STAT/I_MASK bit 0 (VBLANK; [0x8007521C] = 0x1F801070) and then calls [0x800751E4], which is NULL in a title-screen dump — so even on real hardware that arm would call nothing.
 
 NEXT: read [[0x800749AC]+0x14] to confirm what 0x8005DE8C actually registers, then mirror vsync.cpp — override 0x8005DE8C to capture the handler, and deliver it at the cadence the real interrupt would. Get the CADENCE right rather than firing it every frame; that is the part worth measuring before writing code.
+
+### Note (2026-07-29)
+ROOT CAUSE, CONFIRMED END TO END: the guest's libetc CALLBACK DISPATCHER never runs in this port.
+
+  0x800749C0        libetc callback-slot table, 8 entries
+  0x8005E5D8        the setter: table[index] = fn
+  0x8005DE58        VSyncCallback — hardcodes index 4
+  0x8005DE8C        generic SetCallback(index, fn), args passed through
+  0x8005E560        the DISPATCHER that walks the table  <-- NEVER CALLED
+
+Spyro registers 0x80067CD4 into SLOT 7 at frame 835 (0x800662BC -> 0x8005DE8C, measured: 1 call each, ra=0x8007B02C and 0x8006630C). Table read in the same regime confirms [0x800749D0]=0x80053C68 (slot 4, VSync) and [0x800749DC]=0x80067CD4 (slot 7). The callback-system init 0x8005E508 runs once at frame 0; the dispatcher never runs at all.
+
+So the port special-cases exactly ONE callback — game/core/vsync.cpp hand-delivers slot 4's handler directly — and every other registered slot is silently dropped. Slot 7's handler is the sole setter of [0x80075B58]; without it 0x80067628 returns 0 every frame, the sub-1 arm exits at 0x8007B100, and [0x80078D7C] never reaches the 5 its exit gate needs (C111/C115/C117).
+
+TWO CORRECTIONS TO MY OWN EARLIER NOTES IN THIS ISSUE:
+  * I wrote that the registration 'never ran' because slot 7 read 0. That snapshot was taken in a run that never left sub-state 0, so the registration had not happened yet. This issue ALREADY warns 'do not reuse readings taken in sub 0' and I did exactly that. Read state in the regime you are reasoning about, or not at all.
+  * 'a0=7 means PSX IRQ 7 (controller/memory card)' is REFUTED. 0x800749C0 is a libetc callback-slot table, not an IRQ table: VSyncCallback hardcodes index 4, while PSX IRQ 4 is TIMER0. Index 7's meaning is still unknown and should be established from the dispatcher, not guessed from PSX IRQ numbering.
+
+NEXT — and note the fix is a DESIGN choice, not a transcription. Do not simply call slot 7's handler from vsync.cpp next to slot 4; that would hardcode a second special case and guess the cadence. The port-owned answer is to drive the guest's own dispatcher (0x8005E560) at whatever cadence real hardware would, which delivers every registered slot including any future one. Establish the cadence first: read 0x8005E560's body for what it expects (it maintains a counter at 0x800749E0 and the init at 0x8005E508 programs 0x1F801114, a TIMER register), and check whether psxport's HLE already models that timer.

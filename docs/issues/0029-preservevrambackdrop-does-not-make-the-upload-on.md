@@ -39,3 +39,23 @@ So the loss happens between upload_vram() writing s_vram_tex and readback_vram()
 UNTESTED CANDIDATES, in order: the float-RGBA semi intermediate (s_color_rgba) and whatever composites it back onto C; the depth/stencil target setup; and the possibility that the readback's own command buffer runs before the present's has been submitted, though present submits at its end.
 
 NEXT MEASUREMENT, which settles the falsifier: read back immediately AFTER upload_vram and before render_geom. If that reads 0 too, the upload never lands and the pass chain is innocent — which would point at the transfer buffer or the texture instance instead.
+
+### Note (2026-07-29)
+BISECTED to render_geom's SETUP, not its render passes. Two runs, same REPL script, same present:
+
+  PSXPORT_NO_GEOM=1  (render_geom not called at all)   -> readback nonzero=50254/524288
+  PSXPORT_NO_BANDS=1 (setup runs, band passes skipped) -> readback nonzero=0/524288
+
+So the upload DOES land in s_vram_tex, and something in render_geom BEFORE the first band discards it.
+
+RULED OUT inside that region, by reading the code rather than more runs:
+  * ensure_ires_targets — idempotent ("if (s_ires_scale == i) return"), and at i<=1 it releases nothing and returns immediately.
+  * the ires downsample that blits C back over s_vram_tex — guarded by "if (ires)", and ires is 1.
+  * the DONT_CARE composite-back onto colorTgt — sits after "if (!semiTotal) return", and semiTotal is 0 on these screens (batch tri=0 tex=0 semi=0).
+  * the three band passes themselves — Pass A uses LOAD when preserveVramBackdrop is set, and the bisect above exonerates them anyway.
+
+WHAT IS LEFT in the setup: gpu_vk_video_status(&g.game->core, ...) and the copy pass that uploads s_vram_snap and the vertex buffers.
+
+NEXT: skip only the copy pass. If the backdrop survives, it is that upload; if not, gpu_vk_video_status is touching the targets. Either answer is one run away.
+
+NOTE ON METHOD: this was found by bisecting the function with two temporary env-gated skips, after four rounds of capture-and-infer had produced three wrong conclusions. Bisection asked a question the measurement could answer; the captures kept asking questions that needed interpretation.

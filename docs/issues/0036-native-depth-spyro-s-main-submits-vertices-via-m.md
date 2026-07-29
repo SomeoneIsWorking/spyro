@@ -1,7 +1,7 @@
 ---
 id: 36
 title: Native depth: Spyro's MAIN submits vertices via mfc2->GPR->sw, which the generic swc2 tap cannot see
-status: open
+status: resolved
 symptom: After adding psxport's generic native-depth tap on swc2 of the projected screen-XY registers, projprim records=0 lookups hit=0 miss=0 in the attract demo, and all 1609 polys at f46501 still classify is3d=0. No world geometry gets real depth.
 tags: gpu,depth,gte,re
 created: 2026-07-29
@@ -85,3 +85,24 @@ ALSO A LATENT WRONG-DEPTH BUG, now fixed: the copy tap re-evaluated the load's a
 ARCHITECTURE, settled: address-keyed depth is RIGHT for this engine and should stay. The engine's own dataflow is address-keyed (a scratchpad slot per vertex; face lists indexing slots by byte offset). A value-keyed attach ring would fail here even before the same-pixel ambiguity, because the cached value is (sxy<<5)|clipcode, not the SXY the packet holds.
 
 STILL hit=0, and this is now the whole remaining question. The taps ARE emitted inside the renderer (gen_func_8004EBA8 contains 1 gte_record_pz and 10 gte_copy_pz) and records hold at ~925/frame, but pzaddr shows every record in the scratchpad at STRIDE 8, while stage 1 writes stride 4 (s7 += 4) — so the records are coming from some OTHER tapped site, and the terrain renderer's own stage-1 store is still not recording. NEXT: find out why that one store does not fire. Check whether gen_func_8004EBA8's [lo,hi) actually covers 0x8004EE44 (the emitted function is only 292 lines for a ~900-instruction routine, so it may be split), and confirm with a targeted count of records at stride-4 scratchpad addresses.
+
+### Resolution (2026-07-29)
+RESOLVED — native depth works. 210/210 prims in a sampled level frame carry real per-vertex view-space Z, zero unresolved lookups (C125).
+
+THE LAST TWO LINKS, both found by measurement:
+
+1. THE COPY SOURCE WAS CAPTURED ONE LINE TOO LATE. gte_hold_src was emitted AFTER the load, so for the terrain renderer's `lw t6,0(t6)` — a load that clobbers its own base — it recorded the loaded VALUE as an address. The exact wrong-depth bug the hold exists to prevent, reintroduced by emission order. The test now pins the ORDER, not just the presence; asserting a call exists is not asserting it is correct.
+
+2. THE CACHE LIFETIME WAS ONE FRAME SHORT, and this was the last link. reset() cleared every depth at frame end, which assumes record and draw happen in the same frame. Spyro double-buffers its packet pool: it fills one pool while the DMA draws the other, so a vertex recorded in frame N is drawn in frame N+1.
+
+   HOW IT WAS IDENTIFIED, because the reasoning generalises: 6568 addresses appeared as BOTH a record and a later MISS. An addressing fault cannot produce that — if the key were wrong the two sets would be disjoint. Only a lifetime fault can. That one number turned 'somewhere in a long chain' into 'the cache is cleared too early'.
+
+   reset() now retires the oldest generation instead of clearing. TWO generations, not 'keep everything': the pool is reused, so an entry older than one buffer flip describes a vertex that no longer occupies that address, and serving it would be a wrong depth.
+
+BEFORE / AFTER at the same sampled frames:
+    records=1120  lookups hit=0    miss=1655   is3d 0/1609
+    records=1386  lookups hit=670  miss=0      is3d 210/210
+
+A MEASUREMENT TRAP THAT COST TIME HERE: the ndepth summary only prints every 60 frames, so a primdump on an arbitrary odd frame (46501) shows is3d=0 while sampled frames show 100%. Dump a frame the summary actually reports on. This is the fifth wrong-regime read in this project.
+
+WHAT THIS UNLOCKS: widescreen and 60fps interpolation both ride on real depth — painter order is only correct for the camera the game pre-sorted for.

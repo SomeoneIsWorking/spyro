@@ -48,3 +48,16 @@ HYPOTHESIS RAISED: if the GTE's LZCS/LZCR were unimplemented, the normalising sh
 ADDRESS ARITHMETIC ALREADY RULES OUT THE OVERLAYS as the direct site: 0x8003DAE4, 0x80016AB4 and the globals 0x80078B08/B74/B78/B7C are all BELOW the arena base 0x8007AA38, so neither the looping code nor its state lives in overlay space. The five new overlays can still be a source of bad input data, but they are not where the loop runs.
 
 NOTE ON THE OSCILLATING VALUES: 0x0FFC is 4092 and (4092 - 4096) = -4, i.e. an angle four units from the target out of 4096 — essentially converged. The pair being written alternately looks like the raw 12-bit value and its sign-extended form, so the two globals may simply be a (wrapped, unwrapped) pair rather than evidence of thrashing. Confirm what 0x80016AB4 stores where before reading the oscillation as a symptom.
+
+### Note (2026-07-29)
+TWO OF MY OWN READINGS CORRECTED, and the entity-count hypothesis refuted.
+
+1. THE 'OSCILLATION' IS BY DESIGN, not a symptom. 0x8003DCE0-0x8003DD28 writes each global TWICE per pass on purpose: first the raw 0..4095 value, then — only if it exceeds 2048 — the signed form (value - 4096). That is the standard shortest-arc wrap written out longhand. So 0x0FFC followed by 0xFFFFFFFC is one correct computation, not thrashing, and 6.3M stores means roughly 1.6M passes at 4 stores each. I presented the alternation as evidence of a problem; it is evidence of nothing.
+
+2. THE STORES ARE NOT IN ratan2. The watchpoint said pc=0x80016AB4, but writers.py finds no store to these addresses inside that function — the real sites are in the CALLER at 0x8003DCF0/DD04/DD14/DD28, right after two ratan2 calls. Cause: wwatch's pc is the last function ENTERED and is stale after a call returns (now recorded as an instrument caveat). The ra it reported, 0x8003DC20, was right all along.
+
+3. ENTITY COUNT REFUTED. 0x80048B9C's two loops both iterate [0x800756CC] times, which looked like the runaway. Measured: [0x800756CC] = 2, written repeatedly by pc=0x80056ED4 ra=0x80012238. Two iterations, not millions. Neither 0x8003DAE4 nor 0x8004888C contains a backward branch either, so nothing in this part of the chain loops.
+
+WHERE THE REPETITION MUST COME FROM. If the inner chain runs a bounded number of times per pass, then an OUTER loop is re-entering it without ever completing a frame — the frame counter is pinned at 4532 while work continues. That puts the loop at 0x8003385C / 0x80012204 / main, above everything examined so far. 0x8003385C is already instrumented (it is one of the level_load_probe sites), which is the cheapest place to start.
+
+This is the same SHAPE as issue 0027: not a runaway computation, but a wait for something that never arrives, with the per-pass work being ordinary. Look for what the outer loop is polling rather than for a counter that is too large.

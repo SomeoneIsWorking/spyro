@@ -88,3 +88,18 @@ NOT OUR NATIVE BODIES — PSXPORT_NO_NATIVE=1 reproduces the stall identically (
 LEADING HYPOTHESIS, stated as one: a RECOMPILER mistranslation somewhere in the dispatched path leaves s0 wrong across the call. That would be a framework bug of the most serious kind and must not be assumed on this reasoning alone.
 
 CHEAPEST NEXT TEST, and it settles it without reading more code: log s0 immediately before and after the jal. An override on 0x8004888C can read c->r[16] on entry and again after super-calling, and report the first call where they differ — that names the offending path directly instead of inferring it. Do that before touching the recompiler.
+
+### Note (2026-07-29)
+REGISTER-PRESERVATION HYPOTHESIS REFUTED. Extended fntrace to snapshot the callee-saved registers (s0-s7, gp, sp, fp, ra) around every traced call and compare. Result: 0x8004888C and 0x8003DAE4 each report ZERO violations across 62,331,761 calls. Both honour the ABI, so nothing is clobbering the loop counter.
+
+THE CHECKER WAS VALIDATED BEFORE THE RESULT WAS BELIEVED, via PSXPORT_FNTRACE_SELFTEST=1 which XORs s0 after the call: it then reports 'VIOLATES THE ABI: s0 entered as 8006FCF4, returned as 25A35951' on all 1856 calls of the control function. A '0 violations' reading is only worth anything once the checker has been made to say the other thing — a control case passing proves nothing, because a broken checker passes everything too.
+
+SO THE CONTRADICTION IS SHARPER, NOT RESOLVED. All of the following are now measured, and they cannot all be true of a correctly executing loop:
+  * the loop at 0x80048C04 counts s0 up and exits when s0 >= [0x800756CC]
+  * s0 starts at 0 (set in the delay slot of the jal at 0x80048BE8)
+  * s0 is incremented every iteration by the delay slot at 0x80048C08
+  * [0x800756CC] measures 2 at the stall
+  * s0 is preserved across the call (0 ABI violations)
+  * the loop nevertheless runs ~62M times, ~206,000 per call of its caller
+
+Something in that list is wrong, and the cheapest way to find out which is to stop reasoning about it and OBSERVE the loop directly: log s0 and [0x800756CC] as seen by the loop itself on each of the first few iterations. An override on 0x8004888C can print c->r[16] and c->mem_r32(0x800756CC) on entry; if s0 is not what the static reading predicts, the delay-slot translation is the thing to examine next, and if [0x800756CC] is not 2 there then the watchpoint reading was taken at the wrong moment.

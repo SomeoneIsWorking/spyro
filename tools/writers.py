@@ -65,7 +65,37 @@ def const_into(data, off, reg, back=6):
     return None
 
 
+def writes_reg(w, r):
+    """Does word `w` write GPR `r`? Used only to stop the base-register walk at a redefinition."""
+    op = w >> 26
+    if op == 0:                                    # SPECIAL: rd is the destination
+        fn = w & 0x3F
+        if fn in (0x08, 0x09):                     # jr/jalr — jalr writes rd
+            return fn == 0x09 and ((w >> 11) & 31) == r
+        return ((w >> 11) & 31) == r
+    if op in (0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F):   # addi/addiu/slti/../lui -> rt
+        return ((w >> 16) & 31) == r
+    if op in (0x20, 0x21, 0x23, 0x24, 0x25):       # loads -> rt
+        return ((w >> 16) & 31) == r
+    return False
+
+
 def scan(data, base, target):
+    """Stores whose target address is formed by an immediate base.
+
+    HANDLES BOTH IDIOMS, and the second one is why this exists in its current form:
+
+        lui  rs, hi              ;  sw rt, lo(rs)          address = (hi<<16) + lo
+        lui  rs, hi ; addiu rs, rs, lo ; sw rt, 0(rs)      address = (hi<<16) + lo + 0
+
+    The first version understood only the first idiom and so reported ZERO writers for
+    0x80077DD8 — an address that NINETEEN functions store to on every single call (the
+    hand-written assembly renderers' fixed-area register save). "Nothing writes this" is the worst
+    answer a tool like this can give: it reads as dead state, and it is indistinguishable from a
+    correct empty result. The offset accumulates across the addiu, so both forms resolve here.
+
+    The walk stops at any redefinition of the base register, so an unrelated earlier `lui` into the
+    same register cannot be mistaken for this store's base."""
     hits = []
     for off in range(0, len(data) - 3, 4):
         w = struct.unpack_from("<I", data, off)[0]
@@ -73,16 +103,21 @@ def scan(data, base, target):
         if op not in STORE:
             continue
         rs, rt = (w >> 21) & 31, (w >> 16) & 31
-        # Walk back for the `lui rs, hi` that forms this store's base register.
-        for k in range(1, 9):
+        acc = simm(w)                              # the store's own displacement
+        for k in range(1, 12):
             o = off - 4 * k
             if o < 0:
                 break
             w2 = struct.unpack_from("<I", data, o)[0]
-            if (w2 >> 26) == 0x0F and ((w2 >> 16) & 31) == rs:          # lui rs, imm
-                if (((w2 & 0xFFFF) << 16) + simm(w)) & 0xFFFFFFFF == target:
+            if (w2 >> 26) == 0x0F and ((w2 >> 16) & 31) == rs:          # lui rs, hi — base complete
+                if ((((w2 & 0xFFFF) << 16) + acc) & 0xFFFFFFFF) == target:
                     hits.append((base + off, STORE[op], rt, const_into(data, off, rt)))
                 break
+            if (w2 >> 26) == 0x09 and ((w2 >> 16) & 31) == rs and ((w2 >> 21) & 31) == rs:
+                acc += simm(w2)                    # addiu rs, rs, lo — folds into the address
+                continue
+            if writes_reg(w2, rs):
+                break                              # base redefined by something else: not our chain
     return hits
 
 

@@ -114,3 +114,20 @@ WHERE THAT LEAVES THE STATE MACHINE. The handler dispatches on the sub-state at 
 Under FORCE_BUTTONS the sub-1 arm DOES run: [0x80078D7C] is written 1 at f837 by pc=0x80068F44 from ra=0x8007B12C. But across 4000 frames it is never written 5, so 0x8007B8F8 still does not execute. THAT is now the precise open question — with the sub-1 arm confirmed running and edges arriving every 32 frames, which of the block's four conditions ([0x80078D84] >= 8, func_80032AB0()==0, edge & 0x840, [0x80078D8C]==0) is false? Measure them under FORCE_BUTTONS at a frame after 837; do not reuse readings taken in sub 0, which is the mistake this note is correcting.
 
 Also worth noting: the writer at 0x80068F44 is a store through a pointer inside a called function, so tools/writers.py could not have found it. Its documented blind spot, demonstrated live.
+
+### Note (2026-07-29)
+THE BLOCK'S CONDITIONS ARE NOT THE PROBLEM — THE BLOCK IS NOT REACHED. Measured under FORCE_BUTTONS=FFF7 after f837, i.e. with the sub-1 arm confirmed running (previous notes' readings were taken in sub 0 and must not be reused):
+
+  [0x80078D78] = 1     sub-state 1, as intended
+  [0x80078D7C] = 1     the gate global — needs 5
+  [0x80078D84] = 0x20, 0x34, 0x48, 0x5C across f900..f1020   -> condition 1 (>= 8) PASSES
+  [0x80078D8C] = 0                                            -> condition 4 PASSES
+  edge word fires every 32 frames under the pulse             -> condition 3 satisfied regularly
+
+So all four preconditions of the block at 0x8007B85C hold, and it still never stores 5. A watchpoint over the WHOLE state block (0x80078D78..0x80078DB0) settles why: after f900 the only stores anywhere in it are [0x80078D80] and [0x80078D84], 137255 each, both from pc=0x80058CC0 (the idle-animation counters, called from ra=0x8007CC50 just past the handler's common exit). In particular [0x80078D88] is never written — and 0x8007B818 in that same region writes it — so the region containing 0x8007B85C DOES NOT EXECUTE. Analysing its conditions further is analysing dead code, which is the same error this issue already made once at 0x8007CBA0.
+
+Note the block starts at 0x8007B85C, not 0x8007B858 (that word is the branch's delay-slot nop). Scanning for predecessors of 0x8007B858 returned zero and would have read as 'unreachable'; 0x8007B85C has one, from 0x8007B804.
+
+A MEASUREMENT ERROR WORTH RECORDING, since it nearly produced a false conclusion here: aggregating watchpoint hits by (address=VALUE, pc) puts a monotonically climbing counter into one row PER VALUE, each with count 1, which sorts last and vanishes under . The first pass therefore looked like '[0x80078D84] written once after f900' while it is written 137255 times. Aggregate by ADDRESS and pc, with the value dropped, when the question is 'what code is running'.
+
+NEXT, and it is a TOOL GAP rather than an analysis step. Everything above narrows to 'which basic blocks of the sub-1 arm actually execute', and this port has no instrument that answers that: watchpoints only see blocks that STORE to a watched address, hostprof resolves host PCs to whole functions (the arm is one recompiled function), and the overlay's handler is thousands of instructions. Either build block-level execution visibility, or pick target addresses that the candidate paths write and watch those — the technique that worked here, used deliberately rather than by luck.

@@ -27,3 +27,18 @@ NOTE THE Z IS READ INTO A GPR HERE (mfc2 DR19), unlike the terrain renderer wher
 WHY THIS ORDER: coverage is measurable per frame (the ndepth summary prints real-depth vs OT-band prims), so it improves in visible steps, unlike the byte-exact reimplementation of 8-19 assembly renderers that widescreen ultimately needs (issue 0037). Every renderer whose vertices resolve is one whose geometry can later be reprojected or interpolated.
 
 A full per-site trace of all 9 sites was delegated; results to be folded in here.
+
+### Note (2026-07-29)
+PER-SITE TRACE DONE, THREE EMITTER FIXES LANDED, AND COVERAGE DID NOT MOVE. Recording the negative result plainly because it changes the strategy.
+
+THE TRACE (delegated, then the key claims checked against the disassembly). All NINE mfc2 DR14 sites in 0x800258F0 reach a real GP0 packet — none is culling math, so there is nothing here to deliberately skip. It is a 6-block sequential draw pipeline over object lists, no swc2 anywhere. Sites 1-3 stage through the scratchpad and their stage-2 copy was killed by an unconditional forward j; sites 4-5 by a seed redefinition and an inbound-edge guard; sites 6-9 by the vertex store sitting in a BRANCH DELAY SLOT, with their stage-2 copies already tapped — one instruction per block breaking an otherwise complete chain.
+
+FIXED IN psxport 0c85bb6a, all test-first: delay-slot stores are now tapped (spliced into the delay-slot statement, which is exactly where the hardware runs them); an unconditional forward j inside the function no longer stops the walk; and start-4 counts as inside the inbound-edge guard for a seed that is itself a delay slot. Tapped vertex stores in MAIN: 49 -> 74, none skipped.
+
+THE RESULT: primitive coverage is 2.5% before AND after. Frames at 100% went 47 -> 55 and partial 81 -> 97 over a longer run, so more vertices genuinely resolve — but is3d requires EVERY vertex of a primitive to resolve, so partial gains are invisible in that metric. Across a run the lookup hit rate is 7.5% (87988 hit / 1078903 miss) against 4.69 MILLION records.
+
+THAT RATIO IS THE FINDING. Recording is not the constraint — the port records 4.7M vertex depths per run and 92.5% of lookups still miss. The depths are being attached to addresses nothing draws from, because these renderers stage vertices through scratchpad caches and work arrays and then assemble packets from them through multi-hop paths that a bounded per-block scan cannot follow in general. Each fix follows one more hop; the engine has more hops.
+
+STRATEGIC CONCLUSION, and it matches what the porting guide says independently: incremental tapping has hit diminishing returns for this game. Two fixes moved coverage from 0% to 2.5% (the address stamp and the cache lifetime, both structural); three further fixes moved it not at all. The honest path to broad depth — and therefore to widescreen and 60fps, which both need it — is OWNING these renderers rather than observing them, which is issue 0037's conclusion arrived at from the other direction.
+
+DO NOT keep adding tap rules hoping for a threshold effect. If tapping is continued at all, the next measurement should be per-VERTEX resolution rather than per-primitive is3d, because that is what these fixes actually improve and the current metric cannot see it.

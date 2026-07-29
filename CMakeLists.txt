@@ -5,6 +5,19 @@
 # renderer) is the reusable `psxport` library; this repo adds the game (game/**) and the recompiled
 # SCUS_942.28 substrate (generated/**, produced by run.sh / tools/ensure_recomp.py) and links it.
 cmake_minimum_required(VERSION 3.21)
+
+# ccache, when it is available. The recompiled substrate is ~200 MB of generated C across ~47
+# translation units, and compiling it takes 10-15 minutes while a no-op build links in ~3 seconds —
+# so compilation is essentially the whole cost of an iteration here. The pattern that makes this pay
+# is the normal one: change the emitter, measure, change it again, and land back on bytes that were
+# already compiled once. Must be set BEFORE project(), which is when CMake probes the compiler.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  message(STATUS "ccache: ${CCACHE_PROGRAM}")
+endif()
+
 project(spyroengine CXX C)
 
 set(CMAKE_CXX_STANDARD 20)

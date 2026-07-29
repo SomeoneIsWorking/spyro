@@ -60,7 +60,7 @@ BIN_ID_BEFORE=$(stat -c '%s:%Y' scratch/bin/spyro_port)
 echo "[gate] running ${SECS}s headless…"
 PSXPORT_DEBUG=cdq,ovload,gpu,ndiff PSXPORT_GPU_DUMP="$OUT/frames:5" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
   PSXPORT_NDIFF=8 \
-  PSXPORT_WATCHDOG=0 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
+  PSXPORT_WATCHDOG=15 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
 RC=$?
 BIN_ID_AFTER=$(stat -c '%s:%Y' scratch/bin/spyro_port 2>/dev/null || echo gone)
@@ -149,6 +149,14 @@ OVID=$(grep -oE 'ovload.*slot 0 <- [A-Za-z0-9_]+' "$LOG" 2>/dev/null | awk '{pri
 # pass. Zero is the requirement; when it trips, run tools/overlay_scan.py to pick up the new ones.
 OVUNMATCHED=$(grep -c 'ovload.*none/unmatched' "$LOG" 2>/dev/null; true)
 NDIFF=$(grep -c 'DIVERGES from the recompiled body' "$LOG" 2>/dev/null; true)
+# THE FRAME-PROGRESS WATCHDOG, which this gate spent its life with switched OFF. That is how a port
+# that wedged at frame 4531 and never presented again PASSED: `frames presented >= 300` counts frames
+# from before the stall, and every other check here is a log/frame total that a wedged run still
+# satisfies. The stall was found by hand, days later (issue 0034).
+#
+# 15s, not the 3s default: this runs headless under whatever else the machine is doing, and a slow
+# frame under load is not a hang. A real wedge is infinite, so no honest run comes close to 15s.
+STUCK=$(grep -c 'watchdog. STUCK' "$LOG" 2>/dev/null; true)
 # Count the PASSING verifications too. "0 divergences" is also what a run with no native bodies at
 # all reports, and those two states must not look identical — that is the hollow-gate trap this file
 # already warns about, in a new place.
@@ -169,6 +177,11 @@ chk "CD loader invocations"      "$LOADS"    ge 3
 chk "bytes loaded from disc"     "$MOVED"    ge 100000
 chk "CD completions delivered"   "$COMPL"    ge 3
 chk "recomp misses"              "$MISS"     eq 0
+chk "frame-progress watchdog trips" "$STUCK"  eq 0
+if [ "${STUCK:-0}" -gt 0 ]; then
+  echo "        the port stopped presenting frames — top of the stuck stack:"
+  grep -A6 'watchdog. STUCK' "$LOG" | grep -oE 'gen_func_[0-9A-F]+' | head -4 | sed -n 's/^/          /p'
+fi
 # NATIVE BODIES MUST STILL MATCH THE SUBSTRATE. Every function this port OWNS is re-verified against
 # the recompiled body it replaced, on its first 8 calls, every gate run (PSXPORT_NDIFF=8 above). This
 # is the regression guard for the whole native-ownership programme: a replacement that drifts — or a

@@ -94,3 +94,23 @@ WHY EVERY PREVIOUS BUTTON TEST FAILED. Condition 3 reads 0x80077378, which is th
 ALSO: func_80032AB0 is itself an input handler — it tests edge bit 0x10 and, when set, writes sub-state = 1 and clears [0x80078D88]. So condition 2 only fails when that other button is pressed. START alone passes it.
 
 STILL UNEXPLAINED, and this is the next step. Pressing START 14 times at 40-frame intervals from f1400, with [0x80078D84] climbing monotonically 3 -> 23 -> 43 -> ... -> 263 (so condition 1 holds from the second press onward), [0x80078D8C] == 0 throughout, and a real edge on each press, NEVER moves [0x80078D78] off 0. All four conditions look satisfiable yet the store never happens, so the likeliest explanation is that this block is NOT DISPATCHED in the state the port is actually in — i.e. 0x8007B858 belongs to a different arm of the handler than the one running. Settle that before analysing the conditions further: put a probe/override on the overlay function, or watch [0x80078D88]/the dispatch selector, rather than reading more code. Do not assume the block runs.
+
+### Note (2026-07-29)
+CORRECTION TO MY OWN PREVIOUS NOTE, and it inverted the conclusion. I wrote that PSXPORT_FORCE_BUTTONS 'holds a button from boot, so it produces NO EDGE', and therefore that every earlier FORCE_BUTTONS result was unfounded. That is wrong. I inferred it from the option's NAME rather than reading pad_input.cpp. Pad::serviceFrame PULSES it:
+
+    setButtons((mFc % 32u) < 8u ? mForceMask : PAD_NONE);   // 8 frames down, 24 up
+
+and the comment there states the reason: 'so each press is a fresh EDGE the game's current&~prev input logic actually sees — a continuous hold would edge only once.' So FORCE_BUTTONS is the STRONGER menu-driving instrument and the REPL's 'press' is the weaker one — 'press' is a persistent HOLD (held &= ~bit; driveHold), giving exactly one edge ever. I had the two exactly backwards, and it cost me a false negative: 40 REPL 'presses' looked like 40 attempts but were one hold plus 39 no-ops, and never reached sub 1.
+
+MEASURED BOTH WAYS ON THE CURRENT BUILD:
+  * FORCE_BUTTONS=FFF7      -> sub 0 -> 1 at f835 (pc=0x8002BFE0 ra=0x8007AD04), reproducing the
+                               original observation exactly.
+  * REPL 'press start' at f0 (reports the identical held=FFF7) -> sub NEVER leaves 0 through 1500
+                               frames, watchpoint-confirmed.
+Two mechanisms that report the same held mask, different guest behaviour. Use FORCE_BUTTONS to drive menus; do not treat a REPL hold as equivalent.
+
+WHERE THAT LEAVES THE STATE MACHINE. The handler dispatches on the sub-state at 0x8007AD28-0x8007AD5C: sub 0 -> 0x8007AD64, sub 1 -> 0x8007B0B8, sub 2 -> 0x8007C454, else exit. So the block at 0x8007B858 that sets sub=2 and [0x80078D7C]=5 belongs to the SUB-1 ARM — which answers the previous note's open question: it was never dispatched in the runs I was doing, because those runs never left sub 0.
+
+Under FORCE_BUTTONS the sub-1 arm DOES run: [0x80078D7C] is written 1 at f837 by pc=0x80068F44 from ra=0x8007B12C. But across 4000 frames it is never written 5, so 0x8007B8F8 still does not execute. THAT is now the precise open question — with the sub-1 arm confirmed running and edges arriving every 32 frames, which of the block's four conditions ([0x80078D84] >= 8, func_80032AB0()==0, edge & 0x840, [0x80078D8C]==0) is false? Measure them under FORCE_BUTTONS at a frame after 837; do not reuse readings taken in sub 0, which is the mistake this note is correcting.
+
+Also worth noting: the writer at 0x80068F44 is a store through a pointer inside a called function, so tools/writers.py could not have found it. Its documented blind spot, demonstrated live.

@@ -1,9 +1,10 @@
 ---
 id: C108
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-29
 tags: input,stage,overlay
+falsified_on: 2026-07-29
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ REPL read at the title screen with START pressed: [0x80078D7C] = 0. PSXPORT_WWAT
 ## What would falsify it
 
 A run in which [0x80078D7C] is observed non-zero (would mean a writer exists on a path not yet reached, and the 'nothing ever writes it' conclusion is scoped to runs that stall at the title screen), or a second predecessor to 0x8007CBA0 appearing in a different resident overlay.
+
+## FALSIFIED 2026-07-29
+
+ITS OWN FALSIFIER FIRED, exactly as written ('a run in which [0x80078D7C] is observed non-zero would mean a writer exists on a path not yet reached'). Under PSXPORT_FORCE_BUTTONS=FFF7 the port DOES leave sub-state 0: sub becomes 1 at f835 and [0x80078D7C] is written 1 at f837, by pc=0x80068F44 from ra=0x8007B12C — inside the sub-state-1 arm. The static half of the claim survives and is re-recorded as C111: the gate is still s0 == 5 with s0 = [0x80078D7C], and that is still a static fact from the single predecessor's delay slot. What was over-scoped was 'nothing ever writes it' — that was measured only in runs which never left sub 0, because the REPL hold I was driving with cannot reach sub 1 (see C109 falsified / C110). Note the real writer is a store through a pointer inside a called function, so tools/writers.py could never have found it — its documented blind spot, demonstrated live.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

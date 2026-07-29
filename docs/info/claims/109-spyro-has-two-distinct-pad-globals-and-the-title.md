@@ -1,9 +1,10 @@
 ---
 id: C109
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-29
 tags: input,pad
+falsified_on: 2026-07-29
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ PSXPORT_WWATCH=0x80077378,0x8007737C over a run with REPL 'press start': 241180 
 ## What would falsify it
 
 A run in which PSXPORT_FORCE_BUTTONS produces a non-zero [0x80077378] on any frame after pad init, which would mean the port synthesises edges from a held button and the two words are not distinguishable this way.
+
+## FALSIFIED 2026-07-29
+
+The pad-global half is right; the FORCE_BUTTONS half is WRONG and I inferred it from the name instead of reading pad_input.cpp. PSXPORT_FORCE_BUTTONS does NOT hold a button — Pad::serviceFrame PULSES it, 'setButtons((mFc % 32u) < 8u ? mForceMask : PAD_NONE)', 8 frames down and 24 up, and the code comment states the reason outright: 'so each press is a fresh EDGE the game's current&~prev input logic actually sees — a continuous hold would edge only once.' So FORCE_BUTTONS generates repeated edges and is the STRONGER menu-driving instrument, while the REPL's 'press' (a persistent hold, one edge) is the weaker one. I had it exactly backwards, and it produced a false negative: holding via the REPL from boot never reaches sub=1, while FORCE_BUTTONS=FFF7 reaches it at f835 reproducibly. The surviving, re-verified part is recorded as C110.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

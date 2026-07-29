@@ -180,3 +180,21 @@ Note the tracing technique that made this tractable: enumerate the arm's jal
 targets (13 in MAIN) and trace them ALL IN ONE RUN, then follow only the ones
 that come back REACHED. Two batches took this from 'somewhere in a 5000-instruction
 handler' to one named function.
+
+### Note (2026-07-29)
+THE MISSING EVENT IS A CALLBACK THE PORT NEVER DELIVERS — and it is the same gap vsync.cpp already fixed once, for a different callback.
+
+0x80067CD4 (the sole setter of [0x80075B58], which the title screen polls every frame) is registered at 0x80066304:
+
+    0x800662FC  lui   a1, 0x8006
+    0x80066300  addiu a1, a1, 0x7CD4      ; a1 = 0x80067CD4
+    0x80066304  jal   0x8005DE8C
+    0x80066308  addiu a0, zero, 7          ; delay slot — callback/IRQ number 7
+
+That lui/addiu pair is why the earlier searches came up empty: the address is CONSTRUCTED, never stored as a word, so both xrefs.py (branches only) and a pointer word-scan miss it. Scanning for lui/addiu pairs found it immediately — worth adding to the toolkit.
+
+0x8005DE8C is a libetc-style registrar dispatching through [0x800749AC]+0x14. Its SIBLING 0x8005DE58 is VSyncCallback, which this port already intercepts and hand-delivers every frame (game/core/vsync.cpp) precisely because no IRQ fires on its own. 0x8005DE8C gets no such treatment, so callback 7 is registered and then never invoked. a0=7 is very likely the PSX interrupt number (7 = controller / memory-card byte received), which would make 0x80069030/0x80068FC4 that device's state machine — but that identification is INFERENCE and is not yet confirmed.
+
+RULED OUT this round, so nobody re-walks it: the one registered InterruptElement (0x80075C58, handler 0x8006969C, verifier 0x80069634) is NOT the path. Both are NEVER CALLED, and the verifier tests I_STAT/I_MASK bit 0 (VBLANK; [0x8007521C] = 0x1F801070) and then calls [0x800751E4], which is NULL in a title-screen dump — so even on real hardware that arm would call nothing.
+
+NEXT: read [[0x800749AC]+0x14] to confirm what 0x8005DE8C actually registers, then mirror vsync.cpp — override 0x8005DE8C to capture the handler, and deliver it at the cadence the real interrupt would. Get the CADENCE right rather than firing it every frame; that is the part worth measuring before writing code.

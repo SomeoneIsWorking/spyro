@@ -61,3 +61,30 @@ TWO OF MY OWN READINGS CORRECTED, and the entity-count hypothesis refuted.
 WHERE THE REPETITION MUST COME FROM. If the inner chain runs a bounded number of times per pass, then an OUTER loop is re-entering it without ever completing a frame — the frame counter is pinned at 4532 while work continues. That puts the loop at 0x8003385C / 0x80012204 / main, above everything examined so far. 0x8003385C is already instrumented (it is one of the level_load_probe sites), which is the cheapest place to start.
 
 This is the same SHAPE as issue 0027: not a runaway computation, but a wait for something that never arrives, with the per-pass work being ordinary. Look for what the outer loop is polling rather than for a counter that is too large.
+
+### Note (2026-07-29)
+LOOP LOCATED EXACTLY, and the evidence now points at a REGISTER-PRESERVATION failure rather than at bad data.
+
+fntrace call counts over one 40s run:
+    0x8003385C   2244 calls          (per-frame, normal)
+    0x8004A200    302 calls
+    0x8004888C   64,043,023 calls    from ra=0x80048C0C
+    0x8003DAE4   64,043,023 calls    from ra=0x80048B40
+
+So the runaway is the loop at 0x80048C04:
+
+    80048c04  jal   0x8004888C
+    80048c08  addiu s0, s0, 1        ; DELAY SLOT — runs with the jal
+    80048c0c  v0 = [0x800756CC]
+    80048c18  slt   v0, s0, v0
+    80048c1c  bne   v0, zero -> 0x80048c04
+
+The counter is s0, compared against [0x800756CC], which is MEASURED = 2 at the stall (a watchpoint's last write to it is =2 at f4530, from pc=0x80056ED4). s0 is incremented every single iteration by the delay slot. Two iterations should end it. It runs 64 million.
+
+s0 IS CALLEE-SAVED, so the loop only misbehaves if something in the call fails to preserve it. Checked: 0x8004888C's prologue saves ONLY ra (it is a 45-entry jump-table dispatcher on [0x80078AD0], table at 0x80011230), but the function it dispatches to here, 0x8003DAE4, does save s0/s1/s2 in its own prologue. ratan2 (0x80016AB4) uses only at/v0/v1/a0-a3. So on paper s0 survives, and in practice the loop says it does not.
+
+NOT OUR NATIVE BODIES — PSXPORT_NO_NATIVE=1 reproduces the stall identically (last frame 4531 either way), so the substrate is doing this on its own.
+
+LEADING HYPOTHESIS, stated as one: a RECOMPILER mistranslation somewhere in the dispatched path leaves s0 wrong across the call. That would be a framework bug of the most serious kind and must not be assumed on this reasoning alone.
+
+CHEAPEST NEXT TEST, and it settles it without reading more code: log s0 immediately before and after the jal. An override on 0x8004888C can read c->r[16] on entry and again after super-calling, and report the first call where they differ — that names the offending path directly instead of inferring it. Do that before touching the recompiler.

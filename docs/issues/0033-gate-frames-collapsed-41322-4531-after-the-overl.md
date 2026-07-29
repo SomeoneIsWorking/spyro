@@ -26,3 +26,21 @@ That would make this NOT a regression at all but the port becoming correctly pac
 CONCRETE NEXT STEP, cheap: watchpoint [0x800749E0] over a fixed run and compare its increments against the presented-frame count, once with the root-handler path active and once forced onto the fallback (captured slot-4 handler). If the counter now advances once per presented frame where it used to advance faster, this issue is resolved as 'correct pacing' rather than fixed.
 
 The GATE DEFECT stands regardless of which way that lands: 'frames >= 300' cannot distinguish 41322 from 4531, and a relative check against a recorded baseline would have flagged the change for inspection instead of passing it silently.
+
+### Note (2026-07-29)
+SETTLED BY MEASUREMENT, and BOTH of my earlier readings were wrong.
+
+THE TEST: run the same binary for 20s and for 60s. If 4531 were a RATE, frames scale with wall time. They do not — 20s gives 4531 and 60s gives 4531, identical. So it is neither 'roughly nine times slower' (my first reading) nor 'correctly paced to the guest timebase' (my second). The port reaches frame 4531 and STOPS PRESENTING, while the process stays alive. A deterministic stall.
+
+WHAT IT ACTUALLY IS — AND IT IS PROGRESS, NOT REGRESSION. With the watchdog enabled (the gate disables it, which is why this never showed):
+
+  main -> 0x80012204 -> 0x8003385C -> 0x8004A200 -> 0x80048B9C -> 0x8004888C
+       -> 0x8003DAE4 -> ndiff_run
+
+0x8003DAE4 calls 0x80016CB0 and 0x80016C58 — the angle-table bodies this port owns — so ndiff_run in the trace is just an owned callee, not the problem. This is ordinary game code looping without completing a frame, on the LEVEL-LOAD path (0x8003385C is one of the level-load probe sites).
+
+So the old 41322-frame runs were not 'faster'. They never left the TITLE SCREEN, whose attract loop presents frames indefinitely. Now that issue 0027 is fixed the port advances into level loading and stalls there, presenting far fewer frames in the same wall time. A frame count is a proxy for throughput ONLY while the port is doing the same work; across a change that alters how far it gets, comparing frame counts compares different things. That is the real lesson here and it invalidates the premise this issue was filed on.
+
+RETITLE in spirit: this is not a throughput regression, it is a NEW STALL during level load, reachable only since 0027 was fixed. Next step is to find what 0x8003DAE4's caller chain is looping on — it is gated on [0x80078B08] < 23, which looks like an object/entity count, so start by watching that and 0x80078B74.
+
+THE GATE DEFECT IS REAL AND UNCHANGED, and is now better motivated: 'frames >= 300' passed a run that stopped presenting entirely after 4531 frames. It should assert frames still ADVANCING near the end of the window, not merely a total — a stalled run and a healthy one are indistinguishable to a cumulative floor.

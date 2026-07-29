@@ -42,3 +42,14 @@ THAT RATIO IS THE FINDING. Recording is not the constraint — the port records 
 STRATEGIC CONCLUSION, and it matches what the porting guide says independently: incremental tapping has hit diminishing returns for this game. Two fixes moved coverage from 0% to 2.5% (the address stamp and the cache lifetime, both structural); three further fixes moved it not at all. The honest path to broad depth — and therefore to widescreen and 60fps, which both need it — is OWNING these renderers rather than observing them, which is issue 0037's conclusion arrived at from the other direction.
 
 DO NOT keep adding tap rules hoping for a threshold effect. If tapping is continued at all, the next measurement should be per-VERTEX resolution rather than per-primitive is3d, because that is what these fixes actually improve and the current metric cannot see it.
+
+### Note (2026-07-29)
+TRANSCRIPTION UNBLOCKED — the differential works AND the listing is now readable.
+
+(1) THE ACCEPTANCE TEST WORKS (C129). An identity probe hands ndiff the generated body of 0x8004EBA8 as both the native replacement and the substrate reference: 8/8 exact matches, 0 divergences. RAM, scratchpad, all GPRs and the COP2/GTE file all restore under the rewind, and running the body twice leaves no host residue because it only WRITES packets into guest RAM — the DMA happens later, from a different call. A renderer that submitted to the GPU directly could NOT be validated this way; re-run the probe (PSXPORT_NDIFF_IDENTITY=1) per renderer before owning it.
+
+(2) THE GTE IS NOW READABLE. psxport's disas.py printed every COP2 instruction as 'cop2/GTE 0x0c30000'. For a renderer that is dozens of the most important instructions rendered as hex, and hand-decoding each one into a byte-exact reimplementation is exactly how a silent error gets in. It now decodes the moves with real register names (mfc2 v0, SZ3) and the commands with their sf/lm flags and MVMVA's mx/v/cv selectors — the flags matter because they change the RESULT.
+
+IMMEDIATE PAYOFF, one line of it: 0x8004ECA8-CC4 reads as RTPS [sf] / mfc2 v0,SZ3 / mfc2 v0,MAC3 / sub / blez — a DISTANCE-LOD REJECT, which had only been guessed at. The prologue at 0x8004EBF4-EC10 reads as ctc2 of R11R12..R33 plus zeroed TRX/TRY/TRZ, i.e. gte_SetRotMatrix with no translation.
+
+NEXT UNIT OF WORK: transcribe 0x8004EBA8 (278 instructions) as a native body and iterate against ndiff, which reports the exact differing RAM addresses and registers. Note the transcription CANNOT be validated incrementally — ndiff verifies a whole function — so the loop is: write it all, run it, fix what diverges. Full decoded listing: scratch/logs/terrain.txt.

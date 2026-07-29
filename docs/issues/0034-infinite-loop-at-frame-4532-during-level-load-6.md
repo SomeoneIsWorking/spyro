@@ -37,3 +37,14 @@ This mattered enough to build a switch for because the per-call differential cou
 WHERE THAT LEAVES IT. The game plainly works on hardware, so a faithful reproduction of this loop would still terminate — which points at wrong STATE feeding it rather than a wrong loop. Candidates, in order of cheapness: (1) the angle/position globals it converges on being seeded from a bad source; (2) one of the FIVE newly-added overlays (issue 0032) being mis-based or mis-recompiled, since this code path only became reachable alongside them; (3) a genuine recompiler mistranslation in 0x8003DAE4 or 0x80016AB4.
 
 Note (2) deserves suspicion precisely because it is new: the overlays were added by the same change that first made this path reachable, so 'it only breaks here' does not distinguish 'new code' from 'new bug'.
+
+### Note (2026-07-29)
+WHAT THE LOOP IS DOING, and one hypothesis raised then weakened.
+
+0x80016AB4 is ratan2. Its body takes |a0| and |a1|, normalises them using the GTE's LEADING-ZERO COUNT (MTC2 v1,LZCS at reg 30; MFC2 v1,LZCR at reg 31; then 17 - clz and srav on both operands), ensures the larger is the dividend, divides, and then selects a quadrant from the signs of a0/a1. The caller at 0x8003DBF0 does isqrt (0x80017A38) then two ratan2 calls, then the 12-bit shortest-arc test (v1 - [0x80078B7C]) & 0xFFF vs 2049. So the whole loop is angle/rotation convergence.
+
+HYPOTHESIS RAISED: if the GTE's LZCS/LZCR were unimplemented, the normalising shift would be wrong, the ratio wrong, and the returned angle wrong — which would explain a convergence that never settles. WEAKENED on inspection: the Beetle GTE this port uses does implement it, computing LZCR on every write to DR[30] as MDFN_lzcount32(value ^ (0u - (value >> 31))) (gte.c:663), which is the correct sign-aware form. So this is NOT obviously broken and should not be assumed to be. It is still worth CONFIRMING end to end rather than by code reading, because a correct implementation reached through a wrong recompiler translation of MTC2/MFC2 to regs 30/31 would look identical from here.
+
+ADDRESS ARITHMETIC ALREADY RULES OUT THE OVERLAYS as the direct site: 0x8003DAE4, 0x80016AB4 and the globals 0x80078B08/B74/B78/B7C are all BELOW the arena base 0x8007AA38, so neither the looping code nor its state lives in overlay space. The five new overlays can still be a source of bad input data, but they are not where the loop runs.
+
+NOTE ON THE OSCILLATING VALUES: 0x0FFC is 4092 and (4092 - 4096) = -4, i.e. an angle four units from the target out of 4096 — essentially converged. The pair being written alternately looks like the raw 12-bit value and its sign-extended form, so the two globals may simply be a (wrapped, unwrapped) pair rather than evidence of thrashing. Confirm what 0x80016AB4 stores where before reading the oscillation as a symptom.

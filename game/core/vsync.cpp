@@ -73,11 +73,38 @@ void vsync_callback_set(Core* c) {
 // on the same Core would otherwise clobber the interrupted function's caller-saved registers — a
 // real IRQ saves and restores them, and skipping that produces corruption that looks like a
 // mistranslation rather than like this.
-void run_vblank_callback(Core* c) {
-  if (!g_vblank_cb) return;
+// libetc's ROOT-HANDLER table, indexed by IRQ number; slot 0 is VBLANK. The guest installs its own
+// VBlank root handler here at boot (0x8005E560, via 0x8005E224), and that handler is what walks the
+// 8-entry callback table at 0x800749C0 calling every registered slot.
+constexpr uint32_t kRootHandlers = 0x80073928u;   // +0 = IRQ 0 = VBLANK
+
+// Deliver the vblank the way the console does: run the guest's VBlank ROOT handler, not one hand-picked
+// callback.
+//
+// WHY THIS CHANGED. This used to call only the handler captured from VSyncCallback — libetc callback
+// SLOT 4. But slot 4 is one of EIGHT, and the game registers others: Spyro puts 0x80067CD4 in slot 7 at
+// frame 835, and that handler is the sole setter of the flag its title screen polls every frame. With
+// only slot 4 delivered, slot 7 never ran, so the title screen could never advance (issue 0027, C117).
+// Special-casing one callback meant silently dropping every other one the game registers.
+//
+// Running the root handler fixes the whole class rather than that instance: it dispatches ALL eight
+// slots, including any registered later, and it is the guest's own code doing it rather than our
+// reimplementation of the loop.
+//
+// THE ROOT HANDLER ALSO OWNS THE VBLANK COUNTER ([0x800749E0]) — it increments it on entry. So when it
+// runs, the port must NOT also maintain that counter; vblank_wait re-reads it instead. Returns true if
+// the guest's handler ran, so the caller knows who owns the count this iteration.
+//
+// The register file is saved and restored around the call for the same reason as before: this runs from
+// INSIDE a guest call, and a real IRQ preserves the interrupted function's registers.
+bool run_vblank_callback(Core* c) {
+  const uint32_t root = c->mem_r32(kRootHandlers);
+  const uint32_t target = root ? root : g_vblank_cb;
+  if (!target) return false;
   R3000 saved = *static_cast<R3000*>(c);
-  rc0(c, g_vblank_cb);
+  rc0(c, target);
   *static_cast<R3000*>(c) = saved;
+  return root != 0;
 }
 
 // The libetc vblank counter. Derived from the wait helper's own body: it compares
@@ -135,7 +162,7 @@ void vblank_wait(Core* c) {
     c->game->pad.serviceFrame();
     // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
     // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
-    run_vblank_callback(c);
+    const bool guestOwnsCount = run_vblank_callback(c);
     // A COMPLETED FRAME is the only safe place to capture guest RAM: mid-frame the OT and packet pool
     // are half-built, which is the one state nobody wants to reason about. The guest still owns its
     // frame loop here, so the framework cannot know where that boundary is — this wait does.
@@ -174,7 +201,10 @@ void vblank_wait(Core* c) {
     for (uint32_t cls : { c->cfg->irqEventClasses[0], c->cfg->irqEventClasses[1],
                           c->cfg->irqEventClasses[2] })
       if (cls) c->game->hle.deliverEvent(cls, 0xFFFFFFFFu);
-    cur++;
+    // The guest's root handler increments [0x800749E0] itself, so re-read it rather than double-count.
+    // Only when it is absent (early boot, before libetc installs it) does the port own the tick.
+    if (guestOwnsCount) cur = (int32_t)c->mem_r32(kVblankCounter);
+    else                cur++;
     advanced++;
   }
 

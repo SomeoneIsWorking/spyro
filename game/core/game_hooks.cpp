@@ -57,6 +57,7 @@ static void spyro_registerOverrides(Game*) {
   spyro_register_native_leaves();  // OWNED natively: hot leaves (copy3 / zero3 / fill)
   spyro_register_native_vec();     // OWNED natively: vadd / vsub / angle-table lookup
   spyro_register_native_gte();     // OWNED natively: vector length (GTE SQR + sqrt table)
+  spyro_register_native_angle();   // OWNED natively: 8-bit/12-bit angle helpers + the calibrated spin
 }
 
 static const GameHooks g_spyro_hooks = {

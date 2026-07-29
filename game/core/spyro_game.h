@@ -31,3 +31,9 @@ void spyro_register_native_vec();
 
 // Geometry leaves that use the GTE (native_gte.cpp) — scalar logic native, COP2 via the platform model.
 void spyro_register_native_gte();
+
+// native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
+void spyro_register_native_angle();
+
+// native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
+void spyro_register_native_angle();

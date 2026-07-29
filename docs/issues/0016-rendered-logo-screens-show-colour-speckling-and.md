@@ -1,7 +1,7 @@
 ---
 id: 16
 title: Rendered logo screens show colour speckling and horizontal truncation
-status: open
+status: resolved
 symptom: The SCE 'SONY COMPUTER ENTERTAINMENT presents' and Universal Interactive logo screens render as rainbow-speckled noise where the text should be solid white/coloured, and the image runs off the right edge of the 512x240 dump.
 tags: gpu,render
 created: 2026-07-28
@@ -55,3 +55,6 @@ Measured, with the present index pinned from the GPU_DUMP series rather than ass
 So the speckle recorded in this issue was never what a player would see. It is what the CPU-side buffer contains, viewed through an observer that also gets the depth wrong. On screen these frames are black.
 
 FAULT B is a framework/consumer mismatch rather than a defect: the black clear is correct for a port whose native producer owns rendering. Spyro still runs the guest's own drawing, and for these screens that means uploads.
+
+### Resolution (2026-07-29)
+ONE cause, not two. Both listed defects are the display being 24bpp (GP1(08) bit 4) while every decoder read it as 15-bit 1555. The colour speckle is RGB888 bytes reinterpreted as 1555 fields; the horizontal truncation is 24bpp packing 1.5 halfwords per pixel, so 512 halfwords of row cover only ~341 display columns and the rest ran off. The note's instinct that the content was 'clearly correct, not a geometry or addressing failure' was right, and its guess at 'a CLUT decode mismatch' was wrong — no CLUT is involved. Fixed in psxport: the bit now crosses to gpu_vk via gpu_vk_set_display_depth() and is honoured in BOTH decoders of the display region, the present shader (present.frag pc.fmt.x + a vram_byte helper) and the CPU shot/readback (dump_to). Verified by looking at the pixels: frame 300 goes from a rainbow-scrambled two-thirds-width logo to the correct Universal Interactive Studios screen — silver wordmark over the Earth globe, full 512 width, legible copyright lines. Gate 14/14 PASS. See C105. Note these screens only became visible at all once issue 0029 was fixed (C104); before that they were cleared to black and the misdecode was invisible.

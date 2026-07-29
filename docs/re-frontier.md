@@ -188,7 +188,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: 
 - evidence: C099,C100,C097
 - where: external/psxport/runtime/recomp/gpu_vk.cpp render_geom/present; game/core/game_config.cpp preserveVramBackdrop
-- gap: Spyro's SCE and Universal screens are uploads with zero primitives. They rendered black because render_geom's `total == 0` early return cleared s_vram_tex unconditionally, above every other backdrop control in the function — so GameConfig::preserveVramBackdrop, added for exactly these frames (C100), could never reach them. That branch now honours the flag (C104, issue 0029 resolved): readback nonzero 0 -> 50254 on the same binary, matching the skip-render_geom control, and the frame is real (36.1% non-black, 14357 colours). REMAINING on these screens: they are 24bpp and the depth bit is decoded but not honoured (C097), so they now appear but are mis-coloured and two-thirds wide until GP1(08) bit 4 is handled in readback/present.
+- gap: CLOSED. These screens had TWO stacked faults. (1) render_geom's `total == 0` early return cleared s_vram_tex unconditionally, above every other backdrop control, so preserveVramBackdrop (C100) could never reach the very frames it was added for — fixed, C104, issue 0029. (2) With them visible, they were 24bpp (GP1(08) bit 4, set frames 1-436) decoded as 1555 — fixed, C105, issue 0016. Both decoders of the display region now honour the bit: the present shader and the CPU shot/readback. Verified by looking at the pixels — frame 300 renders the correct Universal Interactive Studios logo at full width. Gate 14/14.
 - notes: Two independent faults on the same screens. Fix the visibility first — a 24bpp fix cannot be verified against a black screen.
 
 

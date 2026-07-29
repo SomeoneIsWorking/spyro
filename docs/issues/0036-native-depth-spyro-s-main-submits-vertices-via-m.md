@@ -41,3 +41,23 @@ GAP 1 — COVERAGE. Only 10 of MAIN's 70 mfc2-of-DR12-15 sites pair with a store
 GAP 2 — IDENTITY. records=224/frame against miss=1724: even the vertices that ARE recorded are not the ones being drawn. Either the 10 tapped sites belong to a different subsystem than the level geometry, or the guest builds vertices in one buffer and DMAs a copy. Settle it by dumping a few recorded addresses next to the s_gp0_src values the renderer looks up, in the same frame — do NOT assume which.
 
 ACCEPTANCE, unchanged: PSXPORT_DEBUG=ndepth showing hit > 0, and the is3d column in PSXPORT_PRIMDUMP=<odd frame> flipping for real prims.
+
+### Note (2026-07-29)
+IDENTITY GAP DIAGNOSED — the vertices are projected into one buffer and the GP0 packets are built in another.
+
+Added `debug pzaddr`, which prints the addresses RECORDED and the addresses that MISSED within the SAME frame. That distinction is the whole point: records=N/hit=0/miss=M cannot tell 'the wrong vertices are recorded' from 'not enough vertices are recorded', and those want opposite fixes. Measured, one frame:
+
+    RECORD  1A8678  1A88C8  1A88D0  1A8B08  1A8B10  1A8CF8  1A8D00   (+ scratchpad 1F8000xx)
+    MISS    1AB764  1AB780  1AB79C  1AB7B8  1AB7D4  ...              (stride 0x1C = a 7-word POLY_FT3)
+
+Same 0x1A region, ~12 KB apart, same frame. So the projected XY is written into a vertex buffer (and, for a large share, into the SCRATCHPAD at 0x1F8000xx), and the primitive packets that actually get DMA'd are assembled elsewhere with the XY copied in. Nothing is stale and nothing is mis-keyed — the depth is simply attached to the wrong copy of the value.
+
+COVERAGE IS NO LONGER THE BINDING CONSTRAINT, though it did improve: holding the Z at the mfc2 instead of reading it at the store took tapped sites 10 -> 26 and recorded vertices per frame 224 -> 1120. Peak counters now records=1120 lookups hit=0 miss=1655. More coverage of the same buffers will not produce a single hit.
+
+NEXT STEP — PROPAGATE ACROSS THE COPY. Same local dataflow shape that already works twice: for `lw rX, off(src)` followed by `sw rX, off2(dst)` with no redefinition of rX and no branch between, emit a propagation call that looks up a pz at the loaded address and, if present, records it at the stored address. This is what PGXP does in emulators and it is game-agnostic. Test it the same way — a pair with an intervening redefinition must NOT propagate.
+
+RISK TO WATCH: propagation must not fabricate depth. Only propagate when the source address HAS a recorded pz; a miss must stay a miss, otherwise 2D elements that happen to copy words through the same registers acquire a world depth and sort into the 3D scene.
+
+A SECOND CANDIDATE, if the copy turns out not to be lw/sw: the transfer may be a DMA or a block copy routine, in which case the propagation belongs at that routine rather than in the recompiler. Measure which before building either — do not assume lw/sw.
+
+TWO CORRECTNESS BUGS FIXED ALONG THE WAY, both from this measurement: (a) ProjPrim keyed on & 0x1FFFFC, which aliases scratchpad 0x1F800018 onto RAM 0x00000018 — a staged vertex could have answered a lookup for an unrelated packet, i.e. a WRONG depth; (b) defines_reg treated a COP2 op as a GPR writer, which silently killed every software-pipelined pairing.

@@ -103,3 +103,22 @@ SO THE CONTRADICTION IS SHARPER, NOT RESOLVED. All of the following are now meas
   * the loop nevertheless runs ~62M times, ~206,000 per call of its caller
 
 Something in that list is wrong, and the cheapest way to find out which is to stop reasoning about it and OBSERVE the loop directly: log s0 and [0x800756CC] as seen by the loop itself on each of the first few iterations. An override on 0x8004888C can print c->r[16] and c->mem_r32(0x800756CC) on entry; if s0 is not what the static reading predicts, the delay-slot translation is the thing to examine next, and if [0x800756CC] is not 2 there then the watchpoint reading was taken at the wrong moment.
+
+### Note (2026-07-29)
+STATE AT HANDOFF — a live contradiction, not a diagnosis. Measured this session:
+
+    0x80012204     1 call
+    0x8003385C  2244 calls
+    0x8004A200   302 calls        (function spans 0x8004A200..0x8004A7E4)
+    0x80048B9C   302 calls        (spans 0x80048B9C..0x80048D08)
+    0x8004888C   62,331,761 calls
+    0x8003DAE4   62,331,761 calls  (exactly equal — every dispatch goes here)
+
+0x8004888C has exactly THREE callers (xrefs.py): 0x80048C04, 0x8004A8E4, 0x8004AAFC. The latter two live in function 0x8004A7EC, which fntrace reports NEVER CALLED. So the only live caller is the loop at 0x80048C04, inside 0x80048B9C — which runs 302 times, and whose loop does 2 iterations (register dump shows s0 alternating 1,2,1,2..., i.e. the loop completing correctly and being re-entered). 302 x 2 = 604 expected calls. 62 MILLION observed.
+
+Those numbers cannot all be right. Candidates, none yet tested:
+  * fntrace's own counting is wrong for this site — its trampoline clears the override, re-dispatches and restores, and 0x8004888C is a jump-table dispatcher, so a re-entrant path could be counted differently than assumed. VALIDATE THE COUNTER before trusting 62M.
+  * 0x80048B9C is entered more often than fntrace reports (its own count could be under-reported for the same reason).
+  * [0x800756CC] is larger than 2 at the stall.
+
+THE LAST POINT IS UNMEASURED AND MY ATTEMPT TO MEASURE IT FAILED. A SIGUSR1 snapshot did not produce a file, and 'ls -t scratch/raw/snap_*.bin' silently returned snap_title.bin — a stale dump from the TITLE SCREEN earlier in the session. Any value read from it describes the wrong regime entirely. This issue has now been bitten by wrong-regime readings three times; when reading state at the stall, confirm the snapshot is NEW (check its mtime) before reading a single word out of it.

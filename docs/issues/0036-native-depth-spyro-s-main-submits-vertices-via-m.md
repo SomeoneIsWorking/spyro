@@ -61,3 +61,27 @@ RISK TO WATCH: propagation must not fabricate depth. Only propagate when the sou
 A SECOND CANDIDATE, if the copy turns out not to be lw/sw: the transfer may be a DMA or a block copy routine, in which case the propagation belongs at that routine rather than in the recompiler. Measure which before building either — do not assume lw/sw.
 
 TWO CORRECTNESS BUGS FIXED ALONG THE WAY, both from this measurement: (a) ProjPrim keyed on & 0x1FFFFC, which aliases scratchpad 0x1F800018 onto RAM 0x00000018 — a staged vertex could have answered a lookup for an unrelated packet, i.e. a WRONG depth; (b) defines_reg treated a COP2 op as a GPR writer, which silently killed every software-pipelined pairing.
+
+### Note (2026-07-29)
+MECHANISM IDENTIFIED AT INSTRUCTION LEVEL (escalated to Fable, then verified against the disassembly myself).
+
+0x8004EBA8 is not a wrapper — the full-GPR save to a FIXED area (0x80077DD8, no stack) is the signature of Spyro's hand-written assembly terrain renderer. It is TWO-STAGE with a scratchpad vertex cache:
+
+  stage 1 (0x8004EDF8-0x8004EE44): unpack 11/11/10-bit packed vertex deltas, RTPS (software pipelined),
+      mfc2 v0,DR14 ; sll a0,v0,5 ; up to four CONDITIONAL addi a0,a0,1|2|4|8 packing the vertex's CLIP
+      CODE into the freed low bits ; sw a0,0(s7) -> the scratchpad cache, s7 += 4
+  stage 2 (0x8004EE84-0x8004EF64): each face word carries three pre-scaled cache byte-offsets; lw the
+      three slots, AND the clip codes, cull with bgtz, sra ,5 to unshift, sw into the packet at fp,
+      fp += 0x1C (FT3) or 0x14 (F3)
+
+The 0x1C stride is the same one measured independently in the MISS addresses, which is the static/dynamic cross-check.
+
+FALSIFIED: my 'these are wrapper/trampoline functions' reading. The register-save-to-fixed-area idiom marks a LEAF assembly renderer, and the stores wwatch attributed to it were the real ones all along.
+
+WHY EVERY EARLIER TAP MISSED IT: stage 1 stores a DERIVED register (sll + conditional addi) so a same-register scan loses it, and the clip-code addis sit behind conditional branches; stage 2's in-place sra reads as a redefinition and the cull branch as a block boundary. Both scans were single-basic-block and same-register. Fixed upstream by tracking the value through identity-preserving derivations, crossing conditional branches (guarded by 'no label with an inbound edge from outside the walk'), and not stopping at the first store. 26 -> 49 vertex stores tapped.
+
+ALSO A LATENT WRONG-DEPTH BUG, now fixed: the copy tap re-evaluated the load's address expression at the STORE site, but stage 2's load clobbers its own base (add t6,t6,s4 ; lw t6,0(t6)) — so it would have read the loaded VALUE as a pointer and carried an unrelated word's depth. The source address is now captured AT the load.
+
+ARCHITECTURE, settled: address-keyed depth is RIGHT for this engine and should stay. The engine's own dataflow is address-keyed (a scratchpad slot per vertex; face lists indexing slots by byte offset). A value-keyed attach ring would fail here even before the same-pixel ambiguity, because the cached value is (sxy<<5)|clipcode, not the SXY the packet holds.
+
+STILL hit=0, and this is now the whole remaining question. The taps ARE emitted inside the renderer (gen_func_8004EBA8 contains 1 gte_record_pz and 10 gte_copy_pz) and records hold at ~925/frame, but pzaddr shows every record in the scratchpad at STRIDE 8, while stage 1 writes stride 4 (s7 += 4) — so the records are coming from some OTHER tapped site, and the terrain renderer's own stage-1 store is still not recording. NEXT: find out why that one store does not fire. Check whether gen_func_8004EBA8's [lo,hi) actually covers 0x8004EE44 (the emitted function is only 292 lines for a ~900-instruction routine, so it may be split), and confirm with a targeted count of records at stride-4 scratchpad addresses.

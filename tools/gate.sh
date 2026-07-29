@@ -58,7 +58,7 @@ fi
 BIN_ID_BEFORE=$(stat -c '%s:%Y' scratch/bin/spyro_port)
 
 echo "[gate] running ${SECS}s headless…"
-PSXPORT_DEBUG=cdq,ovload,gpu,ndiff PSXPORT_GPU_DUMP="$OUT/frames" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
+PSXPORT_DEBUG=cdq,ovload,gpu,ndiff PSXPORT_GPU_DUMP="$OUT/frames:5" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
   PSXPORT_NDIFF=8 \
   PSXPORT_WATCHDOG=0 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
@@ -85,7 +85,23 @@ chk() { # chk <name> <actual> <op> <expected>
   else printf '  \033[31mFAIL\033[0m %-34s %s (want %s %s)\n' "$1" "$2" "$3" "$4"; fail=1; fi
 }
 
-FRAMES=$(ls "$OUT/frames" 2>/dev/null | grep -c '\.ppm$'; true)
+# FRAMES comes from the LOG, not from counting dumped files, because the dump is now SAMPLED
+# (PSXPORT_GPU_DUMP=dir:20). Counting files would divide the real number by the sample interval and
+# silently move the threshold.
+#
+# Sampling was not just about the gate's own runtime: writing a PPM per frame cost the PORT roughly
+# half its speed. Measured over the same 40s run:
+#     every frame  19003 frames  6.6 GB  21 distinct occupancies
+#     every 5      40186 frames  2.8 GB  11
+#     every 20     54151 frames  963 MB   7   <- FAILS the >=8 occupancy check
+# :5 is the choice because it clears the EXISTING threshold with margin. :20 is faster still but
+# misses short-lived states, and lowering the threshold to suit it would weaken a check that exists to
+# tell "the boot advances through content" from "one screen is being re-presented" — it read 218
+# frames / almost no distinct occupancies for a held splash.
+# Any frames-presented figure recorded BEFORE this change was measured on a port carrying the full
+# per-frame dump and is NOT comparable with one after it.
+FRAMES=$(grep -oE '^\[gpu\] frame [0-9]+' "$LOG" 2>/dev/null | awk '{print $3}' | tail -1)
+FRAMES=${FRAMES:-0}
 # Distinct frame occupancies: the difference between "the boot advances through content" and "one
 # screen is being re-presented". Frame COUNT alone cannot tell those apart — it was 218 for a held
 # splash — so this is the check that actually catches a regression to a stuck boot.

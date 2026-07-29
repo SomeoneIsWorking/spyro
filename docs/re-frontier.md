@@ -252,20 +252,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## render
 
 ### render.own-geometry-family — Own the hand-written assembly geometry renderers (the gate for widescreen AND 60fps)
-- status: todo
+- status: in-progress
 - deps: gpu.native-depth
-- evidence: C127
+- evidence: C127,C129
 - where: 0x8004EBA8 (understood at instruction level), 0x800258F0 (9 vertex sites traced), + 17 more sharing the fixed-area register-save idiom
 - gap: TWO INDEPENDENT LINES OF EVIDENCE POINT HERE, which is why it is the next real step rather than a preference.
-
-(1) WIDESCREEN. The GTE already projects ~25% of vertices outside the visible 512-wide frame (C127), so the content exists — but the renderers trivially reject faces against clip bounds that are IMMEDIATE constants (lui rX,0x0200 = 512<<16 and lui rX,0x0100 = 256<<16), and at least 8 of the family carry them. The projection centre and the bounds must move together and cannot: OFX is a GTE control register the port can influence, the bounds are immediates inside recompiled guest code. Patching those constants is the magic-constant bandaid the rules ban.
-
-(2) 60FPS. psxport's fps60 re-runs the field world natively under lerped inputs and explicitly aborts-with-identity where there is no native world producer. Spyro has none — it replays guest packets.
-
-(3) And depth coverage plateaus at 2.5% because observing a multi-hop staging pipeline from outside cannot keep up with it.
-
-THE FAMILY IS 19 FUNCTIONS (fixed-area GPR save to 0x80077DD8, found with tools/writers.py): 0x8001F158 0x8001F798 0x800208FC 0x80020F34 0x80022A2C 0x80023AC4 0x800258F0 0x8004AE38 0x8004BE4C 0x8004D5EC 0x8004DF24 0x8004E3C8 0x8004EBA8 0x8004F000 0x8004F4BC 0x8004FEA0 0x80050240 0x800580F4 0x80058D64. Not all are geometry; 8 carry clip bounds.
-
-SCOPE WARNING: this is byte-exact reimplementation of hand-written assembly. Each body must pass the per-call differential against the recompiled body BEFORE any widening is switched on, or a plain rendering bug and a widescreen artefact become indistinguishable. START WITH ONE (0x8004EBA8 is fully understood — two stages, 11/11/10-bit packed vertex deltas, scratchpad cache indexed by pre-scaled byte offsets, POLY_FT3 stride 0x1C / F3 0x14) and prove the differential can validate it at all before committing to the rest.
 - notes: 
 

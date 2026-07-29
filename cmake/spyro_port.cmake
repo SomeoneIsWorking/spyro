@@ -34,6 +34,7 @@ set(GAME_SRC
   game/core/native_gte.cpp
   game/core/native_angle.cpp
   game/core/native_util.cpp
+  game/core/native_render.cpp
 )
 
 # ---- the recompiled substrate --------------------------------------------------------------------

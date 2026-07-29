@@ -22,3 +22,20 @@ VERIFIED, so these are all ruled out:
 SO THE REMAINING GAP is between 'upload_vram writes CPU VRAM into s_vram_tex' and 'readback_vram reads s_vram_tex and sees one colour', with band 1 no longer clearing. Something in between still discards it, or the readback and the upload are not looking at the same texture instance (note GpuVkState is per-Game).
 
 The config field is KEPT and committed on its own merits — the policy belongs to the consumer, not hardcoded — but it must NOT be described as fixing this issue, because it does not.
+
+### Note (2026-07-29)
+LOCALISED to a single present. PSXPORT_GPU_TRACE plus a REPL shotregion gives, back to back:
+
+  [gpu_vk] present #200 src nonzero=5256/524288    <- CPU VRAM HAS the content
+  [gpu_vk] readback nonzero=0/524288               <- GPU texture is EMPTY
+
+Both counters span the full 1024x512, so they compare directly. That kills the three explanations the earlier attempts kept circling:
+  * 'the content is not in CPU VRAM at that moment' — it is, 5256 non-zero.
+  * 'the frame axes do not line up' — irrelevant, both numbers come from the same present.
+  * 'you captured the wrong display buffer' — irrelevant, the readback counts the WHOLE texture.
+
+So the loss happens between upload_vram() writing s_vram_tex and readback_vram() reading it, within one present, with band 1 no longer clearing (preserveVramBackdrop=1 is confirmed reaching render_geom).
+
+UNTESTED CANDIDATES, in order: the float-RGBA semi intermediate (s_color_rgba) and whatever composites it back onto C; the depth/stencil target setup; and the possibility that the readback's own command buffer runs before the present's has been submitted, though present submits at its end.
+
+NEXT MEASUREMENT, which settles the falsifier: read back immediately AFTER upload_vram and before render_geom. If that reads 0 too, the upload never lands and the pass chain is innocent — which would point at the transfer buffer or the texture instance instead.

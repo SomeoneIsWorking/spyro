@@ -35,5 +35,8 @@ void spyro_register_native_gte();
 // native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
 void spyro_register_native_angle();
 
+// native_util.cpp — strlen, two set-and-return-previous globals, 2D distance, display-list link.
+void spyro_register_native_util();
+
 // native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
 void spyro_register_native_angle();

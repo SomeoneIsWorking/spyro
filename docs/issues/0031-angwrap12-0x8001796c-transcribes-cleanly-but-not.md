@@ -27,3 +27,22 @@ Two things to get right, both of which are silent when wrong:
   * a0 exits as the masked difference d, not as the wrapped result.
 
 4096 units to the turn is the PSX convention.
+
+### Note (2026-07-29)
+TWO MORE, same situation — folding them in here rather than filing near-duplicate issues. Both transcribed from the image, both deliberately NOT installed because a 4000-frame run with input driven (FORCE_BUTTONS=FFF7) calls neither even once, so neither can be differentially verified.
+
+0x8006276C — strlen, 9 static callers.
+    bne a0,zero,L ; v1=0 | j END ; v0=0 | inc: v1++ | L: lbu v0,0(a0) ; bne v0,zero,inc ; a0++
+  Null a0 returns 0 with the pointer untouched. Otherwise: v1 = length, v0 = v1 at the end, and a0
+  exits at start+len+1 — PAST the NUL — because 'addiu a0,a0,1' is the loop branch's delay slot and
+  so runs on the terminating pass too. That off-by-one is invisible to any caller and would be caught
+  instantly by the differential.
+
+0x80067614 — set a global, return its previous value. 8 static callers.
+    lui v1,0x8007 ; addiu v1,v1,0x5B90 ; lw v0,0(v1) ; jr ra ; sw a0,0(v1)
+  The store is the delay slot, so the old value is loaded first: a swap, not a setter. Global is
+  0x80075B90. v1 exits holding that address.
+
+Note both have respectable static caller counts (9 and 8) and still never execute in any run this port
+can currently drive, which is a reminder that caller count is a statement about the disassembly and
+not about the running port (the same point C082 makes about picking ownership targets).

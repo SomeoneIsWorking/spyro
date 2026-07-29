@@ -58,6 +58,7 @@ static void spyro_registerOverrides(Game*) {
   spyro_register_native_vec();     // OWNED natively: vadd / vsub / angle-table lookup
   spyro_register_native_gte();     // OWNED natively: vector length (GTE SQR + sqrt table)
   spyro_register_native_angle();   // OWNED natively: 8-bit/12-bit angle helpers + the calibrated spin
+  spyro_register_native_util();    // OWNED natively: strlen / global swaps / dist2d / display-list link
 }
 
 static const GameHooks g_spyro_hooks = {

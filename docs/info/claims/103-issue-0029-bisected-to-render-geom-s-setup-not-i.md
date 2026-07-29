@@ -1,9 +1,10 @@
 ---
 id: C103
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-29
 tags: gpu,framework
+falsified_on: 2026-07-29
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ Two runs, same REPL script, same present: with PSXPORT_NO_GEOM=1 (render_geom no
 ## What would falsify it
 
 if skipping only the copy pass restores the backdrop, it is that; if not, gpu_vk_video_status is doing something to the targets
+
+## FALSIFIED 2026-07-29
+
+Wrong location, right region. The bisect that produced C103 compared PSXPORT_NO_GEOM against PSXPORT_NO_BANDS across two DIFFERENT builds, and read the shared 0 as 'the setup is at fault'. It is not: on an upload-only frame render_geom never REACHES the setup. The clear is in the total==0 early return above it (gpu_vk.cpp), so the NO_BANDS and NO_COPY gates both sat downstream of the culprit and could never have fired — which is exactly why they read identical. Cause and fix in C104.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

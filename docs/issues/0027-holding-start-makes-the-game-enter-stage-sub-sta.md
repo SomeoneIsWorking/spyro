@@ -143,3 +143,40 @@ Applied here with FORCE_BUTTONS=FFF7 over 3000 frames, i.e. with the port in sub
 NEXT, and now cheap: map the LIVE path instead of guessing at the dead one. Enumerate the jal targets in the sub-1 arm (0x8007B0B8 onward) and fntrace them in batches of up to 16; the ones that report REACHED trace out the path the handler actually takes, and where that path diverges from the one reaching 0x8007B85C is the branch to investigate. Known-live already: 0x80068F44, which writes [0x80078D7C]=1 at f837 from ra=0x8007B12C.
 
 TOOL CAVEAT, learned the hard way here: fntrace claims the same override slot the port's own overrides use. The first version installed BEFORE the game's registrations, was silently displaced, and reported 'NEVER CALLED' for the CD loader — which runs 14 times a boot. It now initialises last. So do not trace an address whose override does real work (the CD loader serves disc data); tracing a differentially-verified native body is fine. Always validate a trace with a known-positive alongside the address in question — that pairing is what caught this.
+
+### Note (2026-07-29)
+ROOT CAUSE CHAIN COMPLETE — it ends at a function the port never invokes, not at a branch condition. Traced with PSXPORT_FNTRACE (new this session), FORCE_BUTTONS=FFF7, 3000 frames, port in sub-state 1.
+
+  1. Leaving sub 1 needs [0x80078D7C] == 5.                                   (C111)
+  2. The sub-1 arm is a JUMP TABLE, not straight-line code: 0x8007B0B8 reads
+     [0x80078D88], bounds-checks < 16, and jumps through a 16-entry table at
+     0x8007AA54. Only the selected case runs — which is exactly why so much of
+     the arm measured dead, and why reading it linearly was misleading.
+  3. The live case calls 0x80067628 EVERY frame and exits at 0x8007B100 the
+     moment it returns 0.
+  4. 0x80067628 returns 0 precisely when [0x80075B58] == 0. When that flag is
+     set it takes the other path, reports it and clears it.
+  5. [0x80075B58] has 15 immediate-form writers. FOURTEEN clear it. The only
+     setter is 0x80067D10 (v0 = 1), inside function 0x80067CD4.
+  6. 0x80067CD4 is NEVER CALLED. It has zero static callers (xrefs.py) and zero
+     pointer references in MAIN or any overlay image (word scan) — yet the
+     recompiler classifies it as a genuine function entry, since fntrace accepts
+     it and fntrace refuses non-entries.
+
+So the port is not failing a test; it is missing an event. 0x80067CD4's body is
+'if 0x80069030 says not-ready, run 0x80068FC4, and if it is ready THEN set the
+flag' — the shape of a completion/callback handler.
+
+NEXT: find how 0x80067CD4 is meant to be invoked. It is almost certainly driven
+by the interrupt/callback path rather than a call — the port registers exactly
+one interrupt element (0x80075C58, prio 2, logged at boot) and delivers the
+VBlank handler by hand in game/core/vsync.cpp because no IRQ fires on its own.
+The question to answer is whether that chain is supposed to reach 0x80067CD4 and
+which interrupt would raise it. If so this is the same class of gap vsync.cpp
+already fixed once, and the fix is the same shape: deliver the callback the
+hardware would have.
+
+Note the tracing technique that made this tractable: enumerate the arm's jal
+targets (13 in MAIN) and trace them ALL IN ONE RUN, then follow only the ones
+that come back REACHED. Two batches took this from 'somewhere in a 5000-instruction
+handler' to one named function.

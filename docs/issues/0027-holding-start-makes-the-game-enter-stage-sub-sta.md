@@ -77,3 +77,20 @@ NOT A SUSPECT: the 0x5C block clear runs through 0x80016914, which this port own
 RESIDENCY VERIFIED before trusting any of the above, per C065: whatis.py against a fresh title-screen RAM dump reports the arena matching OV_5B800 on 256/256 first words, and the resident word at 0x8007CBA0 is 0x16020029 — the same bne read from the image.
 
 NEXT: the question is now 'what is [0x80078D7C], and what should write it 5?'. It sits inside the 0x5C-byte stage-state block at 0x80078D78 that is cleared as a unit, alongside the sub-state itself at 0x80078D78. Find its writer in the IMAGE (a store through a register, so use the numeric branch/store scan or a watchpoint on a run that gets further, not a lui/addiu immediate scan — two such scans already missed the sub-state's writer for the same reason).
+
+### Note (2026-07-29)
+THE WRITER OF 5 IS FOUND, AND THE FORCE_BUTTONS TESTS WERE STRUCTURALLY UNABLE TO WORK.
+
+[0x80078D7C] has NINETEEN immediate-form writers (tools/writers.py, new). Exactly ONE stores 5: 0x8007B8F8 in OV_5B800, and the instruction pair just before it stores 2 to [0x80078D78] — so that single block sets BOTH the sub-state and the gate global. Enumerating writers was useless on its own; what made it answerable was printing each store's constant, which is why writers.py does.
+
+The block (0x8007B858..0x8007B8F8) needs FOUR things, all read from the resident image:
+  1. [0x80078D84] >= 8            (slti 8 / bnez -> exit)
+  2. func_80032AB0() == 0         (bnez v0 -> exit)
+  3. [0x80077378] & 0x840 != 0    (START bit 11 or X bit 6)
+  4. [0x80078D8C] == 0            (bnez -> 0x8007B914)
+
+WHY EVERY PREVIOUS BUTTON TEST FAILED. Condition 3 reads 0x80077378, which is the EDGE ('newly pressed') word — NOT the held word at 0x80077380 that earlier notes were reading. Both are written every frame by pc=0x8006B64C ra=0x80053D50. A watchpoint proves the distinction: with the REPL's 'press start' the edge word goes 0x00000800 for exactly two frames (f1301-f1302) and is 0 on every other frame of a 241180-store run, while the held word sits at 0xFFFF0800 continuously. PSXPORT_FORCE_BUTTONS holds a button from boot, so it produces NO EDGE — which is why FFF7 and BFF7 both gave identical do-nothing traces. That was never a statement about what the menu wants.
+
+ALSO: func_80032AB0 is itself an input handler — it tests edge bit 0x10 and, when set, writes sub-state = 1 and clears [0x80078D88]. So condition 2 only fails when that other button is pressed. START alone passes it.
+
+STILL UNEXPLAINED, and this is the next step. Pressing START 14 times at 40-frame intervals from f1400, with [0x80078D84] climbing monotonically 3 -> 23 -> 43 -> ... -> 263 (so condition 1 holds from the second press onward), [0x80078D8C] == 0 throughout, and a real edge on each press, NEVER moves [0x80078D78] off 0. All four conditions look satisfiable yet the store never happens, so the likeliest explanation is that this block is NOT DISPATCHED in the state the port is actually in — i.e. 0x8007B858 belongs to a different arm of the handler than the one running. Settle that before analysing the conditions further: put a probe/override on the overlay function, or watch [0x80078D88]/the dispatch selector, rather than reading more code. Do not assume the block runs.

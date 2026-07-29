@@ -1,7 +1,7 @@
 ---
 id: 34
 title: Infinite loop at frame 4532 during level load: 6.3M angle-global writes, no frame ever presented
-status: open
+status: resolved
 symptom: The port stops presenting after frame 4531 and never recovers, while the process stays alive. A write-watchpoint over 0x80078B00-0x80078B80 catches 6,378,459 stores in 45 seconds, ALL stamped frame 4532, all from pc=0x80016AB4 with ra=0x8003DC20. The two globals oscillate between an unwrapped and a wrapped 12-bit angle: [0x80078B7C] alternates 0x00000FBE <-> 0xFFFFFFBE and [0x80078B78] alternates 0x00000FFC <-> 0xFFFFFFFC (4030-4096 = -66; 4092-4096 = -4).
 tags: stall,level-load,angle,blocker
 created: 2026-07-29
@@ -122,3 +122,16 @@ Those numbers cannot all be right. Candidates, none yet tested:
   * [0x800756CC] is larger than 2 at the stall.
 
 THE LAST POINT IS UNMEASURED AND MY ATTEMPT TO MEASURE IT FAILED. A SIGUSR1 snapshot did not produce a file, and 'ls -t scratch/raw/snap_*.bin' silently returned snap_title.bin — a stale dump from the TITLE SCREEN earlier in the session. Any value read from it describes the wrong regime entirely. This issue has now been bitten by wrong-regime readings three times; when reading state at the stall, confirm the snapshot is NEW (check its mtime) before reading a single word out of it.
+
+### Resolution (2026-07-29)
+ROOT CAUSE: a RECOMPILER bug. `jr` and `jalr` share the JUMPR decode kind in tools/recomp/decode.py, and emit.py treated them alike in three places. They are not alike: `jalr rd, rs` is a CALL — it writes rd (= ra) with the address after the delay slot, so control comes BACK. `jr` does not.
+
+WHERE IT BIT. Spyro 0x80047B60 is a 45-case state machine. Several cases converge on 0x800487D8 `jalr v0` whose delay slot is followed IMMEDIATELY by the function's own epilogue at 0x800487E0 (lw ra/s2/s1/s0 from the frame, addiu sp,+144, jr ra). collect_tail_dups walked that shared tail as a DUPLICATED block, hit the `jalr`, and stopped — so the run ended at 0x800487E0 and the emitter closed it with a bare `return;`. The epilogue was never emitted on that path. s0 came back holding the case body's `addiu s0, sp, 32` (0x801FFEC8) instead of the caller's saved 0.
+
+The caller at 0x80048C04 uses s0 as a loop counter tested against [0x800756CC] = 2. With a large positive value in it the loop ran ~62 MILLION times and the port stopped presenting frames. Every measurement in this issue was correct; the item that was wrong is the one nobody listed — 's0 starts at 0'. It did, and then the call overwrote it.
+
+FIXED in psxport tools/recomp/emit.py: jalr continues the walk in both collect_tail_dups walks, and body_falls_through() now excludes only `jr`. Two TDD regression tests added (test_emit.py: test_exec_jalr_in_shared_tail_falls_through_to_epilogue, test_exec_jalr_at_body_end_chains_into_next_fragment); both were confirmed to FAIL on the pre-fix emitter with exactly this symptom (s0 = the clobbered value) before the fix was kept.
+
+MEASURED AFTER: last frame 4531 -> 69360 in a 60s run. Gate 14/14 PASS: 49985 frames, 11 distinct occupancies, 6632 frames submitting prims in the last 25% (real geometry, not just front-end uploads), 33.7 MB from disc, 7 overlays identified, 160 native bodies verified with 0 divergences.
+
+HOW IT WAS FOUND, because the method generalises: fntrace's ABI check (snapshot s0-s7/gp/sp/fp/ra around a traced call, compare on return) named the function in one run once it was pointed at the right site. Nothing about the symptom pointed at 0x80047B60 — it is three frames of call chain away from the loop that spun. When a loop counter misbehaves and static reading says it cannot, check ABI preservation of every call INSIDE the loop's setup, not just inside its body.

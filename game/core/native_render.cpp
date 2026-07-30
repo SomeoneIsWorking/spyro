@@ -30,23 +30,50 @@
 #include "native_diff.h"
 #include "cfg.h"
 #include "spyro_game.h"
+#include <cstdio>
+#include <cstdlib>
 
 namespace {
 
-// The generated body serves as both sides. ndiff calls `native` first, rewinds, then calls `body`;
-// passing the same function to each asks only "is this function reproducible under the rewind?".
-void terrain_identity(Core* c) {
-  ndiff_run(c, "IDENTITY terrain@0x8004EBA8", gen_func_8004EBA8, gen_func_8004EBA8);
+// ANY address, not one hardcoded body — there are eight clip-bound renderers to own and each needs
+// this asked of it before the transcription starts. The generated body cannot be named generically, so
+// the probe re-dispatches: it steps out of its own override slot, dispatches the address (which now
+// finds no override and runs the real body), and puts itself back. Same self-clearing trampoline
+// fntrace uses, and for the same reason.
+uint32_t s_addr = 0;
+char s_name[64];
+void ident_hook(Core* c);
+
+void redispatch(Core* c) {
+  const RecompRegistry* R = psxport_recomp();
+  R->shard_set_override(s_addr, nullptr);
+  R->main_dispatch(c, s_addr);
+  R->shard_set_override(s_addr, ident_hook);
+}
+
+// ndiff calls `native` first, rewinds, then calls `body`; handing it the SAME function twice asks only
+// "is this function reproducible under the rewind?" — which is what has to be true before a
+// reimplementation of it could ever be certified.
+void ident_hook(Core* c) {
+  s_addr = c->pc;
+  ndiff_run(c, s_name, redispatch, redispatch);
 }
 
 }  // namespace
 
 void spyro_register_native_render() {
-  // PSXPORT_NDIFF_IDENTITY=1 — off by default. Running any body twice per call is far too expensive
-  // for a normal run, and this answers a one-off question.
-  if (!cfg_on("PSXPORT_NDIFF_IDENTITY")) return;
-  cfg_logi("ndiff", "IDENTITY PROBE ARMED on 0x8004EBA8 — running the generated body against itself. "
-                    "A divergence here means the differential CANNOT validate a renderer of this "
-                    "shape, and the ownership plan needs a different acceptance test.");
-  psxport_recomp()->shard_set_override(0x8004EBA8u, terrain_identity);
+  // PSXPORT_NDIFF_IDENTITY=<hex guest address> — off unless asked for. Running any body twice per
+  // call is far too expensive for a normal run, and this answers a one-off question per renderer.
+  const char* e = cfg_str("PSXPORT_NDIFF_IDENTITY");
+  if (!e || !*e) return;
+  const uint32_t addr = (uint32_t)strtoul(e, nullptr, 16);
+  if (!addr) {
+    cfg_loge("ndiff", "PSXPORT_NDIFF_IDENTITY=%s is not a hex guest address (e.g. 8004F000)", e);
+    return;
+  }
+  snprintf(s_name, sizeof s_name, "IDENTITY@0x%08X", addr);
+  cfg_logi("ndiff", "%s ARMED — running the generated body against itself. A divergence means the "
+                    "differential CANNOT validate a function of this shape, and owning it would need "
+                    "a different acceptance test.", s_name);
+  psxport_recomp()->shard_set_override(addr, ident_hook);
 }

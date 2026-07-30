@@ -35,45 +35,88 @@
 
 namespace {
 
-// ANY address, not one hardcoded body — there are eight clip-bound renderers to own and each needs
-// this asked of it before the transcription starts. The generated body cannot be named generically, so
-// the probe re-dispatches: it steps out of its own override slot, dispatches the address (which now
-// finds no override and runs the real body), and puts itself back. Same self-clearing trampoline
-// fntrace uses, and for the same reason.
-uint32_t s_addr = 0;
-char s_name[64];
+// ANY address, and now ANY NUMBER OF THEM — the remaining ownership queue is five renderers (C133)
+// and the question "is this one actually called, and is it reproducible under the rewind?" has to be
+// answered for each before choosing which to transcribe. Asking one per run costs a rebuild and a
+// capture per address for an answer that a single run can give for all of them, and the arming log
+// below prints the whole armed set so a silent typo cannot masquerade as "never called".
+//
+// The generated body cannot be named generically, so the probe re-dispatches: it steps out of its own
+// override slot, dispatches the address (which now finds no override and runs the real body), and puts
+// itself back. Same self-clearing trampoline fntrace uses, and for the same reason.
+constexpr int kMaxProbes = 16;
+uint32_t s_addrs[kMaxProbes];
+char s_names[kMaxProbes][64];
+int s_count = 0;
+
+// Which address the CURRENTLY EXECUTING probe is for. ndiff calls `redispatch` synchronously from
+// inside `ident_hook`, so a single current-address is enough — but it is saved and restored around
+// the call because one renderer calling another (both armed) would otherwise leave the outer probe
+// re-dispatching the INNER address, which does not fail loudly; it silently runs the wrong body.
+uint32_t s_cur = 0;
 void ident_hook(Core* c);
 
 void redispatch(Core* c) {
   const RecompRegistry* R = psxport_recomp();
-  R->shard_set_override(s_addr, nullptr);
-  R->main_dispatch(c, s_addr);
-  R->shard_set_override(s_addr, ident_hook);
+  const uint32_t a = s_cur;
+  R->shard_set_override(a, nullptr);
+  R->main_dispatch(c, a);
+  R->shard_set_override(a, ident_hook);
 }
 
 // ndiff calls `native` first, rewinds, then calls `body`; handing it the SAME function twice asks only
 // "is this function reproducible under the rewind?" — which is what has to be true before a
 // reimplementation of it could ever be certified.
 void ident_hook(Core* c) {
-  s_addr = c->pc;
-  ndiff_run(c, s_name, redispatch, redispatch);
+  const uint32_t addr = c->pc;
+  int idx = -1;
+  for (int i = 0; i < s_count; i++) if (s_addrs[i] == addr) { idx = i; break; }
+  if (idx < 0) {                     // cannot happen unless the slot was armed for another address
+    const RecompRegistry* R = psxport_recomp();
+    R->shard_set_override(addr, nullptr);
+    R->main_dispatch(c, addr);
+    R->shard_set_override(addr, ident_hook);
+    return;
+  }
+  const uint32_t saved = s_cur;
+  s_cur = addr;
+  ndiff_run(c, s_names[idx], redispatch, redispatch);
+  s_cur = saved;
 }
 
 }  // namespace
 
 void spyro_register_native_render() {
-  // PSXPORT_NDIFF_IDENTITY=<hex guest address> — off unless asked for. Running any body twice per
-  // call is far too expensive for a normal run, and this answers a one-off question per renderer.
+  // PSXPORT_NDIFF_IDENTITY=<hex guest address>[,<hex>...] — off unless asked for. Running any body
+  // twice per call is far too expensive for a normal run, and this answers a one-off question per
+  // renderer.
   const char* e = cfg_str("PSXPORT_NDIFF_IDENTITY");
   if (!e || !*e) return;
-  const uint32_t addr = (uint32_t)strtoul(e, nullptr, 16);
-  if (!addr) {
-    cfg_loge("ndiff", "PSXPORT_NDIFF_IDENTITY=%s is not a hex guest address (e.g. 8004F000)", e);
+  for (const char* p = e; *p && s_count < kMaxProbes;) {
+    while (*p == ',' || *p == ' ') p++;
+    if (!*p) break;
+    char* end = nullptr;
+    const uint32_t addr = (uint32_t)strtoul(p, &end, 16);
+    if (end == p) {
+      // A silently-skipped token is how a probe reports "never called" for an address it never armed.
+      cfg_loge("ndiff", "PSXPORT_NDIFF_IDENTITY=%s: '%s' is not a hex guest address (e.g. 8004F000); "
+                        "NOTHING is armed from here on", e, p);
+      return;
+    }
+    p = end;
+    if (!addr) continue;
+    s_addrs[s_count] = addr;
+    snprintf(s_names[s_count], sizeof s_names[0], "IDENTITY@0x%08X", addr);
+    psxport_recomp()->shard_set_override(addr, ident_hook);
+    s_count++;
+  }
+  if (!s_count) {
+    cfg_loge("ndiff", "PSXPORT_NDIFF_IDENTITY=%s armed NO addresses", e);
     return;
   }
-  snprintf(s_name, sizeof s_name, "IDENTITY@0x%08X", addr);
-  cfg_logi("ndiff", "%s ARMED — running the generated body against itself. A divergence means the "
-                    "differential CANNOT validate a function of this shape, and owning it would need "
-                    "a different acceptance test.", s_name);
-  psxport_recomp()->shard_set_override(addr, ident_hook);
+  for (int i = 0; i < s_count; i++)
+    cfg_logi("ndiff", "%s ARMED — running the generated body against itself. A divergence means the "
+                      "differential CANNOT validate a function of this shape, and owning it would need "
+                      "a different acceptance test. Zero calls means it never ran in this capture, "
+                      "which is a different answer from 'it diverged'.", s_names[i]);
 }

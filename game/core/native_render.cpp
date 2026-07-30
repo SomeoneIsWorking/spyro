@@ -33,6 +33,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+void interp_call(Core* c, uint32_t pc);   // interp.cpp — nested call that leaves the guest's ra alone
+
 namespace {
 
 // ANY address, and now ANY NUMBER OF THEM — the remaining ownership queue is five renderers (C133)
@@ -98,6 +100,47 @@ void ident_hook(Core* c) {
 // behind is not the guest state the real body would leave — so it is loudly logged and never default.
 void mute_hook(Core*) {}
 
+// ── INTERPRET: can the flat interpreter stand in for a recompiled renderer, bit for bit?
+//
+// THE QUESTION BEHIND IT. The widescreen blocker is that every renderer's clip bounds are IMMEDIATE
+// constants in its own instruction stream (0x02000000 = sx >= 512), so they cannot be moved while the
+// guest owns the code — which is why the plan of record is to transcribe ~9150 instructions of
+// hand-written assembly into native C. But the constants are immediates in GUEST RAM too, and the
+// interpreter reads them from there rather than from a baked C literal. If interpreting a renderer is
+// byte-identical to running its recompiled body, then a widened bound is a one-word change to guest
+// memory instead of a thousand lines of transcription, and it stays honest: the code that runs is
+// still the game's own, not a reimplementation standing in for it.
+//
+// This probe asks ONLY the first half — is the interpreted body exact? — because if it is not, the
+// rest of the idea is dead and no patching is worth designing. It runs interpreted, then rewinds and
+// runs the recompiled body, and reports any difference in RAM, the scratchpad, the GPRs or COP2.
+uint32_t s_icur = 0;
+char s_inames[kMaxProbes][64];
+uint32_t s_iaddrs[kMaxProbes];
+int s_icount = 0;
+
+void interp_hook(Core* c);
+void interp_side(Core* c) { interp_call(c, s_icur); }
+
+void interp_body(Core* c) {
+  const RecompRegistry* R = psxport_recomp();
+  const uint32_t a = s_icur;
+  R->shard_set_override(a, nullptr);
+  R->main_dispatch(c, a);
+  R->shard_set_override(a, interp_hook);
+}
+
+void interp_hook(Core* c) {
+  const uint32_t addr = c->pc;
+  int idx = -1;
+  for (int i = 0; i < s_icount; i++) if (s_iaddrs[i] == addr) { idx = i; break; }
+  if (idx < 0) { interp_call(c, addr); return; }
+  const uint32_t saved = s_icur;
+  s_icur = addr;
+  ndiff_run(c, s_inames[idx], interp_side, interp_body);
+  s_icur = saved;
+}
+
 }  // namespace
 
 void spyro_register_native_render() {
@@ -121,6 +164,32 @@ void spyro_register_native_render() {
                         "this body would have written is simply absent.", addr);
     }
   }
+  // PSXPORT_INTERP_FN=<hex guest address>[,<hex>...] — run these bodies INTERPRETED, and (under
+  // PSXPORT_NDIFF) verify each call against the recompiled body it replaces.
+  if (const char* iv = cfg_str("PSXPORT_INTERP_FN")) {
+    for (const char* p = iv; *p && s_icount < kMaxProbes;) {
+      while (*p == ',' || *p == ' ') p++;
+      if (!*p) break;
+      char* end = nullptr;
+      const uint32_t addr = (uint32_t)strtoul(p, &end, 16);
+      if (end == p) {
+        cfg_loge("ndiff", "PSXPORT_INTERP_FN=%s: '%s' is not a hex guest address; NOTHING is "
+                          "interpreted from here on", iv, p);
+        break;
+      }
+      p = end;
+      if (!addr) continue;
+      s_iaddrs[s_icount] = addr;
+      snprintf(s_inames[s_icount], sizeof s_inames[0], "INTERP@0x%08X", addr);
+      psxport_recomp()->shard_set_override(addr, interp_hook);
+      cfg_logi("ndiff", "%s ARMED — this body runs INTERPRETED from guest RAM instead of as "
+                        "recompiled C. Under PSXPORT_NDIFF each call is compared against the "
+                        "recompiled body; zero reported calls means it never ran, which is not the "
+                        "same answer as 'it matched'.", s_inames[s_icount]);
+      s_icount++;
+    }
+  }
+
   // PSXPORT_NDIFF_IDENTITY=<hex guest address>[,<hex>...] — off unless asked for. Running any body
   // twice per call is far too expensive for a normal run, and this answers a one-off question per
   // renderer.

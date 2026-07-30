@@ -39,6 +39,11 @@
 #include "cfg.h"
 #include "spyro_game.h"
 
+// psxport's widescreen state: whether a wider aspect is selected, and the wide native width (which
+// now scales from this game's own 512-wide 4:3 frame rather than a hardcoded 320).
+int gpu_vk_wide_engine(Core*);
+int gpu_vk_wide_engine_w(Core*);
+
 namespace {
 
 // ── GTE plumbing. The recompiler emits these same calls, so using them keeps the COP2 register file
@@ -181,6 +186,19 @@ void terrain_native(Core* c) {
     t4 = c->mem_r32(s3 + 16);
     s7 = kScratchpad;
     t5 = kClipTop; t6 = kClipBottom; t7 = kClipRight;
+    // WIDESCREEN. This is what owning the renderer bought: the horizontal bounds are ours, so they
+    // can move with the projection instead of being frozen as immediates in guest code. At 4:3 both
+    // are exactly the guest's values, so the body stays byte-identical and the differential still
+    // certifies it — the widening only exists when the user has asked for a wider aspect.
+    int32_t wide_left = 0;
+    if (gpu_vk_wide_engine(c)) {
+      const int nw = gpu_vk_wide_engine_w(c);          // scales from the game's own 4:3 width
+      const int margin = (nw - 512) / 2;               // split the extra width either side
+      if (margin > 0) {
+        t7 = (uint32_t)((512 + margin) << 16);         // right bound moves out
+        wide_left = -margin;                           // and the left bound goes negative
+      }
+    }
     s0 = 0xFFFFFFFFu;
 
     // 4a. Vertex loop, software pipelined. One vertex is in flight in the GTE while the next is
@@ -210,7 +228,8 @@ void terrain_native(Core* c) {
       a1 = v0 - t6;
       if (!((int32_t)a1 < 0)) a0 += 2;       // sy >= 256
       a1 = v0 << 16;
-      if (!((int32_t)a1 > 0)) a0 += 4;       // sx <= 0
+      // The guest compares against zero; widescreen compares against a negative left edge instead.
+      if (!((int32_t)a1 > (wide_left << 16))) a0 += 4;   // sx <= left bound
       a1 = a1 - t7;
       s1 += 4;
       if (!((int32_t)a1 < 0)) a0 += 8;       // sx >= 512  <- kClipRight

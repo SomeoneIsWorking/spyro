@@ -91,3 +91,16 @@ MEASURED, not reasoned: with the latch firing, sky rows 0-45, ground rows 90-150
 THE REAL GATE IS 2D-vs-3D DISCRIMINATION (C143). psxport sets s_seen3d from a projected world prim, so the classification rides on per-primitive DEPTH; at this port's ~2.5% depth coverage almost nothing is classified 3D and 'widen the 2D' becomes 'widen everything'. The latch change is reverted and psxport's comment now records the measured cause instead of the ordering theory.
 
 WHAT THIS MEANS FOR THE PLAN: the remaining widescreen work (this, and the garbage strip in the columns nothing draws) is now blocked on NATIVE DEPTH, which is what owning the geometry renderers buys. Ownership is back on the critical path — but for depth, not for clip bounds, and that is a different and much better-defined target than 'transcribe 9150 instructions so OFX may move'.
+
+### Note (2026-07-30)
+THE STRIP IS NOW LOCALISED EXACTLY, and the fill-rect backdrop is ruled out as its fix.
+
+WHERE IT IS, measured instead of eyeballed (local horizontal roughness, high = atlas noise): in the right margin x=650..683 the artefact occupies DISPLAY ROWS 0-9 and 230-239 and nothing else — rows 10-229 read 0.4-9.1 against 69.1 and 159.3 for the two bad bands. It is two thin horizontal slivers at the top and bottom of the margin, not a vertical strip down the right edge, which is what it looks like by eye.
+
+THE FILL-RECT BACKDROP IS NOT THE ANSWER. The game DOES issue a full-screen FillRect every frame (PSXPORT_DEBUG=fillrect: at=(0,8) 512x224 and at=(0,248) 512x224 alternating, full=1, wide=1), and psxport already widens such a fill into the 2D queue. Two changes to that path, both measured, both zero pixels different:
+  * ungating it from the (s_prev_had3d || s_prev_had_bg2d) latch — a no-op HERE because the fill itself sets s_seen_bg2d, so the latch was already satisfied via the bg2d half. Kept anyway: a full-screen fill is classified GEOMETRICALLY, so it should not depend on a depth-derived latch, and on a port where bg2d is not set the fix would otherwise be unavailable.
+  * converting the rect from VRAM-absolute to display-local before queueing. This IS a real bug — a FillRect ignores clip/offset by design so its rect is VRAM-absolute, while the 2D queue takes display-local and adds the origin back; the second buffer was passing y=248 as if it were a local coordinate. It changes nothing visible here, so it is a correctness fix rather than the strip's cause.
+
+SO THE MARGIN IS NOT PAINTED BY THE 2D BACKDROP PATH AT ALL, and the next attempt should establish WHO paints the margin rows that ARE clean (10-229) before assuming anything about the two that are not. The 8-row and 10-row heights are suspicious: the display sits at VRAM y=8, so a source that covers 0..223 in display rows would leave exactly 224..239 uncovered at the bottom, and something covering 8..231 would leave 0..7 at the top.
+
+Gate 16/16, and the 16:9 frame is byte-identical to the known-good capture, so neither change regressed anything.

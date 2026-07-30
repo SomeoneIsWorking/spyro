@@ -84,9 +84,43 @@ void ident_hook(Core* c) {
   s_cur = saved;
 }
 
+// ── MUTE: the one experiment that answers "what does this renderer actually DRAW" without inference.
+//
+// Twice in this project a renderer's visual contribution was reasoned about and got a wrong answer —
+// once badly enough that a working OFX change was recorded as having "no effect" (issue 0039). What
+// settled it was replacing the body with nothing and looking at what disappeared. That is a general
+// question for every renderer in the ownership queue (which ones draw the 3D world and therefore need
+// the projection re-centred, and which draw screen-space content that must NOT move), so it belongs
+// here as a facility rather than as a temporary edit to whichever body is under the microscope.
+//
+// A muted body returns immediately: it writes no packets, links nothing into the ordering table, and
+// does not run the register save/restore. That makes it a DIAGNOSTIC ONLY — the guest state it leaves
+// behind is not the guest state the real body would leave — so it is loudly logged and never default.
+void mute_hook(Core*) {}
+
 }  // namespace
 
 void spyro_register_native_render() {
+  // PSXPORT_MUTE_FN=<hex guest address>[,<hex>...] — replace these bodies with nothing.
+  if (const char* m = cfg_str("PSXPORT_MUTE_FN")) {
+    for (const char* p = m; *p;) {
+      while (*p == ',' || *p == ' ') p++;
+      if (!*p) break;
+      char* end = nullptr;
+      const uint32_t addr = (uint32_t)strtoul(p, &end, 16);
+      if (end == p) {
+        cfg_loge("ndiff", "PSXPORT_MUTE_FN=%s: '%s' is not a hex guest address; NOTHING is muted from "
+                          "here on", m, p);
+        break;
+      }
+      p = end;
+      if (!addr) continue;
+      psxport_recomp()->shard_set_override(addr, mute_hook);
+      cfg_logi("ndiff", "MUTE@0x%08X — this body is REPLACED BY NOTHING. Whatever disappears from the "
+                        "frame is exactly its visual contribution. The run is diagnostic: guest state "
+                        "this body would have written is simply absent.", addr);
+    }
+  }
   // PSXPORT_NDIFF_IDENTITY=<hex guest address>[,<hex>...] — off unless asked for. Running any body
   // twice per call is far too expensive for a normal run, and this answers a one-off question per
   // renderer.

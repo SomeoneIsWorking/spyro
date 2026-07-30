@@ -72,6 +72,8 @@ static void spyro_registerOverrides(Game*) {
   spyro_register_native_gte();     // OWNED natively: vector length (GTE SQR + sqrt table)
   spyro_register_native_angle();   // OWNED natively: 8-bit/12-bit angle helpers + the calibrated spin
   spyro_register_native_util();
+  spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
+                                   // renderer under differential verification (issue 0037)
   spyro_register_native_render();  // MEASUREMENT, off unless PSXPORT_NDIFF_IDENTITY=1: can the
                                    // differential validate a renderer at all? (re-frontier
                                    // render.own-geometry-family)    // OWNED natively: strlen / global swaps / dist2d / display-list link

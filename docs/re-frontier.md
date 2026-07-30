@@ -252,9 +252,9 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ## render
 
 ### render.own-geometry-family — Own the hand-written assembly geometry renderers (the gate for widescreen AND 60fps)
-- status: in-progress
+- status: re-partial
 - deps: gpu.native-depth
-- evidence: C127,C129
+- evidence: C127,C129,C130
 - where: 0x8004EBA8 (understood at instruction level), 0x800258F0 (9 vertex sites traced), + 17 more sharing the fixed-area register-save idiom
 - gap: TWO INDEPENDENT LINES OF EVIDENCE POINT HERE, which is why it is the next real step rather than a preference.
 - notes: 

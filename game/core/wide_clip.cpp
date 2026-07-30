@@ -101,9 +101,50 @@ inline uint32_t with_bound(uint32_t insn, int width) {
   return (insn & 0xFFFF0000u) | (uint32_t)(width & 0xFFFF);
 }
 
+// ── THE INSTRUMENT (PSXPORT_DEBUG=wideprims), and why it is this quantity and not a picture.
+//
+// "Did widening the bound change anything?" was asked of a screenshot first, and a screenshot could
+// not answer it: the frames differed by FIVE pixels, and a column-correlation search between the 4:3
+// and 16:9 captures reported its own SEARCH BOUND as the best match in every band — this scene is
+// mostly flat sand and does not discriminate. A metric that cannot separate the two answers is not
+// evidence either way.
+//
+// The quantity that actually moves is upstream of the pixels: how much geometry the renderer EMITS.
+// Every one of these bodies appends packets to the pool at 0x800757B0 and advances that pointer, so
+// the bytes it wrote in a call is (pointer after - pointer before) — no packet-format knowledge
+// needed, and no dependence on whether the result happens to be visible against a sandy background.
+//
+// MEASURED IN BOTH MODES, deliberately. The vanilla path reports too, so 4:3 and wide numbers come
+// from the same counter and are directly comparable; an instrument that only runs in the mode you
+// hope to confirm cannot show you the other answer. A renderer that emits ZERO bytes reports that
+// explicitly with both pointers, so "drew nothing" never looks like "was never called".
+constexpr uint32_t kPoolPtr = 0x800757B0u;   // the packet-pool write pointer (see native_terrain.cpp)
+
+struct Emit { uint64_t calls, bytes; uint32_t zero_calls; };
+Emit s_emit[8][2];                            // [renderer][0 = 4:3, 1 = wide]
+
+void emit_report(Core* c, int ri, int wide, uint32_t before, uint32_t after) {
+  if (!cfg_dbg("wideprims")) return;
+  Emit& e = s_emit[ri][wide];
+  e.calls++;
+  if (after >= before) e.bytes += (after - before);
+  if (after == before) e.zero_calls++;
+  if (e.calls % 256) return;
+  const Emit& other = s_emit[ri][wide ^ 1];
+  cfg_logi("wideprims",
+           "0x%08X %-6s calls=%llu bytes/call=%llu (zero-emit calls=%u, pool %08X->%08X). Same "
+           "renderer in the other aspect so far: calls=%llu bytes/call=%llu.",
+           kRenderers[ri].addr, wide ? "WIDE" : "4:3",
+           (unsigned long long)e.calls, (unsigned long long)(e.bytes / e.calls), e.zero_calls,
+           before, after,
+           (unsigned long long)other.calls,
+           (unsigned long long)(other.calls ? other.bytes / other.calls : 0));
+}
+
 void run(Core* c, int ri) {
   const Renderer& R = kRenderers[ri];
   const RecompRegistry* reg = psxport_recomp();
+  const uint32_t pool_before = c->mem_r32(kPoolPtr);
 
   if (!gpu_vk_wide_engine(c) || s_refused[ri]) {
     // SAY SO, once. "No widening happened" has two completely different causes — the renderer was
@@ -119,6 +160,7 @@ void run(Core* c, int ri) {
     // cleared for the duration so the dispatch reaches the real body, and re-armed by the caller.
     reg->shard_set_override(R.addr, nullptr);
     reg->main_dispatch(c, R.addr);
+    emit_report(c, ri, 0, pool_before, c->mem_r32(kPoolPtr));
     return;
   }
 
@@ -196,6 +238,7 @@ void run(Core* c, int ri) {
   gte_write_ctrl(CR_OFX, (uint32_t)((nw / 2) << 16));
   interp_call(c, R.addr);
   gte_write_ctrl(CR_OFX, saved_ofx);
+  emit_report(c, ri, 1, pool_before, c->mem_r32(kPoolPtr));
 
   // Put the guest's own instructions back. A bound must not stay widened for any other reader of this
   // code — and leaving it patched would make a later 4:3 toggle silently wrong.

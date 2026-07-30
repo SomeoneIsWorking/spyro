@@ -1,3 +1,6 @@
 [submodule "external/psxport"]
 	path = external/psxport
 	url = https://github.com/SomeoneIsWorking/psxport.git
+[submodule "external/open-spyro"]
+	path = external/open-spyro
+	url = https://github.com/theMagicalKarp/open-spyro

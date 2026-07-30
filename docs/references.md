@@ -1,9 +1,27 @@
 # External references
 
-Public reverse-engineering work on Spyro the Dragon. **None of it is vendored, copied, or built
-into this repo** — these are pointers for cross-checking our own RE (symbol names, function
-boundaries, structure). Where a reference and our own measurement disagree, the measurement wins:
-this repo's rule is that a claim cites evidence from the binary or a running port.
+Public reverse-engineering work on Spyro the Dragon. **Nothing is copied into this repo's own
+sources** — these are pointers for cross-checking our RE (symbol names, function boundaries,
+structure). Where a reference and our own measurement disagree, the measurement wins: this repo's
+rule is that a claim cites evidence from the binary or a running port.
+
+`open-spyro` is now a **submodule at `external/open-spyro`** (CC0), pinned to a commit so a checkout
+is reproducible and the reference reaches subagents. It is a REFERENCE ONLY: never build it, never
+copy its C into `game/`, and never let a symbol name stand in for evidence. What it is good for is
+the two things that are expensive to derive from scratch and cheap to look up —
+
+  * **Function boundaries and sizes.** `config/spyro.main.ld` carries `name = 0xADDR; // type:func
+    size:0xN`. This settled C137 independently (0x80022A2C is 0x1098 = 1062 instructions, not the 598
+    a lui-scan classifier had recorded) and confirmed four other sizes to within 20 instructions.
+  * **Names, as a HYPOTHESIS to test.** They corrected the reading of C136 immediately — 0x8004F000 is
+    `EmitStaticActorMeshListFogged`, so "never called in this capture" is a fogged-level variant, not
+    a mystery. They also contradict part of the mute map (C138), which is what a reference is for:
+    the disagreement is the finding, and the measurement decides it.
+
+Its own progress notes are worth reading once: it excludes **92 hand-written assembly functions**
+(~95 KB) as unmatchable from C because "they use `$at` as a data register" — that is exactly this
+port's geometry-renderer family, and independent confirmation of the `$at`/`$ra`-as-data idiom that
+caused the upstream `jr $ra` mis-classification in issue 0040.
 
 ## Decompilation projects
 

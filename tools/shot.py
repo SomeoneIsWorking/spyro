@@ -95,6 +95,11 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("frame", type=int)
     ap.add_argument("--full", action="store_true", help="keep the whole 1024x512 VRAM")
+    ap.add_argument("--width", type=int, default=512,
+                    help="framebuffer width to crop (default 512 = this game's 4:3 frame). A WIDER "
+                         "aspect renders wider — 684 at 16:9, 896 at 21:9 — and cropping to 512 shows "
+                         "the left part of a wider picture, which reads as a shifted, cropped, broken "
+                         "render. That nearly got recorded as a renderer fault; it was this crop.")
     ap.add_argument("--secs", type=int, default=240)
     a = ap.parse_args()
 
@@ -128,18 +133,19 @@ def main():
         return 0
     # The framebuffers are the left half: 512x240 at y=0 and y=240. Keep whichever holds the frame,
     # measured rather than assumed — the empty one is a fresh clear and has almost no distinct colours.
+    fbw = min(a.width, w)
     def variety(y0):
         s = set()
         for y in range(y0, min(y0 + 240, h)):
             r = rows[y]
-            for x in range(0, min(512, w), 4):
+            for x in range(0, fbw, 4):
                 s.add(r[x * ch:x * ch + 3])
         return len(s)
     top, bot = variety(0), variety(240)
     y0 = 0 if top >= bot else 240
-    crop = [rows[y][0:512 * ch] for y in range(y0, min(y0 + 240, h))]
+    crop = [rows[y][0:fbw * ch] for y in range(y0, min(y0 + 240, h))]
     png = os.path.join(out, f"f{frame}.png")
-    write_png(png, 512, len(crop), ch, crop)
+    write_png(png, fbw, len(crop), ch, crop)
     print(f"{os.path.relpath(png, REPO)}   (buffer at y={y0}; {top} vs {bot} distinct colours)")
     return 0
 

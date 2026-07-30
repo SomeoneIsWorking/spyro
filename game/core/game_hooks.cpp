@@ -74,6 +74,8 @@ static void spyro_registerOverrides(Game*) {
   spyro_register_native_util();
   spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
                                    // renderer under differential verification (issue 0037)
+  spyro_register_wide_clip();      // WIDESCREEN: the guest's own renderers, with the right clip
+                                   // bound moved to the wide width (inert at 4:3)
   spyro_register_native_render();  // MEASUREMENT, off unless PSXPORT_NDIFF_IDENTITY=1: can the
                                    // differential validate a renderer at all? (re-frontier
                                    // render.own-geometry-family)    // OWNED natively: strlen / global swaps / dist2d / display-list link

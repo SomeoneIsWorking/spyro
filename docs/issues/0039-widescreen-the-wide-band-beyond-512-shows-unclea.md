@@ -65,3 +65,20 @@ CANDIDATES, none tested — do NOT pick one by reasoning:
 THE DECISIVE EXPERIMENT, for next time: make the owned renderer emit NOTHING (return before the face loop) and capture. Whatever disappears from the frame is exactly its visual contribution. That answers all three candidates at once and needs no reasoning — which is the right way round, because I have now inferred twice in a row and been wrong once.
 
 The OFX code is KEPT: it is correct in itself, verified to take effect, inert at 4:3, and the ordering it establishes (3D projection before 2D widen) is what psxport's frame_finalize comment now records.
+
+### Note (2026-07-30)
+WIDESCREEN NOW WORKS, and by a route that removes the ~9150-instruction transcription queue from its critical path.
+
+THE MOVE: the clip bounds are baked into C literals only on the RECOMPILED path. They are still ordinary words in guest RAM, and interpreting these renderers is BIT-IDENTICAL to running their recompiled bodies — verified per call against 2 MB of RAM, the scratchpad, every GPR and all of COP2 (C139). So each renderer now runs interpreted with its right bound patched to the wide width and OFX re-centred to nw/2 around the call, and the patch reverted afterwards. game/core/wide_clip.cpp; eleven bound sites across five renderers, every one read before it was listed.
+
+That needed one framework fix: interp_run poisons r[31] with CORO_SENTINEL to spot the callee's return, and these bodies SPILL ra to a fixed save area, so the sentinel was what reached guest RAM. interp_flat stops on a plain PC compare, so the caller's real return address works as the sentinel — interp_call.
+
+TWO MEASURED RESULTS WORTH KEEPING:
+  * Widening the bounds ALONE moved FIVE pixels of a 684x240 frame (C140). The guest rejects a face only when all three vertices share a side, so with the projection still at 256 almost nothing is WHOLLY beyond 512. Bounds and OFX are not independent halves; neither does anything useful without the other.
+  * Omitting ONE renderer from the table reproduced C135's misalignment exactly — the ground and characters moved by the margin and the sky did not, because 0x8004EBA8's native reimplementation is off by default and its recompiled body was still running at the 4:3 centre. It is now in the table, skipped only when PSXPORT_NATIVE_TERRAIN=1 owns it.
+
+TWO INSTRUMENT FAULTS, BOTH MINE, BOTH IN THIS TICK:
+  * The guard that checks a site really is 'lui rX,0x0200' masked with 0xFC1FFFFF, which PINS the destination register to zero — so it refused all eleven genuine sites. The run then looked exactly like 'widescreen changes nothing'. What caught it was adding a log line to the NEGATIVE path: 'called, but NOT widened: wide_engine=1 refused=1'. Before that line existed, a refusal and a never-called renderer were the same silence.
+  * A 4:3-vs-16:9 offset search scored by summed squared error over a variable-width overlap, so it reported the SEARCH BOUND (+240) as the best match in all three bands. Fixed-window mean-abs-diff puts the expected +86 in the top cluster but does not separate it sharply from a spurious +179 — this scene is mostly flat sand and does not discriminate well. Do not quote that metric as confirmation; the before/after correlation (sky +85, ground +77 against a designed +86) is the one that measures something.
+
+STILL OPEN: the garbage strip in the last ~20 columns; whether the frame is exactly centred (the offset search above cannot currently say); and 2D/HUD alignment against the re-centred 3D, which psxport's ws_2d path now has a coherent 3D projection to line up against for the first time.

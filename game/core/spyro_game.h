@@ -39,5 +39,9 @@ void spyro_register_native_util();
 void spyro_register_native_terrain();
 void spyro_register_native_render();
 
+// wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and running
+// the four contributing renderers interpreted. Inert at 4:3.
+void spyro_register_wide_clip();
+
 // native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
 void spyro_register_native_angle();

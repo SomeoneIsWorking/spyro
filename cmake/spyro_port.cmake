@@ -35,6 +35,7 @@ set(GAME_SRC
   game/core/native_angle.cpp
   game/core/native_util.cpp
   game/core/native_render.cpp
+  game/core/wide_clip.cpp
   game/core/native_terrain.cpp
 )
 

@@ -254,8 +254,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### render.own-geometry-family — Own the hand-written assembly geometry renderers (the gate for widescreen AND 60fps)
 - status: re-partial
 - deps: gpu.native-depth
-- evidence: C127,C129,C130
+- evidence: C127,C129,C130,C136,C137,C138,C139,C140,C141
 - where: 0x8004EBA8 (understood at instruction level), 0x800258F0 (9 vertex sites traced), + 17 more sharing the fixed-area register-save idiom
-- gap: TWO INDEPENDENT LINES OF EVIDENCE POINT HERE, which is why it is the next real step rather than a preference.
+- gap: NO LONGER THE GATE FOR WIDESCREEN, and that is a measured change of dependency rather than a change of mind. Widescreen shipped without owning any of these bodies: the clip bounds are baked into C literals only on the RECOMPILED path, and interpreting these renderers is bit-identical to running their recompiled bodies (C139), so the bound is a one-word patch to guest RAM with the game's own code still drawing. game/core/wide_clip.cpp does that for eleven sites across five renderers plus an OFX re-centre, gate 16/16 at 4:3 (C140, C141). What ownership is STILL the gate for is NATIVE DEPTH and 60fps interpolation — an interpreted body is faithful but just as opaque as a recompiled one, so it yields no per-vertex depth. Pick targets for that reason now, not for widescreen.
 - notes: 
 

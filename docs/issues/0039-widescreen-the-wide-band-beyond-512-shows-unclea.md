@@ -46,3 +46,22 @@ SO THE ORDER IS: widen the 3D projection (shift OFX to nw/2 in the owned rendere
 A FOURTH HARDCODED 320 FOUND AND FIXED (psxport 94e52472): ws_2d_local_x centred HUD by (ww-320)/2 and stretched backdrops by ww/320. For a 512-wide game that is 182 columns instead of 86, and 2.14x instead of 1.34x. That is four instances of the same assumption in this path — wide_native_w, the GP0 E4 draw-area widen, the display blank, and now the 2D widen. Anyone extending widescreen to a non-320 game should grep the whole path for 320 before trusting any of it.
 
 STILL OPEN: the garbage strip in the last ~30 columns at top and bottom, unchanged by any of the above. It is where nothing draws, and it cannot be fixed by clearing VRAM (that zeroes the texture atlas — see the note above). It needs the margin covered by the renderer, which needs the 3D projection widened first.
+
+### Note (2026-07-30)
+OFX RE-CENTRING IMPLEMENTED AND VERIFIED TO TAKE EFFECT — but the picture does not move, and that is an unresolved contradiction rather than something to explain away.
+
+WHAT IS MEASURED:
+  * The owned renderer now shifts the projection centre when a wide aspect is selected: logged ofx_was=01000000 (256 in 16.16) -> ofx_now=01560000 (342), i.e. +86 columns, exactly nw/2 for the 684-wide 16:9 frame. Set and RESTORED at exit, so no un-owned renderer inherits a shifted projection its 4:3 clip test would then mis-cull against.
+  * 4:3 is untouched: ndiff still reports 200/200 exact, gate 16/16.
+  * And the rendered frame does NOT shift. Column-brightness correlation against the pre-OFX capture gives a best-matching offset of 0 px, both over the whole frame and restricted to the terrain band (rows 60-150, x 20-620); +86 scores five times worse.
+
+WHY THAT IS A CONTRADICTION, not an explanation: this renderer is a MAJOR contributor to the frame, not a minor one. Instrumented, it emits roughly 637 packets per call at about one call per frame, against a scene total of ~1166 prims/frame. Something emitting half the frame's primitives cannot have its projection moved 86 columns with no visible effect.
+
+CANDIDATES, none tested — do NOT pick one by reasoning:
+  (a) the visible ground and sky are a 2D BACKDROP (is3d=0) drawn by another path, so the 3D geometry this renderer emits is largely hidden behind it and the correlation is measuring the backdrop, which OFX does not affect.
+  (b) the packets this renderer emits are not the ones being presented — e.g. it fills a pool that a later frame draws, so a single-frame capture compares mismatched frames.
+  (c) the byte-count estimate of its share is wrong (it divides emitted bytes by 20 while packets are 20 OR 28 bytes, and it accumulates across calls), and its real share is small.
+
+THE DECISIVE EXPERIMENT, for next time: make the owned renderer emit NOTHING (return before the face loop) and capture. Whatever disappears from the frame is exactly its visual contribution. That answers all three candidates at once and needs no reasoning — which is the right way round, because I have now inferred twice in a row and been wrong once.
+
+The OFX code is KEPT: it is correct in itself, verified to take effect, inert at 4:3, and the ordering it establishes (3D projection before 2D widen) is what psxport's frame_finalize comment now records.

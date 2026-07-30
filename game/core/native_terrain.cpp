@@ -43,7 +43,6 @@
 // now scales from this game's own 512-wide 4:3 frame rather than a hardcoded 320).
 int gpu_vk_wide_engine(Core*);
 int gpu_vk_wide_engine_w(Core*);
-int gpu_vk_wide_engine_ofx(Core*);   // the projection centre for the wide frame (nw/2)
 
 namespace {
 
@@ -161,21 +160,24 @@ void terrain_native(Core* c) {
   gte_write_ctrl(CR_R11R12, at); gte_write_ctrl(CR_R13R21, v0); gte_write_ctrl(CR_R22R23, v1);
   gte_write_ctrl(CR_R31R32, a0); gte_write_ctrl(CR_R33, a1);
 
-  // WIDESCREEN, PART TWO: re-centre the PROJECTION, not just the clip bounds. Widening the bounds
-  // alone keeps the world left-anchored — it reveals more of the right side and nothing of the left,
-  // and it leaves screen-space 2D misaligned against the world (which is what made an earlier attempt
-  // at widening 2D first look worse, see psxport's note in frame_finalize). OFX is the projection's
-  // horizontal centre in 16.16 fixed point; moving it to nw/2 puts the extra width on BOTH sides.
+  // WIDESCREEN, PART TWO — RE-CENTRING THE PROJECTION IS DELIBERATELY *NOT* DONE HERE, and the
+  // reason is a measured architectural constraint rather than caution.
   //
-  // SET AND RESTORED, deliberately. OFX is a GTE control register that outlives this call, and every
-  // renderer that has not been owned yet still rejects faces at the 4:3 bound — so leaving OFX shifted
-  // would re-centre their projection while their clip test stayed put, clipping content that had moved
-  // under it. Containing the change to this renderer keeps the partially-migrated state assessable.
-  // At 4:3 nothing is written at all, so the body stays byte-identical and ndiff still certifies it.
-  const bool wide = gpu_vk_wide_engine(c) != 0;
-  const uint32_t saved_ofx = wide ? gte_read_ctrl(CR_OFX) : 0u;
-  if (wide) gte_write_ctrl(CR_OFX, (uint32_t)(gpu_vk_wide_engine_ofx(c) << 16));
-
+  // Moving OFX to nw/2 works exactly as intended: measured, this renderer's content shifts +79px of
+  // the expected +86 (correlating the sky band it owns), while content from renderers that are not
+  // owned yet stays put (0px, ground band). That is the problem. A frame is drawn by SEVERAL of this
+  // game's assembly renderers — muting this one removes the sky and distant terrain but leaves the
+  // ground, characters and HUD — so shifting the projection in one of them MISALIGNS the scene
+  // against itself: the plateau slides 86 columns off the ground it stands on, leaving visible seams.
+  //
+  // So INCREMENTAL OWNERSHIP DOES NOT PERMIT INCREMENTAL WIDESCREEN. The projection change is
+  // all-or-nothing across every renderer that contributes to a frame, and until they are all owned the
+  // honest state is the one below: widen the CLIP BOUNDS only. That never moves existing content — it
+  // only stops faces being thrown away — so the frame stays self-consistent and simply extends to one
+  // side. Asymmetric, but coherent, which is strictly better than centred and torn.
+  //
+  // The code to do it is three lines (read CR_OFX, write gpu_vk_wide_engine_ofx(c) << 16, restore at
+  // exit) and was verified to work; it goes back in when the last contributing renderer is owned.
 
   uint32_t fp = c->mem_r32(kPoolPtr);
   uint32_t ra = kWorkList;
@@ -319,9 +321,6 @@ void terrain_native(Core* c) {
     if (pool_out) break;
   }
   if (pool_out) c->mem_w32(kPoolOverflow, 1);
-
-  // Put OFX back before returning, so nothing outside this renderer sees the shifted projection.
-  if (wide) gte_write_ctrl(CR_OFX, saved_ofx);
 
   // 5. Publish the pool pointer and link the batch into the ordering table.
   c->mem_w32(kPoolPtr, fp);

@@ -104,3 +104,17 @@ THE FILL-RECT BACKDROP IS NOT THE ANSWER. The game DOES issue a full-screen Fill
 SO THE MARGIN IS NOT PAINTED BY THE 2D BACKDROP PATH AT ALL, and the next attempt should establish WHO paints the margin rows that ARE clean (10-229) before assuming anything about the two that are not. The 8-row and 10-row heights are suspicious: the display sits at VRAM y=8, so a source that covers 0..223 in display rows would leave exactly 224..239 uncovered at the bottom, and something covering 8..231 would leave 0..7 at the top.
 
 Gate 16/16, and the 16:9 frame is byte-identical to the known-good capture, so neither change regressed anything.
+
+### Note (2026-07-30)
+MARGIN ARTEFACT: three fixes tried, all ZERO pixels, and the 'nothing draws there' model is dead too. Recording so the next attempt does not repeat any of it.
+
+RULED OUT, each measured on the same frame:
+  1. Ungating the widened FillRect backdrop from the (s_prev_had3d || s_prev_had_bg2d) latch — no-op here, because the fill sets s_seen_bg2d itself so the latch was already satisfied. (Kept upstream: a full-screen fill is classified GEOMETRICALLY and should not need a depth-derived latch.)
+  2. Queueing that backdrop in display-local rather than VRAM coordinates — a REAL bug (the second buffer passed y=248 as if it were a local coordinate) and kept upstream as correctness, but zero pixels here.
+  3. Extending the widened backdrop to the full display height. The geometry looked conclusive: the display is 512x240 and the guest's fill is 512x224, so 16 rows are never cleared, which matches slivers of ~8 rows at each end almost exactly. Zero pixels. REVERTED — an unproven behaviour change for other consumers.
+
+AND THE OBVIOUS MODEL IS WRONG. PSXPORT_PRIMDUMP on frame 46501 (2048 prims) shows the margin columns x=650..684 ARE covered by primitives in every display-row band, including both artefact bands (115 prims in rows 0-9, 30 in rows 230-239). So it is not 'no geometry reaches those rows'.
+
+INSTRUMENT TRAP, mine, worth remembering: the primdump's coordinates are VRAM-space, not display-space (this frame's display origin is y=248, prims run y=210..492). Comparing them against display rows first produced '0 prims overlap the margin' for EVERY band, which read as a clean answer and was a space mismatch. Also, bbox extents from this dump are not usable for 'how far right does geometry reach' — several bands report x_max=1023, the full VRAM width, because the dump includes prims in atlas space.
+
+WHERE TO GO NEXT: the artefact is 34 columns wide and 10 rows tall at each end; the primdump says prims cover it. So the question is no longer WHO draws there but WHAT LANDS ON TOP — or whether those rows are outside the VK render target's cleared/loaded region (the margin columns are LOAD_OP_LOAD, persistent across frames, per gpu_native.cpp's own note). Check the render-target load/clear rect before touching the guest-side backdrop again.

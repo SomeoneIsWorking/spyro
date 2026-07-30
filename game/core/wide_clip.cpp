@@ -43,7 +43,7 @@ namespace {
 // trust it.
 struct Renderer {
   uint32_t addr;
-  const char* what;          // what it draws, from the mute map (C138)
+  const char* what;          // what it draws — mute map C147, names from open-spyro
   uint32_t sites[8];
   uint32_t consumer;
   uint32_t ofx_site;         // an `lui rX, 0x0100` this body uses to RESET OFX to the 4:3 centre
@@ -63,18 +63,18 @@ const Renderer kRenderers[] = {
   // Leaving it out was visible immediately: the ground and the characters moved by the margin and
   // the SKY did not, which is exactly the self-misalignment C135 warns about, produced by omission
   // rather than by design. spyro_register_wide_clip() skips this entry when the native body is on.
-  { 0x8004EBA8u, "sky + distant terrain",
+  { 0x8004EBA8u, "EmitStaticActorMeshList — sky + distant terrain",
     { 0x8004ED8Cu }, 0x8004EE2Cu, 0 },                    // lui t7,0x0200 -> sub a1,a1,t7
-  { 0x80022A2Cu, "foreground object + the DEMO MODE caption",
+  { 0x80022A2Cu, "RasterizeSpritePrimQueue — the foreground gem + the DEMO MODE caption",
     { 0x80022FF8u }, 0x800230ACu,                         // lui s0,0x0200 -> sub a0,a0,s0
     0x80023958u },   // `lui at,0x0100; ctc2 at,OFX` at 0x8002395C — this body RESETS the projection
                      // centre to the 4:3 256 partway through, so the OFX we install below would be
                      // silently undone for everything it draws after that point.
-  { 0x8001F798u, "the orange character (stage 1 of the actor pipeline)",
+  { 0x8001F798u, "EmitActorDrawList — the orange character",
     { 0x8001F9F4u }, 0x8001FC94u, 0 },                    // lui t9,0x0200 -> sub t6,t6,t9
-  { 0x80020F34u, "the GROUND and the cliffs",
+  { 0x80020F34u, "EmitSecondaryActorPrimitives — a second character",
     { 0x80021190u }, 0x80021454u, 0 },                    // lui t9,0x0200 -> sub t6,t6,t9
-  { 0x800258F0u, "the orange character (stage 2 of the actor pipeline)",
+  { 0x800258F0u, "RenderWorldChunks — the GROUND and the cliffs",
     { 0x8002626Cu, 0x8002684Cu, 0x80027A60u, 0x8002817Cu,
       0x80028C50u, 0x800299ACu, 0x8002A2F4u, 0x8002A4C0u }, 0, 0 },
     // eight bounds, each the third of a 0x0001/0x0100/0x0200 triple. The SIX other 0x02000000

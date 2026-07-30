@@ -118,6 +118,7 @@ def main():
 
     env = dict(os.environ, PSXPORT_REPL="1", PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1",
                PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
+    pre_mtime = os.path.getmtime(vram) if os.path.exists(vram) else None
     script = f"run {frame}\nvram {os.path.relpath(vram, REPO)}\nquit\n"
     print(f"running to frame {frame} …", file=sys.stderr)
     subprocess.run(["timeout", "-s", "KILL", str(a.secs),
@@ -126,6 +127,11 @@ def main():
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not os.path.exists(vram):
         sys.exit(f"no VRAM dump produced — did the run reach frame {frame} within {a.secs}s?")
+    if pre_mtime is not None and os.path.getmtime(vram) == pre_mtime:
+        sys.exit(f"{vram} was NOT rewritten by this run — it is a PREVIOUS capture. Refusing to "
+                 f"hand it back: copying this file would silently mislabel one run's picture as "
+                 f"another's, which is exactly how the mute map (C138) recorded three renderers "
+                 f"wrongly and stood for a day.")
 
     w, h, ch, rows = read_png(vram)
     if a.full:

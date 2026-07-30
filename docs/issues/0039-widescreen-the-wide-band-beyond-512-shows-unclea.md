@@ -82,3 +82,12 @@ TWO INSTRUMENT FAULTS, BOTH MINE, BOTH IN THIS TICK:
   * A 4:3-vs-16:9 offset search scored by summed squared error over a variable-width overlap, so it reported the SEARCH BOUND (+240) as the best match in all three bands. Fixed-window mean-abs-diff puts the expected +86 in the top cluster but does not separate it sharply from a spurious +179 — this scene is mostly flat sand and does not discriminate well. Do not quote that metric as confirmation; the before/after correlation (sky +85, ground +77 against a designed +86) is the one that measures something.
 
 STILL OPEN: the garbage strip in the last ~20 columns; whether the frame is exactly centred (the offset search above cannot currently say); and 2D/HUD alignment against the re-centred 3D, which psxport's ws_2d path now has a coherent 3D projection to line up against for the first time.
+
+### Note (2026-07-30)
+THE 2D-WIDEN DIAGNOSIS IN THE NOTE ABOVE IS CORRECTED. That note said the ordering was the problem — widen the 3D projection first and the 2D widen 'becomes correct rather than merely active'. The projection is now re-centred across all five contributing renderers, so the precondition holds, and enabling the widen STILL makes the picture worse.
+
+MEASURED, not reasoned: with the latch firing, sky rows 0-45, ground rows 90-150 and caption rows 180-210 each move a further +86 px. All three. So the widen is not shifting 2D relative to 3D at all — it shifts the WHOLE FRAME a second time on top of OFX.
+
+THE REAL GATE IS 2D-vs-3D DISCRIMINATION (C143). psxport sets s_seen3d from a projected world prim, so the classification rides on per-primitive DEPTH; at this port's ~2.5% depth coverage almost nothing is classified 3D and 'widen the 2D' becomes 'widen everything'. The latch change is reverted and psxport's comment now records the measured cause instead of the ordering theory.
+
+WHAT THIS MEANS FOR THE PLAN: the remaining widescreen work (this, and the garbage strip in the columns nothing draws) is now blocked on NATIVE DEPTH, which is what owning the geometry renderers buys. Ownership is back on the critical path — but for depth, not for clip bounds, and that is a different and much better-defined target than 'transcribe 9150 instructions so OFX may move'.

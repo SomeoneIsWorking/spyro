@@ -134,11 +134,16 @@ def main():
     # The framebuffers are the left half: 512x240 at y=0 and y=240. Keep whichever holds the frame,
     # measured rather than assumed — the empty one is a fresh clear and has almost no distinct colours.
     fbw = min(a.width, w)
+    # CHOOSE THE BUFFER USING ONLY THE 4:3 REGION. Columns beyond it are the TEXTURE ATLAS, not
+    # framebuffer, and atlas data is far more colour-varied than any rendered scene — so scoring the
+    # full wide width lets the atlas decide which buffer "has the frame" and it picks the wrong one.
+    # The 4:3 columns are always framebuffer, so they are the honest discriminator.
+    pick_w = min(512, w)
     def variety(y0):
         s = set()
         for y in range(y0, min(y0 + 240, h)):
             r = rows[y]
-            for x in range(0, fbw, 4):
+            for x in range(0, pick_w, 4):
                 s.add(r[x * ch:x * ch + 3])
         return len(s)
     top, bot = variety(0), variety(240)

@@ -268,6 +268,17 @@ static const GameConfig g_spyro_config = {
   // screens render BLACK — they are uploads with zero primitives, so the clear discards them before
   // anything is drawn on top (C099). Set this back to 0 if and when a native producer owns the frame.
   .preserveVramBackdrop = 1u,
+
+  // ── windowed frame pacing ──────────────────────────────────────────────────────────────────────
+  // The guest still owns its frame loop: vsync.cpp's vblank_wait presents AND paces once per vblank
+  // it advances. One vblank is 1/60s, so one pacing call represents 1 vblank — the framework default
+  // reads a hardcoded Tomba2 scratchpad field (0x1F800235) as the quota, and Spyro's geometry
+  // renderer writes vertex data over that byte, so the windowed run slept its garbage value (2..38)
+  // per vblank and the 3D scene dropped to ~2.7fps (root-caused: the pacer's nanosleep is where the
+  // blocked CPU profile sits, and a gdb store-watchpoint on the byte names gen_func_8001F798's
+  // mem_w32 as the writer). One pace call = one vblank = 16.67ms, and the guest's own wait cadence
+  // decides the logic rate; Spyro flips the display every 2 vblanks (30fps, C072).
+  .paceQuota = 1u,
 };
 
 void spyro_install_game_config() { psxport_install_game(&g_spyro_config, spyro_game_hooks()); }

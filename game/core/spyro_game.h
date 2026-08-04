@@ -16,7 +16,6 @@ void spyro_register_vsync(Game* g);
 
 // game/core/cd_queue.cpp — observes (and will own) the CD request queue service routine.
 void spyro_register_cd_queue();
-// TEMPORARY (docs/issues/0017): probes on the level-overlay load chain. Remove once the load fires.
 
 // The first guest function this port OWNS outright (native_rand.cpp) — the recompiled body never
 // runs once installed. Verified per call against that body under PSXPORT_NDIFF.
@@ -36,12 +35,14 @@ void spyro_register_native_angle();
 
 // native_util.cpp — strlen, two set-and-return-previous globals, 2D distance, display-list link.
 void spyro_register_native_util();
+// native_terrain.cpp — BRING-UP, installs nothing unless PSXPORT_NATIVE_TERRAIN=1: a full native
+// body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();
+
+// native_render.cpp — MEASUREMENT, installs nothing unless PSXPORT_NDIFF_IDENTITY=<addr,…>: can the
+// per-call differential validate a geometry renderer at all? (re-frontier render.own-geometry-family)
 void spyro_register_native_render();
 
 // wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and running
-// the four contributing renderers interpreted. Inert at 4:3.
+// the five contributing renderers interpreted (11 sites). Inert at 4:3.
 void spyro_register_wide_clip();
-
-// native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
-void spyro_register_native_angle();

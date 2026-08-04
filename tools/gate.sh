@@ -5,10 +5,12 @@
 # not a gate: nothing mechanical would notice if one stopped firing, and hand-reading has repeatedly
 # been the weak link here.
 #
-# HOW MUCH THIS PORT ACTUALLY OWNS, stated plainly because the old text overstated it: 20 of the 21
-# installed overrides SUPER-CALL the recompiled body — they observe, and the guest code still does the
-# work. The CD and pad ones are platform-level SUPPLY (they provide what the hardware would have, then
-# run the guest body). Genuinely native bodies: the vblank wait, and rand() 0x8006272C. See C075.
+# HOW MUCH THIS PORT ACTUALLY OWNS, stated plainly and kept current (this text has been stale twice,
+# in both directions): 35 overrides are registered, of which 15 are FULL native bodies with no
+# super-call. The rest observe — 9 in cd_queue.cpp and 1 in vsync.cpp super-call the recompiled body,
+# and the CD and pad ones are platform-level SUPPLY (they provide what the hardware would have, then
+# run the guest body). See C075/C081 and re-frontier `cd.pc-owned-stock-libcd`. The live number is the
+# "native bodies verified" check below, which counts per-call verifications, not bodies.
 #
 # WHAT THIS IS, STATED HONESTLY. This is a BOOT-PROGRESS gate, not the byte-exact SBS differential the
 # porting playbook asks for. It cannot prove the native path matches the substrate instruction for
@@ -215,6 +217,29 @@ if ! python3 tools/info.py check --no-stale > "$OUT/info.txt" 2>&1; then
 else
   printf '  \033[32mPASS\033[0m %-34s %s\n' "info ledger self-consistent" "ok"
 fi
+
+# CODEMAP DRIFT. The codemap is the instrument the next debugging session NAVIGATES BY -- "the code
+# map should be pristine so the agent knows where to debug from the code map" (USER, 2026-08-05). So
+# a dangling reference in it is a regression in a tool, not a documentation nit, and it rides the one
+# thing that runs every iteration. It was previously wired to NOTHING and had been reporting a
+# coverage gap (external/open-spyro/) unread.
+#
+# READ ITS BLIND SPOTS, PRINTED BELOW ON EVERY RUN. This check sees exactly two things: a source
+# subsystem mentioned nowhere, and a backticked path that no longer exists. It CANNOT see a wrong
+# STATUS, a cited claim that has since been falsified, a resolved issue cited as live, or a stale
+# count -- and on 2026-08-05 every one of its checks was green while the map's status column told a
+# rendering agent to write a native producer to work around a fixed one-line framework regression.
+# A green line here means "no dangling references", never "the map is true".
+if ! python3 tools/codemap.py check > "$OUT/codemap.txt" 2>&1; then
+  printf '  \033[31mFAIL\033[0m %-34s %s\n' "codemap has no drift" \
+    "$(grep -cE '^  (⬜|❌)' "$OUT/codemap.txt"; true) drifted reference(s) — docs/codemap.md"
+  grep -E '^  (⬜|❌)|^  scanned ' "$OUT/codemap.txt" | sed -n 's/^/        /p'
+  fail=1
+else
+  printf '  \033[32mPASS\033[0m %-34s %s\n' "codemap has no drift" \
+    "$(sed -n 's/^  scanned /scanned /p' "$OUT/codemap.txt")"
+fi
+sed -n 's/^  \(BLIND SPOTS\|  \*\)/        \1/p' "$OUT/codemap.txt" | head -5
 # Claim ROT, reported every run and never silent. C099 read as a current description of the renderer
 # for a week after the code under it was fixed, and nearly bought a whole native producer as a
 # workaround for a one-line regression. The CANNOT-SEE count rides along because "0 stale" says

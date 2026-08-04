@@ -216,6 +216,21 @@ def cmd_check(args):
     for r in sorted(referenced):
         if "/" in r and not os.path.exists(r):
             stale.append(r)
+    # Denominators. A bare "OK" is indistinguishable from "I never looked" -- and this check
+    # HAS reported OK on a map whose every status row was wrong, so it must state what it
+    # measured and what it is structurally blind to.
+    n_subs = 0
+    for root in roots:
+        if os.path.isdir(root):
+            agg, _ = _dir_stats(root)
+            n_subs += len([d for d in agg if _depth(d, root) == 1] or [root])
+    n_paths = sum(1 for r in referenced if "/" in r)
+
+    if not roots or n_subs == 0:
+        print("codemap check SEARCHED NOTHING: no source roots found "
+              f"(roots={roots or '(none)'}). This is a FAILURE, not a pass.")
+        sys.exit(2)
+
     if gaps:
         print("COVERAGE GAPS — source subsystems not mentioned in the codemap:")
         for g in sorted(gaps):
@@ -224,9 +239,23 @@ def cmd_check(args):
         print("STALE — paths the codemap references that don't exist on disk:")
         for s in stale:
             print(f"  ❌ {s}")
+
+    print(f"  scanned {n_subs} source subsystem(s) under {', '.join(roots)}; "
+          f"checked {n_paths} referenced path(s) in {args.map} — "
+          f"{len(gaps)} coverage gap(s), {len(stale)} stale path(s).")
+    print("  BLIND SPOTS — this check CANNOT see any of these, so a green result is "
+          "'no dangling references', NOT 'the map is true':")
+    print("    * a STATUS that is wrong (a ⬜ row for something that works, a ✅ for something that "
+          "does not)")
+    print("    * a cited claim that has since been FALSIFIED, or a cited issue that is RESOLVED")
+    print("    * a stale COUNT (checks, overlays, owned bodies) or two rows that contradict each other")
+    print("    * anything inside a submodule, or a bare filename cited in prose without a directory")
+
     if not gaps and not stale:
-        print("codemap OK: every source subsystem is mentioned and no referenced path is missing.")
+        print("  => no dangling references. Re-read the STATUS column yourself; that is where "
+              "this map has actually rotted.")
         return
+    print("  => FAIL: fix the rows above, or the next agent navigates by a map that lies.")
     sys.exit(1)
 
 

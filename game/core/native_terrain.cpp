@@ -36,7 +36,8 @@
 #include "recomp_iface.h"
 #include "rec_decls.h"
 #include "native_diff.h"
-#include "cfg.h"
+#include "cfg.h"      // cfg_on — PSXPORT_NATIVE_TERRAIN is a feature flag, not a diagnostic
+#include <lucent/log.h>
 #include "spyro_game.h"
 
 // psxport's widescreen state: whether a wider aspect is selected, and the wide native width (which
@@ -367,5 +368,17 @@ void spyro_register_native_terrain() {
   // the packet-pool-exhausted arm (0x8004EF68) did not fire in any verified run, so its exit state —
   // including the delay-slot `t6 = t4 >> 20` — is transcribed but unexercised. If the pool ever runs
   // out while ndiff has budget left, that call is where a divergence would surface.
+  //
+  // THE GATE IS EXPLICIT, AND IT USED TO BE AN ORDERING ACCIDENT. This registration was unconditional
+  // while game_hooks.cpp and wide_clip.cpp both documented it as off unless PSXPORT_NATIVE_TERRAIN=1.
+  // The behaviour happened to be right only because wide_clip.cpp registers LATER and claims the same
+  // single override slot for 0x8004EBA8, silently displacing this one — the exact hazard game_hooks.cpp
+  // records for fntrace. Net effect was correct and the mechanism was a lie, so nothing would have
+  // caught it if the registration order ever changed. Now both sides test the same flag: wide_clip
+  // skips this address when the flag is on, and this installs only when it is on.
+  if (!cfg_on("PSXPORT_NATIVE_TERRAIN")) return;
+  lucent::info("native", "PSXPORT_NATIVE_TERRAIN=1 — the native terrain body OWNS 0x8004EBA8; "
+                         "wide_clip is standing down from this renderer, so widescreen's clip-bound "
+                         "widening does NOT apply to it in this run.");
   psxport_recomp()->shard_set_override(0x8004EBA8u, terrain_owned);
 }

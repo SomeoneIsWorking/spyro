@@ -1,9 +1,10 @@
 ---
 id: C099
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-29
 tags: gpu,framework
+falsified_on: 2026-08-04
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ gpu_vk.cpp render_geom draws three bands; band 1 (2D_BG) passes clearColorBlack=
 ## What would falsify it
 
 if a windowed run shows the logo screens correctly, the present path must composite the uploaded VRAM somewhere the headless readback does not see, and this is a headless-only artefact
+
+## FALSIFIED 2026-08-04
+
+SUPERSEDED, and its 'holds' status was actively misleading on 2026-08-04. C099's stated mechanism (band 1's unconditional clearColorBlack discarding the uploaded backdrop) was ALREADY fixed on 2026-07-29 by C104 (render_geom's total==0 early return honours preserveVramBackdrop) plus C105 (24bpp display depth). Both logo screens were verified rendering correctly then. The screens went black again because of a DIFFERENT, later cause: afca817d added an empty-batch early-out to GpuVkState::present() ABOVE upload_vram, so an upload-only screen never reached render_geom at all and the preserveVramBackdrop control could not be consulted. Anyone reading C099 as a live description of the renderer would conclude the fix had never been attempted and would re-derive the whole of issue 0029. See C-new / issue 0043.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

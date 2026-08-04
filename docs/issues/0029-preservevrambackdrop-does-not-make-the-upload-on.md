@@ -5,7 +5,7 @@ status: resolved
 symptom: with GameConfig::preserveVramBackdrop=1 (band 1 no longer clears to black), the SCE/Universal logo screens STILL read 0.0% non-black / 1 colour in both display buffers
 tags: gpu,framework
 created: 2026-07-29
-updated: 2026-07-29
+updated: 2026-08-04
 ---
 
 The change is sound and does what it says at the code level; it just does not produce the expected picture, and I could not find out why.
@@ -62,3 +62,6 @@ NOTE ON METHOD: this was found by bisecting the function with two temporary env-
 
 ### Resolution (2026-07-29)
 render_geom's 'total == 0' early return in external/psxport/runtime/recomp/gpu_vk.cpp cleared s_vram_tex to black unconditionally. Upload-only screens submit zero primitives by definition, so they always took that branch — which sits ABOVE every other backdrop control in the function, and is why GameConfig::preserveVramBackdrop (added for exactly these frames, C100) never reached them. That branch now honours preserveBackdrop and skips the clear, leaving s_vram_tex holding the frame's uploaded VRAM; s_present_ires is already 0 there, so present() samples the native texture either way. Verified on ONE binary: readback nonzero 0 -> 50254/524288, matching the PSXPORT_NO_GEOM control that skips render_geom entirely; ppm_look reports 512x240, 36.1% non-black, 14357 colours (a real frame, not a flat field); gate 14/14 PASS. See C104. C103 ('bisected to render_geom's SETUP') is FALSIFIED: on an upload-only frame the run never reaches setup, so the NO_BANDS and NO_COPY gates both sat downstream of the culprit and could never fire — which is exactly why they read identical, and reading that shared 0 as evidence about the setup was the error. Those two gates were also compared across different builds. NOTE: these screens are 24bpp and the depth bit is decoded but not honoured (C097), so they will now appear but be mis-coloured and two-thirds wide until that is handled.
+
+### Note (2026-08-04)
+FORWARD POINTER (2026-08-04): this exact assumption came back one level up. afca817d added an empty-batch early-out to GpuVkState::present() ABOVE upload_vram, so an upload-only screen stopped reaching render_geom at all and the preserveVramBackdrop control this issue added could no longer be consulted. Same black screens, different line. See issue 0043 and C149.

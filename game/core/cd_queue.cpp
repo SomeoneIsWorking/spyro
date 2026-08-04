@@ -18,9 +18,9 @@
 // decoding the queue bought.
 #include "core.h"
 #include "game.h"
-#include "cfg.h"
 #include "recomp_iface.h"
 #include "rec_decls.h"     // generated: gen_func_8002BBE0 — the body we super-call
+#include <lucent/log.h>
 #include "overlay_router.h"  // overlay_note_load — give the arena slot a load-time identity
 #include "spyro_game.h"
 
@@ -35,9 +35,11 @@ constexpr uint32_t kGate    = 0x80076BB8u;   // wait-loop gate: must be 0 to eve
 
 // Service routine 0x8002BBE0. Log the queue words on entry, then run the real body.
 void cd_service(Core* c) {
-  const bool on = cfg_dbg("cdq");
+  // The ONE legitimate guard: this captures five guest words that must be sampled BEFORE the
+  // super-call runs, which is work the logger cannot defer for us. It guards the CAPTURE, not the
+  // print — the print below is unconditional and gates itself.
   uint32_t st = 0, pend = 0, q = 0, arg = 0, gate = 0;
-  if (on) {
+  if (lucent::channel_on("cdq")) {
     st = c->mem_r32(kStatus); pend = c->mem_r32(kPending);
     q = c->mem_r32(kQueued);  arg  = c->mem_r32(kReqArg);
     gate = c->mem_r32(kGate);
@@ -45,13 +47,11 @@ void cd_service(Core* c) {
 
   gen_func_8002BBE0(c);   // super-call: the recompiled body, unmodified
 
-  if (on) {
-    // Log BEFORE and AFTER together: the interesting question is which word the service routine
-    // actually moved on this pass, and a one-sided snapshot cannot answer that.
-    cfg_logf("cdq", "service: gate=%u status=0x%X->0x%X pending=%u->%u queued=%u->%u arg=0x%08X",
-             gate, st, c->mem_r32(kStatus), pend, c->mem_r32(kPending),
-             q, c->mem_r32(kQueued), arg);
-  }
+  // Log BEFORE and AFTER together: the interesting question is which word the service routine
+  // actually moved on this pass, and a one-sided snapshot cannot answer that.
+  lucent::debug("cdq", "service: gate={} status=0x{:X}->0x{:X} pending={}->{} queued={}->{} arg=0x{:08X}",
+                gate, st, c->mem_r32(kStatus), pend, c->mem_r32(kPending),
+                q, c->mem_r32(kQueued), arg);
 }
 
 // The retry body's FIRST call, 0x800163E4. A 5-sample profile puts the spin here, and it never
@@ -93,16 +93,16 @@ void deliver_cd_complete(Core* c) {
   c->r[4] = kEventComplete;
   gen_func_80016490(c);
   c->r[4] = saved_a0; c->r[31] = saved_ra;
-  if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "delivered CD completion -> gate now %u", c->mem_r32(kGate));
+  lucent::debug("cdq", "delivered CD completion -> gate now {}", c->mem_r32(kGate));
 }
 
 void cd_retry_step(Core* c) {
   static unsigned n = 0;
-  const bool on = cfg_dbg("cdq");
-  if (on && n < 8)
-    cfg_logf("cdq", "retry#%u ENTER gate=[0x80076BB8]=%u a=%d b=%d status=0x%X",
-             n, c->mem_r32(kGate), (int)c->mem_r32(kA), (int)c->mem_r32(kB), c->mem_r32(kStatus));
+  // `n < 8` is a RATE LIMIT on a per-retry site, not a channel gate — the channel gate is inside
+  // lucent::debug. Dropping it would turn one line into hundreds of thousands.
+  if (n < 8)
+    lucent::debug("cdq", "retry#{} ENTER gate=[0x80076BB8]={} a={} b={} status=0x{:X}",
+                  n, c->mem_r32(kGate), (int)c->mem_r32(kA), (int)c->mem_r32(kB), c->mem_r32(kStatus));
   n++;
 
   gen_func_800163E4(c);   // super-call
@@ -142,9 +142,9 @@ void cd_retry_step(Core* c) {
   // this stays deliberately visible rather than dressed up as a working read.
   if (cd_completion_pending) { cd_completion_pending = false; deliver_cd_complete(c); }
 
-  if (on && n <= 8)
-    cfg_logf("cdq", "retry#%u EXIT  status=0x%X pending=%u queued=%u",
-             n - 1, c->mem_r32(kStatus), c->mem_r32(kPending), c->mem_r32(kQueued));
+  if (n <= 8)
+    lucent::debug("cdq", "retry#{} EXIT  status=0x{:X} pending={} queued={}",
+                  n - 1, c->mem_r32(kStatus), c->mem_r32(kPending), c->mem_r32(kQueued));
 }
 
 // ── transfer-path probes ─────────────────────────────────────────────────────────────────────────
@@ -155,10 +155,11 @@ void cd_retry_step(Core* c) {
 #define CD_PROBE(NAME, ADDR)                                                             \
   void probe_##NAME(Core* c) {                                                           \
     static unsigned hits = 0;                                                            \
-    if (cfg_dbg("cdq") && hits < 4)                                                       \
-      cfg_logf("cdq", "probe " #NAME " (0x%08X) a0=0x%08X a1=0x%08X a2=0x%08X a3=0x%08X", \
-               (unsigned)ADDR, c->r[4], c->r[5], c->r[6], c->r[7]);                       \
-    hits++;                                                                               \
+    if (hits < 4)                                                                          \
+      lucent::debug("cdq", "probe " #NAME " (0x{:08X}) a0=0x{:08X} a1=0x{:08X} a2=0x{:08X}" \
+                           " a3=0x{:08X}",                                                 \
+                    (unsigned)ADDR, c->r[4], c->r[5], c->r[6], c->r[7]);                   \
+    hits++;                                                                                \
     gen_func_##NAME(c);                                                                   \
   }
 CD_PROBE(8006606C, 0x8006606Cu)   // sector-size selection (512 vs 585/582 words) — DMA setup shape
@@ -172,8 +173,7 @@ CD_PROBE(800567F4, 0x800567F4u)   // the queue's request processor
 void probe_80065DBC(Core* c) {
   const uint32_t dest = c->r[5];
   const int32_t  lba  = c->game->cd.setloc_lba;
-  if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "read issued: dest=0x%08X mode=0x%X lba=%d", dest, c->r[6], lba);
+  lucent::debug("cdq", "read issued: dest=0x{:08X} mode=0x{:X} lba={}", dest, c->r[6], lba);
   if (lba >= 0) { cd_stream_lba = lba; cd_stream_dest = dest; }
   cd_completion_pending = true;   // this read is complete the moment it is issued (synchronous CD)
   gen_func_80065DBC(c);
@@ -223,13 +223,12 @@ void cd_loader(Core* c) {
   // If that region really is CODE loaded from WAD.WAD, those words decode as MIPS; if it is data
   // reached through a corrupt pointer, they will not. Log the raw words and decode them offline —
   // cheaper than embedding a disassembler here, and the words are the evidence either way.
-  if (cfg_dbg("cdq") && moved > 0x174 + 16)
-    cfg_logf("cdq", "  callsite-words @0x%08X: %08X %08X %08X %08X",
-             dest + 0x174, c->mem_r32(dest + 0x174), c->mem_r32(dest + 0x178),
-             c->mem_r32(dest + 0x17C), c->mem_r32(dest + 0x180));
-  if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "loader: a0=%u dest=0x%08X len=%u a3=0x%08X arg5=0x%08X -> moved %u bytes",
-             lba, dest, len, arg_off, arg5, moved);
+  if (moved > 0x174 + 16)
+    lucent::debug("cdq", "  callsite-words @0x{:08X}: {:08X} {:08X} {:08X} {:08X}",
+                  dest + 0x174, c->mem_r32(dest + 0x174), c->mem_r32(dest + 0x178),
+                  c->mem_r32(dest + 0x17C), c->mem_r32(dest + 0x180));
+  lucent::debug("cdq", "loader: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> moved {} bytes",
+                lba, dest, len, arg_off, arg5, moved);
   // Give the overlay router its LOAD-TIME identity for the arena slot. This must happen HERE, right
   // after the copy and before the guest's own bookkeeping runs: overlay_router.cpp is explicit that an
   // image's signature matches the RAM at its base only until the game mutates the image's header
@@ -274,9 +273,8 @@ void cd_stream_read(Core* c) {
       moved += n;
     }
   }
-  if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "stream: a0=%u dest=0x%08X len=%u a3=0x%08X arg5=0x%08X -> moved %u bytes",
-             lba, dest, len, arg_off, arg5, moved);
+  lucent::debug("cdq", "stream: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> moved {} bytes",
+                lba, dest, len, arg_off, arg5, moved);
   // Same load-time identity the sync loader records, for the same reason: an overlay's signature only
   // matches its slot before the game mutates the image header.
   if (moved) overlay_note_load(c, dest);
@@ -293,9 +291,10 @@ void cd_stream_read(Core* c) {
 #define LOADER_PROBE(NAME, ADDR)                                                          \
   void lp_##NAME(Core* c) {                                                                \
     static unsigned h = 0;                                                                 \
-    if (cfg_dbg("cdq") && h < 3)                                                            \
-      cfg_logf("cdq", "LOADER? " #NAME " a0=%08X a1=%08X a2=%08X a3=%08X sp=%08X",          \
-               c->r[4], c->r[5], c->r[6], c->r[7], c->r[29]);                                \
+    if (h < 3)                                                                              \
+      lucent::debug("cdq", "LOADER? " #NAME " a0={:08X} a1={:08X} a2={:08X} a3={:08X}"      \
+                           " sp={:08X}",                                                    \
+                    c->r[4], c->r[5], c->r[6], c->r[7], c->r[29]);                          \
     h++;                                                                                    \
     gen_func_##NAME(c);                                                                     \
   }
@@ -316,16 +315,15 @@ constexpr uint32_t kPollArg = 0x800730E8u;
 
 void probe_8005CBB0(Core* c) {
   static unsigned h = 0;
-  const bool on = cfg_dbg("cdq");
   const uint32_t a0 = c->r[4];
-  if (on && h < 6)
-    cfg_logf("cdq", "stall#%u ENTER a0=%u A[0x800730F0]=%u B[0x80073588]=%u arg[0x800730E8]=0x%08X",
-             h, a0, c->mem_r32(kPollA), c->mem_r32(kPollB), c->mem_r32(kPollArg));
+  if (h < 6)
+    lucent::debug("cdq", "stall#{} ENTER a0={} A[0x800730F0]={} B[0x80073588]={} arg[0x800730E8]=0x{:08X}",
+                  h, a0, c->mem_r32(kPollA), c->mem_r32(kPollB), c->mem_r32(kPollArg));
   h++;
   gen_func_8005CBB0(c);
-  if (on && h <= 6)
-    cfg_logf("cdq", "stall#%u EXIT  v0=%u A=%u B=%u", h - 1, c->r[2],
-             c->mem_r32(kPollA), c->mem_r32(kPollB));
+  if (h <= 6)
+    lucent::debug("cdq", "stall#{} EXIT  v0={} A={} B={}", h - 1, c->r[2],
+                  c->mem_r32(kPollA), c->mem_r32(kPollB));
 }
 
 
@@ -333,22 +331,19 @@ void probe_8005CBB0(Core* c) {
 // sole writer of that handle global, so it is the OpenEvent site. Its arguments name the event:
 // PSX OpenEvent(class, spec, mode, handler). Log them, plus what the poll primitive is handed.
 void probe_8005BB78(Core* c) {
-  if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "EVENT-OPEN site a0=0x%08X a1=0x%08X a2=0x%08X a3=0x%08X", c->r[4], c->r[5], c->r[6], c->r[7]);
+  lucent::debug("cdq", "EVENT-OPEN site a0=0x{:08X} a1=0x{:08X} a2=0x{:08X} a3=0x{:08X}",
+                c->r[4], c->r[5], c->r[6], c->r[7]);
   gen_func_8005BB78(c);
-  if (cfg_dbg("cdq"))
-    cfg_logf("cdq", "EVENT-OPEN -> handle=0x%08X stored=0x%08X", c->r[2], c->mem_r32(0x800730E8u));
+  lucent::debug("cdq", "EVENT-OPEN -> handle=0x{:08X} stored=0x{:08X}", c->r[2], c->mem_r32(0x800730E8u));
 }
 
 // The poll primitive func_8005CBB0 calls with the handle — TestEvent-shaped.
 void probe_8005DB84(Core* c) {
   static unsigned h = 0;
-  if (cfg_dbg("cdq") && h < 4)
-    cfg_logf("cdq", "EVENT-TEST a0=0x%08X", c->r[4]);
+  if (h < 4) lucent::debug("cdq", "EVENT-TEST a0=0x{:08X}", c->r[4]);
   h++;
   gen_func_8005DB84(c);
-  if (cfg_dbg("cdq") && h <= 4)
-    cfg_logf("cdq", "EVENT-TEST -> v0=%u", c->r[2]);
+  if (h <= 4) lucent::debug("cdq", "EVENT-TEST -> v0={}", c->r[2]);
 }
 
 }  // namespace

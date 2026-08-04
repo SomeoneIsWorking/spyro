@@ -196,13 +196,33 @@ chk "arena loads UNMATCHED"        "$OVUNMATCHED" eq 0
 # Ledger self-consistency. Not a runtime property, but this is the one thing that runs every
 # iteration, and a contradictory ledger (a refutation recorded without flipping the claim it kills)
 # is silently served as fact by every later `info.py brief`. Cheap, so it rides along here.
-if ! python3 tools/info.py check > "$OUT/info.txt" 2>&1; then
-  printf '  \033[31mFAIL\033[0m %-34s %s\n' "info ledger self-consistent" "$(grep -c INCONSISTENT\\\|'NO FALSIFIER' "$OUT/info.txt"; true) problem(s)"
-  sed -n 's/^/        /p' "$OUT/info.txt" | grep -E 'INCONSISTENT|NO FALSIFIER'
+# SELF-CONSISTENCY IS THE PASS/FAIL AXIS; STALENESS IS A REPORTED BACKLOG. They are separated
+# deliberately, and `--no-stale` here is not a check being switched off — the staleness numbers are
+# printed unconditionally two lines down, WITH their blind-spot denominator. The reason they are not
+# fatal is that the stale set is a re-verification backlog accumulated over the project's life (47 of
+# 76 checkable claims when this split was made), not a property of the run being gated; a gate that
+# is red every single time for reasons the run did not cause is a gate people stop reading.
+#
+# The old form of this block also LIED: it counted only INCONSISTENT|'NO FALSIFIER' for its FAIL
+# message, so once `info.py check` grew staleness it printed "FAIL ... 0 problem(s)" and then listed
+# nothing at all. A failure that names no cause is worse than no check, so the message below prints
+# the actual failing lines.
+if ! python3 tools/info.py check --no-stale > "$OUT/info.txt" 2>&1; then
+  printf '  \033[31mFAIL\033[0m %-34s %s\n' "info ledger self-consistent" \
+    "$(grep -cE 'INCONSISTENT|NO FALSIFIER|DISTRUSTED INSTRUMENT' "$OUT/info.txt"; true) problem(s)"
+  sed -n 's/^/        /p' "$OUT/info.txt" | grep -E 'INCONSISTENT|NO FALSIFIER|DISTRUSTED INSTRUMENT'
   fail=1
 else
   printf '  \033[32mPASS\033[0m %-34s %s\n' "info ledger self-consistent" "ok"
 fi
+# Claim ROT, reported every run and never silent. C099 read as a current description of the renderer
+# for a week after the code under it was fixed, and nearly bought a whole native producer as a
+# workaround for a one-line regression. The CANNOT-SEE count rides along because "0 stale" says
+# nothing about claims that record no code dependency at all — they are UNCHECKED, not fresh.
+python3 tools/info.py claim check > "$OUT/stale.txt" 2>&1 || true
+num() { sed -n "s/^ *$1[ .]*\([0-9][0-9]*\).*/\1/p" "$OUT/stale.txt" | head -1; }
+printf '  \033[33mNOTE\033[0m %-34s %s\n' "claim staleness (not fatal)" \
+  "$(num 'stale (code moved)') stale / $(num CHECKED) checked, $(num '\*\*\* CANNOT SEE') UNCHECKED (no code dependency recorded)"
 
 # Open 'blocker' entries, reported only when the gate PASSED. A blocker asserts the port cannot get
 # past it; a passing gate says otherwise, so each one is a contradiction — either it no longer blocks

@@ -28,8 +28,9 @@
 // reports off, so the differential reference never sees a patched word.
 #include "core.h"
 #include "recomp_iface.h"
-#include "cfg.h"
+#include "cfg.h"      // cfg_on — PSXPORT_NATIVE_TERRAIN is a feature flag, not a diagnostic
 #include "spyro_game.h"
+#include <lucent/log.h>
 
 void interp_call(Core* c, uint32_t pc);      // interp.cpp — nested call leaving the guest's ra alone
 int  gpu_vk_wide_engine(Core*);              // a wider aspect is selected (and this is not the oracle)
@@ -124,21 +125,23 @@ struct Emit { uint64_t calls, bytes; uint32_t zero_calls; };
 Emit s_emit[8][2];                            // [renderer][0 = 4:3, 1 = wide]
 
 void emit_report(Core* c, int ri, int wide, uint32_t before, uint32_t after) {
-  if (!cfg_dbg("wideprims")) return;
+  // The ONE legitimate guard: it fences the per-call ACCUMULATION (counters, byte totals), which is
+  // real state the logger cannot defer. The print below is unguarded — `debug` is the audience this
+  // report always had, and it gates itself on the same channel.
+  if (!lucent::channel_on("wideprims")) return;
   Emit& e = s_emit[ri][wide];
   e.calls++;
   if (after >= before) e.bytes += (after - before);
   if (after == before) e.zero_calls++;
   if (e.calls % 256) return;
   const Emit& other = s_emit[ri][wide ^ 1];
-  cfg_logi("wideprims",
-           "0x%08X %-6s calls=%llu bytes/call=%llu (zero-emit calls=%u, pool %08X->%08X). Same "
-           "renderer in the other aspect so far: calls=%llu bytes/call=%llu.",
-           kRenderers[ri].addr, wide ? "WIDE" : "4:3",
-           (unsigned long long)e.calls, (unsigned long long)(e.bytes / e.calls), e.zero_calls,
-           before, after,
-           (unsigned long long)other.calls,
-           (unsigned long long)(other.calls ? other.bytes / other.calls : 0));
+  lucent::debug("wideprims",
+                "0x{:08X} {:<6} calls={} bytes/call={} (zero-emit calls={}, pool {:08X}->{:08X}). "
+                "Same renderer in the other aspect so far: calls={} bytes/call={}.",
+                kRenderers[ri].addr, wide ? "WIDE" : "4:3",
+                e.calls, e.bytes / e.calls, e.zero_calls,
+                before, after,
+                other.calls, other.calls ? other.bytes / other.calls : 0);
 }
 
 void run(Core* c, int ri) {
@@ -152,9 +155,10 @@ void run(Core* c, int ri) {
     // identical in the log, which is the failure this file's own comment warns about.
     if (!s_said_43[ri]) {
       s_said_43[ri] = true;
-      cfg_logi("wide", "0x%08X (%s) called, but NOT widened: wide_engine=%d refused=%d — running the "
-                       "recompiled body unchanged.", R.addr, R.what, gpu_vk_wide_engine(c),
-               (int)s_refused[ri]);
+      // R.what is a string literal in every kRenderers entry — never a null const char*.
+      lucent::info("wide", "0x{:08X} ({}) called, but NOT widened: wide_engine={} refused={} — "
+                           "running the recompiled body unchanged.",
+                   R.addr, R.what, gpu_vk_wide_engine(c), (int)s_refused[ri]);
     }
     // Vanilla: run the recompiled body, exactly as if this file did not exist. The override is
     // cleared for the duration so the dispatch reaches the real body, and re-armed by the caller.
@@ -177,9 +181,9 @@ void run(Core* c, int ri) {
       // it differs per renderer (s0 in one, t9 in two, t3/t4/a1 across the eight in 0x800258F0), and
       // pinning it is how the first version of this check refused all eleven genuine sites.
       if ((w & 0xFFE0FFFFu) != 0x3C000200u) {
-        cfg_loge("wide", "0x%08X: expected `lui rX,0x0200` at the clip-bound site 0x%08X, found "
-                         "%08X. NOT patching this renderer (%s) — its bounds stay at 4:3.",
-                 R.addr, at, w, R.what);
+        lucent::error("wide", "0x{:08X}: expected `lui rX,0x0200` at the clip-bound site 0x{:08X}, "
+                              "found {:08X}. NOT patching this renderer ({}) — its bounds stay at 4:3.",
+                      R.addr, at, w, R.what);
         s_refused[ri] = true;
         break;
       }
@@ -195,8 +199,9 @@ void run(Core* c, int ri) {
     if (!s_have_ofx[ri]) {
       const uint32_t w = c->mem_r32(R.ofx_site);
       if ((w & 0xFFE0FFFFu) != 0x3C000100u) {
-        cfg_loge("wide", "0x%08X: expected `lui rX,0x0100` at the OFX reset site 0x%08X, found %08X. "
-                         "NOT widening this renderer (%s).", R.addr, R.ofx_site, w, R.what);
+        lucent::error("wide", "0x{:08X}: expected `lui rX,0x0100` at the OFX reset site 0x{:08X}, "
+                              "found {:08X}. NOT widening this renderer ({}).",
+                      R.addr, R.ofx_site, w, R.what);
         s_refused[ri] = true;
       } else {
         s_ofx_orig[ri] = w;
@@ -218,9 +223,9 @@ void run(Core* c, int ri) {
   // "no effect" non-result that was really a measurement fault more than once (issue 0039).
   if (!s_said[ri]) {
     s_said[ri] = true;
-    cfg_logi("wide", "0x%08X (%s): %d bound site(s) widened 512 -> %d, first at 0x%08X %08X -> %08X; "
-                     "running interpreted", R.addr, R.what, n, nw, R.sites[0], s_orig[ri][0],
-             with_bound(s_orig[ri][0], nw));
+    lucent::info("wide", "0x{:08X} ({}): {} bound site(s) widened 512 -> {}, first at 0x{:08X} "
+                         "{:08X} -> {:08X}; running interpreted",
+                 R.addr, R.what, n, nw, R.sites[0], s_orig[ri][0], with_bound(s_orig[ri][0], nw));
   }
 
   // RE-CENTRE THE PROJECTION. Widening the bounds alone is very nearly a no-op — measured, it moved
@@ -262,7 +267,7 @@ void spyro_register_wide_clip() {
   psxport_recomp()->shard_set_override(kRenderers[3].addr, hook<3>);
   psxport_recomp()->shard_set_override(kRenderers[4].addr, hook<4>);
   static_assert(kRendererCount == 5, "add a hook<> instantiation for the new renderer");
-  cfg_logi("wide", "clip-bound widening armed for %d renderers (11 sites). At 4:3 they run their "
-                   "recompiled bodies untouched; at a wider aspect they run interpreted with the "
-                   "right bound moved to the wide width.", kRendererCount);
+  lucent::info("wide", "clip-bound widening armed for {} renderers (11 sites). At 4:3 they run their "
+                       "recompiled bodies untouched; at a wider aspect they run interpreted with the "
+                       "right bound moved to the wide width.", kRendererCount);
 }

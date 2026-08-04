@@ -23,8 +23,9 @@
 #include "core.h"
 #include "game.h"
 #include "platform_hle.h"
-#include "cfg.h"
+#include "cfg.h"      // cfg_on — PSXPORT_REPL is a feature flag, not a diagnostic
 #include "spyro_game.h"
+#include <lucent/log.h>
 #include "hle.h"      // Hle::deliverEvent — per-frame BIOS events
 #include "recomp_iface.h"
 #include "rec_decls.h"
@@ -62,8 +63,8 @@ void vsync_callback_set(Core* c) {
   const uint32_t fn = c->r[4];
   if (fn != g_vblank_cb) {
     g_vblank_cb = fn;
-    cfg_logi("vsync", "VSyncCallback(0x%08X) registered — this is the per-vblank handler the port "
-                      "must run, since no IRQ will.", fn);
+    lucent::info("vsync", "VSyncCallback(0x{:08X}) registered — this is the per-vblank handler the "
+                          "port must run, since no IRQ will.", fn);
   }
   gen_func_8005DE58(c);   // super-call: let libetc do its own table bookkeeping unmodified
 }
@@ -127,10 +128,10 @@ void vblank_wait(Core* c) {
   int advanced = 0;
   while (cur < target) {
     if (advanced >= kMaxVblanksPerWait) {
-      cfg_logw("vsync", "wait target %d is %d vblanks ahead of the counter (%d) — clamped at %d. "
-                        "Either the counter address is wrong or a caller asked for an implausible "
-                        "wait; the timebase is suspect either way.",
-               target, target - cur, cur, kMaxVblanksPerWait);
+      lucent::warn("vsync", "wait target {} is {} vblanks ahead of the counter ({}) — clamped at {}. "
+                            "Either the counter address is wrong or a caller asked for an implausible "
+                            "wait; the timebase is suspect either way.",
+                   target, target - cur, cur, kMaxVblanksPerWait);
       cur = target;   // satisfy the caller rather than hang, but the warning above is the real output
       break;
     }
@@ -183,7 +184,7 @@ void vblank_wait(Core* c) {
       static bool quit = false;
       if (!quit && budget <= 0) {
         while ((budget = c->game->repl.read(c, (uint32_t)cur)) == 0) { }
-        if (budget < 0) { quit = true; cfg_logi("repl", "quit — running free"); }
+        if (budget < 0) { quit = true; lucent::info("repl", "quit — running free"); }
       }
       if (budget > 0) budget--;
     }
@@ -209,8 +210,7 @@ void vblank_wait(Core* c) {
   }
 
   c->mem_w32(kVblankCounter, (uint32_t)cur);
-  if (cfg_dbg("vsync"))
-    cfg_logf("vsync", "wait target=%d -> counter=%d (+%d frames)", target, cur, advanced);
+  lucent::debug("vsync", "wait target={} -> counter={} (+{} frames)", target, cur, advanced);
 }
 
 }  // namespace

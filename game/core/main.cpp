@@ -5,8 +5,9 @@
 // touches only framework symbols.
 #include "core.h"
 #include "game.h"
-#include "cfg.h"
+#include "cfg.h"      // cfg_str — PSXPORT_SELFTEST is a feature flag, not a diagnostic
 #include "fs_util.h"
+#include <lucent/log.h>
 #include "platform_hle.h"
 #include "spyro_game.h"
 #include <stdio.h>
@@ -48,10 +49,11 @@ int main(int argc, char** argv) {
   // Self-provision the executable: with just a disc image (PSXPORT_SPYRO_DISC, .env, or a *.chd in
   // the working directory) the binary runs directly, no prior ./run.sh extraction needed.
   if (!Fs::exists(path)) {
-    cfg_logw("boot", "%s missing — extracting from disc", path);
+    // `path` is argv[1] or kDefaultExe — never null, so passing it straight to std::format is safe.
+    lucent::warn("boot", "{} missing — extracting from disc", path);
     if (!disc_extract_file(&game->disc, kDiscExePath, path)) {
-      cfg_loge("boot", "extraction failed: provide a disc (PSXPORT_SPYRO_DISC, .env, or a *.chd in "
-                       "the working directory) or run ./run.sh");
+      lucent::error("boot", "extraction failed: provide a disc (PSXPORT_SPYRO_DISC, .env, or a *.chd "
+                            "in the working directory) or run ./run.sh");
       return 1;
     }
   }
@@ -98,6 +100,6 @@ int main(int argc, char** argv) {
   // behaviour and what has to be RE'd before the native frame loop can take over.
   dc_boot_init(c);
 
-  cfg_logi("boot", "guest main() returned");
+  lucent::info("boot", "guest main() returned");
   return 0;
 }

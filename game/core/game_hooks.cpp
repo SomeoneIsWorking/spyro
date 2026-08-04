@@ -15,8 +15,9 @@
 #include "core.h"
 #include "game_iface.h"
 #include "spyro_game.h"
-#include "cfg.h"
+#include "cfg.h"      // cfg_on — PSXPORT_NO_NATIVE is a feature flag, not a diagnostic
 #include "hostprof.h"
+#include <lucent/log.h>
 #include "fntrace.h"
 
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
@@ -62,9 +63,9 @@ static void spyro_registerOverrides(Game*) {
   // The platform supply above is deliberately NOT gated — removing it changes what the port can do
   // at all, which would confound the comparison.
   if (cfg_on("PSXPORT_NO_NATIVE")) {
-    cfg_logw("native", "PSXPORT_NO_NATIVE=1 — native bodies NOT installed; the substrate runs "
-                       "everything. Diagnostic only: any behaviour difference from a normal run is "
-                       "attributable to a natively-owned body.");
+    lucent::warn("native", "PSXPORT_NO_NATIVE=1 — native bodies NOT installed; the substrate runs "
+                           "everything. Diagnostic only: any behaviour difference from a normal run "
+                           "is attributable to a natively-owned body.");
   } else {
   spyro_register_native_rand();    // OWNED natively (not a probe): rand() 0x8006272C
   spyro_register_native_leaves();  // OWNED natively: hot leaves (copy3 / zero3 / fill)

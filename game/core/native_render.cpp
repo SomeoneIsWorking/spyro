@@ -28,8 +28,9 @@
 #include "recomp_iface.h"
 #include "rec_decls.h"
 #include "native_diff.h"
-#include "cfg.h"
+#include "cfg.h"      // cfg_str — the PSXPORT_*_FN address lists are feature flags, not diagnostics
 #include "spyro_game.h"
+#include <lucent/log.h>
 #include <cstdio>
 #include <cstdlib>
 
@@ -152,16 +153,19 @@ void spyro_register_native_render() {
       char* end = nullptr;
       const uint32_t addr = (uint32_t)strtoul(p, &end, 16);
       if (end == p) {
-        cfg_loge("ndiff", "PSXPORT_MUTE_FN=%s: '%s' is not a hex guest address; NOTHING is muted from "
-                          "here on", m, p);
+        // `m` is non-null (checked above) and `p` points into it, so neither can be a null
+        // `const char*` — the one std::format case printf would have survived and this would not.
+        lucent::error("ndiff", "PSXPORT_MUTE_FN={}: '{}' is not a hex guest address; NOTHING is muted "
+                               "from here on", m, p);
         break;
       }
       p = end;
       if (!addr) continue;
       psxport_recomp()->shard_set_override(addr, mute_hook);
-      cfg_logi("ndiff", "MUTE@0x%08X — this body is REPLACED BY NOTHING. Whatever disappears from the "
-                        "frame is exactly its visual contribution. The run is diagnostic: guest state "
-                        "this body would have written is simply absent.", addr);
+      lucent::info("ndiff", "MUTE@0x{:08X} — this body is REPLACED BY NOTHING. Whatever disappears "
+                            "from the frame is exactly its visual contribution. The run is "
+                            "diagnostic: guest state this body would have written is simply absent.",
+                   addr);
     }
   }
   // PSXPORT_INTERP_FN=<hex guest address>[,<hex>...] — run these bodies INTERPRETED, and (under
@@ -173,8 +177,8 @@ void spyro_register_native_render() {
       char* end = nullptr;
       const uint32_t addr = (uint32_t)strtoul(p, &end, 16);
       if (end == p) {
-        cfg_loge("ndiff", "PSXPORT_INTERP_FN=%s: '%s' is not a hex guest address; NOTHING is "
-                          "interpreted from here on", iv, p);
+        lucent::error("ndiff", "PSXPORT_INTERP_FN={}: '{}' is not a hex guest address; NOTHING is "
+                               "interpreted from here on", iv, p);
         break;
       }
       p = end;
@@ -182,10 +186,10 @@ void spyro_register_native_render() {
       s_iaddrs[s_icount] = addr;
       snprintf(s_inames[s_icount], sizeof s_inames[0], "INTERP@0x%08X", addr);
       psxport_recomp()->shard_set_override(addr, interp_hook);
-      cfg_logi("ndiff", "%s ARMED — this body runs INTERPRETED from guest RAM instead of as "
-                        "recompiled C. Under PSXPORT_NDIFF each call is compared against the "
-                        "recompiled body; zero reported calls means it never ran, which is not the "
-                        "same answer as 'it matched'.", s_inames[s_icount]);
+      lucent::info("ndiff", "{} ARMED — this body runs INTERPRETED from guest RAM instead of as "
+                            "recompiled C. Under PSXPORT_NDIFF each call is compared against the "
+                            "recompiled body; zero reported calls means it never ran, which is not "
+                            "the same answer as 'it matched'.", s_inames[s_icount]);
       s_icount++;
     }
   }
@@ -202,8 +206,8 @@ void spyro_register_native_render() {
     const uint32_t addr = (uint32_t)strtoul(p, &end, 16);
     if (end == p) {
       // A silently-skipped token is how a probe reports "never called" for an address it never armed.
-      cfg_loge("ndiff", "PSXPORT_NDIFF_IDENTITY=%s: '%s' is not a hex guest address (e.g. 8004F000); "
-                        "NOTHING is armed from here on", e, p);
+      lucent::error("ndiff", "PSXPORT_NDIFF_IDENTITY={}: '{}' is not a hex guest address (e.g. "
+                             "8004F000); NOTHING is armed from here on", e, p);
       return;
     }
     p = end;
@@ -214,12 +218,12 @@ void spyro_register_native_render() {
     s_count++;
   }
   if (!s_count) {
-    cfg_loge("ndiff", "PSXPORT_NDIFF_IDENTITY=%s armed NO addresses", e);
+    lucent::error("ndiff", "PSXPORT_NDIFF_IDENTITY={} armed NO addresses", e);
     return;
   }
   for (int i = 0; i < s_count; i++)
-    cfg_logi("ndiff", "%s ARMED — running the generated body against itself. A divergence means the "
-                      "differential CANNOT validate a function of this shape, and owning it would need "
-                      "a different acceptance test. Zero calls means it never ran in this capture, "
-                      "which is a different answer from 'it diverged'.", s_names[i]);
+    lucent::info("ndiff", "{} ARMED — running the generated body against itself. A divergence means "
+                          "the differential CANNOT validate a function of this shape, and owning it "
+                          "would need a different acceptance test. Zero calls means it never ran in "
+                          "this capture, which is a different answer from 'it diverged'.", s_names[i]);
 }

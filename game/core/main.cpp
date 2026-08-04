@@ -20,6 +20,7 @@ extern "C" {
 
 void load_exe(const char* path, Core* c);   // framework: runtime/recomp/boot.cpp
 void dc_boot_init(Core* c);                 // framework: crt0_setup + game_init (-> hooks->bootInit)
+int  selftest_run(const char* path);        // framework: runtime/recomp/selftest.cpp
 
 // Spyro boots straight from SCUS_942.28 — unlike Tomba!2 there is no separate SCEA boot stub that
 // LoadExec's a MAIN.EXE, so there is no stub stage to run and no second image to load.
@@ -81,6 +82,13 @@ int main(int argc, char** argv) {
   spyro_register_vsync(game);
   threads_init(c);                   // native BIOS threads (ucontext); main = slot 0
   threads_register_overrides();
+
+  // PSXPORT_SELFTEST=<name> — run a self-test INSTEAD of the game and exit with its status.
+  // Dispatched here: after the hardware backends are up (a self-test drives them directly) and before
+  // the guest boots. This port had no such call at all, so psxport's whole self-test suite —
+  // startgame, narration, oracle, oraclediff, mdecpump, spuirq — was unreachable from Spyro and could
+  // never report anything. See external/psxport/runtime/recomp/selftest.cpp.
+  if (const char* which = cfg_str("PSXPORT_SELFTEST")) if (*which) return selftest_run(path);
 
   c->r[4] = 1; c->r[5] = 0;          // a0/a1 as the BIOS would leave them (minimal)
 

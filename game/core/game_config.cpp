@@ -278,6 +278,9 @@ static const GameConfig g_spyro_config = {
   // blocked CPU profile sits, and a gdb store-watchpoint on the byte names gen_func_8001F798's
   // mem_w32 as the writer). One pace call = one vblank = 16.67ms, and the guest's own wait cadence
   // decides the logic rate; Spyro flips the display every 2 vblanks (30fps, C072).
+  // Window title (framework is game-agnostic; it must not name a game).
+  .windowTitle = "Spyro the Dragon",
+
   .paceQuota = 1u,
 };
 

@@ -192,6 +192,20 @@ void vblank_wait(Core* c) {
     // holds real time to the frame interval so the game runs at its intended speed rather than
     // spinning as fast as the host can.
     gpu_present(c);
+    // ADVANCE THE AUDIO MIXER. Exactly one video field of SPU clocks per displayed frame, drained to
+    // the sink. Nothing else in this port ever advanced it: main.cpp opens the audio sink with
+    // `spu_audio.init()` and `spu_audio.frame()` was called NOWHERE, so the SPU mixed no samples and
+    // the port was SILENT — every voice, not just CD audio. The mixer is also the only caller of
+    // CDC_GetCDAudioSample, so any XA stream would arm and then decode nothing.
+    //
+    // Here for the same reason the present, the pad service and the event delivery above are: the
+    // framework's native_step_frame ("tick + per-vblank audio + present + pace") NEVER RUNS in this
+    // port because the guest still owns its frame loop, and this wait is the port's real per-frame
+    // boundary. One call per displayed frame keeps audio on the same clock as the picture.
+    //
+    // Found in spider1, which had the identical omission (that port's silent intro), and confirmed
+    // here by grep before writing this: zero call sites.
+    c->game->spu_audio.frame();
     gpu_pace_frame(c);
     // Deliver the per-frame IRQ-driven BIOS events. The framework normally does this in
     // native_step_frame — but that loop NEVER RUNS here, because the guest still owns its own frame

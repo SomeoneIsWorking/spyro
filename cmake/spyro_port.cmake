@@ -28,6 +28,8 @@ set(GAME_SRC
   game/core/recomp_register.cpp
   game/core/vsync.cpp
   game/core/frame_loop.cpp
+  game/render/render_frame.cpp
+  game/render/scene.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
   game/core/native_leaf.cpp
@@ -68,7 +70,7 @@ set_target_properties(spyro_port PROPERTIES
 
 # Only game/* include dirs here — the framework's (runtime, generated, vendored backends, SDL,
 # freetype) are inherited PUBLICly from the psxport link below.
-target_include_directories(spyro_port PRIVATE game game/core)
+target_include_directories(spyro_port PRIVATE game game/core game/render)
 
 target_compile_options(spyro_port PRIVATE -w -O2 -g
   ${SDL3_CFLAGS_OTHER} ${FREETYPE_CFLAGS_OTHER})

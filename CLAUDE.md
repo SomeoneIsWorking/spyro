@@ -61,6 +61,19 @@ swallowed errors, no retry-until-green, no commenting out a failing check. If th
 right now, say so plainly and mark the stopgap `// STOPGAP: <proper fix> because <why>` — never slip a
 hack in as if it were a fix.
 
+**The picture comes from GAME STATE, never from what the GTE produced.** Two checkable rules (the
+binding statement is `coord/PROTOCOL.md`; the word "tap" is retired because it needed adjudication
+every time). (1) The shipping picture path runs **no `gen_func_*` body** — reads are fine, a producer
+reads the node's own fields, and diagnostics are exempt because they answer questions rather than
+produce the picture. (2) **Resolve from what SUBMITS to the GTE**: find the
+`SetRotMatrix`/`SetTransMatrix`/RTPS site and take its INPUTS — the game's own pre-quantisation
+values. Never read `gte_read_ctrl()`/the OT/composed GP0 and invert them to recover a transform; those
+are s16-quantised, and factoring the camera back out leaves a residue that is *a function of the
+camera* (measured elsewhere in this workspace: 0.13 px still, 1.53 px panning, 12/12 sign
+alternations — a layer that "vibrated" with nothing in the game moving it). Dusklight lerps recorded
+matrices and we may not: theirs are float values from a decomp, ours would be s16 GTE output. Same
+technique, different source.
+
 **RE before reimplementing, and don't jump the frontier.** The cardinal sin on a port is faking a
 step's output before its RE is done — it makes a broken port *look* finished and blocks the real work.
 Work the step `re_frontier.py next` gives you, not a downstream one.

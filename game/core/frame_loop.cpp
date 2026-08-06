@@ -53,33 +53,37 @@
 // rate. The vblank handler in vsync.cpp keeps present/pace/audio/events until the render driver's own
 // wait is owned — step (2) of docs/re-frontier.md `frame.own-render-driver`.
 //
-// DEFAULT OFF. `PSXPORT_SPYRO_FRAME_LOOP=1` arms the loop; `PSXPORT_SPYRO_NATIVE_RENDER=1` then
-// selects the native render branch, whose only correct behaviour today is to ABORT naming the scene it
-// was asked to draw and cannot. That abort IS the deliverable — it turns the porting backlog into a
-// crash sequence in dependency order and makes it impossible to ship a layer that merely looks
-// finished. It is opt-in for the same reason `PSXPORT_NATIVE_TERRAIN` is: a port that aborts on its
-// first frame by default makes every other measurement in this repo impossible to take.
+// WHERE THE PICTURE COMES FROM IS NOT THIS FILE'S DECISION. The loop calls the render seam
+// (game/render/render_frame.cpp `SpyroRenderer::drawFrame`) and that seam picks the leg from the
+// framework's per-Core `RenderMode`: reference (`PSXPORT_RENDER_PSX=1`, the guest's own render driver)
+// or native (the default, which today aborts on the first frame naming the scene it cannot draw — by
+// design; see render.h).
+//
+// DEFAULT OFF. `PSXPORT_SPYRO_FRAME_LOOP=1` arms the loop. It is opt-in for the same reason
+// `PSXPORT_NATIVE_TERRAIN` is: with the native render leg selected the port aborts on its first
+// drawn frame, which would make every other measurement in this repo impossible to take.
 #include "core.h"
 #include "game.h"
-#include "cfg.h"          // cfg_on — both switches below are feature flags, not diagnostics
+#include "cfg.h"          // cfg_on — the loop switch is a feature flag, not a diagnostic
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
+#include "guest_gp.h"     // kGp — every gp-relative address below is derived from it
+#include "render.h"       // SpyroRenderer — the render seam (game/render/)
 #include "spyro_game.h"
 #include <lucent/log.h>
-#include <stdlib.h>       // abort
 
 namespace {
 
 // ── The guest functions the loop calls ───────────────────────────────────────────────────────────
-// Addresses read from the disassembly above; `tools/whatis.py <addr>` cross-references each.
+// Addresses read from the disassembly above; `tools/whatis.py <addr>` cross-references each. The
+// render driver 0x8001ED5C is NOT here: it is the reference leg of the render seam and lives with
+// it, in game/render/render.h.
 constexpr uint32_t kStaticCtors      = 0x8005B988u;  // run-once fn-ptr table walk; its count is 0
 constexpr uint32_t kBootInit         = 0x800127C0u;  // CD loads + logo fades + display setup
 constexpr uint32_t kFrameUpdate      = 0x8003385Cu;  // per-frame game logic, stage-dispatched
-constexpr uint32_t kFrameRenderDrv   = 0x8001ED5Cu;  // per-frame render + display, stage-dispatched
 
-// ── The gp-relative loop block. gp = 0x80075264 (game_config.cpp, from crt0 at 0x8005B95C). ──────
-// Every literal below is gp + the signed 16-bit displacement in the instruction it came from, so the
+// ── The gp-relative loop block. gp = 0x80075264 (guest_gp.h, from crt0 at 0x8005B95C). ───────────
+// Every literal below is kGp + the signed 16-bit displacement in the instruction it came from, so the
 // arithmetic is checkable against the listing rather than being a magic address.
-constexpr uint32_t kGp = 0x80075264u;
 
 // gp+0x604 — the INPUT-LATCH WINDOW flag, and the reason the two writes below are load-bearing.
 // The vblank callback 0x80053C68 (installed via VSyncCallback, decompiled in scratch/decomp/frameown.c)
@@ -105,74 +109,6 @@ constexpr int      kFrameStepMax     = 4;
 // 11333 renders, so 8 frames were suppressed.
 constexpr uint32_t kRenderSuppressed = kGp + 0x538u;  // 0x8007579C
 
-// gp+0x574 — the STAGE SELECTOR. Both 0x8003385C and 0x8001ED5C dispatch on it, so it names WHICH game
-// mode is running, and therefore which scene a native renderer would have to produce.
-constexpr uint32_t kStageSelector    = kGp + 0x574u;  // 0x800757D8
-
-// ── The stage arms of the render driver 0x8001ED5C ───────────────────────────────────────────────
-// Transcribed from the linear if-chain at 0x8001EDF8-0x8001EF80 and spot-checked against the
-// disassembly (the chain compares [0x800757D8] against 1,2,3,4,5,6,7,8,9,0xA…0xF in order). Two arms
-// are themselves conditional and two more are indirect; all four are represented honestly rather than
-// collapsed to a single address.
-//
-// NOTHING HERE IS NAMED BEYOND ITS ADDRESS unless this repo already named it. A stage whose role has
-// not been reverse-engineered gets "(role not RE'd)" — an invented name would read as knowledge.
-struct StageArm {
-  uint32_t stage;
-  uint32_t handler;      // 0 when the arm dispatches indirectly or picks between two handlers
-  const char* what;
-};
-constexpr StageArm kStageArms[] = {
-  {  0, 0x00000000u, "FIELD / world — the arm that runs during gameplay (C151, snap_15000). "
-                     "Not one call: a 10-entry layer list, see kFieldLayers" },
-  {  1, 0x8001A050u, "(role not RE'd)" },
-  {  2, 0x8001A40Cu, "(role not RE'd)" },
-  {  3, 0x8001A40Cu, "(role not RE'd)" },
-  {  4, 0x8001CA38u, "(role not RE'd) — reaches EmitStaticActorMeshList 0x8004EBA8" },
-  {  5, 0x8001CA38u, "(role not RE'd) — reaches EmitStaticActorMeshList 0x8004EBA8" },
-  {  6, 0x8001A40Cu, "(role not RE'd)" },
-  {  7, 0x00000000u, "INDIRECT — calls (*[0x8007567C])(), so the handler is data, not code" },
-  {  8, 0x8001CFDCu, "(role not RE'd)" },
-  {  9, 0x8001A050u, "(role not RE'd)" },
-  { 10, 0x8001C694u, "(role not RE'd)" },
-  { 11, 0x8001D718u, "(role not RE'd)" },
-  { 12, 0x8001E24Cu, "(role not RE'd)" },
-  { 13, 0x00000000u, "SPLIT on [0x80078D78]==3 -> 0x8001E6B8, else 0x8007CEE4" },
-  { 14, 0x8001E9C8u, "(role not RE'd) — reaches RenderWorldChunks 0x800258F0" },
-  { 15, 0x00000000u, "SPLIT on [0x80075704]<99 -> 0x8007BFD0, else 0x8001EB80 "
-                     "(the latter reaches RasterizeSpritePrimQueue 0x80022A2C)" },
-};
-constexpr uint32_t kStageIndirectPtr13 = 0x80078D78u;  // the [..]==3 discriminator of stage 13
-constexpr uint32_t kStageIndirectPtr15 = 0x80075704u;  // the [..]<99 discriminator of stage 15
-constexpr uint32_t kStageFnPtr7        = 0x8007567Cu;  // stage 7's function pointer
-
-// ── The FIELD (stage 0) layer list ───────────────────────────────────────────────────────────────
-// The stage-0 arm of 0x8001ED5C, in order, from the decompile in scratch/decomp/frameloop.c. `gate`
-// is the global the guest tests before making the call; 0 means unconditional. This list IS the
-// native-renderer backlog for the field, in the order the guest draws it.
-struct FieldLayer {
-  uint32_t fn;
-  uint32_t gate;        // 0 = unconditional
-  bool gateNonZero;     // true: runs when [gate] != 0; false: runs when [gate] == 0
-  const char* what;
-};
-constexpr FieldLayer kFieldLayers[] = {
-  { 0x800521C0u, 0,            false, "(role not RE'd)" },
-  { 0x80019300u, 0x80075690u,  false, "(role not RE'd) — runs when [0x80075690] == 0" },
-  { 0x80018908u, 0x80075714u,  true,  "(role not RE'd) — runs when [0x80075714] != 0" },
-  { 0x80019698u, 0,            false, "actor pass — reaches EmitActorDrawList 0x8001F798 and "
-                                      "EmitSecondaryActorPrimitives 0x80020F34" },
-  { 0x8002B9CCu, 0,            false, "(role not RE'd)" },
-  { 0x80050BD0u, 0,            false, "(role not RE'd)" },
-  { 0x800573C8u, 0,            false, "(role not RE'd)" },
-  { 0x800190D4u, 0x80075918u,  true,  "(role not RE'd) — runs when [0x80075918] != 0, called with "
-                                      "([0x80075918]<<3) in a1/a2/a3" },
-  { 0x80018F30u, 0,            false, "(role not RE'd) — runs when [0x8007570C] != 0 OR "
-                                      "[0x800756C0] != 0; reported as always-armed here because this "
-                                      "classifier does not evaluate the OR" },
-  { 0x800189F0u, 0,            false, "(role not RE'd)" },
-};
-
 // ── A typed lens over the loop block, so the body below reads as the loop it is ──────────────────
 class FrameState {
 public:
@@ -187,86 +123,10 @@ public:
 
   void setFrameStep(int n)        { mC->mem_w32(kFrameStep, (uint32_t)n); }
   bool renderSuppressed() const   { return mC->mem_r32(kRenderSuppressed) != 0; }
-  uint32_t stage() const          { return mC->mem_r32(kStageSelector); }
 
 private:
   Core* mC;
 };
-
-// ── The scene a native renderer is being asked to produce ────────────────────────────────────────
-struct Scene {
-  uint32_t stage;
-  const StageArm* arm;      // null when the stage selector is outside 0..15 (the guest draws nothing)
-};
-
-Scene classifyScene(Core* c) {
-  FrameState fs(c);
-  const uint32_t s = fs.stage();
-  for (const StageArm& a : kStageArms)
-    if (a.stage == s) return { s, &a };
-  return { s, nullptr };
-}
-
-// The native render branch. It draws NOTHING and says exactly what it was asked to draw.
-//
-// A FALLBACK HERE WOULD BE THE WHOLE BUG: a branch that quietly dispatched the guest's renderer, or
-// drew something plausible, would let a half-ported scene read as finished — and the reason this
-// project keeps re-deriving render bugs is that a plausible picture is indistinguishable from a
-// correct one. So the honest behaviour is to stop, print the scene identity and the exact backlog for
-// it, and let the crash sequence be the work list.
-[[noreturn]] void abortUnimplemented(Core* c, const Scene& sc) {
-  lucent::error("frameloop", "NATIVE RENDER NOT IMPLEMENTED — stage selector [0x{:08X}] = {}",
-                kStageSelector, sc.stage);
-  if (!sc.arm) {
-    lucent::error("frameloop", "  stage {} is outside 0..15: the guest's render driver 0x{:08X} falls "
-                               "off its if-chain and draws nothing for it, so there is nothing to port "
-                               "for this stage — but reaching it means the selector is a value this "
-                               "port has not seen before. Investigate before adding an arm.",
-                  sc.stage, kFrameRenderDrv);
-    abort();
-  }
-  lucent::error("frameloop", "  arm: {}", sc.arm->what);
-  if (sc.arm->handler)
-    lucent::error("frameloop", "  the guest would have called 0x{:08X}", sc.arm->handler);
-  if (sc.stage == 7)
-    lucent::error("frameloop", "  the guest would have called (*[0x{:08X}]) = 0x{:08X}",
-                  kStageFnPtr7, c->mem_r32(kStageFnPtr7));
-  if (sc.stage == 13)
-    lucent::error("frameloop", "  [0x{:08X}] = {} selects 0x8001E6B8 (==3) or 0x8007CEE4",
-                  kStageIndirectPtr13, c->mem_r32(kStageIndirectPtr13));
-  if (sc.stage == 15)
-    lucent::error("frameloop", "  [0x{:08X}] = {} selects 0x8007BFD0 (<99) or 0x8001EB80",
-                  kStageIndirectPtr15, c->mem_r32(kStageIndirectPtr15));
-  if (sc.stage == 0) {
-    lucent::error("frameloop", "  the FIELD backlog, in the guest's own draw order — ARMED means the "
-                               "layer's gate is satisfied on THIS frame, i.e. it is missing from the "
-                               "picture right now:");
-    for (const FieldLayer& L : kFieldLayers) {
-      const bool armed = L.gate == 0 || ((c->mem_r32(L.gate) != 0) == L.gateNonZero);
-      lucent::error("frameloop", "    [{}] 0x{:08X}  {}", armed ? "ARMED" : "  -  ", L.fn, L.what);
-    }
-  }
-  lucent::error("frameloop", "  no fallback is installed on purpose: a native branch that drew "
-                             "something plausible would make this gap invisible. Port the layers "
-                             "above, or run without PSXPORT_SPYRO_NATIVE_RENDER.");
-  abort();
-}
-
-bool g_nativeRender = false;
-
-// ONE per-frame render step, with the two branches the port needs to compare.
-//
-// This is the seam Tomba!2 reaches through `GameHooks::drawOTag`. Spyro's `drawOTag` hook stays NULL
-// and this function stands in its place, because that hook's ONLY call site is `native_step_frame`,
-// which is unreachable in this port (see the header). Filling the hook would look like wiring and
-// connect to nothing.
-void renderFrame(Core* c) {
-  if (!g_nativeRender) {
-    rc0(c, kFrameRenderDrv);   // psx_render reference: the guest's own render driver, unmodified
-    return;
-  }
-  abortUnimplemented(c, classifyScene(c));
-}
 
 // The loop itself — a readable port of 0x80012204. The guest sequence is preserved exactly, including
 // the order of the two input-latch writes relative to the update and to the vblank-count read.
@@ -274,10 +134,8 @@ void renderFrame(Core* c) {
   FrameState fs(c);
   rc0(c, kStaticCtors);
   rc0(c, kBootInit);
-  lucent::info("frameloop", "the PORT owns Spyro's frame loop (guest main 0x{:08X} is not dispatched); "
-                            "render branch = {}",
-               0x80012204u, g_nativeRender ? "NATIVE (aborts on the first frame, by design)"
-                                           : "psx_render reference (the guest's 0x8001ED5C)");
+  lucent::info("frameloop", "the PORT owns Spyro's frame loop (guest main 0x{:08X} is not dispatched)",
+               0x80012204u);
   for (;;) {
     fs.closeInputLatchWindow();
     rc0(c, kFrameUpdate);
@@ -290,7 +148,7 @@ void renderFrame(Core* c) {
     const bool suppressed = fs.renderSuppressed();
     fs.restartVblankCount();
     if (suppressed) continue;
-    renderFrame(c);
+    SpyroRenderer(c).drawFrame();
   }
 }
 
@@ -301,6 +159,6 @@ bool spyro_frame_loop_enabled() {
 }
 
 [[noreturn]] void spyro_frame_loop_run(Core* c) {
-  g_nativeRender = cfg_on("PSXPORT_SPYRO_NATIVE_RENDER") != 0;
+  SpyroRenderer::installModeFromConfig(c);   // which leg of the render seam this run uses
   run(c);
 }

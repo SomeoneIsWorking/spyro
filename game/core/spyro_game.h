@@ -52,6 +52,8 @@ void spyro_register_wide_clip();
 // Off unless PSXPORT_SPYRO_FRAME_LOOP=1, in which case bootInit runs THIS loop instead of dispatching
 // the guest's main. It is the seam every native-graphics step needs: a per-LOGIC-FRAME point in port
 // code above the guest's renderers. See the file header for why the framework's native_step_frame
-// cannot serve that role here.
+// cannot serve that role here. The loop does not decide where the PICTURE comes from — it calls the
+// render seam (game/render/render.h, `SpyroRenderer::drawFrame`), which picks the reference OT walk
+// or the native producers from the framework's per-Core RenderMode (`PSXPORT_RENDER_PSX=1`).
 bool spyro_frame_loop_enabled();
 [[noreturn]] void spyro_frame_loop_run(Core* c);

@@ -99,13 +99,90 @@ constexpr uint32_t kRootHandlers = 0x80073928u;   // +0 = IRQ 0 = VBLANK
 //
 // The register file is saved and restored around the call for the same reason as before: this runs from
 // INSIDE a guest call, and a real IRQ preserves the interrupted function's registers.
+//
+// ── AND THE HANDLER DOES NOT RUN ON THE INTERRUPTED STACK ──────────────────────────────────────────
+//
+// $sp IS NOT A STACK POINTER ON A PSX AT AN ARBITRARY INSTRUCTION. The kernel's exception entry saves
+// the interrupted context and switches to its own stack before running the interrupt chain, so a PS1
+// function may legally keep scratch values in $sp/$gp/$fp, and hand-written renderers do — they are
+// three more registers. Spyro's is one, and this is from the recompiled instructions, not inference:
+// `gen_func_800258F0` (RenderWorldChunks, generated/shard_3.c) saves sp/gp/fp in its prologue,
+// then writes `sp = -1`, `sp = 0x1F800000` (the scratchpad base) and `sp = r1 + 7680` in its inner
+// loops, and reloads all three from its frame at the end.
+//
+// MEASURED CONSEQUENCE of getting this wrong, because it does not fail as a stack bug. With the host
+// turn armed and the handler run on `c->r[29]`, the port died in RenderWorldChunks on an UNMAPPED
+// read8 at 0x9006E9AB about half a second into the run. `PSXPORT_DEBUG=hostturn` showed why: turns
+// 25-31 were taken at libetc function entries with sp=0x801FFFxx (a real stack), turn 32 was taken at
+// a loop back-edge inside the renderer with sp=0x80071B00 and gp=0x80071D20 — mid-table addresses,
+// not a stack — and the handler chain wrote its frames there, over libetc's data. The crash then
+// surfaced somewhere else entirely, reading a pointer that had been overwritten.
+//
+// WHERE THE HANDLER STACK LIVES. In the kernel region, which is where the console's is: a PS-EXE
+// loads at 0x80010000 (this game's boot log says so) precisely because everything below belongs to
+// the BIOS, and psxport already carves its own BIOS work area out of the same region
+// (hle.cpp `HLE_WORK_BASE` 0x8000E000 / `HLE_B0TABLE` 0x8000F000 / `HLE_C0TABLE` 0x8000F800). So this
+// is the framework's existing convention rather than a new claim on guest memory.
+//
+// AND WHICH PART OF IT IS FREE IS MEASURED, not assumed. `PSXPORT_WWATCH=0x80000000,0x8000FFFC
+// PSXPORT_WWATCH_BT=1` over a whole run from boot to the memory-card screen logs writes to exactly
+// 131 distinct addresses in that 64 KB: 0x80000000-0x8000007F (from a B0 stub at 0x80068900) and
+// psxport's own work area words at 0x8000F16C / 0x8000F800-0x8000F807. Nothing else in the region is
+// ever written. The stack therefore sits directly below `HLE_WORK_BASE` and grows down, with the
+// nearest measured neighbour ~48 KB further down.
+constexpr uint32_t kHandlerStackTop   = 0x8000E000u;   // exclusive: first word used is TOP-4
+constexpr uint32_t kHandlerStackBytes = 8192u;
+constexpr uint32_t kHandlerStackFloor = kHandlerStackTop - kHandlerStackBytes;
+// Written into every word of the stack once, so "how deep did the handler chain actually go" is a
+// measurement and "did it run off the bottom" is a test rather than a hope. Any value works; this one
+// is recognisable in a RAM dump and is not a plausible pointer or count.
+constexpr uint32_t kStackPoison = 0xCDCDCDCDu;
+
+void handler_stack_init(Core* c) {
+  for (uint32_t a = kHandlerStackFloor; a < kHandlerStackTop; a += 4) c->mem_w32(a, kStackPoison);
+  lucent::info("vsync", "vblank handler stack armed at [0x{:08X},0x{:08X}) — the guest's interrupt "
+                        "handler does NOT run on the interrupted $sp (see vsync.cpp)",
+               kHandlerStackFloor, kHandlerStackTop);
+}
+
+// How far down the handler chain has ever reached, as an address. Reported by `PSXPORT_DEBUG=vsync`;
+// the floor word is checked unconditionally, because an overflow silently corrupts whatever is below
+// and would otherwise present as a bug somewhere else entirely — which is exactly the failure this
+// whole comment is about.
+uint32_t handler_stack_low_water(Core* c) {
+  for (uint32_t a = kHandlerStackFloor; a < kHandlerStackTop; a += 4)
+    if (c->mem_r32(a) != kStackPoison) return a;
+  return kHandlerStackTop;
+}
+
 bool run_vblank_callback(Core* c) {
   const uint32_t root = c->mem_r32(kRootHandlers);
   const uint32_t target = root ? root : g_vblank_cb;
   if (!target) return false;
+  static bool armed = false;
+  if (!armed) { armed = true; handler_stack_init(c); }
+
   R3000 saved = *static_cast<R3000*>(c);
+  c->r[29] = kHandlerStackTop;          // the stack switch the kernel's exception entry performs
   rc0(c, target);
-  *static_cast<R3000*>(c) = saved;
+  *static_cast<R3000*>(c) = saved;      // …and the context restore its exit performs
+
+  if (c->mem_r32(kHandlerStackFloor) != kStackPoison)
+    lucent::error("vsync", "the vblank handler chain ran off the bottom of its {}-byte stack at "
+                           "0x{:08X} — it has been writing below it, and whatever lives there is "
+                           "already corrupt. Raise kHandlerStackBytes.",
+                  kHandlerStackBytes, kHandlerStackFloor);
+  static const lucent::Channel ch_vsync{"vsync"};
+  if (ch_vsync) {                       // guards the SCAN, not the print
+    static uint32_t deepest = kHandlerStackTop;
+    const uint32_t lw = handler_stack_low_water(c);
+    if (lw < deepest) {
+      deepest = lw;
+      lucent::debug(ch_vsync, "vblank handler stack peak: {} bytes used (low water 0x{:08X} of "
+                              "[0x{:08X},0x{:08X}))",
+                    kHandlerStackTop - lw, lw, kHandlerStackFloor, kHandlerStackTop);
+    }
+  }
   return root != 0;
 }
 
@@ -137,16 +214,20 @@ constexpr int kMaxVblanksPerWait = 300;   // ~5s at 60Hz
 // instrument that cannot report its own denominator.
 //
 // WHAT A NEGATIVE LOOKS LIKE HERE, by construction. `pace` lines ABSENT entirely means either the
-// channel is off or this build never reached a vblank wait — not "the port never paced". A `pace`
-// line whose `pace` and `vbl` counters diverge means this loop paced a different number of times
+// channel is off or this build never delivered a field — not "the port never paced". A `pace`
+// line whose `pace` and `vbl` counters diverge means the port paced a different number of times
 // than it advanced vblanks, which is the exact defect paceQuota encodes; equal counters with
 // `vbl/s` well under 60 means the pacer is sleeping longer than one vblank per call (a quota too
 // high, or the host missing the deadline) and the two are told apart by `quota` on the same line.
+// `site=` names WHICH caller asked for the field — `vsync` (the guest reached a VSync wait) or
+// `hostturn` (the guest is in a loop that calls no wait, so the host clock delivered it). A run
+// whose `pace` lines are ALL site=vsync is a run in which the host turn never fired; that is the
+// distinction the memory-card softlock turns on, so it is on every line rather than inferred.
 // BLIND SPOTS: pace calls made from anywhere else. Bounded by grep — the only other callers in the
 // framework are native_boot.cpp / native_stub.cpp (the native frame loop, which this port does not
 // run: the guest owns its loop) and fps60.cpp (unreachable here — its eligibility needs
 // RenderQueue::drawWorldQuad, which this repo never calls). `present` likewise counts only the
-// presents THIS loop makes; the framework's boot stub presents outside it.
+// presents THIS file makes; the framework's boot stub presents outside it.
 //
 // AND THIS INSTRUMENT DOES NOT MEASURE THE DRAW RATE — say so rather than let a reader assume the
 // vblank rate is it. The guest's DrawOTag reaches the GPU through DMA2, and the framework drains the
@@ -154,10 +235,10 @@ constexpr int kMaxVblanksPerWait = 300;   // ~5s at 60Hz
 // this loop flushes, the queue is already consumed and this boundary cannot see a draw happen. The
 // rate of NEW rendered frames is `rebuild_geom` from `PSXPORT_DEBUG=presentskip`, which is a
 // framework counter over the composite decision; run the two channels together.
-unsigned long g_pace_entries = 0;   // gpu_pace_frame calls made from this loop
-unsigned long g_pace_vbl     = 0;   // vblanks this loop advanced (loop iterations)
-unsigned long g_pace_present = 0;   // gpu_present calls made from this loop
-// Iterations where THIS loop was the queue's first consumer (n>0 and not yet consumed). Expected 0
+unsigned long g_pace_entries = 0;   // gpu_pace_frame calls made from this file
+unsigned long g_pace_vbl     = 0;   // display fields this file delivered
+unsigned long g_pace_present = 0;   // gpu_present calls made from this file
+// Fields where THIS file was the queue's first consumer (n>0 and not yet consumed). Expected 0
 // for this port, per the paragraph above — it is the instrument's own check that the sample point is
 // downstream of the DMA2 flush, so a NON-zero value is the interesting answer and means a second
 // producer is queueing outside the OT walk.
@@ -173,9 +254,169 @@ double pace_ms() {
   return now - t0;
 }
 
+// ── ONE DISPLAY FIELD, ONE DEFINITION ──────────────────────────────────────────────────────────────
+//
+// Everything the console's VBlank does, in the order it does it. There are TWO callers and they must
+// not be two implementations of "a field happened":
+//
+//   * `vblank_wait` below — the guest reached a VSync wait and is asking for fields;
+//   * `spyro_host_turn` — the guest is in a loop that waits for a field WITHOUT calling anything the
+//     port owns, so nothing would ever ask. The framework's host clock says a field is due and the
+//     port delivers it at the next recompiled-function entry or loop back-edge.
+//
+// WHY THE SECOND CALLER EXISTS AT ALL, measured rather than asserted. libmcrd's MemCardSync(mode=0)
+// at 0x80067628 blocks in a bare spin (`generated/shard_4.c` L_80067684: `v0 = [0x80075B58]; beq v0,
+// zero, back` — nothing else in the loop), and the SOLE writer of that flag is the card driver's
+// completion callback 0x80067CD4, which the game installed as libetc VBlank callback slot 7. That
+// spin calls no library function, so before this the port had no way to deliver the field the flag
+// depends on and the run wedged with no frame ever presented again — the user's "SELECT MEMORY CARD
+// softlock". The spin is not special: it is one member of a class (the card READ and WRITE op state
+// machines have the same shape), so the fix is the framework's class-wide mechanism rather than an
+// override on that one address. `rec_host_turn_register` is one line; see host_turn.cpp for why its
+// arming interval is a hardware fact and not a tuned constant.
+//
+// NOT RE-ENTRANT, and that is the console's behaviour rather than a convenience. The BIOS runs the
+// VBlank root handler with interrupts masked, so a second field cannot begin inside the first; the
+// framework's event delivery refuses nested delivery for exactly this reason (hle.cpp `ev_depth`).
+// The guard matters because a host turn is taken at a guest function entry, and this function runs
+// guest code — without it a turn could open a field inside a field and re-enter the game's own
+// handler halfway through its own non-atomic update.
+bool g_in_field = false;
+
+unsigned long g_field_refused = 0;   // fields a caller asked for while one was already in flight
+
+bool deliver_field(Core* c, const char* site) {
+  // See the header: a field cannot begin inside a field. A host turn is taken at a guest function
+  // entry or loop back-edge, and the guest code this function runs contains plenty of both — the
+  // card state machine's own retry loops among them — so without this the game's vblank handler
+  // re-enters itself to unbounded depth. MEASURED, on the way to this line: the watchdog backtrace
+  // from the memory-card wedge showed gen_func_8005E560 -> 0x80067CD4 -> 0x80068FC4 -> 0x800671F0 ->
+  // rec_irq_poll -> rec_host_turn -> gen_func_8005E560 again, one full nesting deep.
+  if (g_in_field) {
+    ++g_field_refused;
+    lucent::debug("pace", "field refused (site={}): one is already in flight — a vblank handler is "
+                          "not re-entrant on hardware either. refused={} so far", site,
+                  g_field_refused);
+    return false;
+  }
+  g_in_field = true;
+  // DRAIN THE RENDER QUEUE. The guest's DrawOTag walks its OT and QUEUES each prim
+  // (gpu_dma2_linked_list -> gpu_gp0 -> rq.push), but nothing emits that queue to the renderer:
+  // rq.flush() is only reached from the framework's native_boot / Engine::drawOTag path, which this
+  // port never runs. The queue only resets lazily on the push AFTER it was consumed, so with no
+  // consumer it grows without bound.
+  //
+  // That single omission produced BOTH of the port's symptoms. Nothing reached the VK renderer, so
+  // every frame after the logo fade was BLACK; and the queue accumulated ~449 polys/frame until it
+  // hit RQ_MAX 65536 about 146 drawing-frames later and the framework fail-fasted, which is the
+  // abort at frame 3781 (issue 0015). psxport's own history records the identical bug with the
+  // identical black-front-end symptom — see the comment in native_boot.cpp.
+  //
+  // Here is the right place for the same reason the event delivery below is: this wait IS the
+  // port's per-frame boundary. Flush before present, so the frame being presented is the one the
+  // guest just drew.
+  // Read the queue BEFORE it is flushed, for the `pace` line: `n>0 && !consumed` would mean this
+  // loop is the queue's FIRST consumer this frame. See g_pace_rq_unconsumed above.
+  const int rq_n = c->game->rq.n, rq_unconsumed = (rq_n > 0 && !c->game->rq.consumed) ? 1 : 0;
+  g_pace_rq_unconsumed += (unsigned)rq_unconsumed;
+  c->game->rq.flush(c);
+  // FILL THE PAD BUFFERS. Spyro's libpad (0x80069000-0x8006C000) fills them from SIO0 inside the
+  // VBlank IRQ handler, and this runtime raises no IRQs — so on the port that state machine never
+  // runs and the buffers keep the 0xFF "no controller" byte its init wrote (0x8006B100). The
+  // decoder at 0x80053F00 then takes its no-pad arm every frame, which is why the only input the
+  // game ever saw was the attract demo's recorded stream (C062). serviceFrame() does exactly what
+  // the VBlank read would have: poll the host and write the standard packet into the buffers named
+  // in GameConfig. It belongs here for the same reason the present and the event delivery do —
+  // this wait IS the port's per-frame boundary — and it must run BEFORE the guest's decoder, which
+  // it does: the guest reads input inside its own frame body, after returning from this wait.
+  c->game->pad.serviceFrame();
+  // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
+  // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
+  const bool guestOwnsCount = run_vblank_callback(c);
+  // A COMPLETED FRAME is the only safe place to capture guest RAM: mid-frame the OT and packet pool
+  // are half-built, which is the one state nobody wants to reason about. The guest still owns its
+  // frame loop here, so the framework cannot know where that boundary is — this wait does.
+  // PSXPORT_SNAP_AT / PSXPORT_SNAP_EVERY / kill -USR1 <pid>; see snapshot.h.
+  snapshot_tick(c);
+  // PUMP THE REPL. `PSXPORT_REPL=1` gives an interactive prompt on stdin — read/write guest memory,
+  // press pad buttons, dump RAM, step N frames. It was UNREACHABLE in this port for a structural
+  // reason, not a broken one: repl.read() is only pumped from the framework's native scheduler loop,
+  // and that loop never runs here because the guest still owns its frame loop. Pumping it from this
+  // frame boundary costs nothing and makes a live port inspectable instead of requiring a rebuild
+  // per question.
+  //
+  // read() blocks until the operator types `run N`, then returns N — a frame budget. So hold the
+  // budget across frames and only re-enter when it runs out; that is exactly the contract the
+  // native loop uses. A negative return is quit.
+  if (cfg_on("PSXPORT_REPL")) {
+    static long budget = 0;
+    static bool quit = false;
+    if (!quit && budget <= 0) {
+      while ((budget = c->game->repl.read(c, c->mem_r32(kVblankCounter))) == 0) { }
+      if (budget < 0) { quit = true; lucent::info("repl", "quit — running free"); }
+    }
+    if (budget > 0) budget--;
+  }
+  // One vblank = one displayed frame. present() puts the guest's drawn frame on screen; pace()
+  // holds real time to the frame interval so the game runs at its intended speed rather than
+  // spinning as fast as the host can.
+  gpu_present(c);
+  ++g_pace_present;
+  // ADVANCE THE AUDIO MIXER. Exactly one video field of SPU clocks per displayed frame, drained to
+  // the sink. Nothing else in this port ever advanced it: main.cpp opens the audio sink with
+  // `spu_audio.init()` and `spu_audio.frame()` was called NOWHERE, so the SPU mixed no samples and
+  // the port was SILENT — every voice, not just CD audio. The mixer is also the only caller of
+  // CDC_GetCDAudioSample, so any XA stream would arm and then decode nothing.
+  //
+  // Here for the same reason the present, the pad service and the event delivery above are: the
+  // framework's native_step_frame ("tick + per-vblank audio + present + pace") NEVER RUNS in this
+  // port because the guest still owns its frame loop, and this wait is the port's real per-frame
+  // boundary. One call per displayed frame keeps audio on the same clock as the picture.
+  //
+  // Found in spider1, which had the identical omission (that port's silent intro), and confirmed
+  // here by grep before writing this: zero call sites.
+  c->game->spu_audio.frame();
+  gpu_pace_frame(c);
+  ++g_pace_entries;
+  // Deliver the per-frame IRQ-driven BIOS events. The framework normally does this in
+  // native_step_frame — but that loop NEVER RUNS here, because the guest still owns its own frame
+  // loop (game_hooks.cpp). This wait is the port's real per-frame point, so it is where the events
+  // a game's TestEvent waits poll must be raised. Without it the classes in GameConfig are
+  // configured but never delivered, and any such wait spins forever — which is exactly the stall
+  // at func_8005CBB0 (it polls handle 0xF1000000, opened on class 0xF0000009).
+  for (uint32_t cls : { c->cfg->irqEventClasses[0], c->cfg->irqEventClasses[1],
+                        c->cfg->irqEventClasses[2] })
+    if (cls) c->game->hle.deliverEvent(cls, 0xFFFFFFFFu);
+  ++g_pace_vbl;
+  lucent::debug("pace", "t={:.1f}ms vbl={} pace={} present={} rq_unconsumed={} | site={} quota={} "
+                        "counter={} rq_n={} unconsumed={}",
+                pace_ms(), g_pace_vbl, g_pace_entries, g_pace_present, g_pace_rq_unconsumed,
+                site, c->cfg ? c->cfg->paceQuota : 0u, c->mem_r32(kVblankCounter), rq_n,
+                rq_unconsumed);
+  g_in_field = false;
+  // The guest's root handler increments [0x800749E0] itself, so the caller must re-read it rather
+  // than double-count. Only when it is absent (early boot, before libetc installs it) does the port
+  // own the tick — which is what this return value says.
+  return guestOwnsCount;
+}
+
 void vblank_wait(Core* c) {
   const int32_t target = (int32_t)c->r[4];
   int32_t cur = (int32_t)c->mem_r32(kVblankCounter);
+
+  // A VSync WAIT reached from inside the vblank handler cannot be satisfied: the field it is waiting
+  // for cannot begin until this one ends. That is a deadlock on the console too (the BIOS runs the
+  // root handler with interrupts masked), so there is no behaviour to be faithful to — but the port
+  // must not spin silently either. Say it, with the caller, and let the guest continue.
+  if (g_in_field) {
+    lucent::error("vsync", "VSync wait for {} entered from INSIDE the vblank handler (ra=0x{:08X}) — "
+                           "the field it waits for cannot start until this one ends, which deadlocks "
+                           "on hardware as well. Returning without waiting; the caller's timing is "
+                           "wrong from here on, and this line is the only reason you will know.",
+                  target, c->r[31]);
+    if (cur < target) c->mem_w32(kVblankCounter, (uint32_t)target);
+    return;
+  }
 
   int advanced = 0;
   while (cur < target) {
@@ -187,107 +428,32 @@ void vblank_wait(Core* c) {
       cur = target;   // satisfy the caller rather than hang, but the warning above is the real output
       break;
     }
-    // DRAIN THE RENDER QUEUE. The guest's DrawOTag walks its OT and QUEUES each prim
-    // (gpu_dma2_linked_list -> gpu_gp0 -> rq.push), but nothing emits that queue to the renderer:
-    // rq.flush() is only reached from the framework's native_boot / Engine::drawOTag path, which this
-    // port never runs. The queue only resets lazily on the push AFTER it was consumed, so with no
-    // consumer it grows without bound.
-    //
-    // That single omission produced BOTH of the port's symptoms. Nothing reached the VK renderer, so
-    // every frame after the logo fade was BLACK; and the queue accumulated ~449 polys/frame until it
-    // hit RQ_MAX 65536 about 146 drawing-frames later and the framework fail-fasted, which is the
-    // abort at frame 3781 (issue 0015). psxport's own history records the identical bug with the
-    // identical black-front-end symptom — see the comment in native_boot.cpp.
-    //
-    // Here is the right place for the same reason the event delivery below is: this wait IS the
-    // port's per-frame boundary. Flush before present, so the frame being presented is the one the
-    // guest just drew.
-    // Read the queue BEFORE it is flushed, for the `pace` line: `n>0 && !consumed` would mean this
-    // loop is the queue's FIRST consumer this frame. See g_pace_rq_unconsumed above.
-    const int rq_n = c->game->rq.n, rq_unconsumed = (rq_n > 0 && !c->game->rq.consumed) ? 1 : 0;
-    g_pace_rq_unconsumed += (unsigned)rq_unconsumed;
-    c->game->rq.flush(c);
-    // FILL THE PAD BUFFERS. Spyro's libpad (0x80069000-0x8006C000) fills them from SIO0 inside the
-    // VBlank IRQ handler, and this runtime raises no IRQs — so on the port that state machine never
-    // runs and the buffers keep the 0xFF "no controller" byte its init wrote (0x8006B100). The
-    // decoder at 0x80053F00 then takes its no-pad arm every frame, which is why the only input the
-    // game ever saw was the attract demo's recorded stream (C062). serviceFrame() does exactly what
-    // the VBlank read would have: poll the host and write the standard packet into the buffers named
-    // in GameConfig. It belongs here for the same reason the present and the event delivery do —
-    // this wait IS the port's per-frame boundary — and it must run BEFORE the guest's decoder, which
-    // it does: the guest reads input inside its own frame body, after returning from this wait.
-    c->game->pad.serviceFrame();
-    // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
-    // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
-    const bool guestOwnsCount = run_vblank_callback(c);
-    // A COMPLETED FRAME is the only safe place to capture guest RAM: mid-frame the OT and packet pool
-    // are half-built, which is the one state nobody wants to reason about. The guest still owns its
-    // frame loop here, so the framework cannot know where that boundary is — this wait does.
-    // PSXPORT_SNAP_AT / PSXPORT_SNAP_EVERY / kill -USR1 <pid>; see snapshot.h.
-    snapshot_tick(c);
-    // PUMP THE REPL. `PSXPORT_REPL=1` gives an interactive prompt on stdin — read/write guest memory,
-    // press pad buttons, dump RAM, step N frames. It was UNREACHABLE in this port for a structural
-    // reason, not a broken one: repl.read() is only pumped from the framework's native scheduler loop,
-    // and that loop never runs here because the guest still owns its frame loop. Pumping it from this
-    // frame boundary costs nothing and makes a live port inspectable instead of requiring a rebuild
-    // per question.
-    //
-    // read() blocks until the operator types `run N`, then returns N — a frame budget. So hold the
-    // budget across frames and only re-enter when it runs out; that is exactly the contract the
-    // native loop uses. A negative return is quit.
-    if (cfg_on("PSXPORT_REPL")) {
-      static long budget = 0;
-      static bool quit = false;
-      if (!quit && budget <= 0) {
-        while ((budget = c->game->repl.read(c, (uint32_t)cur)) == 0) { }
-        if (budget < 0) { quit = true; lucent::info("repl", "quit — running free"); }
-      }
-      if (budget > 0) budget--;
-    }
-    // One vblank = one displayed frame. present() puts the guest's drawn frame on screen; pace()
-    // holds real time to the frame interval so the game runs at its intended speed rather than
-    // spinning as fast as the host can.
-    gpu_present(c);
-    ++g_pace_present;
-    // ADVANCE THE AUDIO MIXER. Exactly one video field of SPU clocks per displayed frame, drained to
-    // the sink. Nothing else in this port ever advanced it: main.cpp opens the audio sink with
-    // `spu_audio.init()` and `spu_audio.frame()` was called NOWHERE, so the SPU mixed no samples and
-    // the port was SILENT — every voice, not just CD audio. The mixer is also the only caller of
-    // CDC_GetCDAudioSample, so any XA stream would arm and then decode nothing.
-    //
-    // Here for the same reason the present, the pad service and the event delivery above are: the
-    // framework's native_step_frame ("tick + per-vblank audio + present + pace") NEVER RUNS in this
-    // port because the guest still owns its frame loop, and this wait is the port's real per-frame
-    // boundary. One call per displayed frame keeps audio on the same clock as the picture.
-    //
-    // Found in spider1, which had the identical omission (that port's silent intro), and confirmed
-    // here by grep before writing this: zero call sites.
-    c->game->spu_audio.frame();
-    gpu_pace_frame(c);
-    ++g_pace_entries;
-    // Deliver the per-frame IRQ-driven BIOS events. The framework normally does this in
-    // native_step_frame — but that loop NEVER RUNS here, because the guest still owns its own frame
-    // loop (game_hooks.cpp). This wait is the port's real per-frame point, so it is where the events
-    // a game's TestEvent waits poll must be raised. Without it the classes in GameConfig are
-    // configured but never delivered, and any such wait spins forever — which is exactly the stall
-    // at func_8005CBB0 (it polls handle 0xF1000000, opened on class 0xF0000009).
-    for (uint32_t cls : { c->cfg->irqEventClasses[0], c->cfg->irqEventClasses[1],
-                          c->cfg->irqEventClasses[2] })
-      if (cls) c->game->hle.deliverEvent(cls, 0xFFFFFFFFu);
-    // The guest's root handler increments [0x800749E0] itself, so re-read it rather than double-count.
-    // Only when it is absent (early boot, before libetc installs it) does the port own the tick.
-    if (guestOwnsCount) cur = (int32_t)c->mem_r32(kVblankCounter);
-    else                cur++;
+    if (deliver_field(c, "vsync")) cur = (int32_t)c->mem_r32(kVblankCounter);
+    else                           cur++;
     advanced++;
-    ++g_pace_vbl;
-    lucent::debug("pace", "t={:.1f}ms vbl={} pace={} present={} rq_unconsumed={} | quota={} n={} "
-                          "target={} cur={} rq_n={} unconsumed={}",
-                  pace_ms(), g_pace_vbl, g_pace_entries, g_pace_present, g_pace_rq_unconsumed,
-                  c->cfg ? c->cfg->paceQuota : 0u, advanced, target, cur, rq_n, rq_unconsumed);
   }
 
   c->mem_w32(kVblankCounter, (uint32_t)cur);
   lucent::debug("vsync", "wait target={} -> counter={} (+{} frames)", target, cur, advanced);
+}
+
+// The host's turn: a field is due by the host clock and the guest has not asked for one. See
+// deliver_field's header for the loop this exists for. Taking a turn is the framework's decision
+// (host_turn.cpp owns the clock, the arming and the guest's critical sections); what a turn DOES is
+// the port's, and for this port a turn is exactly one display field — the same one vblank_wait
+// delivers, from the same function, so the two can never drift into two definitions of a field.
+// `PSXPORT_DEBUG=hostturn` — WHERE the guest was when the host took a turn. A turn runs the game's
+// own vblank handler at a point the game did not choose, so "which guest function, at what stack
+// depth" is the first question any corruption blamed on it has to answer, and it cannot be recovered
+// after the fact. The counter is bumped unconditionally so a run can report how many turns it took
+// even with the channel off (`turns=` on the pace line's site=hostturn entries is the same number).
+unsigned long g_host_turns = 0;
+
+void spyro_host_turn(Core* c) {
+  ++g_host_turns;
+  lucent::debug("hostturn", "turn #{} at pc=0x{:08X} ra=0x{:08X} sp=0x{:08X} gp=0x{:08X}",
+                g_host_turns, c->pc, c->r[31], c->r[29], c->r[28]);
+  deliver_field(c, "hostturn");
 }
 
 }  // namespace
@@ -300,4 +466,14 @@ void spyro_register_vsync(Game* g) {
   // hardware-sync spin we are replacing, it is an observation point on a real library body that
   // still runs (the super-call in vsync_callback_set).
   psxport_recomp()->shard_set_override(0x8005DE58u, vsync_callback_set);
+  // THE HOST CLOCK. Without this, a guest loop whose exit condition is only ever written by the
+  // vblank callback can never terminate, because nothing between two guest instructions advances
+  // time — the memory-card wait in deliver_field's header is one, and it is not the only member of
+  // its class. The rate is read from the standard the GAME programmed into GP1(0x08)
+  // (gpu_field_rate_millihz), not written here: field_rate.h exists so a field rate has exactly one
+  // spelling. Registration runs before the guest boots, so this is the framework's default (NTSC)
+  // unless the guest has already programmed the standard; Spyro is an NTSC disc and programs NTSC,
+  // and if a PAL game ever needed this the fix is for GpuState to re-arm on a standard change, not a
+  // literal here.
+  rec_host_turn_register(&g->core, spyro_host_turn, gpu_field_rate_millihz(&g->core));
 }

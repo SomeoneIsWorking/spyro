@@ -18,3 +18,20 @@ Guest loops read from the substrate (a second tool over the same executable): ge
 ## What would falsify it
 
 read/write on a PSX memory-card fd shown to return the byte count on real hardware while Spyro still boots past this screen, or another psxport consumer that requires the byte-count return from the same handlers
+
+## CORRECTION 2026-08-06 — the CONTRACT was right, the LOCATION was wrong for WRITE
+
+The retry-loop RE and "0 means accepted, completion arrives as a card event" are confirmed and now
+fixed. But this claim named `memcard.cpp` `file_write` line 351 as the code that returns `len` on the
+write path, and **that function was never reached for B0:0x35 at all**. `Hle::dispatchBios`'s B-table
+had its own `case 0x35` above the `default: card_hle_b0(...)` arm, which returned `len` for every fd
+and only wrote to stderr for fd 1/2 — so every memory-card WRITE the framework ever saw was silently
+discarded. Measured: `PSXPORT_DEBUG=card,bios` on the repro logs 3,986,996 `B0:0x35(fd=3, ...)` lines
+and zero `[card]` lines (`scratch/mcfix/logs/fix2.log`). See C164.
+
+The READ half of this claim stands as written: there is no `case 0x34` in that switch, so read did
+reach `file_read`, and `c->r[V0] = len` there was exactly the defect described.
+
+**Method lesson, recorded because it nearly repeated:** the first version of the hermetic test called
+`card_hle_b0` directly and was GREEN against the broken build. A test must enter at the same door the
+guest does (`Hle::dispatchBios`), or an earlier arm of a dispatcher is invisible to it.

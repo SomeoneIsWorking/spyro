@@ -38,8 +38,9 @@ extern "C" void rec_dispatch(Core* c, uint32_t addr);
 //
 // PSXPORT_SPYRO_FRAME_LOOP=1 takes that loop over, in GAME code (frame_loop.cpp), which is where it
 // has to live: the framework's native_step_frame is unreachable in this port and is shaped for
-// Tomba!2's per-frame OT model, not Spyro's (C073). Off by default — the loop is bring-up, and its
-// native render branch aborts by design.
+// Tomba!2's per-frame OT model, not Spyro's (C073). Off by default — the loop is bring-up, and the
+// render seam it calls (game/render/) aborts by design on its native leg, which is the default leg
+// (`PSXPORT_RENDER_PSX=1` selects the reference one).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 static void spyro_bootInit(Core* c) {
   if (spyro_frame_loop_enabled()) spyro_frame_loop_run(c);   // does not return
@@ -97,8 +98,10 @@ static const GameHooks g_spyro_hooks = {
   /* ctxCreate  */ nullptr,   // no per-Core game context yet — Core tolerates null and leaves gameCtx null
   /* ctxDestroy */ nullptr,
 
-  /* frameUpdate        */ nullptr,   // unreached in Phase 0: the guest owns its own frame loop
-  /* drawOTag           */ nullptr,
+  /* frameUpdate        */ nullptr,   // UNREACHABLE, not unwritten: both of these are called only by
+  /* drawOTag           */ nullptr,   // the framework's native_step_frame, which this port never runs
+                                      // (C158). frame_loop.cpp and game/render/ stand in their place;
+                                      // filling them would look like wiring and connect to nothing.
   /* musicCoordTick     */ nullptr,
   /* cdDialogToneActive */ nullptr,
   /* cdMusicFadeIn      */ nullptr,

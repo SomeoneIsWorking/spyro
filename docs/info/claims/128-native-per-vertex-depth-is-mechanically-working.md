@@ -17,3 +17,16 @@ Aggregated the per-frame ndepth summary over a whole 130s run (scratch/logs/dept
 ## What would falsify it
 
 the ratio moving materially in either direction after more renderers are tapped or owned; also if a scene is found where prims resolve depth but the resulting occlusion is visibly wrong, which would make this a correctness problem rather than coverage
+
+## INSTRUMENT DEPENDENCY NOTED 2026-08-06 — `PSXPORT_DEBUG=ndepth` is now I041, DISTRUSTED
+
+Status left `holds`; nothing measured contradicts this claim, and its "1572 sampled frames" phrasing
+is already the honest form. The dependency is recorded so the link is not lost: each ndepth line is a
+ONE-FRAME snapshot (counters reset every present at `gpu_native.cpp:1466` while the report is gated
+`s_frame % 60 == 0` at `:1439`) and the line never prints that window. So `2.5%` is 2.5% ACROSS 1572
+SAMPLED FRAMES, not across the run's ~N frames, and the two denominators are not the same number.
+
+The spider1 failure that got I041 registered — every sample phase-locked onto a non-drawing field —
+is NOT known to happen here, and C145's observed alternation across consecutive samples is evidence
+that it does not. See I041. Unreconciled and worth settling before re-deriving these figures: 1572
+samples does not divide cleanly out of a 130 s run at a 60-frame period.

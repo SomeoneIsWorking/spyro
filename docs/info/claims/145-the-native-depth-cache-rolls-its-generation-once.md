@@ -17,3 +17,21 @@ PSXPORT_DEBUG=ndepth,pznear. Per sampled frame the port alternates hit=1547/miss
 ## What would falsify it
 
 a key that carries pool-buffer identity — if the alternation persists once a reused address can no longer alias, the model is wrong rather than the key
+
+## INSTRUMENT DEPENDENCY NOTED 2026-08-06 — `PSXPORT_DEBUG=ndepth` is now I041, DISTRUSTED
+
+Status left `holds`. Recorded so the link is not lost, and because this claim's evidence turned out to
+be the DISCRIMINATOR that keeps I041's worst failure off this port: the alternation observed here
+across CONSECUTIVE ndepth samples (`hit=1547/miss=0` then `hit=0/miss=1540`) is only possible if
+spyro's samples land on BOTH phases of the 2-frame cycle. spider1's samples were phase-locked onto a
+non-drawing field and the channel printed `3D%=0.0` for a whole run there; that cannot be what
+happened here, and this claim is the evidence for that.
+
+What still applies: every ndepth line is a ONE-FRAME snapshot with no printed denominator (counters
+reset every present, `gpu_native.cpp:1466`; report gated `s_frame % 60 == 0`, `:1439`). The
+`hit`/`miss` figures above are per-sampled-frame counts, which is how this claim reads them, so the
+reading is sound — but do not re-quote them as run totals.
+
+WORTH KEEPING IN VIEW when the pool-buffer key lands: `pznear`'s near-miss probe is a separate
+mechanism and is not covered by this distrust; it is what makes "not a stride error" a real
+elimination rather than an absence.

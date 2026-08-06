@@ -204,14 +204,14 @@ static const GameConfig g_spyro_config = {
   .padSlotPtrStride = 240u,
 
   // ── platform HLE: the PSX hardware-sync primitives ─────────────────────────────────────────────
-  // NOT YET REVERSE-ENGINEERED — every entry 0, which initBuiltins() reads as "this game has no such
-  // primitive, or its RE is outstanding" and skips. Spelled out explicitly rather than left to
-  // trailing zero-init, because a zero here is a CLAIM about Spyro and should be visible as one.
+  // MOSTLY NOT YET REVERSE-ENGINEERED — an entry that is 0 is read by initBuiltins() as "this game
+  // has no such primitive, or its RE is outstanding" and skipped. Spelled out explicitly rather than
+  // left to trailing zero-init, because a zero here is a CLAIM about Spyro and should be visible as
+  // one. RE'd so far: cdDataSync, cdInitHandshake, and the two libgte projection setters below.
   //
-  // Consequence, stated plainly: with no window configured, register_() refuses every registration
-  // and says so, and no sync primitive is installed. The guest therefore spins in the REAL library
-  // spin loops — which is exactly the honest signal that this RE is outstanding, and is the shape of
-  // the CD timeouts seen at boot (docs/re-frontier.md cd.chokepoints).
+  // Consequence, stated plainly: an un-RE'd entry installs nothing, so the guest spins in the REAL
+  // library spin loop — which is exactly the honest signal that this RE is outstanding, and is the
+  // shape of the CD timeouts seen at boot (docs/re-frontier.md cd.chokepoints).
   //
   // vsyncTrap stays 0 and MUST stay 0 for now: the trap encodes the policy "nothing may reach VSync
   // because the native frame loop owns all timing", which is only true once that loop drives the
@@ -259,6 +259,45 @@ static const GameConfig g_spyro_config = {
     .gpuTimeoutDeadlineVar = 0u,
     .gpuTimeoutFlagVar = 0u,
     .changeThread = 0u,
+    // ── libgte SetGeomOffset / SetGeomScreen — Spyro's camera projection ───────────────────────
+    // These are the two leaves through which the GAME ITSELF STATES its projection; the framework
+    // records OFX/OFY/H where they are stated rather than reading CR24/25/26 back out of the GTE at
+    // draw time (proj_params.h). Until they are wired, ProjParams::geomValid() is false and any
+    // native producer aborts in requireGeom() on its first frame — which is why this is the first
+    // step of the native renderer.
+    //
+    // BOTH BODIES RE'd, Ghidra headless on the resident snapshot, reproduce with:
+    //   external/psxport/tools/decomp.sh decomp spyro470 scratch/decomp/g7_geom.c \
+    //       list 0x80062618 0x80062638 0x800127C0
+    //
+    //   FUN_80062618(param_1, param_2)  { setCopControlWord(2,0xc000,param_1 << 0x10);   // CR24 OFX
+    //                                     setCopControlWord(2,0xc800,param_2 << 0x10); } // CR25 OFY
+    //   FUN_80062638(param_1)           { setCopControlWord(2,0xd000,param_1); }          // CR26 H
+    //
+    // That is SetGeomOffset(ofx,ofy) and SetGeomScreen(h) exactly — no other function in the image
+    // writes CR24/25 from a0/a1, and no other writes CR26 at all outside libgte's own InitGeom
+    // (FUN_80062350). Corroborated independently by the recompiled substrate, which is emitted from
+    // the same executable by a different tool: generated/shard_1.c gen_func_80062618 and
+    // generated/shard_2.c gen_func_80062638 hold the identical two/one control writes.
+    //
+    // THE CONSTANTS SPYRO PASSES — read at the call site, not defaulted. FUN_800127c0 (boot init,
+    // main's second call, 0x8001221C -> 0x800127C0) does, at 0x80012818 / 0x80012824:
+    //     FUN_80062618(0x100, 0x78);   // OFX = 256, OFY = 120
+    //     FUN_80062638(0x155);         // H   = 341
+    // i.e. 256/120/341 — HALF OF SPYRO'S 512x240 DISPLAY, not libgte's 160/120 and not H=350.
+    // Substrate cross-check, generated/shard_6.c gen_func_800127C0:
+    //     c->r[4] = 256; c->r[5] = 120; func_80062618(c);
+    //     c->r[4] = 341;                func_80062638(c);
+    //
+    // BLIND SPOT, stated because a recording that can only be right is not a measurement: two GAME
+    // functions ALSO write CR24/CR25 inline, without calling this leaf, so ProjParams will not see
+    // them — FUN_80022a2c and FUN_80023384 each restore the boot pair (0x1000000/0x780000 = 256/120,
+    // the same values) and each have one path taking OFX/OFY from a per-view struct at +0xC/+0x10.
+    // H is never re-stated after boot: the only other CR26 write in the whole image is InitGeom's
+    // default of 1000, which this call overwrites. Enumerated over the full substrate — 6 CR24
+    // writes, 6 CR25, 2 CR26 — so the list is complete for the main executable and the 7 overlays.
+    .setGeomOffset = 0x80062618u,
+    .setGeomScreen = 0x80062638u,
     .vsyncTrap = 0u,
   },
 

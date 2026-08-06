@@ -32,6 +32,7 @@
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
 #include "snapshot.h"     // snapshot_tick — on-demand guest RAM capture at a frame boundary
 #include "repl.h"         // class Repl — interactive inspection, pumped from this frame boundary
+#include <time.h>         // clock_gettime — wall clock on the PSXPORT_DEBUG=pace lines
 
 namespace {
 
@@ -121,6 +122,57 @@ constexpr uint32_t kVblankWait = 0x8005DD0Cu;
 // clamping is how a wrong timebase hides.
 constexpr int kMaxVblanksPerWait = 300;   // ~5s at 60Hz
 
+// ── `PSXPORT_DEBUG=pace` — the instrument that CHECKS `GameConfig::paceQuota` against a real run ──
+//
+// paceQuota declares how many vblanks ONE `gpu_pace_frame` call represents, and the framework sleeps
+// exactly `quota/60 s` per call on the strength of that declaration (gpu_native.cpp
+// gpu_pace_subframe). It is therefore a claim about THIS FILE's calling cadence, and a wrong claim
+// does not fail — it silently multiplies the port's frame time and reads as "the port is slow".
+// Spider-Man's paceQuota sat at 2 against a 1-vblank cadence for exactly that reason, and the port
+// rendered at half rate while presenting normally. So measure the cadence rather than asserting it.
+//
+// The tallies are kept UNCONDITIONALLY, one increment per event, on the same lines as the events
+// themselves — `lucent::debug` does not evaluate its arguments when the channel is off, so a counter
+// bumped inside the log call would only count while someone was watching, which is the classic
+// instrument that cannot report its own denominator.
+//
+// WHAT A NEGATIVE LOOKS LIKE HERE, by construction. `pace` lines ABSENT entirely means either the
+// channel is off or this build never reached a vblank wait — not "the port never paced". A `pace`
+// line whose `pace` and `vbl` counters diverge means this loop paced a different number of times
+// than it advanced vblanks, which is the exact defect paceQuota encodes; equal counters with
+// `vbl/s` well under 60 means the pacer is sleeping longer than one vblank per call (a quota too
+// high, or the host missing the deadline) and the two are told apart by `quota` on the same line.
+// BLIND SPOTS: pace calls made from anywhere else. Bounded by grep — the only other callers in the
+// framework are native_boot.cpp / native_stub.cpp (the native frame loop, which this port does not
+// run: the guest owns its loop) and fps60.cpp (unreachable here — its eligibility needs
+// RenderQueue::drawWorldQuad, which this repo never calls). `present` likewise counts only the
+// presents THIS loop makes; the framework's boot stub presents outside it.
+//
+// AND THIS INSTRUMENT DOES NOT MEASURE THE DRAW RATE — say so rather than let a reader assume the
+// vblank rate is it. The guest's DrawOTag reaches the GPU through DMA2, and the framework drains the
+// queue at the END OF THAT WALK (gpu_native.cpp `gpu_dma2_linked_list` -> rq.flush), so by the time
+// this loop flushes, the queue is already consumed and this boundary cannot see a draw happen. The
+// rate of NEW rendered frames is `rebuild_geom` from `PSXPORT_DEBUG=presentskip`, which is a
+// framework counter over the composite decision; run the two channels together.
+unsigned long g_pace_entries = 0;   // gpu_pace_frame calls made from this loop
+unsigned long g_pace_vbl     = 0;   // vblanks this loop advanced (loop iterations)
+unsigned long g_pace_present = 0;   // gpu_present calls made from this loop
+// Iterations where THIS loop was the queue's first consumer (n>0 and not yet consumed). Expected 0
+// for this port, per the paragraph above — it is the instrument's own check that the sample point is
+// downstream of the DMA2 flush, so a NON-zero value is the interesting answer and means a second
+// producer is queueing outside the OT walk.
+unsigned long g_pace_rq_unconsumed = 0;
+
+// Wall clock on the same line as the counters, so the rates are derivable from the log alone
+// without trusting a separate timestamp source to share this one's clock.
+double pace_ms() {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  static double t0 = -1;
+  double now = ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+  if (t0 < 0) t0 = now;
+  return now - t0;
+}
+
 void vblank_wait(Core* c) {
   const int32_t target = (int32_t)c->r[4];
   int32_t cur = (int32_t)c->mem_r32(kVblankCounter);
@@ -150,6 +202,10 @@ void vblank_wait(Core* c) {
     // Here is the right place for the same reason the event delivery below is: this wait IS the
     // port's per-frame boundary. Flush before present, so the frame being presented is the one the
     // guest just drew.
+    // Read the queue BEFORE it is flushed, for the `pace` line: `n>0 && !consumed` would mean this
+    // loop is the queue's FIRST consumer this frame. See g_pace_rq_unconsumed above.
+    const int rq_n = c->game->rq.n, rq_unconsumed = (rq_n > 0 && !c->game->rq.consumed) ? 1 : 0;
+    g_pace_rq_unconsumed += (unsigned)rq_unconsumed;
     c->game->rq.flush(c);
     // FILL THE PAD BUFFERS. Spyro's libpad (0x80069000-0x8006C000) fills them from SIO0 inside the
     // VBlank IRQ handler, and this runtime raises no IRQs — so on the port that state machine never
@@ -192,6 +248,7 @@ void vblank_wait(Core* c) {
     // holds real time to the frame interval so the game runs at its intended speed rather than
     // spinning as fast as the host can.
     gpu_present(c);
+    ++g_pace_present;
     // ADVANCE THE AUDIO MIXER. Exactly one video field of SPU clocks per displayed frame, drained to
     // the sink. Nothing else in this port ever advanced it: main.cpp opens the audio sink with
     // `spu_audio.init()` and `spu_audio.frame()` was called NOWHERE, so the SPU mixed no samples and
@@ -207,6 +264,7 @@ void vblank_wait(Core* c) {
     // here by grep before writing this: zero call sites.
     c->game->spu_audio.frame();
     gpu_pace_frame(c);
+    ++g_pace_entries;
     // Deliver the per-frame IRQ-driven BIOS events. The framework normally does this in
     // native_step_frame — but that loop NEVER RUNS here, because the guest still owns its own frame
     // loop (game_hooks.cpp). This wait is the port's real per-frame point, so it is where the events
@@ -221,6 +279,11 @@ void vblank_wait(Core* c) {
     if (guestOwnsCount) cur = (int32_t)c->mem_r32(kVblankCounter);
     else                cur++;
     advanced++;
+    ++g_pace_vbl;
+    lucent::debug("pace", "t={:.1f}ms vbl={} pace={} present={} rq_unconsumed={} | quota={} n={} "
+                          "target={} cur={} rq_n={} unconsumed={}",
+                  pace_ms(), g_pace_vbl, g_pace_entries, g_pace_present, g_pace_rq_unconsumed,
+                  c->cfg ? c->cfg->paceQuota : 0u, advanced, target, cur, rq_n, rq_unconsumed);
   }
 
   c->mem_w32(kVblankCounter, (uint32_t)cur);

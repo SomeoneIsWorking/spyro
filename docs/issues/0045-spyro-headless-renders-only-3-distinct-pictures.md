@@ -1,9 +1,9 @@
 ---
 id: 45
-title: spyro flickering graphics (USER-REPORTED, still OPEN) — the "headless renders only ~3 pictures then stalls" premise is REFUTED; there is NO headless/windowed divergence
-status: open
-symptom: USER, windowed: "spyro has flickering graphics". (The headless "frozen picture" that was recorded here on 2026-08-05 was an INSTRUMENT ARTEFACT, not a symptom — see below.)
-tags: render,flicker,user-reported,corrected,instrument-artefact
+title: spyro flickering graphics (USER-REPORTED) — ROOT-CAUSED: the composite had no persistence; fix measured, awaiting the user's verdict. (The old "headless renders only ~3 pictures then stalls" premise is REFUTED.)
+status: fix-landed-awaiting-user
+symptom: USER, windowed: "spyro has flickering graphics". ROOT CAUSE: the composite had no persistence — upload_vram overwrote all of s_vram_tex from guest CPU VRAM every present, erasing the rasterized picture out of the buffer about to be displayed. Fixed by uploading only gpu_vk_dirty()'s regions. (The headless "frozen picture" that was recorded here on 2026-08-05 was an INSTRUMENT ARTEFACT, not a symptom — see below.)
+tags: render,flicker,user-reported,corrected,instrument-artefact,persistence,double-buffer,framework
 created: 2026-08-05
 updated: 2026-08-06
 ---
@@ -16,8 +16,70 @@ updated: 2026-08-06
 
 ## The live bug
 
-USER-REPORTED 2026-08-05, in a WINDOWED run: **"spyro has flickering graphics."** That is what this
-entry tracks and it is OPEN. Nothing below closes it.
+USER-REPORTED 2026-08-05, in a WINDOWED run: **"spyro has flickering graphics."**
+
+## ROOT-CAUSED AND FIXED 2026-08-06 — the composite had NO PERSISTENCE
+
+**Cause.** `upload_vram()` (`external/psxport/runtime/recomp/gpu_vk.cpp`) memcpy'd ALL 1024x512 of
+guest CPU VRAM over `s_vram_tex` on every present. Under `vk_path()` the guest's POLYGONS never reach
+CPU VRAM — they go to the VK rasterizer; only GP0 uploads/fills/copies land in the CPU array (that is
+I008's mechanism, one level up). So every present erased every pixel the rasterizer had drawn,
+including the whole of the buffer this double-buffered guest was about to display. The frames that
+*did* show a scene only did so because `RenderQueue::flush` re-emits an already-consumed queue on the
+guest's idle field (its `reset()` is deferred to the next `push()`), which happened to re-draw the
+previous frame's geometry into the buffer that was about to be scanned out.
+
+**Fix.** `gpu_vk_dirty(x,y,w,h)` already received the rect of every guest CPU->VRAM write and threw it
+away (it kept only a count, because the upload was unconditional). Keep it, in `VramDirty`
+(`runtime/recomp/vram_dirty.h`), and upload ONLY those regions. The composite is then a persistent
+framebuffer, which is what console VRAM is.
+
+**Evidence — A/B on ONE tree, ONE binary, one line toggled.** WINDOWED, the user's own pad replay
+`replays/bugs/flicker-session.pad`, 20 CONSECUTIVE presents 2200..2219 captured with
+`PSXPORT_PRESENT_SHOT_AT` into a per-run directory and checked against their own `present_shot` log
+lines. Instrument: **distinct colour count** (`tools/ppm_look.py`).
+
+| | presents 2200..2219, distinct colours |
+|---|---|
+| control (whole-canvas upload) | 3169, **2**, 3158, **2**, 3171, **2**, 3156, **2**, 3174, **2**, 3140, **2**, 3171, **2**, 3179, **2**, 3160, **2**, 3149, **2** |
+| fix (dirty-rect upload) | 3169, 3169, 3158, 3158, 3171, 3171, 3156, 3156, 3174, 3174, 3140, 3140, 3171, 3171, 3179, 3179, 3160, 3160, 3149, 3149 |
+
+The 2-colour frames are a solid `0xffdead` — the guest's own clear fill, uploaded from CPU VRAM with
+no geometry over it. The scene presents are **md5-identical** across the two arms, so the change adds
+nothing to and removes nothing from the frames that were already right.
+
+**`non-black %` reads 93.33% on BOTH classes** and would have certified the broken frames as fine.
+That is why the instrument here is distinct-colour count.
+
+**How the mechanism was pinned down BEFORE any fix was written:**
+* `PSXPORT_DEBUG=presentskip`: all 20 sampled presents are `PRESENT_REBUILD_GEOM`. The geometry batch
+  is NOT empty on the flat frames, so afca817d/7a4faf5a's empty-batch classification is not involved.
+* `PSXPORT_DEBUG=rqflush` (new, **I044**): the queue y-ranges alternate `y=[-93..332]` and
+  `y=[147..572]` — the two display buffers, exactly 240 apart — and one guest frame issues a fresh
+  flush plus two re-emits.
+* **The discriminating experiment:** deleting the deferred-reset re-emit *alone*, with no persistence
+  change, turned **20/20 presents flat** (2 colours). That is what proved the re-emit was the only
+  thing putting geometry into the displayed buffer.
+
+**No regression on the upload-only screens** (issue 0043 / C149): presents 30/60/120/200 = 2.7%
+non-black / 252 colours (SCE card); 300..319 = 27.2% / 16216 (Universal globe), 20 consecutive and
+identical; 600 = 93.3% / 2117. Every number matches C149's recorded post-7a4faf5a values.
+Framework suite 19/19 (`test_vram_persistence` is new). Headless boot: 111,489 presents, no
+`rec_dispatch_miss`, no watchdog trip.
+
+**WHAT THIS DOES NOT COVER — read before treating the report as closed:**
+* Only ONE scene was sampled: the memory-card / title screen the user's pad replay ends on. The
+  replay never reaches a moving-camera gameplay scene, and I could not drive the port into one, so
+  **no 3D gameplay scene with camera motion was measured.** Stale-pixel ghosting there (if the guest
+  ever fails to fully repaint its back buffer) would not have shown up in anything I ran.
+* Cutscenes, FMV->gameplay transitions, the pause screen and level loads were not sampled.
+* A GP0 VRAM->VRAM copy still reads CPU VRAM, which under `vk_path()` does not contain rasterized
+  geometry — pre-existing, untouched by this fix, and named here so it is not mistaken for new.
+
+The USER closes this. Measured under the conditions above — does the flicker look gone to you?
+
+Framework patch: `coord/patches/vram-persistence.diff` + `coord/patches/vram-persistence-newfiles/`;
+claim **C157**; coordination `coord/claims/vram-persistence/`.
 
 ## What was REFUTED, and why it matters
 

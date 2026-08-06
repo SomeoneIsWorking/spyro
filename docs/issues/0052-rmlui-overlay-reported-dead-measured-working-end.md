@@ -88,3 +88,38 @@ display-scale-aware measurement. Also unmeasured: legibility/layout of the menu
 
 ### Note (2026-08-06)
 Defect 8: mods.cpp:3 says the settings file is '(gitignored)'. It is not — neither spyro/.gitignore nor Tomba2Engine/.gitignore lists psxport_settings.ini, and Mods::save() writes it to the REPO ROOT. Toggling one menu row therefore leaves an untracked file in the tree (observed this session; moved to scratch/rmlprobe/psxport_settings.ini.from_probe). Fix: add it to each .gitignore, or default the path into scratch/.
+
+### Note (2026-08-06)
+FRAMEWORK FIX LANDED IN A PATCH (not yet in spyro's checkout) — coord/patches/rmlui-overlay.diff, claim coord/claims/rmlui-overlay/.
+Made in Tomba2Engine/external/psxport. SPYRO'S CHECKOUT IS UNTOUCHED and spyro was NOT rebuilt or
+re-measured; this note records what the patch addresses, not a spyro verification.
+
+Of the defects this issue named:
+ * (1) 'overlay up' logged after a failed LoadDocument — FIXED. init() now separates mInited (RmlUi is
+   up, shutdown must free) from hasMenu() (a document exists). A failed LoadDocument logs
+   'MENU UNAVAILABLE, the overlay is up but has NOTHING TO SHOW' and never the success line. ESC now
+   refuses to toggle a menu that does not exist and warns, and wantsKeyboard() returns false without a
+   document — previously ESC flipped mVisible on a null document, showed nothing, and still made
+   wantsKeyboard() true, so the port swallowed every gameplay key with no menu and no way out.
+ * (3) gpu_vk.cpp `if (!s_headless) overlay_glue_init(...)` — FIXED, and this was the one that made the
+   whole thing undiagnosable. The overlay is now brought up in BOTH legs from sink_size() with the
+   sink's colour format; s_win may be NULL and is used only for input translation. MEASURED: a headless
+   Tomba!2 run now prints `[rmlui] overlay up (headless sink 960x720, 3/3 fonts, ...)`, which had never
+   happened before.
+ * (4) the points-vs-pixels scale mismatch, this issue's LEADING SUSPECT — FIXED BY CONSTRUCTION, NOT
+   MEASURED. RmlOverlay::newFrame() sized the context from SDL_GetWindowSize (LOGICAL POINTS) while the
+   render interface viewport comes from the swapchain (PIXELS). It now tracks gpu_vk_video_status()'s
+   sink, which is SDL_GetWindowSizeInPixels (gpu_vk.cpp:159) — so context and viewport are two views of
+   ONE pixel measurement and the mismatch is structurally impossible. Headless CANNOT exercise this (no
+   display scale), so it needs one windowed run by the USER at a scale other than 1.0 to confirm it was
+   the user's symptom.
+ * (2) asset-dir resolution (one env var + a cwd-relative fallback, no exe-relative default) — NOT
+   FIXED. Still the reproducible failure when the binary is launched directly.
+ * (5) OneShotWait fence-per-buffer, (6) Tomba!2 guest addresses in overlay_glue, (7) the stale
+   pad_input comment, (8) psxport_settings.ini not gitignored — ALL STILL OPEN, none touched.
+
+ALSO NEW, and it makes the UI diagnosable at all: a REPL/debug-server command `menu [on|off|toggle]`.
+The overlay could previously only be opened by an SDL ESC key event, i.e. only through a window, so
+every instrument this project actually uses could bring it up but never open it. It reports its own
+refusals ('overlay NOT initialised' / 'has NO DOCUMENT'), so a run that changed nothing cannot read
+like a run that worked.

@@ -67,7 +67,39 @@ identical; 600 = 93.3% / 2117. Every number matches C149's recorded post-7a4faf5
 Framework suite 19/19 (`test_vram_persistence` is new). Headless boot: 111,489 presents, no
 `rec_dispatch_miss`, no watchdog trip.
 
-**WHAT THIS DOES NOT COVER — read before treating the report as closed:**
+## VERIFIED IN REAL 3D GAMEPLAY 2026-08-06 — NO GHOSTING (claim C166)
+
+The gap named below ("no 3D gameplay scene with camera motion was measured") is now CLOSED, and the
+answer is negative: **the fix holds and introduces no ghosting.**
+
+The scene: stage 0 (FIELD), the ATTRACT/DEMO the game enters by itself ~1941 drawn frames into an
+idle boot — the Artisans home world with Spyro running and the camera panning. No input needed and no
+memory-card screen to pass; `PSXPORT_DEBUG=scene` shows the boot cycling stage 13 -> stage 0 (866-1106
+drawn frames each) indefinitely. 24 CONSECUTIVE presents, 4600..4623, captured into a per-run
+directory and checked against their own `present_shot` log lines.
+
+Instrument: **`tools/present_seq.py --ghost`** (I047) — distinct colours, %pixels changed vs the
+previous present, vs 2 presents back (the same display buffer), and a THREE-WAY ghost test: pixels
+that differ from N-1 but EQUAL N-2, i.e. content that reverted to an older buffer instead of being
+repainted. A pairwise diff cannot see ghosting; that is why the tool exists.
+
+| presents 4600..4623, in-gameplay | fix (dirty-rect upload) | control (whole-canvas upload) |
+|---|---|---|
+| flat presents (<=2 colours) | **0 of 24** | 15 of 24 |
+| ghost-candidate pixels | **0** across 22 comparisons | 5,524,275 (mean **36.3%** of the frame) |
+| presents with >0.1% ghost candidates | **0 of 22** | 13 of 22, bbox (0,24)-(959,695) — the whole picture |
+| pixels changed on each new drawn frame | 68.8-75.2% | n/a (alternates flat) |
+
+Both legs are the SAME tree and the SAME window, one line toggled (`upload_vram`'s region argument),
+so the instrument is validated against BOTH classes on the gameplay class specifically — the exact
+generalisation failure this entry's post-mortem records.
+
+`non-black %` reads **93.33% on both**, again.
+
+**Still not covered:** cutscenes, FMV->gameplay transitions, the pause screen and level loads; and a
+GP0 VRAM->VRAM copy of a rasterised region still reads CPU VRAM (pre-existing, untouched).
+
+**WHAT THE 2026-08-06 ENTRY DID NOT COVER (now closed above for gameplay):**
 * Only ONE scene was sampled: the memory-card / title screen the user's pad replay ends on. The
   replay never reaches a moving-camera gameplay scene, and I could not drive the port into one, so
   **no 3D gameplay scene with camera motion was measured.** Stale-pixel ghosting there (if the guest

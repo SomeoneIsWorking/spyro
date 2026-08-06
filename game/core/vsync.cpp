@@ -458,6 +458,15 @@ void spyro_host_turn(Core* c) {
 
 }  // namespace
 
+// spyro_deliver_field — ONE display field, for a caller outside this file.
+//
+// The native render leg's frame tail owns Spyro's >= 2-field throttle (game/render/frame_env.cpp),
+// and that throttle has to spend the SAME field this file defines — flush, pad, the guest's vblank
+// callback, present — or the two legs run on two timebases that drift. So the field is exported
+// rather than reimplemented; `deliver_field` itself stays file-local because its re-entrancy guard
+// and its logging are this file's business.
+bool spyro_deliver_field(Core* c, const char* site) { return deliver_field(c, site); }
+
 void spyro_register_vsync(Game* g) {
   // Registration goes through PlatformHle::register_, which validates the address against
   // GameConfig::hle's windows — so this only installs if the libetc window actually covers it.

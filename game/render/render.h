@@ -21,6 +21,10 @@
 #include <cstdint>
 class Core;
 
+// The stage-selector value whose arm has a native producer today (game/render/fx_title_menu.cpp).
+// Named here because the seam's dispatch and the producer's own comments both have to agree on it.
+constexpr uint32_t kStageFrontEnd = 13u;
+
 // The guest's per-frame RENDER DRIVER, called once per drawn frame from its main() 0x80012204 at
 // 0x8001227C. It resets the OT/packet pool, dispatches on the stage selector below, and ends in the
 // display tail (DrawSync, the >=2-vblank throttle, PutDispEnv/PutDrawEnv, DrawOTag). It IS the
@@ -64,7 +68,7 @@ public:
   static void installModeFromConfig(Core* c);
 
   // ONE frame's picture: the reference OT walk, or the native producers.
-  void drawFrame() const;
+  void drawFrame();
 
   // WHICH SCENE the game is drawing right now, from the guest's own stage selector. A read of game
   // state, used both to dispatch a native producer and — on the reference leg — to report what the
@@ -73,9 +77,23 @@ public:
 
 private:
   void referenceOtWalk() const;                          // the guest's render driver, unmodified
-  void renderScene(const Scene& sc) const;               // the native picture (no producer yet)
-  [[noreturn]] void abortUnimplemented(const Scene& sc) const;
+  void renderScene(const Scene& sc) const;               // the native picture — dispatches producers
+  [[noreturn]] void abortUnimplemented(const Scene& sc, const char* why) const;
   void reportBacklog(const Scene& sc) const;             // scene.cpp — the arm/layer detail
 
+  // ── PRODUCERS ─────────────────────────────────────────────────────────────────────────────────
+  // game/render/fx_title_menu.cpp — stage 13's front-end sprite layer (guest 0x8007CD38's picture,
+  // driven by 0x8007CEE4's own state machine). False = this frame's menu mode has no producer, so
+  // the seam must abort rather than present the scene without its menu.
+  bool titleMenuRender(int32_t drawOfsX, int32_t drawOfsY,
+                       int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1) const;
+  void titleMenuBacklogReport() const;                   // what stage 13 still owes, once per run
+  bool spriteEmit(int32_t x, int32_t y, int32_t id, uint32_t style,
+                  int32_t drawOfsX, int32_t drawOfsY,
+                  int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1) const;
+
   Core* mC;
+  // The DRAWENV this frame is being drawn with, set by drawFrame()'s call to nativeFrameBegin() on
+  // the native leg only. 0 on the reference leg, where the guest's own driver owns the env.
+  uint32_t mEnv = 0;
 };

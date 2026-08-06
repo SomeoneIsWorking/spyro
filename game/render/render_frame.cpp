@@ -10,6 +10,7 @@
 #include "game.h"         // Game::rq — the render queue the native producers emit into
 #include "cfg.h"          // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
+#include "frame_env.h"    // nativeFrameBegin/End — the frame the native producers draw into
 #include <lucent/log.h>
 #include <stdlib.h>       // abort
 
@@ -52,23 +53,32 @@ void SpyroRenderer::referenceOtWalk() const {
   rc0(mC, kFrameRenderDrv);
 }
 
-// THE NATIVE PICTURE. Today no scene has a producer, so every scene ends in the abort below.
-//
-// THAT ABORT IS THE DELIVERABLE, not a gap being papered over. A branch that quietly dispatched the
-// guest's renderer, or drew something plausible, would let a half-ported scene read as finished — and
-// the reason this project keeps re-deriving render bugs is that a plausible picture is
+// THE NATIVE PICTURE. One branch per stage that has a producer; every other stage ends in the abort
+// below, and that abort is a DELIVERABLE rather than a gap being papered over. A branch that quietly
+// dispatched the guest's renderer, or drew something plausible, would let a half-ported scene read as
+// finished — and the reason this project keeps re-deriving render bugs is that a plausible picture is
 // indistinguishable from a correct one. Stopping with the scene identity printed turns the porting
 // backlog into a crash sequence in dependency order.
 //
-// When the first producer is built it dispatches HERE, on `sc` — one branch per RE'd stage, each
-// drawing from the game's own state into the render queue, each still ending at the same rq.flush in
-// drawFrame(). Stages with no producer keep falling through to the abort.
+// STAGE 13 IS THE ONE STAGE WITH A PRODUCER. Its front-end sprite layer is native
+// (game/render/fx_title_menu.cpp); its 3D backdrop is not, and `titleMenuBacklogReport` names the
+// five guest calls that would have drawn it, once per run, at warn level. The producer itself still
+// returns false — and this still aborts — for the menu modes it does not implement, so the seam's
+// discipline holds one level finer than the stage.
 void SpyroRenderer::renderScene(const Scene& sc) const {
-  abortUnimplemented(sc);
+  if (sc.stage != kStageFrontEnd)
+    abortUnimplemented(sc, "no producer is registered for this stage");
+  static bool reported = false;
+  if (!reported) { reported = true; titleMenuBacklogReport(); }
+  const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
+  const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
+  const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
+  if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1))
+    abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
 }
 
-[[noreturn]] void SpyroRenderer::abortUnimplemented(const Scene& sc) const {
-  lucent::error("render", "NATIVE RENDER NOT IMPLEMENTED — stage selector = {}", sc.stage);
+[[noreturn]] void SpyroRenderer::abortUnimplemented(const Scene& sc, const char* why) const {
+  lucent::error("render", "NATIVE RENDER NOT IMPLEMENTED — stage selector = {} ({})", sc.stage, why);
   reportBacklog(sc);
   lucent::error("render", "  no fallback is installed on purpose: a native branch that drew "
                           "something plausible would make this gap invisible. Port the scene above, "
@@ -77,7 +87,7 @@ void SpyroRenderer::renderScene(const Scene& sc) const {
 }
 
 // ONE frame's picture.
-void SpyroRenderer::drawFrame() const {
+void SpyroRenderer::drawFrame() {
   const Scene sc = classifyScene();
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the denominator
   // is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It is how "which
@@ -88,6 +98,11 @@ void SpyroRenderer::drawFrame() const {
                 mC->rsub.mode.psxRender() ? "psx_render" : "native",
                 sc.arm ? sc.arm->what : "(outside 0..15 — the guest draws nothing)");
   if (mC->rsub.mode.psxRender()) { referenceOtWalk(); return; }
+  // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
+  // and programs the GPU from it; on this leg nothing does, so the producers would emit into the
+  // buffer that is NOT on screen and read as broken. game/render/frame_env.cpp owns that — it is
+  // re-frontier `frame.own-render-driver` parts (1) and (2), written from the game's own DRAWENV.
+  mEnv = nativeFrameBegin(mC);
   renderScene(sc);
   // THE ONE PLACE NATIVE PRIMS REACH THE RENDERER. Producers push into the render queue as they draw;
   // nothing is on screen until the queue is emitted, and this is that emit. Unreachable while every
@@ -95,4 +110,7 @@ void SpyroRenderer::drawFrame() const {
   // it, rather than remembered later when the first producer renders nothing and the day goes into
   // finding out why.
   mC->game->rq.flush(mC);
+  // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see
+  // frame_env.cpp for why that displays the PREVIOUS iteration's buffer and why that is correct.
+  nativeFrameEnd(mC, mEnv);
 }

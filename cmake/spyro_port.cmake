@@ -27,6 +27,7 @@ set(GAME_SRC
   game/core/game_hooks.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp
+  game/core/frame_loop.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
   game/core/native_leaf.cpp

@@ -12,4 +12,10 @@ ROOT CAUSE: gpu_pace_subframe (external/psxport/runtime/recomp/gpu_native.cpp) r
 
 Headless was never affected (pacer is a no-op without a window): the same run does ~1000fps headless, and the windowed CPU profile had only 486 samples in 55s (99.5% blocked) — the smoking gun that this was a sleep, not CPU work.
 
+> **SUPERSEDED 2026-08-06 (issue #50, claim C159).** "The pacer is a no-op without a window" WAS THE
+> DEFECT, and it is gone: `!gpu_has_window()` has been deleted from `gpu_pace_subframe`, so a headless
+> run now paces exactly like a windowed one and does ~58 fps, not ~1000. Nothing above about the
+> scratchpad-quota root cause changes — only the sentence saying headless is immune. If you want the
+> unpaced run, pass `PSXPORT_NOPACE=1`; that is now the ONLY thing that suppresses pacing.
+
 FIX: GameConfig::paceQuota (appended at end, positional-init safe) now carries the per-call quota; Spyro sets 1 (vsync.cpp paces once per vblank; 1 vblank = 1/60s). The legacy byte-read stays as the 0 fallback so the reference consumer is untouched. Windowed: 2673 frames in 45s (~59.4 vblanks/s = the true 60Hz timebase; display = 30fps per C072's 2-vblank flip). Gate 16/16. NOTE: this also halves the boot's previous per-vblank sleep, so the whole game now runs at real-time instead of the old half-speed 30 vblanks/s; earlier '30fps' claims were display-vs-vblank ratios, not wall clock.

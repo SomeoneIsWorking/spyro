@@ -74,7 +74,10 @@ def main():
                PSXPORT_DEBUG="wwatch",
                PSXPORT_WWATCH=f"{lo:08X},{hi:08X}",
                PSXPORT_WWATCH_BT="1",
-               PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1", PSXPORT_WATCHDOG="0",
+               # PSXPORT_NOPACE: a write hunt, not a play session — run as fast as the host can.
+               # Headless is paced like a windowed run now, so "fast" has to be ASKED for.
+               PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1", PSXPORT_NOPACE="1",
+               PSXPORT_WATCHDOG="0",
                PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
     print(f"watching [{lo:08X},{hi:08X}) for {a.secs}s …", file=sys.stderr)
     with open(log, "w") as f:

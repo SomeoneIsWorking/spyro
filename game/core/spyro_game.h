@@ -6,6 +6,7 @@
 
 struct GameHooks;
 class Game;
+class Core;
 
 const GameHooks* spyro_game_hooks();     // game/core/game_hooks.cpp — the (mostly null) Phase-0 vtable
 void spyro_install_game_config();        // game/core/game_config.cpp — installs GameConfig + hooks
@@ -46,3 +47,11 @@ void spyro_register_native_render();
 // wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and running
 // the five contributing renderers interpreted (11 sites). Inert at 4:3.
 void spyro_register_wide_clip();
+
+// frame_loop.cpp — the PORT's own per-frame loop, a readable port of the guest's main() 0x80012204.
+// Off unless PSXPORT_SPYRO_FRAME_LOOP=1, in which case bootInit runs THIS loop instead of dispatching
+// the guest's main. It is the seam every native-graphics step needs: a per-LOGIC-FRAME point in port
+// code above the guest's renderers. See the file header for why the framework's native_step_frame
+// cannot serve that role here.
+bool spyro_frame_loop_enabled();
+[[noreturn]] void spyro_frame_loop_run(Core* c);

@@ -14,6 +14,11 @@
 #
 # Env knobs: PSXPORT_NOAUDIO=1 (mute), PSXPORT_NOWINDOW=1 (headless), CC=clang/gcc,
 #            PSXPORT_FORCE_RECOMP=1 (always re-emit the substrate).
+#            PSXPORT_NOPACE=1 (run as fast as the host can). HEADLESS IS NOT UNPACED: headless
+#            means no window surface and no audio device, nothing else, so a headless run paces
+#            at the game's field rate exactly like a windowed one. A gate or tool that wants
+#            frames rather than real time asks for NOPACE explicitly — it is the only switch
+#            that means that.
 #
 # no pipefail: some steps use `cmd | head -1`, where head closing early would SIGPIPE the producer
 # and (under pipefail) abort the script; results are validated explicitly instead.

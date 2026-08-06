@@ -34,10 +34,15 @@ extern "C" void rec_dispatch(Core* c, uint32_t addr);
 // CONSEQUENCE, stated plainly: Spyro's main() contains the game's OWN frame loop, so this call does
 // not return — the framework's native_step_frame loop never runs, and per-frame hooks are never
 // reached. That is correct for Phase 0 ("everything dispatched to the substrate") and it is why the
-// per-frame GameConfig group is still 0. Taking over the frame loop is a later, separately-gated
-// step that requires RE'ing Spyro's main loop first.
+// per-frame GameConfig group is still 0.
+//
+// PSXPORT_SPYRO_FRAME_LOOP=1 takes that loop over, in GAME code (frame_loop.cpp), which is where it
+// has to live: the framework's native_step_frame is unreachable in this port and is shaped for
+// Tomba!2's per-frame OT model, not Spyro's (C073). Off by default — the loop is bring-up, and its
+// native render branch aborts by design.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 static void spyro_bootInit(Core* c) {
+  if (spyro_frame_loop_enabled()) spyro_frame_loop_run(c);   // does not return
   rec_dispatch(c, c->cfg->gameMain);
 }
 

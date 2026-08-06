@@ -195,8 +195,10 @@ def run_port(secs):
         sys.exit("overlay_scan: no disc image (set PSXPORT_SPYRO_DISC or .env)")
     log = os.path.join(REPO, "scratch", "logs", "overlay_scan.log")
     os.makedirs(os.path.dirname(log), exist_ok=True)
+    # PSXPORT_NOPACE: this is a scan, not a play session — run as fast as the host can. Headless is
+    # paced like a windowed run now (they are one program), so "fast" has to be ASKED for.
     env = dict(os.environ, PSXPORT_DEBUG="cdq", PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1",
-               PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport",
+               PSXPORT_NOPACE="1", PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport",
                PSXPORT_SPYRO_DISC=disc)
     with open(log, "w") as f:
         subprocess.run(["timeout", "-s", "KILL", str(secs), "./scratch/bin/spyro_port", EXE],

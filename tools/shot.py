@@ -116,8 +116,10 @@ def main():
     os.makedirs(out, exist_ok=True)
     vram = os.path.join(out, f"vram_f{frame}.png")
 
+    # PSXPORT_NOPACE: drive to the requested frame as fast as the host can — headless is paced like
+    # a windowed run now (they are one program), so "fast" has to be ASKED for.
     env = dict(os.environ, PSXPORT_REPL="1", PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1",
-               PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
+               PSXPORT_NOPACE="1", PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
     pre_mtime = os.path.getmtime(vram) if os.path.exists(vram) else None
     script = f"run {frame}\nvram {os.path.relpath(vram, REPO)}\nquit\n"
     print(f"running to frame {frame} …", file=sys.stderr)

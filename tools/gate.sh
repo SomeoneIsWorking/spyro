@@ -60,8 +60,13 @@ fi
 BIN_ID_BEFORE=$(stat -c '%s:%Y' scratch/bin/spyro_port)
 
 echo "[gate] running ${SECS}s headless…"
+# PSXPORT_NOPACE=1 — THE GATE WANTS FRAMES, NOT REAL TIME. Headless used to be unpaced by accident
+# (the pacer opened with `if (!gpu_has_window()) return`), which made every headless timing number a
+# statement about a program the user never runs. Headless and windowed are one program now, so a
+# headless run PACES — and a gate that measures boot PROGRESS in a fixed wall-clock budget has to ask
+# for the unpaced run explicitly. That is exactly what this switch has always been for.
 PSXPORT_DEBUG=cdq,ovload,gpu,ndiff PSXPORT_GPU_DUMP="$OUT/frames:5" PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
-  PSXPORT_NDIFF=8 \
+  PSXPORT_NOPACE=1 PSXPORT_NDIFF=8 \
   PSXPORT_WATCHDOG=15 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
   timeout -s KILL "$SECS" ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$LOG" 2>&1
 RC=$?

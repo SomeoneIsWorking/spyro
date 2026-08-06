@@ -52,8 +52,10 @@ def run_port(secs):
         sys.exit("no disc image (set PSXPORT_SPYRO_DISC or .env)")
     log = os.path.join(REPO, "scratch", "logs", "depth_cov.log")
     os.makedirs(os.path.dirname(log), exist_ok=True)
+    # PSXPORT_NOPACE: this is a scan, not a play session — run as fast as the host can. Headless is
+    # paced like a windowed run now (they are one program), so "fast" has to be ASKED for.
     env = dict(os.environ, PSXPORT_DEBUG="ndepth", PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1",
-               PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
+               PSXPORT_NOPACE="1", PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
     print(f"running {secs}s …", file=sys.stderr)
     with open(log, "w") as f:
         subprocess.run(["timeout", "-s", "KILL", str(secs),

@@ -14,22 +14,25 @@
 #include <lucent/log.h>
 #include <stdlib.h>       // abort
 
-// PSXPORT_RENDER_PSX -> the framework's per-Core RenderMode.
-//
-// WHY THE GAME DOES THIS. The framework parses that flag in `native_boot_run` (native_boot.cpp), and
-// this port never calls it: spyro boots through `main()` -> `dc_boot_init` -> the bootInit hook, a
-// path `native_boot_run` is not on. So the flag would be silently inert here and the mode would be
-// stuck at its default. This is the flag's own parse, landing in the framework's own per-Core
-// variable — not a second switch with Spyro's name on it. (The duplication is a framework wart:
-// config parsing that belongs at Core setup lives inside one particular boot spine. Worth fixing
-// upstream; out of scope for a game-side step.)
+// WHAT THE NATIVE LEG MEANS IN THIS PORT — one log line, no configuration. The render path itself is
+// the framework's (installed in dc_boot_init); this only says what choosing `native` implies HERE.
 void SpyroRenderer::installModeFromConfig(Core* c) {
-  const bool psx = cfg_on("PSXPORT_RENDER_PSX") != 0;
-  c->rsub.mode.setPsxRender(psx);
-  lucent::info("render", "render path = {}",
-               psx ? "psx_render REFERENCE (the guest's render driver 0x8001ED5C)"
-                   : "NATIVE (aborts on the first frame naming the scene, by design — "
-                     "PSXPORT_RENDER_PSX=1 for the reference path)");
+  // NOTHING TO PARSE HERE ANY MORE. This used to re-read PSXPORT_RENDER_PSX itself, and its own comment
+  // named the reason as a framework wart — "config parsing that belongs at Core setup lives inside one
+  // particular boot spine". That is fixed upstream: the framework installs the render path in
+  // `dc_boot_init` (psxport runtime/recomp/render_path.cpp + native_boot.cpp), a chokepoint THIS port
+  // DOES go through — so the path is already correct here, including on a run that never enables this
+  // frame loop. What is left is the one thing the framework cannot know.
+  // What the NATIVE path means in THIS port specifically — which the framework cannot know. Stated
+  // precisely, because the coarse version ("it aborts on anything not native") is not what the code
+  // does: it aborts per STAGE (no producer registered) and when the stage-13 producer declines a menu
+  // mode. Guest-drawn parts of a stage that DOES have a producer do not abort — stage 13's 3D backdrop
+  // is guest-drawn and only warns, once, via titleMenuBacklogReport.
+  if (!c->rsub.mode.psxRender())
+    lucent::info("render", "native path: ONE producer (stage {} front-end sprites, C167). Aborts on a stage with "
+                           "no producer; guest-drawn parts WITHIN a producer's stage only warn. "
+                           "PSXPORT_RENDER_PATH=gte for the reference picture (guest driver 0x8001ED5C).",
+                 (int)kStageFrontEnd);
 }
 
 // THE REFERENCE PATH — permanent, not scaffolding. It is the byte-exact PSX picture: the only thing

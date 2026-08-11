@@ -341,7 +341,19 @@ def cmd_check(entries, order, args):
     if problems:
         print(f"\n{problems} problem(s) found.", file=sys.stderr)
         return 1
-    print("re-frontier OK: no unknown deps, no cycles, every re-verified step cites evidence.")
+    # ZERO ENTRIES IS A FAILURE, NOT A PASS (docs/info/instruments.md INST-14). Every check above is
+    # VACUOUSLY TRUE over an empty set, so printing OK after parsing nothing is the green-over-nothing
+    # that entry exists for — and it stayed alive here after being fixed elsewhere, because three
+    # copies of this file drifted. A roadmap that exists but yields no entries means the parser and the
+    # document disagree about the format: a broken instrument, not a clean roadmap.
+    if not order:
+        print("\u203c ZERO entries parsed — verified NOTHING, so this is a FAILURE, not a pass. Either "
+              "the roadmap has no steps yet (run `scaffold`) or the parser and the document disagree "
+              "about the format. Fix that before trusting any re-frontier verdict.", file=sys.stderr)
+        return 1
+    # The OK line carries its DENOMINATOR: "OK" with no count cannot be told apart from OK over zero.
+    print(f"re-frontier OK: {len(order)} entr(ies) parsed \u2014 no unknown deps, no cycles, every "
+          f"re-verified step cites evidence.")
     return 0
 
 

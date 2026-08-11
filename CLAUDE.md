@@ -62,7 +62,7 @@ right now, say so plainly and mark the stopgap `// STOPGAP: <proper fix> because
 hack in as if it were a fix.
 
 **The picture comes from GAME STATE, never from what the GTE produced.** Two checkable rules (the
-binding statement is `coord/PROTOCOL.md`; the word "tap" is retired because it needed adjudication
+binding statement is `external/psxport/docs/workspace/PROTOCOL.md`; the word "tap" is retired because it needed adjudication
 every time). (1) The shipping picture path runs **no `gen_func_*` body** — reads are fine, a producer
 reads the node's own fields, and diagnostics are exempt because they answer questions rather than
 produce the picture. (2) **Resolve from what SUBMITS to the GTE**: find the
@@ -138,14 +138,25 @@ Everything transient goes in the git-ignored `scratch/`, kept split by kind (`sc
 per-user quota on this machine, and logs/dumps fill it in a run or two, breaking all writes with
 "Disk quota exceeded". Diagnose that symptom with `quota -s`, not `df`.
 
-## Pushing the psxport submodule: `HEAD:main`, never `main`
+## Where the framework source comes from — NEVER edit `external/psxport`
 
-`external/psxport` is a submodule, so it normally sits on a **detached HEAD** while its local `main`
-branch stays wherever it was last left — which can be dozens of commits stale. `git push origin main`
-there pushes *that stale branch*, not the commit you just made, and the rejection reads like a
-"behind remote" problem with your work rather than what it is. Push `git push origin HEAD:main`, then
-`git branch -f main HEAD` so the local branch stops lying. Verify with `git log --oneline -1 origin/main`
-after pushing — a framework fix that only exists in this checkout is a fix the next clone does not get.
+`external/psxport` is a **read-only pinned consumer**. Framework edits happen in the workspace's
+framework DEV CLONE (`$PSX/psxport`, i.e. `../psxport` from here) and nowhere else — `run.sh` re-syncs
+this submodule to the RECORDED gitlink on every run, so an edit made here is liable to be silently
+reverted mid-gate, and the build or measurement that follows describes a different framework than you
+think.
+
+Build this game against in-progress framework work WITHOUT touching the submodule:
+
+```sh
+PSXPORT_DIR=$PSX/psxport ./run.sh          # or: cmake -S . -B build -DPSXPORT_DIR=$PSX/psxport
+```
+
+`PSXPORT_DIR` defaults to the submodule, so a bare clone of this repo still builds standalone — keep it
+that way. `run.sh` announces which framework checkout a run was built from and whether it was dirty;
+read that line before trusting any measurement. The full protocol (area claims, how a framework change
+lands, the standing USER rules) is `external/psxport/docs/workspace/PROTOCOL.md`; the workspace map is
+`external/psxport/docs/workspace/WORKSPACE.md`.
 
 ## Never commit
 

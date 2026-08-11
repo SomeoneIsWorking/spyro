@@ -67,7 +67,7 @@ misses and `rec_dispatch_miss` aborts. Stack: `gen_func_80012204` <- `gen_func_8
 ## The fix, and where it belongs
 
 Framework, `external/psxport/tools/recomp/emit.py`. This repo cannot make it — the `recomp-emitter`
-coordination area is claimed by the spider1 agent and `/home/bhamil/repo/psx/coord/PROTOCOL.md`
+coordination area is claimed by the spider1 agent and `/home/bhamil/repo/psx/external/psxport/docs/workspace/PROTOCOL.md`
 forbids a second writer. Three changes, in decreasing order of how much they matter:
 
 1. `ra_computed_jumps`: when the base of `lw $ra, N(rX)` resolves to a link-time constant address,

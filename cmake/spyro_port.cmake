@@ -2,7 +2,8 @@
 #
 # This target is just the GAME: game/** + generated/** linking libpsxport.a. Every PSX-generic piece
 # (the runtime substrate, the Beetle GTE/MDEC/SPU backends, the SDL_GPU renderer, the SBS harness)
-# lives in the psxport framework library — see external/psxport/cmake/psxport.cmake.
+# lives in the psxport framework library — see ${PSXPORT_DIR}/cmake/psxport.cmake (set in the root
+# CMakeLists; the submodule by default).
 #
 #   cmake -S . -B build && cmake --build build --target spyro_port
 #   ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28     # after run.sh extracted it
@@ -11,7 +12,7 @@ option(PSXPORT_BUILD_PORT "Build the Spyro native port binary (spyro_port)" ON)
 
 # The framework static library + its psxport_smoke agnosticism proof. Always included so `psxport` is
 # buildable even when the game target is off.
-include(${CMAKE_SOURCE_DIR}/external/psxport/cmake/psxport.cmake)
+include(${PSXPORT_DIR}/cmake/psxport.cmake)
 
 if(NOT PSXPORT_BUILD_PORT)
   return()

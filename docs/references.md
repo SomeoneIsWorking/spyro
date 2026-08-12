@@ -27,7 +27,7 @@ caused the upstream `jr $ra` mis-classification in issue 0040.
 
 | project | what it is |
 |---|---|
-| [theMagicalKarp/open-spyro](https://github.com/theMagicalKarp/open-spyro) | Byte-for-byte matching decompilation of SCUS_942.28. Uses GCC 2.7.2 + maspsx + splat/spimdisasm; every commit rebuilds a byte-identical executable and stays runnable. Reports the game as the main EXE **plus 37 overlays**, ~828 functions, ~5% C-matched. |
+| [theMagicalKarp/open-spyro](https://github.com/theMagicalKarp/open-spyro) | Byte-for-byte matching decompilation of SCUS_942.28. Uses GCC 2.7.2 + maspsx + splat/spimdisasm; every commit rebuilds a byte-identical executable and stays runnable. Reports the game as the main EXE **plus 37 overlays**, ~828 functions (673 game, 155 PSY-Q/libc). **14.63% C-matched as of 2026-08-12** — this cell said ~5% and was stale by roughly 3x, which matters because the figure is how you judge whether a name you need is likely to exist yet. Verified the same day: our extracted `SCUS_942.28` is SHA-1 `84e3728ab94720d0873e2514adf4aade4935e0c5`, **byte-identical to its target**, so `config/symbol_addrs.txt` and `include/{types,funcs,globals}.h` name OUR addresses with no translation. |
 | [TheMobyCollective/spyro-1](https://github.com/TheMobyCollective/spyro-1) | Spyro the Dragon decompilation aiming at a matching executable. |
 | [celophi/spyro-decompilation](https://github.com/celophi/spyro-decompilation) | Decompilation to C using a different approach — recreated functions placed in extra RAM. |
 

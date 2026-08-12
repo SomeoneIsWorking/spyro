@@ -58,6 +58,17 @@ def today():
     return datetime.date.today().isoformat()
 
 
+def now_stamp():
+    """A SECOND-precision local timestamp, for the staleness baseline only.
+
+    WHY not `today()`: a date-granularity baseline is coarser than the commit rate, so a claim verified
+    today anchors to MIDNIGHT and every commit made later the same day counts as "since" — the claim
+    reads STALE FROM BIRTH. A checker that is red on day zero cannot detect rot: it is already saying
+    the thing it would say if the ground had moved. Local time, to match `git log`'s %ct in
+    claim_baseline."""
+    return datetime.datetime.now().replace(microsecond=0).isoformat(sep=" ")
+
+
 def slug(s, n=48):
     s = re.sub(r"[^a-zA-Z0-9]+", "-", s.lower()).strip("-")
     return (s[:n] or "entry").rstrip("-")
@@ -167,15 +178,15 @@ def cmd_claim_confirm(a):
     e = by_id(CLAIMS, a.id)
     fr, bo = parse(e["_path"])
     fr["status"] = "holds"
-    fr["reconfirmed"] = today()
+    fr["reconfirmed"] = now_stamp()
     # Re-confirming RESETS the staleness baseline. Without this, a claim re-proved today would keep
     # being reported stale by every future `claim check` because its ADD commit is still the anchor —
     # and a checker that cries wolf after the wolf was dealt with stops being read.
-    fr["verified_at"] = today()
+    fr["verified_at"] = now_stamp()
     if a.depends:
         fr["depends"] = ", ".join(a.depends)
-    write(e["_path"], fr, bo + f"\n\n## Re-confirmed {today()}\n\n{a.evidence}\n")
-    print(f"{e.get('id')} re-confirmed (staleness baseline reset to {today()})")
+    write(e["_path"], fr, bo + f"\n\n## Re-confirmed {fr['verified_at']}\n\n{a.evidence}\n")
+    print(f"{e.get('id')} re-confirmed (staleness baseline reset to {fr['verified_at']})")
     if not fr.get("depends"):
         print("  NOTE: no `depends:` recorded — this claim stays INVISIBLE to `info.py claim check`. "
               "Add one: --depends path/to/file.cpp#symbol")
@@ -525,13 +536,22 @@ def claim_baseline(e, root, add_cache):
         v = (e.get(k) or "").strip()
         if not v:
             continue
+        # Full ISO timestamps FIRST, date-only as the fallback. Truncating to v[:10] threw away
+        # precision the author had supplied and pinned every re-verification to midnight, which is
+        # what made a claim read stale against the very commits it was just verified against.
         try:
-            d = datetime.datetime.fromisoformat(v[:10])
+            d = datetime.datetime.fromisoformat(v)
+            coarse = len(v) <= 10
         except ValueError:
-            continue
+            try:
+                d = datetime.datetime.fromisoformat(v[:10])
+                coarse = True
+            except ValueError:
+                continue
         ep = int(d.timestamp())
         if k in ("verified_at", "reconfirmed"):   # explicit re-verification always wins
-            return ep, f"{k}: {v}"
+            return ep, (f"{k}: {v}" + (" (DAY-COARSE: same-day commits after it still count as "
+                                       "'since' — use a full timestamp)" if coarse else ""))
         if base is None:                          # untracked claim file: fall back to created:
             return ep, f"created: {v} (claim file is UNTRACKED — baseline is coarse)"
     if base is None:

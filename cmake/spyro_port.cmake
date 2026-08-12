@@ -29,6 +29,7 @@ set(GAME_SRC
   game/core/recomp_register.cpp
   game/core/vsync.cpp
   game/core/frame_loop.cpp
+  game/core/producer_run.cpp
   game/render/render_frame.cpp
   game/render/scene.cpp
   game/render/frame_env.cpp

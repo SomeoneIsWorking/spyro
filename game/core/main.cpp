@@ -9,6 +9,7 @@
 #include "fs_util.h"
 #include <lucent/log.h>
 #include "platform_hle.h"
+#include "producer_run.h"   // the graphics-producer DB's lifecycle — this port owns it (issue #58)
 #include "spyro_game.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +92,13 @@ int main(int argc, char** argv) {
   // startgame, narration, oracle, oraclediff, mdecpump, spuirq — was unreachable from Spyro and could
   // never report anything. See external/psxport/runtime/recomp/selftest.cpp.
   if (const char* which = cfg_str("PSXPORT_SELFTEST")) if (*which) return selftest_run(path);
+
+  // THE PRODUCER DB'S `begin`, and it must be HERE: before the first frame, and before the boot that
+  // never returns. The framework calls this from its own frame loop, which this port never enters —
+  // so without this line the census ran armed and fed for the whole run and then emitted nothing at
+  // all (issue #58). `finish` cannot go after dc_boot_init because nothing comes after it; the frame
+  // cap in producer_run.cpp is what creates a last frame. See producer_run.h.
+  spyro_producer_run_begin(c);
 
   c->r[4] = 1; c->r[5] = 0;          // a0/a1 as the BIOS would leave them (minimal)
 

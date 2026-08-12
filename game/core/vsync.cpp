@@ -32,6 +32,7 @@
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
 #include "snapshot.h"     // snapshot_tick — on-demand guest RAM capture at a frame boundary
 #include "repl.h"         // class Repl — interactive inspection, pumped from this frame boundary
+#include "producer_run.h" // spyro_producer_run_frame — the producer DB's per-frame boundary (issue #58)
 #include <time.h>         // clock_gettime — wall clock on the PSXPORT_DEBUG=pace lines
 
 namespace {
@@ -394,6 +395,13 @@ bool deliver_field(Core* c, const char* site) {
                 site, c->cfg ? c->cfg->paceQuota : 0u, c->mem_r32(kVblankCounter), rq_n,
                 rq_unconsumed);
   g_in_field = false;
+  // THE PRODUCER DB'S FRAME BOUNDARY, and the only one this port has. Everything above this line is
+  // here for the same reason (flush, present, pace, audio, events): the guest owns its frame loop, so
+  // the framework's native_step_frame never runs and THIS field is the port's per-frame point. The DB
+  // needs it for the one thing it could not otherwise have — an END. `PSXPORT_NATIVE_FRAMES=<n>`
+  // makes this call end the run at frame n with the report written; uncapped it only counts. See
+  // producer_run.h for why a periodic flush here would be wrong (appendClaims does not dedup).
+  spyro_producer_run_frame(c);
   // The guest's root handler increments [0x800749E0] itself, so the caller must re-read it rather
   // than double-count. Only when it is absent (early boot, before libetc installs it) does the port
   // own the tick — which is what this return value says.

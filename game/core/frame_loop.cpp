@@ -137,6 +137,57 @@ private:
   lucent::info("frameloop", "the PORT owns Spyro's frame loop (guest main 0x{:08X} is not dispatched)",
                0x80012204u);
   for (;;) {
+    // THE LOGIC-FRAME COUNTER, advanced HERE because this loop is this port's logic frame.
+    // `Timing::logicFrame` is the framework's per-Core "which logic frame is this", and its ONLY
+    // writer is native_step_frame (runtime/recomp/native_boot.cpp:110) — a loop this port never
+    // enters, so it stayed 0 for the entire run. That is not cosmetic: `census_frame()` stamps every
+    // graphics-producer row with it, so the producer DB reported `frames 1 (f0..f0)` for a producer
+    // that is CALLED on ~1282 consecutive frames and DRAWS on 697 of them — two different questions,
+    // and this comment used to give only the first. #59's verification run (scratch/logs/prod59_run3.log,
+    // cap 3000) counts 585 `emitted=0` + 14 `emitted=1` + 683 `emitted=2` = 1282 calls, so 14+683 =
+    // **697** drawing frames and 1380 prims, and the row it produced reads `frames 697 (f585..f1282)`.
+    // Reproduced independently at the same cap: `frames 697 (f585..f1282)`, 1380 prims
+    // (scratch/logs/vfx_db3000.log). A FEW FRAMES OF SPREAD AT THE CAP BOUNDARY IS EXPECTED AND IS NOT A
+    // DEFECT: the cap counts PRESENTED FIELDS while this counter counts LOGIC frames, so where the run is
+    // cut lands wherever the loop happens to be. MEASURED SPREAD over four runs at the same cap 3000 —
+    // 697 (f585..f1282)/1380 prims, 696 (f585..f1281)/1378, 695 (f585..f1280)/1376 — i.e. the START is
+    // f585 every time and only the END moves, exactly 2 prims per frame because this screen draws two
+    // sprites. So f585 IS the invariant to assert on and the total is NOT; quote a span with its log,
+    // never a bare frame count. THE BAND IS NOT A BOUND: a later run on a build against pin 726d10c9
+    // (md5 303763bdb3658e6b0dd74f29a9da4c34, scratch/logs/V_native3000.log) landed on
+    // `frames 694 (f585..f1279)` / 1374 prims — OUTSIDE the 695..697 / 1376..1380 quoted above. The
+    // arithmetic invariant held exactly (585 non-drawing + 14 one-prim + 680 two-prim = 694 drawing
+    // frames, 1374 prims), which is the thing to check. Anyone who writes 695..697 into an assertion
+    // has turned an observed range into a fake bound; only `first_frame == 585` and the arithmetic are
+    // invariants.
+    // The counter's documented tick is the LOGIC frame, not the present — and one iteration of this loop
+    // is exactly that tick, which is why it is advanced here and not in producer_run.cpp (that hook
+    // runs per PRESENTED FIELD, ~1.9 per logic frame, and would have re-created the s_frame defect
+    // census_frame.h exists to fix). Same defect class as #58: framework state welded to a code path
+    // a port with its own frame loop never reaches.
+    ++c->game->timing.logicFrame;
+    //
+    // THE OTHER HALF OF THE SAME CONTRACT, and it was missing. The framework's own frame loop does TWO
+    // things per logic frame, not one: `native_step_frame` sets `timing.logicFrame` (native_boot.cpp:112)
+    // AND `native_boot_run` calls `otAttr.beginLogicFrame(f)` (native_boot.cpp:384). The line above
+    // replicated only the first, so this port drove NEITHER writer of OtAttr's span-table reset —
+    // `resetIfNewFrame` is reached from `beginLogicFrame` and from nowhere else. Same root cause as the
+    // counter above (framework state whose only writer is a loop this port never enters), so it is fixed
+    // in the same place rather than left as a second latent copy of it.
+    //
+    // HONEST STATUS, because this must not be read as a fix for an observed symptom: it is DORMANT TODAY
+    // and I proved why rather than assuming it. `trackStoreSlow` records a span only for stores inside the
+    // packet pool (`if (!pool.known || k < pool.lo || k >= pool.hi) return;`, ot_attr.cpp), and
+    // `pool_range` returns `known=false` because this game's `packetPoolBase/Stride` are 0
+    // (game_config.cpp:79-80, issue #56). So the span table takes ZERO entries, there is nothing to go
+    // stale, and the reference leg's 100%-span-miss census is fully explained by #56 alone — the missing
+    // reset is NOT a second cause of it, which is what I checked before writing this line.
+    // It stops being dormant the moment #56 lands: a filled pool would fill this table and, with no reset
+    // ever firing, saturate it at SPAN_CAP against a frame stamp that never changes — which is EXACTLY
+    // the saturation failure `beginLogicFrame` was written to remove (ot_attr.h: 60 logic frames advanced
+    // s_frame to 3, 140,153 overflows, every later lookup matching a stale span with fn 0). Driving it now
+    // costs one compare per frame and means #56's fix cannot land on top of a silent trap.
+    c->rsub.otAttr.beginLogicFrame(c->game->timing.logicFrame);
     fs.closeInputLatchWindow();
     rc0(c, kFrameUpdate);
     const int elapsed = fs.vblanksThisFrame();

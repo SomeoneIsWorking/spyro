@@ -49,3 +49,30 @@ this port cannot be quoted per-run.
 read as "measured, nothing to attribute". It is either "not measured" (pool blind, no ProducerScope — the
 claim is right about that) or "the feed did not execute at all", and the framework prints a DIFFERENT
 sentence for each. Quote the sentence, never the row count.
+
+## 2026-08-12, from #59's verification: what the FED/UNFED split actually depends on, and the 2x in every number here
+
+Two things this stream could not separate are now measured, and neither rescues the disputed figures as
+stated.
+
+**FED vs UNFED at a fixed cap is a BOOT-PROGRESS question, and the cap is the wrong unit for it.**
+`PSXPORT_NATIVE_FRAMES` counts PRESENTED FIELDS, and nothing is pushed to any census until the run reaches
+drawn frames — with the frame loop armed, `spyro_frame_loop_run` first runs `rc0(0x800127C0)` (CD loads +
+logo fades) and the cap can fire inside that call, before the loop's first iteration. Measured this
+session, identical command, only the cap changed: **cap 400 -> `NEVER FED`, 0 notes, JSONL refused
+(`scratch/logs/prod59_run1.log`); cap 3000 -> fed, a row written (`prod59_run3.log`)**. So a cap in the
+hundreds sits ON the boundary, which is exactly where the claim's cap-600 figure and the operator's five
+cap-600 `NEVER FED` runs both live. The honest reading is the operator's: **quote the sentence the report
+prints, and do not treat a frame cap as a reproducible denominator for this port** until the cap counts
+something that starts after boot.
+
+**The prim figures in this claim are 2x the real prim count — see issue #61.** `197746 = 98873 + 98873`
+and `1718994 = 859497 + 859497` are not partitions: `guest-origin` and `span-miss` each increment
+`prims seen` for the SAME prim (`producer_census.h` lines 170 and 173), so a reference-leg run counts
+every prim twice. Reproduced here as `2962984 = 1481492 + 1481492`. The real figure in each pair is the
+summand, never the total. That is a framework accounting defect, not evidence about this port.
+
+**The part of this claim that is now superseded rather than disputed:** "no ProducerScope exists in the
+tree" was true when written and is no longer — issue #59 landed one (C170), so a native-leg run here
+reports `1 row(s) ... attributed 1380 ... unscoped-native 0`. `0 rows` on a native leg is now a real
+negative to investigate, not the expected state.

@@ -57,13 +57,55 @@
 // selected the arm, the arm taken, how many sprites were emitted, and the world layers still
 // missing. `emitted=0` with a named arm is a real answer (the d88==2 arm draws nothing until the
 // game's own gate opens) and reads differently from `arm=none`.
+//
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// PRODUCER DB — THIS FILE IS THE PORT'S *ONLY* NATIVE PRODUCER, AND ITS KEY IS 0x8007CD38 (#59).
+//
+// The native leg's census has no trail of its own: `push2dQuad` funnels into the one render-queue
+// chokepoint (psxport render_queue.cpp emitOrQueue), and a prim arriving there is anonymous unless
+// the producer SAYS who it is. Until this scope existed, `grep -rn ProducerScope game/` returned 0
+// across this whole tree, so the DB could only ever report "NEVER FED" — which is not "this game
+// draws nothing", it is "no instrument exists here". Issue #59 is exactly that gap.
+//
+// WHY 0x8007CD38 AND NOT ONE OF THE THREE OTHER CANDIDATES ON THIS PATH (producer_scope.h's rule:
+// key on the GUEST SUBMITTER the native draw stands in for, never a shared dispatcher, never a
+// shared submit leaf). All four are real addresses in this file's own RE, so the choice is between
+// four true statements, only one of which is the right row:
+//   * 0x8007CD38  ← CHOSEN. `spriteEmit` below IS the transcription of it, one native quad per guest
+//     POLY_FT4, same inputs, same table reads. It is the finest-grained guest fn that SUBMITS, so the
+//     guest leg (OtAttr, keyed at the packet-pool store) and this native scope land on the SAME row —
+//     which is the entire point of the DB.
+//   * 0x8007CEE4 — the stage-13 arm/state machine. It selects a page and calls the emitter; it
+//     submits nothing itself. Keying here would be keying a DISPATCHER, and because the census
+//     charges a prim to the INNERMOST open scope only, an outer 0x8007CEE4 scope would also mint a
+//     permanently 0-prim row that reads as "a producer that draws nothing".
+//   * 0x800168DC / 0x80016784 — the front-list AddPrim and the OT walk. These are the SHARED SUBMIT
+//     LEAF the whole game funnels through: keying them would name the library instead of the effect
+//     and collapse every future producer into one meaningless row.
+//
+// NO DisplayPassGuard HERE, and that is a decision rather than an omission. Tomba!2's worked example
+// (game/render/perobj_dispatch.cpp:257) needs one because its native draw lives INSIDE a substrate
+// body whose surrounding guest code legitimately writes guest RAM, so the pc_render read-only-overlay
+// invariant has to be armed for just that block. This producer is not inside any `gen_func_*` body:
+// its whole call chain is port code (frame_loop.cpp -> SpyroRenderer::drawFrame -> renderScene ->
+// titleMenuRender -> here), it only READS guest memory (the four state globals, the ease tables, the
+// sprite/style tables), and it writes none. Arming the guard would therefore assert nothing this call
+// chain can violate — and it would ALSO fire on the guest calls the enclosing frame legitimately
+// makes, since the guard is per-Core and this frame's env setup (frame_env.cpp) does write guest RAM.
 #include "render.h"
 #include "core.h"
 #include "game.h"
 #include "render_queue.h"
+#include "producer_scope.h"   // ProducerScope — the native leg's "who is drawing right now"
 #include <lucent/log.h>
 
 namespace {
+
+// ── PRODUCER IDENTITY: the guest submitter this file stands in for ───────────────────────────────
+// The sprite emitter RE'd at the top of this file (`scratch/decomp/title_text.c` FUN_8007cd38).
+// `spriteEmit` below is its transcription, so its native prims belong in ITS row — see the
+// PRODUCER DB block in the banner for why not 0x8007CEE4, 0x800168DC or 0x80016784.
+constexpr uint32_t kGuestSpriteEmitter = 0x8007CD38u;
 
 // ── The front-end state machine's own globals (all in the overlay's data, read never written) ────
 constexpr uint32_t kMode      = 0x80078D78u;  // 0/1/2 select the arm; 3 is the OTHER stage-13 handler
@@ -212,6 +254,12 @@ bool SpyroRenderer::spriteEmit(int32_t x, int32_t y, int32_t id, uint32_t style,
   // GP0 code bits, from the style word rather than hardcoded: bit 0 = raw texel, bit 1 = semi.
   const int raw  = (code & 1u) ? 1 : 0;
   const int semi = (code & 2u) ? 1 : 0;
+  // DECLARE THE PRODUCER for the one push below, and no wider. Scoping the whole function instead
+  // would be harmless today (host words only, no guest write) but it would put the two early
+  // `return false` paths inside a scope that pushes nothing, which is precisely the shape that makes
+  // a 0-prim row indistinguishable from a producer that never ran. The name is a string literal, as
+  // ProducerScope requires — it is stored by pointer, not copied.
+  ProducerScope producer(&c->rsub.producerScope, kGuestSpriteEmitter, "titlefx:spriteEmit");
   c->game->rq.push2dQuad(RQ_HUD, /*order_2d_fg=*/1, xs, ys, us, vs, rs, gs, bs,
                          /*tp_x=*/(int)(s.tpage & 0xFu) * 64, /*tp_y=*/(int)((s.tpage >> 4) & 1u) * 256,
                          /*mode=*/(int)((s.tpage >> 7) & 3u), raw,

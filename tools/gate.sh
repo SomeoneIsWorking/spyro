@@ -87,9 +87,19 @@ fi
 # A healthy run is one this script had to KILL: 137. Anything else is the port dying on its own.
 
 fail=0
+# COUNT THE LINES, AND PRINT THE TOTALS AT THE END. Not cosmetic: the composition of this report was
+# MISQUOTED on 2026-08-12 as "all 18 checks PASS" when the run printed 17 PASS plus one non-fatal NOTE
+# — the reader counted coloured lines, and NOTE/WARN lines are not checks. A tally the script computes
+# cannot be miscounted, and it also makes "a check silently stopped being emitted" visible: the number
+# is expected to grow, never shrink.
+npass=0; nfail=0; nnote=0; nwarn=0
+ok()   { npass=$((npass+1)); printf '  \033[32mPASS\033[0m %-34s %s\n' "$1" "$2"; }
+bad()  { nfail=$((nfail+1)); fail=1; printf '  \033[31mFAIL\033[0m %-34s %s\n' "$1" "$2"; }
+note() { nnote=$((nnote+1)); printf '  \033[33mNOTE\033[0m %-34s %s\n' "$1" "$2"; }
+warn() { nwarn=$((nwarn+1)); printf '  \033[33mWARN\033[0m %-34s %s\n' "$1" "$2"; }
 chk() { # chk <name> <actual> <op> <expected>
-  if [ "$2" -"$3" "$4" ]; then printf '  \033[32mPASS\033[0m %-34s %s (want %s %s)\n' "$1" "$2" "$3" "$4"
-  else printf '  \033[31mFAIL\033[0m %-34s %s (want %s %s)\n' "$1" "$2" "$3" "$4"; fail=1; fi
+  if [ "$2" -"$3" "$4" ]; then ok "$1" "$2 (want $3 $4)"
+  else bad "$1" "$2 (want $3 $4)"; fi
 }
 
 # FRAMES comes from the LOG, not from counting dumped files, because the dump is now SAMPLED
@@ -171,11 +181,10 @@ NDIFFOK=$(grep -c 'matches the recompiled body exactly' "$LOG" 2>/dev/null; true
 
 echo "[gate] checks:"
 if [ "$RC" -eq 137 ]; then
-  printf '  \033[32mPASS\033[0m %-34s %s\n' "port still running at timeout" "killed by gate (rc=137)"
+  ok "port still running at timeout" "killed by gate (rc=137)"
 else
-  printf '  \033[31mFAIL\033[0m %-34s %s\n' "port still running at timeout" "port exited on its own (rc=$RC)"
+  bad "port still running at timeout" "port exited on its own (rc=$RC)"
   grep -m1 -A2 'FATAL\|FAULT' "$LOG" | sed -n 's/^/        /p'
-  fail=1
 fi
 chk "frames presented"          "$FRAMES"   ge 300
 chk "distinct frame occupancies" "$DISTINCT" ge 8      # >2 means content moves, not a held screen
@@ -200,6 +209,48 @@ chk "refused HLE registrations"  "$REFUSED"  eq 0
 chk "distinct overlays identified" "$OVID"        ge 1
 chk "arena loads UNMATCHED"        "$OVUNMATCHED" eq 0
 
+# ── THE SHIPPED PRODUCER KEYS vs THE GUEST IMAGE THEY WERE MEASURED FROM ────────────────────────────
+# WHY THIS IS A GATE AND NOT A COMMENT. A ProducerScope key (`kGuestSpriteEmitter = 0x8007CD38`) is a
+# MEASURED CONSTANT that decides which row of the producer DB a native draw is charged to, and until
+# 2026-08-12 nothing compared it to the binary: the RE behind it was a Ghidra pass over a gitignored
+# RAM snapshot, so a transposed digit would have shipped a plausible wrong row with every check here
+# still green (the port draws the same picture either way). That is PROTOCOL.md's "THE SHIPPED VALUE
+# MUST BE COMPARED TO THE MEASURED ONE — BY CODE, NOT BY A HUMAN'S EYES", the defect found in four of
+# five ports in one round. tools/verify_producers.py is fix shape #1 from that rule: it PARSES the
+# shipping .cpp and re-derives the address from the overlay bytes the recompiler consumes.
+#
+# --selftest is included in the same invocation ON PURPOSE: it mutates the shipped constant, the
+# constant's name, and the image's fingerprint word, and requires each mutant to be caught. A gate that
+# has only ever been green is decoration, so this one proves it can go red on every run.
+if python3 tools/verify_producers.py --selftest > "$OUT/producers_static.txt" 2>&1; then
+  ok "producer keys == measured (+selftest)" \
+    "$(grep -c '^  ok ' "$OUT/producers_static.txt") case(s) incl. $(grep -c 'mutant:' "$OUT/producers_static.txt") mutant(s) caught"
+else
+  bad "producer keys == measured (+selftest)" "see $OUT/producers_static.txt"
+  grep -E 'FAIL|DISAGREE|REFUSED' "$OUT/producers_static.txt" | head -4 | sed -n 's/^/        /p'
+fi
+# AND THE SHIPPING PATH MUST ACTUALLY FIRE. The static check above is green with the ProducerScope line
+# DELETED — the constant would still be right, the scope just never runs. So take one short CAPPED
+# native-leg run (~2 s; the DB is only written by a capped run, C169, because an uncapped one is killed
+# by signal) and require the DB to carry a row keyed at the shipped constant with prims > 0.
+PRODLOG="$OUT/producers_run.log"
+PSXPORT_SPYRO_FRAME_LOOP=1 PSXPORT_NATIVE_FRAMES=3000 PSXPORT_VK_HEADLESS=1 PSXPORT_NOAUDIO=1 \
+  PSXPORT_NOPACE=1 PSXPORT_ASSET_DIR=external/psxport PSXPORT_SPYRO_DISC="$DISC" \
+  timeout -s KILL 120 ./scratch/bin/spyro_port scratch/bin/spyro/SCUS_942.28 > "$PRODLOG" 2>&1
+PRC=$?
+# The JSONL path comes from the run's OWN line, not from "the newest file in the directory": a parallel
+# run by another session would otherwise be the one this gate reads.
+PRODJSON=$(sed -n 's/.*wrote .* -> \(scratch\/producers\/run-[^ ]*\.jsonl\).*/\1/p' "$PRODLOG" | tail -1)
+if [ "$PRC" -ne 0 ] || [ -z "$PRODJSON" ]; then
+  bad "producer scope fired in a run" \
+    "capped native-leg run rc=$PRC, wrote $( [ -n "$PRODJSON" ] && echo "$PRODJSON" || echo "NO JSONL" ) — see $PRODLOG"
+elif python3 tools/verify_producers.py --db "$PRODJSON" > "$OUT/producers_db.txt" 2>&1; then
+  ok "producer scope fired in a run" "$(sed -n 's/^  RAN *//p' "$OUT/producers_db.txt" | head -1 | cut -c1-60)"
+else
+  bad "producer scope fired in a run" "see $OUT/producers_db.txt"
+  grep -E 'DISAGREE|REFUSED' -A2 "$OUT/producers_db.txt" | head -4 | sed -n 's/^/        /p'
+fi
+
 # Ledger self-consistency. Not a runtime property, but this is the one thing that runs every
 # iteration, and a contradictory ledger (a refutation recorded without flipping the claim it kills)
 # is silently served as fact by every later `info.py brief`. Cheap, so it rides along here.
@@ -215,12 +266,11 @@ chk "arena loads UNMATCHED"        "$OVUNMATCHED" eq 0
 # nothing at all. A failure that names no cause is worse than no check, so the message below prints
 # the actual failing lines.
 if ! python3 tools/info.py check --no-stale > "$OUT/info.txt" 2>&1; then
-  printf '  \033[31mFAIL\033[0m %-34s %s\n' "info ledger self-consistent" \
+  bad "info ledger self-consistent" \
     "$(grep -cE 'INCONSISTENT|NO FALSIFIER|DISTRUSTED INSTRUMENT' "$OUT/info.txt"; true) problem(s)"
   sed -n 's/^/        /p' "$OUT/info.txt" | grep -E 'INCONSISTENT|NO FALSIFIER|DISTRUSTED INSTRUMENT'
-  fail=1
 else
-  printf '  \033[32mPASS\033[0m %-34s %s\n' "info ledger self-consistent" "ok"
+  ok "info ledger self-consistent" "ok"
 fi
 
 # CODEMAP DRIFT. The codemap is the instrument the next debugging session NAVIGATES BY -- "the code
@@ -236,13 +286,11 @@ fi
 # rendering agent to write a native producer to work around a fixed one-line framework regression.
 # A green line here means "no dangling references", never "the map is true".
 if ! python3 tools/codemap.py check > "$OUT/codemap.txt" 2>&1; then
-  printf '  \033[31mFAIL\033[0m %-34s %s\n' "codemap has no drift" \
+  bad "codemap has no drift" \
     "$(grep -cE '^  (⬜|❌)' "$OUT/codemap.txt"; true) drifted reference(s) — docs/codemap.md"
   grep -E '^  (⬜|❌)|^  scanned ' "$OUT/codemap.txt" | sed -n 's/^/        /p'
-  fail=1
 else
-  printf '  \033[32mPASS\033[0m %-34s %s\n' "codemap has no drift" \
-    "$(sed -n 's/^  scanned /scanned /p' "$OUT/codemap.txt")"
+  ok "codemap has no drift" "$(sed -n 's/^  scanned /scanned /p' "$OUT/codemap.txt")"
 fi
 sed -n 's/^  \(BLIND SPOTS\|  \*\)/        \1/p' "$OUT/codemap.txt" | head -5
 # Claim ROT, reported every run and never silent. C099 read as a current description of the renderer
@@ -251,7 +299,7 @@ sed -n 's/^  \(BLIND SPOTS\|  \*\)/        \1/p' "$OUT/codemap.txt" | head -5
 # nothing about claims that record no code dependency at all — they are UNCHECKED, not fresh.
 python3 tools/info.py claim check > "$OUT/stale.txt" 2>&1 || true
 num() { sed -n "s/^ *$1[ .]*\([0-9][0-9]*\).*/\1/p" "$OUT/stale.txt" | head -1; }
-printf '  \033[33mNOTE\033[0m %-34s %s\n' "claim staleness (not fatal)" \
+note "claim staleness (not fatal)" \
   "$(num 'stale (code moved)') stale / $(num CHECKED) checked, $(num '\*\*\* CANNOT SEE') UNCHECKED (no code dependency recorded)"
 
 # Open 'blocker' entries, reported only when the gate PASSED. A blocker asserts the port cannot get
@@ -263,12 +311,15 @@ printf '  \033[33mNOTE\033[0m %-34s %s\n' "claim staleness (not fatal)" \
 if [ "$fail" -eq 0 ]; then
   STALE="$(python3 tools/catalog.py stale --count 2>/dev/null || echo 0)"
   if [ "${STALE:-0}" -gt 0 ]; then
-    printf '  \033[33mWARN\033[0m %-34s %s\n' "open 'blocker' issues" \
+    warn "open 'blocker' issues" \
       "$STALE — gate passes, so each no longer blocks or is uncovered (tools/catalog.py stale)"
   else
-    printf '  \033[32mPASS\033[0m %-34s %s\n' "open 'blocker' issues" "none"
+    ok "open 'blocker' issues" "none"
   fi
 fi
 
+# READ THIS LINE INSTEAD OF COUNTING THE ONES ABOVE. PASS/FAIL are checks; NOTE/WARN are reported
+# backlog and are NOT checks — conflating them is exactly how this report got quoted as "18 checks".
+echo "[gate] tally: $npass PASS, $nfail FAIL (checks = $((npass+nfail))); $nnote NOTE, $nwarn WARN (not checks)"
 if [ "$fail" -eq 0 ]; then echo "[gate] PASS"; else echo "[gate] FAIL — see $LOG"; fi
 exit "$fail"

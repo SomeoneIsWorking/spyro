@@ -322,6 +322,10 @@ static const GameConfig g_spyro_config = {
   // Window title (framework is game-agnostic; it must not name a game). Declaration order
   // matters for designated initialisers: windowTitle follows paceQuota in GameConfig.
   .windowTitle = "Spyro the Dragon",
+  // crt0 stack-top bias, MEASURED by psxport tools/crt0_extract over this game's own boot
+  // executable (SCUS_942.28, entry 0x8005B8E0). `declared = 1` is mandatory: crt0_plan REFUSES a boot when it is 0,
+  // because 0 is a REAL measured answer for some crt0s and so cannot double as "unset".
+  .stackBias = {1, -8},
 };
 
 void spyro_install_game_config() { psxport_install_game(&g_spyro_config, spyro_game_hooks()); }

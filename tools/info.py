@@ -168,10 +168,17 @@ def cmd_claim_falsify(a):
     fr["falsified_on"] = today()
     write(e["_path"], fr, bo + f"\n\n## FALSIFIED {today()}\n\n{a.why}\n\n"
           f"> Anything that cited this claim as proof must be re-checked. Grep the repo for it.\n")
-    print(f"{e.get('id')} falsified. Now grep for who relied on it:")
-    key = bo.split("## Claim")[-1].split("##")[0].strip().splitlines()[0][:40] if "## Claim" in bo else ""
-    if key:
-        print(f"  git grep -n {key.split()[0]!r} -- docs/ || true")
+    # WHO RELIED ON IT is the whole point of falsifying: the damage is downstream, not local. Search by
+    # the claim ID, because that is how another doc cites a claim. An earlier version searched the first
+    # WORD of the claim text ("this", "psxport's"), which matches half the corpus or nothing — a suggested
+    # command that cannot find what it is looking for is worse than no suggestion.
+    cid = str(e.get("id") or "").strip()
+    if cid:
+        print(f"  git grep -n {cid!r} -- docs/ || true          # who cites this claim by id")
+    dep = str(e.get("depends") or "").strip()
+    if dep:
+        print(f"  # it rested on: {dep}")
+        print(f"  #   -> anything else asserting things about those paths is now suspect too")
 
 
 def cmd_claim_confirm(a):

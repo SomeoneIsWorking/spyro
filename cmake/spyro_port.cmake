@@ -68,7 +68,7 @@ add_executable(spyro_port ${GAME_SRC} ${GEN_REC_SRCS})
 add_dependencies(spyro_port gen_gpu_shaders)
 
 set_target_properties(spyro_port PROPERTIES
-  CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON
+  CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
   ENABLE_EXPORTS ON                                    # -rdynamic: watchdog backtrace symbol names
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/scratch/bin)
 

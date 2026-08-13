@@ -51,6 +51,14 @@ static int32_t sar32(uint32_t v, unsigned shift) {
   return (int32_t)v >> shift;
 }
 
+static int32_t wrap_add32(int32_t a, int32_t b) {
+  return (int32_t)((uint32_t)a + (uint32_t)b);
+}
+
+static int32_t wrap_sub32(int32_t a, int32_t b) {
+  return (int32_t)((uint32_t)a - (uint32_t)b);
+}
+
 static Vec3i unpack_accum(uint32_t packed) {
   // 0x800244DC..24520 / 0x80024700..24718.  The packed base term is
   // added with 32-bit wrap before these three signed extractions.
@@ -74,14 +82,19 @@ static Vec3i short_absolute(uint16_t lo, uint16_t hi) {
 }
 
 static Vec3i add(Vec3i a, Vec3i b) {
-  return { a.x + b.x, a.y + b.y, a.z + b.z };
+  // The RAM-resident guest decoder is R3000 code: addu/subu accumulator
+  // operations wrap modulo 2^32.  Signed C++ overflow is undefined, so spell
+  // out the guest arithmetic instead of relying on the host compiler.
+  return { wrap_add32(a.x, b.x), wrap_add32(a.y, b.y),
+           wrap_add32(a.z, b.z) };
 }
 
 static Vec3i blend16(Vec3i a, Vec3i b, uint8_t blend) {
   // Guest loads IR0=blend*0x100 then executes INTPL (0x4A980011):
   // A + ((B-A)*IR0 >> 12), i.e. A + ((B-A)*blend >> 4).
   auto one = [blend](int32_t av, int32_t bv) {
-    return av + (int32_t)(((int64_t)(bv - av) * blend) >> 4);
+    const int64_t delta = (int64_t)bv - (int64_t)av;
+    return wrap_add32(av, (int32_t)((delta * blend) >> 4));
   };
   return { one(a.x,b.x), one(a.y,b.y), one(a.z,b.z) };
 }

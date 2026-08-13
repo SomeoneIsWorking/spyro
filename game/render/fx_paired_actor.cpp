@@ -56,7 +56,6 @@ struct GuestXyzCapture {
   bool decoded = false;
   uint64_t allRtps = 0;
   std::vector<uint32_t> rtpsPcs;
-  int layer = 0;
   bool warmup = true;
 };
 
@@ -114,6 +113,14 @@ static Vec3i blend16(Vec3i a, Vec3i b, uint8_t blend) {
   return { one(a.x,b.x), one(a.y,b.y), one(a.z,b.z) };
 }
 
+static Vec3i rtps_input(Vec3i v) {
+  // 0x80024548/0x800247C0 do not pack Y/Z with an OR. They execute
+  // `z * 0x10000 + y`, so a negative or overflowing Y carries into Z
+  // before DR0 is split into its signed 16-bit halves by RTPS.
+  const uint32_t yz = ((uint32_t)v.z << 16) + (uint32_t)v.y;
+  return {(int16_t)v.x, (int16_t)yz, (int16_t)(yz >> 16)};
+}
+
 static uint32_t keyframe_ptr(uint32_t frameWord) {
   // Guest `(word << 11) >> 10`: a 21-bit half-address expanded to a
   // byte address in the PSX physical window.
@@ -138,8 +145,10 @@ static bool make_stream(Core* c, uint8_t anim, uint8_t frame, int layer,
   const uint32_t wc = c->mem_r32(out.keyframe + 0xCu);
   const uint32_t payload = out.keyframe + 0x18u;
   if (layer == 0) {
-    out.bytes = payload;
-    out.shorts = payload + (w8 >> 20);
+    // 0x80023B94 stores payload+(w8>>20) into descriptor word 10
+    // (the byte stream) and payload into word 11 (the short stream).
+    out.bytes = payload + (w8 >> 20);
+    out.shorts = payload;
   } else if (layer == 1) {
     out.bytes = payload + ((w8 >> 10) & 0x3FFu);
     out.shorts = payload + (wc >> 16);
@@ -171,7 +180,9 @@ static bool decode_stream(Core* c, const StreamDesc& d, std::vector<Vec3i>& out)
         const uint16_t hi = c->mem_r16(sp); sp += 2u;
         accum = short_absolute(word, hi);
       } else {
-        accum = add(accum, add(short_delta(word), unpack_accum(c->mem_r32(base))));
+        const uint32_t baseWord = c->mem_r32(base);
+        const Vec3i sd = short_delta(word), bd = unpack_accum(baseWord);
+        accum = add(accum, add(sd, bd));
       }
     }
     out.push_back(accum);
@@ -204,8 +215,8 @@ static bool decode_pose(Core* c, const std::array<LayerDesc,kLayers>& desc,
     if (desc[layer].hasB && !decode_stream(c, desc[layer].b, b)) return false;
     pose.layers[layer].vertices.resize(a.size());
     for (size_t i = 0; i < a.size(); ++i)
-      pose.layers[layer].vertices[i] = desc[layer].hasB
-        ? blend16(a[i], b[i], desc[layer].blend) : a[i];
+      pose.layers[layer].vertices[i] = rtps_input(desc[layer].hasB
+        ? blend16(a[i], b[i], desc[layer].blend) : a[i]);
     decoded[layer] = (uint32_t)a.size();
   }
   return true;
@@ -244,7 +255,6 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
   capture.vertices.push_back({(int16_t)vz, (int16_t)vxy,
                               (int16_t)(vxy >> 16)});
   if (pc == 0x80024A14u) {
-    ++capture.layer;
     capture.warmup = true;
   }
 }
@@ -347,6 +357,14 @@ int spyro_paired_actor_selftest() {
                "zero blend preserves A");
   ok &= expect(keyframe_ptr(0xFFEF354Au) == 0x001E6A94u,
                "live frame-word pointer expansion");
+  const Vec3i borrowed = rtps_input({11, -135, 128});
+  ok &= expect(borrowed.x == 11 && borrowed.y == -135 && borrowed.z == 127,
+               "RTPS DR0 addition carries negative Y into Z");
+  // Layer zero's descriptor direction is fixed by 0x80023B94: the byte
+  // stream starts after the short stream's payload prefix.
+  constexpr uint32_t payload = 0x001E6608u, packedW8 = 0x05400000u;
+  ok &= expect(payload + (packedW8 >> 20) == 0x001E665Cu,
+               "layer-zero byte stream follows short stream payload");
   if (ok) lucent::info("selftest", "PASS(pairedpose): {} checks", checks);
   return ok ? 0 : 1;
 }

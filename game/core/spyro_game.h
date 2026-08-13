@@ -43,6 +43,8 @@ void spyro_register_native_terrain();
 // native_render.cpp — MEASUREMENT, installs nothing unless PSXPORT_NDIFF_IDENTITY=<addr,…>: can the
 // per-call differential validate a geometry renderer at all? (re-frontier render.own-geometry-family)
 void spyro_register_native_render();
+// Emits the run-end denominator for native_render.cpp's optional sprite-queue input census.
+void spyro_sprite_queue_census_finish();
 
 // wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and running
 // the five contributing renderers interpreted (11 sites). Inert at 4:3.

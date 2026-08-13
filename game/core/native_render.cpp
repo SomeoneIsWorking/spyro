@@ -33,10 +33,129 @@
 #include <lucent/log.h>
 #include <cstdio>
 #include <cstdlib>
+#include <array>
 
 void interp_call(Core* c, uint32_t pc);   // interp.cpp — nested call that leaves the guest's ra alone
 
 namespace {
+
+// RasterizeSpritePrimQueue's INPUT census. This deliberately reads the game's request queue and mesh
+// records before redispatching the untouched guest body. It does not inspect the OT or GPU packets:
+// those are renderer output and cannot define a native producer. The fixed addresses and capacities
+// are symbols/sizes in Spyro's executable (open-spyro symbols.csv); the record fields and primitive
+// stream layout are reads performed by the body at 0x80022A2C itself.
+constexpr uint32_t kSpriteRenderer = 0x80022A2Cu;
+constexpr uint32_t kSpriteQueue = 0x800720F4u;
+constexpr uint32_t kActorMeshTable = 0x80076378u;
+constexpr uint32_t kRamBegin = 0x80000000u;
+constexpr uint32_t kRamEnd = 0x80200000u;
+constexpr uint32_t kQueueCapacity = 256u;
+
+struct SpriteQueueCensus {
+  bool armed = false;
+  uint64_t calls = 0;
+  uint64_t empty_calls = 0;
+  uint64_t records = 0;
+  uint64_t primitives = 0;
+  uint64_t bit11 = 0;
+  uint64_t bit01 = 0;
+  uint64_t gouraud_quad = 0;
+  uint64_t gouraud_tri = 0;
+  uint64_t invalid_actor = 0;
+  uint64_t absent_mesh = 0;
+  uint64_t absent_stream = 0;
+  uint64_t sentinel_mesh = 0;
+  uint64_t invalid_mesh = 0;
+  uint64_t invalid_stream = 0;
+  uint64_t invalid_index = 0;
+  uint64_t unterminated_queues = 0;
+  std::array<bool, 65536> mesh_seen{};
+  std::array<bool, 65536> invalid_stream_seen{};
+  uint32_t distinct_meshes = 0;
+} s_spriteq;
+
+bool ram_range(uint32_t addr, uint32_t bytes) {
+  // Asset relocation intentionally leaves some pointers in the physical-RAM alias (the renderer
+  // itself masks bit 31 from its vertex pointer). Core::mem_r* accepts both aliases, so rejecting
+  // low pointers here would call every valid streamed mesh corrupt.
+  const uint32_t physical = addr & 0x1FFFFFFFu;
+  return (addr < 0x00200000u || (addr >= kRamBegin && addr < kRamEnd)) &&
+         physical < 0x00200000u && bytes <= 0x00200000u - physical;
+}
+
+void census_sprite_queue(Core* c) {
+  s_spriteq.calls++;
+  uint32_t call_records = 0;
+  bool terminated = false;
+  for (uint32_t qi = 0; qi < kQueueCapacity; ++qi) {
+    const uint32_t actor = c->mem_r32(kSpriteQueue + qi * 4u);
+    if (!actor) { terminated = true; break; }
+    if (!ram_range(actor, 0x58u)) { s_spriteq.invalid_actor++; continue; }
+    call_records++;
+    s_spriteq.records++;
+
+    const uint16_t mesh_index = c->mem_r16(actor + 0x36u);
+    if (!s_spriteq.mesh_seen[mesh_index]) {
+      s_spriteq.mesh_seen[mesh_index] = true;
+      s_spriteq.distinct_meshes++;
+    }
+    const uint32_t mesh = c->mem_r32(kActorMeshTable + (uint32_t)mesh_index * 4u);
+    // The queue is built before visibility rejection. A null mesh entry is therefore an observed
+    // input state, not corruption: the guest only dereferences it inside its visible branch.
+    if (!mesh) { s_spriteq.absent_mesh++; continue; }
+    if (!ram_range(mesh, 0x10u)) { s_spriteq.invalid_mesh++; continue; }
+    const uint32_t vertex_count = c->mem_r8(mesh + 0u);
+    const uint32_t primitive_count = c->mem_r8(mesh + 1u);
+    const uint32_t stream = c->mem_r32(mesh + 0x0Cu);
+    // Slot 0 is the executable's explicit all-ones sentinel descriptor. These records are rejected
+    // by the visibility branch before the body reaches mesh decoding; keep them in the denominator
+    // without reporting their deliberately-invalid stream pointer as corruption.
+    if (vertex_count == 0xFFu && primitive_count == 0xFFu && stream == 0xFFFFFFFFu) {
+      s_spriteq.sentinel_mesh++;
+      continue;
+    }
+    if (!stream && primitive_count) { s_spriteq.absent_stream++; continue; }
+    if (!ram_range(stream, primitive_count * 8u)) {
+      s_spriteq.invalid_stream++;
+      if (!s_spriteq.invalid_stream_seen[mesh_index]) {
+        s_spriteq.invalid_stream_seen[mesh_index] = true;
+        lucent::info("spriteq", "unavailable stream state: mesh_index={} mesh=0x{:08X} "
+                                "vertex_count={} primitive_count={} stream=0x{:08X}; queued records "
+                                "are inspected before the guest's visibility branch",
+                     mesh_index, mesh, vertex_count, primitive_count, stream);
+      }
+      continue;
+    }
+
+    for (uint32_t pi = 0; pi < primitive_count; ++pi) {
+      const uint32_t packed = c->mem_r32(stream + pi * 8u);
+      const uint32_t i0 = (packed >> 21u) & 0x1FCu;
+      const uint32_t i1 = (packed >> 14u) & 0x1FCu;
+      const uint32_t i2 = (packed >> 7u) & 0x1FCu;
+      const uint32_t i3 = packed & 0x1FCu;
+      if (i0 / 4u >= vertex_count || i1 / 4u >= vertex_count ||
+          i2 / 4u >= vertex_count || i3 / 4u >= vertex_count) {
+        s_spriteq.invalid_index++;
+        continue;
+      }
+      s_spriteq.primitives++;
+      if ((packed & 3u) == 3u) s_spriteq.bit11++;
+      else if ((packed & 1u) != 0u) s_spriteq.bit01++;
+      else if (i2 != i3) s_spriteq.gouraud_quad++;
+      else s_spriteq.gouraud_tri++;
+    }
+  }
+  if (!terminated) s_spriteq.unterminated_queues++;
+  if (!call_records) s_spriteq.empty_calls++;
+}
+
+void sprite_queue_hook(Core* c) {
+  census_sprite_queue(c);
+  const RecompRegistry* R = psxport_recomp();
+  R->shard_set_override(kSpriteRenderer, nullptr);
+  R->main_dispatch(c, kSpriteRenderer);
+  R->shard_set_override(kSpriteRenderer, sprite_queue_hook);
+}
 
 // ANY address, and now ANY NUMBER OF THEM — the remaining ownership queue is five renderers (C133)
 // and the question "is this one actually called, and is it reproducible under the rewind?" has to be
@@ -145,6 +264,14 @@ void interp_hook(Core* c) {
 }  // namespace
 
 void spyro_register_native_render() {
+  if (cfg_str("PSXPORT_SPRITE_QUEUE_CENSUS")) {
+    s_spriteq.armed = true;
+    psxport_recomp()->shard_set_override(kSpriteRenderer, sprite_queue_hook);
+    lucent::info("spriteq", "ARMED input census at 0x{:08X}: queue capacity {}, scanning game actor + "
+                            "mesh records before the unchanged guest renderer. The run-end report "
+                            "prints calls and records even when both are zero.",
+                 kSpriteRenderer, kQueueCapacity);
+  }
   // PSXPORT_MUTE_FN=<hex guest address>[,<hex>...] — replace these bodies with nothing.
   if (const char* m = cfg_str("PSXPORT_MUTE_FN")) {
     for (const char* p = m; *p;) {
@@ -226,4 +353,19 @@ void spyro_register_native_render() {
                           "the differential CANNOT validate a function of this shape, and owning it "
                           "would need a different acceptance test. Zero calls means it never ran in "
                           "this capture, which is a different answer from 'it diverged'.", s_names[i]);
+}
+
+void spyro_sprite_queue_census_finish() {
+  if (!s_spriteq.armed) return;
+  lucent::info("spriteq", "CENSUS: calls={} empty_calls={} records={} distinct_meshes={} primitives={} "
+                          "variants(bit11={}, bit01={}, gouraud_quad={}, gouraud_tri={}) absent(mesh={}, "
+                          "stream={}) sentinel_mesh={} "
+                          "invalid(actor={}, mesh={}, stream={}, vertex_index={}) unterminated_queues={}",
+               s_spriteq.calls, s_spriteq.empty_calls, s_spriteq.records, s_spriteq.distinct_meshes,
+               s_spriteq.primitives, s_spriteq.bit11, s_spriteq.bit01, s_spriteq.gouraud_quad,
+               s_spriteq.gouraud_tri, s_spriteq.absent_mesh, s_spriteq.absent_stream,
+               s_spriteq.sentinel_mesh,
+               s_spriteq.invalid_actor,
+               s_spriteq.invalid_mesh, s_spriteq.invalid_stream, s_spriteq.invalid_index,
+               s_spriteq.unterminated_queues);
 }

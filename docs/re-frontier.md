@@ -267,10 +267,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 ### render.own-geometry-family — Own the hand-written assembly geometry renderers (the gate for widescreen AND 60fps)
 - status: re-partial
 - deps: gpu.native-depth
-- evidence: C127,C129,C130,C136,C137,C138,C139,C140,C141
+- evidence: C127,C129,C130,C136,C137,C138,C139,C140,C141,C176
 - where: 0x8004EBA8 (understood at instruction level), 0x800258F0 (9 vertex sites traced), + 17 more sharing the fixed-area register-save idiom
 - gap: OWNERSHIP IS BACK ON WIDESCREEN'S CRITICAL PATH, but for a different and much better-defined reason than before. It is NO LONGER needed for clip bounds or OFX: those are handled by running the five contributing renderers interpreted with their bound immediates patched in guest RAM, which is bit-identical to the recompiled body (C139) and measurably recovers 9-18% more geometry per call at 16:9 (C142). What IS blocked is everything downstream of 2D-vs-3D DISCRIMINATION — psxport's 2D widen shifts the WHOLE FRAME a second time at this port's ~2.5% depth coverage (C143), and the uncovered-margin strip (issue 0039) is in the same class. That discrimination rides on per-primitive DEPTH, and depth is exactly what an OWNED body can emit and an interpreted one cannot. So own these for DEPTH; pick the target by which renderer's vertices are most needed, starting with 0x80020F34 (the ground) since it covers the most screen area.
-- notes: 
+- notes: RasterizeSpritePrimQueue 0x80022A2C is now measured at its game-state input boundary: the 256-entry actor queue and mesh stream exercise all four decoded primitive variants over 1,455,901 valid primitives, with explicit null/sentinel pre-cull states and zero invalid inputs (C176). This is input coverage, not ownership or visual fidelity; its native producer still has to reproduce visibility, transforms, colour/depth and queue emission.
 
 ### render.projection-constants — Wire Spyro's native projection constants (libgte SetGeomOffset/SetGeomScreen)
 - status: re-verified

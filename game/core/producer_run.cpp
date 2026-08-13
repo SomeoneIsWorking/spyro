@@ -5,6 +5,7 @@
 #include "core.h"
 #include "cfg.h"          // cfg_int — PSXPORT_NATIVE_FRAMES is a run-shape flag, not a diagnostic
 #include "producer_db.h"  // framework: producer_db_begin / producer_db_finish
+#include "spyro_game.h"   // optional sprite-queue census has the same run-end truth boundary
 #include <lucent/log.h>
 #include <stdlib.h>       // exit, atexit
 
@@ -30,6 +31,7 @@ void finish_once(const char* why) {
   s_finished = true;
   lucent::info("producers", "run ending after {} presented frame(s) ({}) — writing the DB",
                s_frames, why);
+  spyro_sprite_queue_census_finish();
   producer_db_finish(s_core);
 }
 

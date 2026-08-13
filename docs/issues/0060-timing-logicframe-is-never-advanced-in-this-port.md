@@ -61,3 +61,9 @@ What that warning WOULD have said, before the fix above: it would have fired, be
 
 ### Resolution (2026-08-13)
 Resolved. The port-side frame loop already advances Timing::logicFrame and calls OtAttr::beginLogicFrame; after pinning psxport c1e10128, a fresh standalone consumer run reported the expected producer across frames f585..f930-ish rather than f0, and the framework's no-frame-loop warning stayed silent. The same run retained one producer row and zero unscoped-native primitives. This closes the contract and warning verification requested by the issue; total end frame remains cap-bound and is not an invariant.
+
+### Reopened (2026-08-13)
+Reopened after the longer native run disproved the prior resolution's warning claim: psxport c1e10128 warned during normal crt0 before this healthy owned loop began. The counter itself was correct; the diagnostic's observation point was too early.
+
+### Resolution (2026-08-13)
+Resolved with psxport 64584c61. OtAttr now counts pre-frame stamps and emits the verdict at producer_db_finish. Real Spyro native run: SATISFIED at logic frame 931 after 2,197,225 legitimate pre-loop stamps; Core-alone smoke: FAILED after 3 stamps and no declared frame. test_core_store_no_game drives both states through shipping OtAttr, and the framework suite passes 45/45.

@@ -7,6 +7,7 @@
 // RenderQueue item yet.  Keeping that boundary explicit prevents a plausible but
 // incomplete actor from being presented as a finished producer.
 #include "fx_paired_actor.h"
+#include "cfg.h"
 #include "core.h"
 #include <lucent/log.h>
 #include <array>
@@ -46,6 +47,20 @@ struct LayerPose {
 struct PairedPose {
   std::array<LayerPose, kLayers> layers;
 };
+
+struct GuestXyzCapture {
+  std::vector<Vec3i> vertices;
+  uint64_t targeted = 0;
+  std::array<LayerDesc,kLayers> desc;
+  PairedPose pose;
+  bool decoded = false;
+  uint64_t allRtps = 0;
+  std::vector<uint32_t> rtpsPcs;
+  int layer = 0;
+  bool warmup = true;
+};
+
+static GuestXyzCapture sGuest;
 
 static int32_t sar32(uint32_t v, unsigned shift) {
   return (int32_t)v >> shift;
@@ -110,10 +125,12 @@ static bool make_stream(Core* c, uint8_t anim, uint8_t frame, int layer,
   const uint32_t table = c->mem_r32(kActorTable);
   out.model = c->mem_r32(table + (uint32_t)anim * 4u + 0x38u);
   if (!out.model) return false;
-  out.count = c->mem_r8(out.model + 8u + (uint32_t)layer);
+  const uint32_t boundary = c->mem_r8(out.model + 8u + (uint32_t)layer);
+  const uint32_t previous = layer ? c->mem_r8(out.model + 7u + (uint32_t)layer) : 0u;
+  if (boundary < previous) return false;
+  out.count = boundary - previous;
   out.base = c->mem_r32(out.model + 0x10u);
-  for (int i = 0; i < layer; ++i)
-    out.base += (uint32_t)c->mem_r8(out.model + 8u + (uint32_t)i) * 4u;
+  out.base += previous * 4u;
   out.frameWord = c->mem_r32(out.model + 0x24u + (uint32_t)frame * 4u);
   out.keyframe = keyframe_ptr(out.frameWord);
   if (!out.base || !out.keyframe) return false;
@@ -194,6 +211,95 @@ static bool decode_pose(Core* c, const std::array<LayerDesc,kLayers>& desc,
   return true;
 }
 
+static bool vertex_rtps_pc(uint32_t pc) {
+  switch (pc) {
+    case 0x800244E0u: case 0x80024580u:
+    case 0x800246BCu: case 0x800247D8u:
+    case 0x80024A14u: return true;
+    default: return false;
+  }
+}
+
+static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
+                              uint32_t insn, void* user) {
+  auto& capture = *static_cast<GuestXyzCapture*>(user);
+  if (insn != 0x4A180001u) return;
+  ++capture.allRtps;
+  bool novel = true;
+  for (uint32_t seen : capture.rtpsPcs) novel &= seen != pc;
+  if (novel) capture.rtpsPcs.push_back(pc);
+  if (!vertex_rtps_pc(pc)) return;
+  if (!capture.decoded) {
+    std::array<uint32_t,kLayers> counts{};
+    capture.decoded = build_descs(c, capture.desc) &&
+                      decode_pose(c, capture.desc, capture.pose, counts);
+  }
+  ++capture.targeted;
+  if (capture.warmup) {
+    capture.warmup = false;
+    return;
+  }
+  const uint32_t vxy = gte_read_data(0);
+  const uint32_t vz = gte_read_data(1);
+  capture.vertices.push_back({(int16_t)vz, (int16_t)vxy,
+                              (int16_t)(vxy >> 16)});
+  if (pc == 0x80024A14u) {
+    ++capture.layer;
+    capture.warmup = true;
+  }
+}
+
+static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
+  const uint64_t armed = gte_preop_observer_disarm(c);
+  if (guest.targeted == 0 && !guest.decoded) {
+    lucent::debug("pairedpose",
+                  "actual guest XYZ: armed_ops={} all_rtps={} target_rtps=0 "
+                  "expected=UNKNOWN compared=0 (0x80023AC4 not reached; novel_rtps_pcs={})",
+                  armed, guest.allRtps, guest.rtpsPcs.size());
+    for (uint32_t pc : guest.rtpsPcs)
+      lucent::debug("pairedpose", "actual guest XYZ: observed RTPS pc=0x{:08X}", pc);
+    return true;
+  }
+  const uint32_t expectedVertices = guest.decoded
+    ? guest.desc[0].a.count + guest.desc[1].a.count + guest.desc[2].a.count : 0;
+  const uint32_t expectedRtps = expectedVertices + kLayers;
+  uint32_t compared = 0, mismatches = 0;
+  int firstLayer = -1;
+  uint32_t firstVertex = 0;
+  Vec3i firstGuest{}, firstNative{};
+  if (guest.targeted == expectedRtps && guest.vertices.size() == expectedVertices) {
+    size_t at = 0;
+    for (int layer = 0; layer < kLayers; ++layer) {
+      for (uint32_t vertex = 0; vertex < guest.desc[layer].a.count; ++vertex, ++at) {
+        const Vec3i g = guest.vertices[at];
+        const Vec3i n = guest.pose.layers[layer].vertices[vertex];
+        ++compared;
+        if (g.x != n.x || g.y != n.y || g.z != n.z) {
+          if (firstLayer < 0) {
+            firstLayer = layer; firstVertex = vertex;
+            firstGuest = g; firstNative = n;
+          }
+          ++mismatches;
+        }
+      }
+    }
+  }
+  if (!guest.decoded || guest.targeted != expectedRtps ||
+      guest.vertices.size() != expectedVertices || mismatches) {
+    lucent::error("pairedpose",
+                  "actual guest XYZ: armed_ops={} all_rtps={} target_rtps={}/{} compared={}/{} "
+                  "mismatches={} first=layer{} vertex{} guest=({},{},{}) native=({},{},{})",
+                  armed, guest.allRtps, guest.targeted, expectedRtps, compared, expectedVertices, mismatches,
+                  firstLayer, firstVertex, firstGuest.x, firstGuest.y, firstGuest.z,
+                  firstNative.x, firstNative.y, firstNative.z);
+    return false;
+  }
+  lucent::info("pairedpose",
+               "actual guest XYZ: armed_ops={} all_rtps={} target_rtps={}/{} compared={}/{} mismatches=0",
+               armed, guest.allRtps, guest.targeted, expectedRtps, compared, expectedVertices);
+  return true;
+}
+
 } // namespace
 
 bool spyro_paired_actor_decode_pose(Core* c) {
@@ -213,6 +319,15 @@ bool spyro_paired_actor_decode_pose(Core* c) {
                 decoded[1], descriptors ? desc[1].a.count : 0,
                 decoded[2], descriptors ? desc[2].a.count : 0);
   return ok;
+}
+
+void spyro_paired_actor_oracle_arm(Core* c) {
+  sGuest = {};
+  gte_preop_observer_arm(c, capture_guest_xyz, &sGuest);
+}
+
+bool spyro_paired_actor_oracle_finish(Core* c) {
+  return compare_actual_guest(c, sGuest);
 }
 
 int spyro_paired_actor_selftest() {

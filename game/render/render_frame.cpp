@@ -11,6 +11,7 @@
 #include "cfg.h"          // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
 #include "frame_env.h"    // nativeFrameBegin/End — the frame the native producers draw into
+#include "fx_paired_actor.h"
 #include <lucent/log.h>
 #include <stdlib.h>       // abort
 
@@ -105,7 +106,15 @@ void SpyroRenderer::drawFrame() {
   lucent::debug("scene", "stage={} leg={} arm={}", sc.stage,
                 mC->rsub.mode.psxRender() ? "psx_render" : "native",
                 sc.arm ? sc.arm->what : "(outside 0..15 — the guest draws nothing)");
-  if (mC->rsub.mode.psxRender()) { referenceOtWalk(); return; }
+  if (mC->rsub.mode.psxRender()) {
+    const bool pairedOracle = sc.stage == kStageFrontEnd &&
+      mC->mem_r32(0x80078D7Cu) == 2u &&
+      cfg_str("PSXPORT_PAIREDPOSE_ORACLE") != nullptr;
+    if (pairedOracle) spyro_paired_actor_oracle_arm(mC);
+    referenceOtWalk();
+    if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) abort();
+    return;
+  }
   // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
   // and programs the GPU from it; on this leg nothing does, so the producers would emit into the
   // buffer that is NOT on screen and read as broken. game/render/frame_env.cpp owns that — it is

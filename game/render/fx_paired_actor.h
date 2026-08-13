@@ -7,5 +7,11 @@ class Core;
 // no faces yet.  False means the live actor/model data was structurally invalid.
 bool spyro_paired_actor_decode_pose(Core* c);
 
+// Diagnostic oracle: arm immediately before the guest render driver and finish
+// after it returns. The callback resolves the native pose at the guest's first
+// vertex RTPS, when all producer inputs are live.
+void spyro_paired_actor_oracle_arm(Core* c);
+bool spyro_paired_actor_oracle_finish(Core* c);
+
 // Hermetic checks for the shipping delta codec and /16 frame blend.
 int spyro_paired_actor_selftest();

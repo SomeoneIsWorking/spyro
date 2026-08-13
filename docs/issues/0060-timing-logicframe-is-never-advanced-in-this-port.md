@@ -1,11 +1,11 @@
 ---
 id: 60
 title: Timing::logicFrame is never advanced in this port, so every producer-DB row is stamped f0 and reads 'frames 1 (f0..f0)'
-status: open
+status: resolved
 symptom: a graphics-producer row that drew for hundreds of frames reports frames 1 (f0..f0); the same shape the framework's census_frame.h says it fixed
 tags: producers,census,frame-loop,instrument,psxport
 created: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 Found 2026-08-12 while verifying #59's first ProducerScope, and it is the SAME defect class as #58: framework state whose only writer lives on a code path a port with its own frame loop never enters.
@@ -58,3 +58,6 @@ FRAMEWORK REMAINDER, NOT FIXED HERE: any other port that owns its frame loop has
 psxport `868aa7e3` (OtAttr: stop reaching through `Core::game` for a frame stamp) added a one-shot warning that says out loud when no frame loop has ever called `beginLogicFrame` on a Core — so the span/watch/per-fn tables are stamped frame 0 and never reset, and a saturated table reads exactly like a busy frame. **Did it fire on a real run here? No — and NOT because this port is healthy.** It cannot fire, because it does not exist at the pin this port records: `grep -rn beginLogicFrame external/psxport/runtime/` at `726d10c9` finds only the declaration and `native_boot.cpp`'s call, with no warn text, whereas the same grep in the dev clone at `868aa7e3+` finds it at `ot_attr.cpp:53-65`. **Reporting "the warning did not fire" as a clean bill of health would have been a negative from a method that could not have produced a positive** — the denominator here is a build that contains no such check.
 
 What that warning WOULD have said, before the fix above: it would have fired, because `game/` called `beginLogicFrame` nowhere. It should stay silent once the pin advances past `868aa7e3`, and **that is the check to run at the next pin bump** — it is the cheapest confirmation that the fix above is wired to the framework's own notion of the contract rather than to this entry's reading of it. Also at `868aa7e3`: `ot_attr.cpp` no longer reads `c->game->gpu.s_frame` at all, so the stale-stamp half of this defect class is closed upstream; at `726d10c9` line 62 still reads it.
+
+### Resolution (2026-08-13)
+Resolved. The port-side frame loop already advances Timing::logicFrame and calls OtAttr::beginLogicFrame; after pinning psxport c1e10128, a fresh standalone consumer run reported the expected producer across frames f585..f930-ish rather than f0, and the framework's no-frame-loop warning stayed silent. The same run retained one producer row and zero unscoped-native primitives. This closes the contract and warning verification requested by the issue; total end frame remains cap-bound and is not an invariant.

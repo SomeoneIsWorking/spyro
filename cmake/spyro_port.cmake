@@ -34,6 +34,7 @@ set(GAME_SRC
   game/render/scene.cpp
   game/render/frame_env.cpp
   game/render/fx_title_menu.cpp
+  game/render/fx_sprite_queue.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
   game/core/native_leaf.cpp

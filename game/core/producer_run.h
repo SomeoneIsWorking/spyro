@@ -52,3 +52,8 @@ void spyro_producer_run_begin(Core* c);
 // Once per PRESENTED frame, from the port's real frame boundary (the vblank field in vsync.cpp).
 // Ends the run — report, JSONL, claim append, `exit(0)` — when the frame cap is reached.
 void spyro_producer_run_frame(Core* c);
+
+// Current PRESENT count for diagnostics that must correlate a producer call with a captured frame.
+// Zero before the first field; unlike a private per-producer counter, this is the same clock used by
+// PSXPORT_PRESENT_SHOT_AT and PSXPORT_NATIVE_FRAMES.
+long spyro_producer_run_present_count();

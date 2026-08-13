@@ -8,6 +8,7 @@
 #include "spyro_game.h"   // optional sprite-queue census has the same run-end truth boundary
 #include <lucent/log.h>
 #include <stdlib.h>       // exit, atexit
+#include <cstdio>
 
 namespace {
 
@@ -68,8 +69,24 @@ void spyro_producer_run_begin(Core* c) {
 }
 
 void spyro_producer_run_frame(Core* c) {
-  (void)c;   // the Core is latched in begin(); this argument keeps the call site self-documenting
   ++s_frames;
+  // Semantic-state capture shared by BOTH render legs. Fixed PRESENT indices cannot compare this
+  // scene: unchanged runs placed timer 171 anywhere from present 3858 to 4094. This hook is after
+  // the real present in vsync.cpp and fires once on the game's own stage/mode/state/timer tuple.
+  if (const int shot_timer = cfg_int("PSXPORT_SPRITE_QUEUE_SHOT_TIMER", -1); shot_timer >= 0) {
+    static bool shot_done = false;
+    const int32_t timer = (int32_t)c->mem_r32(0x80078D80u);
+    if (!shot_done && c->mem_r32(0x800757D8u) == 13u && c->mem_r32(0x80078D78u) == 3u &&
+        c->mem_r32(0x80078D7Cu) == 2u && timer == shot_timer) {
+      shot_done = true;
+      void gpu_vk_present_shot(Core*, const char*);
+      char path[128];
+      snprintf(path, sizeof path, "scratch/screenshots/spriteq_timer_%d.ppm", shot_timer);
+      gpu_vk_present_shot(c, path);
+      lucent::info("spriteq", "semantic capture: present={} stage=13 mode=3 state=2 timer={} -> {}",
+                   s_frames, timer, path);
+    }
+  }
   if (s_cap <= 0 || s_frames < (long)s_cap) return;
   finish_once("frame cap reached");
   // STOP THE HOST-TURN TIMER THREAD BEFORE EXITING, and this is not housekeeping — without it the
@@ -95,3 +112,5 @@ void spyro_producer_run_frame(Core* c) {
   // not decide the framework's config-reporting lifecycle from inside its DB hook; reported instead.
   exit(0);
 }
+
+long spyro_producer_run_present_count() { return s_frames; }

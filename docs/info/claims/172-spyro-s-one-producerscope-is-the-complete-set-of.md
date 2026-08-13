@@ -1,12 +1,13 @@
 ---
 id: C172
 kind: claim
-status: holds
+status: falsified
 created: 2026-08-12
 tags: producers,census,scoping,instrument
 depends: game/render/fx_title_menu.cpp#spriteEmit
 reconfirmed: 2026-08-12 21:16:05
 verified_at: 2026-08-12 21:16:05
+falsified_on: 2026-08-13
 ---
 
 ## Claim
@@ -24,3 +25,9 @@ any run whose [producers] run-end line reports unscoped-native > 0, or any PSXPO
 ## Re-confirmed 2026-08-12 21:16:05
 
 CONFIRMED STRUCTURALLY (stronger than the original's run evidence) 2026-08-12: 'grep -rn push2dQuad game/' has exactly ONE call site (fx_title_menu.cpp:263); 'grep -rn ProducerScope game/' exactly one construction (line 262); the only other rq uses are two flush() consumers (render_frame.cpp:115, vsync.cpp:323). So the complete set is 1 by enumeration of the render queue's single push function. Reproduced at runtime on a fresh build (scratch/logs/V_native3000.log, PSXPORT_DEBUG=unscoped, cap 3000, rc=0): 'attributed 1374 + unscoped-native 0' and 0 UNDECLARED lines. Reference leg swept (scratch/logs/V_refleg3000.log and V_refleg_after.log): 0 rows, unscoped-native 0, every prim guest-origin. Its blind-spot (3) is now CORROBORATED BY THE FRAMEWORK ITSELF, which prints 'otattr:warn GameConfig::packetPoolBase/Stride are 0 for this game — packet-pool attribution is STRUCTURALLY BLIND here'.
+
+## FALSIFIED 2026-08-13
+
+A second native RenderQueue producer now exists in game/render/fx_sprite_queue.cpp, scoped to guest 0x80022A2C; the claim's own falsifier explicitly names this condition.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

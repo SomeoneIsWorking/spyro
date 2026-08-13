@@ -30,12 +30,15 @@
 #include "native_diff.h"
 #include "cfg.h"      // cfg_str — the PSXPORT_*_FN address lists are feature flags, not diagnostics
 #include "spyro_game.h"
+#include "producer_run.h"
 #include <lucent/log.h>
 #include <cstdio>
 #include <cstdlib>
 #include <array>
 
 void interp_call(Core* c, uint32_t pc);   // interp.cpp — nested call that leaves the guest's ra alone
+void spyro_trace_reference_sprite_faces(Core* c);
+void spyro_trace_reference_sprite_packets(Core* c, uint32_t begin, uint32_t end);
 
 namespace {
 
@@ -56,11 +59,17 @@ struct SpriteQueueCensus {
   uint64_t calls = 0;
   uint64_t empty_calls = 0;
   uint64_t records = 0;
+  uint64_t screen_records = 0;
   uint64_t primitives = 0;
   uint64_t bit11 = 0;
   uint64_t bit01 = 0;
   uint64_t gouraud_quad = 0;
   uint64_t gouraud_tri = 0;
+  uint64_t screen_primitives = 0;
+  uint64_t screen_bit11 = 0;
+  uint64_t screen_bit01 = 0;
+  uint64_t screen_gouraud_quad = 0;
+  uint64_t screen_gouraud_tri = 0;
   uint64_t invalid_actor = 0;
   uint64_t absent_mesh = 0;
   uint64_t absent_stream = 0;
@@ -71,6 +80,13 @@ struct SpriteQueueCensus {
   uint64_t unterminated_queues = 0;
   std::array<bool, 65536> mesh_seen{};
   std::array<bool, 65536> invalid_stream_seen{};
+  std::array<uint64_t, 16 * 4> stage_mode_calls{};
+  std::array<uint64_t, 16 * 4> stage_mode_records{};
+  std::array<uint64_t, 16 * 4> stage_mode_screen_records{};
+  std::array<uint64_t, 16 * 4 * 4> stage_mode_variants{};
+  std::array<uint64_t, 65536> screen_mesh_records{};
+  std::array<uint64_t, 65536> screen_mesh_primitives{};
+  std::array<uint32_t, 65536> screen_mesh_actor_flags{};
   uint32_t distinct_meshes = 0;
 } s_spriteq;
 
@@ -84,7 +100,14 @@ bool ram_range(uint32_t addr, uint32_t bytes) {
 }
 
 void census_sprite_queue(Core* c) {
+  const uint64_t prim_before = s_spriteq.primitives;
+  const uint64_t screen_prim_before = s_spriteq.screen_primitives;
   s_spriteq.calls++;
+  const uint32_t stage = c->mem_r32(0x800757D8u);
+  const uint32_t mode = c->mem_r32(0x80078D78u);
+  const bool classified = stage < 16u && mode < 4u;
+  const uint32_t class_index = stage * 4u + mode;
+  if (classified) s_spriteq.stage_mode_calls[class_index]++;
   uint32_t call_records = 0;
   bool terminated = false;
   for (uint32_t qi = 0; qi < kQueueCapacity; ++qi) {
@@ -93,8 +116,21 @@ void census_sprite_queue(Core* c) {
     if (!ram_range(actor, 0x58u)) { s_spriteq.invalid_actor++; continue; }
     call_records++;
     s_spriteq.records++;
-
+    // The body tests `(u16(actor+0x50) << 24) < 0`: on little-endian MIPS that is the sign bit of
+    // byte +0x50, not bit 15 of the halfword. Text actors write 0xFF to exactly this byte.
+    const bool screen_space = (c->mem_r8(actor + 0x50u) & 0x80u) != 0;
     const uint16_t mesh_index = c->mem_r16(actor + 0x36u);
+    if (screen_space) s_spriteq.screen_records++;
+    if (screen_space) {
+      s_spriteq.screen_mesh_records[mesh_index]++;
+      if (s_spriteq.screen_mesh_records[mesh_index] == 1)
+        s_spriteq.screen_mesh_actor_flags[mesh_index] = c->mem_r32(actor + 0x4Cu);
+    }
+    if (classified) {
+      s_spriteq.stage_mode_records[class_index]++;
+      if (screen_space) s_spriteq.stage_mode_screen_records[class_index]++;
+    }
+
     if (!s_spriteq.mesh_seen[mesh_index]) {
       s_spriteq.mesh_seen[mesh_index] = true;
       s_spriteq.distinct_meshes++;
@@ -139,22 +175,64 @@ void census_sprite_queue(Core* c) {
         continue;
       }
       s_spriteq.primitives++;
-      if ((packed & 3u) == 3u) s_spriteq.bit11++;
-      else if ((packed & 1u) != 0u) s_spriteq.bit01++;
-      else if (i2 != i3) s_spriteq.gouraud_quad++;
-      else s_spriteq.gouraud_tri++;
+      if (screen_space) s_spriteq.screen_primitives++;
+      if (screen_space) s_spriteq.screen_mesh_primitives[mesh_index]++;
+      if ((packed & 3u) == 3u) {
+        s_spriteq.bit11++;
+        if (screen_space) s_spriteq.screen_bit11++;
+        if (classified) s_spriteq.stage_mode_variants[class_index * 4u + 0u]++;
+      } else if ((packed & 1u) != 0u) {
+        s_spriteq.bit01++;
+        if (screen_space) s_spriteq.screen_bit01++;
+        if (classified) s_spriteq.stage_mode_variants[class_index * 4u + 1u]++;
+      } else if (i2 != i3) {
+        s_spriteq.gouraud_quad++;
+        if (screen_space) s_spriteq.screen_gouraud_quad++;
+        if (classified) s_spriteq.stage_mode_variants[class_index * 4u + 2u]++;
+      } else {
+        s_spriteq.gouraud_tri++;
+        if (screen_space) s_spriteq.screen_gouraud_tri++;
+        if (classified) s_spriteq.stage_mode_variants[class_index * 4u + 3u]++;
+      }
     }
   }
   if (!terminated) s_spriteq.unterminated_queues++;
   if (!call_records) s_spriteq.empty_calls++;
+  lucent::debug("spriteq", "reference queue input: present={} stage={} mode={} state={} timer={} "
+                           "records={} primitives={} screen_primitives={}",
+                spyro_producer_run_present_count(), stage, mode, c->mem_r32(0x80078D7Cu),
+                (int32_t)c->mem_r32(0x80078D80u), call_records,
+                s_spriteq.primitives - prim_before, s_spriteq.screen_primitives - screen_prim_before);
 }
 
 void sprite_queue_hook(Core* c) {
+  lucent::debug("spriteq", "reference queue: present={} stage={} mode={} state={} timer={}",
+                spyro_producer_run_present_count(), c->mem_r32(0x800757D8u),
+                c->mem_r32(0x80078D78u), c->mem_r32(0x80078D7Cu),
+                (int32_t)c->mem_r32(0x80078D80u));
   census_sprite_queue(c);
+  spyro_trace_reference_sprite_faces(c);
+  const uint32_t pool_before = c->mem_r32(0x800757B0u);
   const RecompRegistry* R = psxport_recomp();
   R->shard_set_override(kSpriteRenderer, nullptr);
   R->main_dispatch(c, kSpriteRenderer);
   R->shard_set_override(kSpriteRenderer, sprite_queue_hook);
+  const uint32_t pool_after = c->mem_r32(0x800757B0u);
+  spyro_trace_reference_sprite_packets(c, pool_before, pool_after);
+  uint32_t p = pool_before, packets = 0, tri = 0, quad = 0, malformed = 0;
+  while (p < pool_after && packets < 4096u) {
+    const uint32_t tag = c->mem_r32(p);
+    const uint32_t words = tag >> 24;
+    const uint32_t bytes = (words + 1u) * 4u;
+    if (!words || bytes > pool_after - p) { malformed++; break; }
+    const uint32_t op = c->mem_r8(p + 7u) & 0xFCu;
+    if (op == 0x20u) tri++; else if (op == 0x28u) quad++;
+    packets++; p += bytes;
+  }
+  lucent::debug("spriteq", "reference queue output: present={} timer={} pool=0x{:08X}..0x{:08X} "
+                           "packets={} tri={} quad={} malformed={} unparsed_bytes={}",
+                spyro_producer_run_present_count(), (int32_t)c->mem_r32(0x80078D80u),
+                pool_before, pool_after, packets, tri, quad, malformed, pool_after - p);
 }
 
 // ANY address, and now ANY NUMBER OF THEM — the remaining ownership queue is five renderers (C133)
@@ -368,4 +446,24 @@ void spyro_sprite_queue_census_finish() {
                s_spriteq.invalid_actor,
                s_spriteq.invalid_mesh, s_spriteq.invalid_stream, s_spriteq.invalid_index,
                s_spriteq.unterminated_queues);
+  lucent::info("spriteq", "SCREEN-SPACE SUBSET: records={} primitives={} variants(bit11={}, bit01={}, "
+                          "gouraud_quad={}, gouraud_tri={})",
+               s_spriteq.screen_records, s_spriteq.screen_primitives, s_spriteq.screen_bit11,
+               s_spriteq.screen_bit01, s_spriteq.screen_gouraud_quad, s_spriteq.screen_gouraud_tri);
+  for (uint32_t stage = 0; stage < 16u; ++stage) for (uint32_t mode = 0; mode < 4u; ++mode) {
+    const uint32_t i = stage * 4u + mode;
+    if (!s_spriteq.stage_mode_calls[i]) continue;
+    lucent::info("spriteq", "CLASS stage={} mode={}: calls={} records={} screen_records={} variants("
+                            "bit11={}, bit01={}, gouraud_quad={}, gouraud_tri={})", stage,
+                 mode, s_spriteq.stage_mode_calls[i], s_spriteq.stage_mode_records[i],
+                 s_spriteq.stage_mode_screen_records[i], s_spriteq.stage_mode_variants[i * 4u + 0u],
+                 s_spriteq.stage_mode_variants[i * 4u + 1u], s_spriteq.stage_mode_variants[i * 4u + 2u],
+                 s_spriteq.stage_mode_variants[i * 4u + 3u]);
+  }
+  for (uint32_t mesh = 0; mesh < 65536u; ++mesh) {
+    if (!s_spriteq.screen_mesh_records[mesh]) continue;
+    lucent::info("spriteq", "SCREEN MESH {}: records={} primitives={} first_actor_4c=0x{:08X}", mesh,
+                 s_spriteq.screen_mesh_records[mesh], s_spriteq.screen_mesh_primitives[mesh],
+                 s_spriteq.screen_mesh_actor_flags[mesh]);
+  }
 }

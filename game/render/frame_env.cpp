@@ -17,12 +17,16 @@
 //   scratch/decomp/libgpu_setdrawenv.c FUN_800608e0 — SetDrawEnv: which GP0 words a DRAWENV becomes
 //   scratch/decomp/libgpu_env.c       FUN_80060030 — PutDispEnv: which GP1 word a DISPENV becomes
 //
-// 1. THE FLIP, verbatim from 0x8001ED5C's first six instructions:
-//        env = (active == kEnvA) ? kEnvB : kEnvA;   active = env;
-//    Everything else the driver head does — the OT base, the front list, the packet-pool pointers —
-//    is GUEST PACKET bookkeeping. The native leg emits no guest packets, so those pointers are
-//    deliberately NOT touched here: writing them would be busywork that only makes the reference
-//    leg's state harder to reason about. Named, so the omission is a decision and not an oversight.
+// 1. THE FRAME-OWNED ARENAS, verbatim from 0x8001ED5C's head:
+//        env = (active == kEnvA) ? kEnvB : kEnvA;
+//        ot = env->ot; front = env->front; pool = env->pool; packet_count = 0;
+//        actor_end = pool + 0x1c000; actor_cursor = actor_limit = actor_end; active = env;
+//        0x80033C50();
+//    These are not merely guest-packet bookkeeping. 0x80018880 and the stage-13 text builder use
+//    actor_cursor..actor_end as the transient actor arena before 0x80022A2C consumes that queue.
+//    Omitting the assignments made the native handler subtract an actor from null and write at
+//    0xFEFFFFFE. The final call builds the two camera matrices at 0x80076DD0/0x80076DE4; it remains
+//    guest logic, dispatched before any native producer reads them.
 //
 // 2. THE DRAW ENV -> GP0, from FUN_800608e0's five packet words, in its order:
 //        E3 draw-area TL   = (clip.x,           clip.y)
@@ -62,6 +66,18 @@ constexpr uint32_t kEnvA        = 0x80076EE0u;
 constexpr uint32_t kEnvB        = 0x80076F64u;
 constexpr uint32_t kActiveEnvPtr = 0x80075888u;   // *this = the env the guest is drawing with
 constexpr uint32_t kDispEnvOfs  = 0x5Cu;          // the DISPENV embedded at DRAWENV+0x5C
+constexpr uint32_t kEnvPoolPtrOfs = 0x70u;
+constexpr uint32_t kEnvOtPtrOfs = 0x74u;
+constexpr uint32_t kEnvFrontPtrOfs = 0x78u;
+constexpr uint32_t kPoolBase = 0x800757B0u;
+constexpr uint32_t kPoolEnd = 0x800756FCu;
+constexpr uint32_t kPoolCursor = 0x80075710u;
+constexpr uint32_t kPoolLimit = 0x80075780u;
+constexpr uint32_t kOtBase = 0x80075820u;
+constexpr uint32_t kFrontList = 0x8007581Cu;
+constexpr uint32_t kPacketCount = 0x800758B0u;
+constexpr uint32_t kTransientActorBytes = 0x1C000u;
+constexpr uint32_t kBuildCameraMatrices = 0x80033C50u;
 
 // Sony DRAWENV field offsets. Every one is used below, so an unused constant cannot rot here.
 constexpr uint32_t kDeClipX = 0x00u, kDeClipY = 0x02u, kDeClipW = 0x04u, kDeClipH = 0x06u;
@@ -86,6 +102,7 @@ constexpr int      kMaxFieldsPerFrame = 8;           // this port's bound; the g
 // guest's vblank callback, present. Declared here rather than in a header because vsync.cpp is the
 // only other file that uses it, and a two-caller extern is clearer than a header nobody else reads.
 bool spyro_deliver_field(Core* c, const char* site);
+extern "C" void rec_dispatch(Core* c, uint32_t addr);
 
 // A typed lens over one of the game's DRAWENVs, so the GP0 words below read as what they are.
 class DrawEnvLens {
@@ -117,12 +134,22 @@ private:
   uint32_t mB;
 };
 
-// nativeFrameBegin — open the native leg's frame: flip the env, then program the GPU from it.
+// nativeFrameBegin — open the native leg's frame: establish its arenas, then program the GPU.
 // Returns the env now being drawn with, so the caller can hand the same one to nativeFrameEnd.
 uint32_t nativeFrameBegin(Core* c) {
-  // (1) THE FLIP — 0x8001ED5C's own rule, and nothing else from its head (see note 1).
+  // (1) THE COMPLETE DRIVER HEAD — 0x8001ED5C, through its camera-matrix call (see note 1).
   const uint32_t env = (c->mem_r32(kActiveEnvPtr) == kEnvA) ? kEnvB : kEnvA;
+  const uint32_t pool = c->mem_r32(env + kEnvPoolPtrOfs);
+  const uint32_t actor_end = pool + kTransientActorBytes;
+  c->mem_w32(kOtBase, c->mem_r32(env + kEnvOtPtrOfs));
+  c->mem_w32(kFrontList, c->mem_r32(env + kEnvFrontPtrOfs));
+  c->mem_w32(kPoolBase, pool);
+  c->mem_w32(kPacketCount, 0);
+  c->mem_w32(kPoolEnd, actor_end);
+  c->mem_w32(kPoolCursor, actor_end);
+  c->mem_w32(kPoolLimit, actor_end);
   c->mem_w32(kActiveEnvPtr, env);
+  rec_dispatch(c, kBuildCameraMatrices);
 
   const DrawEnvLens de(c, env);
   // (2) THE DRAW ENV — FUN_800608e0's words, in its order.

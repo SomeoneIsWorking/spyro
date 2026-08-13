@@ -63,6 +63,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import struct
 import sys
 import tempfile
@@ -71,6 +72,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OVERLAYS_JSON = os.path.join(REPO, "game", "overlays.json")
 SEEDS_JSON = os.path.join(REPO, "game", "recomp_seeds.json")
 OVL_DIR = os.path.join(REPO, "scratch", "bin", "overlays")
+MAIN_EXE = os.path.join(REPO, "scratch", "bin", "spyro", "SCUS_942.28")
 
 JR_RA = 0x03E00008
 OP_JAL = 3
@@ -96,6 +98,23 @@ PRODUCERS = [
         "image": "OV_5B800",
         # The RE'd fingerprint: POLY_FT4 tag 0x09000000 -> `lui $r, 0x0900`.
         "fingerprint": ("lui $r,0x0900 (POLY_FT4 tag 0x09000000)", OP_LUI, 0x0900),
+    },
+    {
+        "label": "spriteq:RasterizeSpritePrimQueue.screen",
+        "src": "game/render/fx_sprite_queue.cpp",
+        "const": "kGuestProducer",
+        "image": "MAIN",
+        # Hand-written renderer entry: establish 0x80077DD8 as its register-save block, then save
+        # s0..s7/gp/sp/fp/ra. The shorter s0/s1/s2 prefix identifies 19 assembly renderers; the full
+        # save sequence identifies exactly one. This is structural data, not the expected address.
+        "entry_sequence": (
+            "0x80077DD8 register-save base + sw s0..s7/gp/sp/fp/ra + next lui ra,0x8007",
+            (0x3C018007, 0x24217DD8,
+             0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+             0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+             0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C,
+             0x3C1F8007),
+        ),
     },
 ]
 
@@ -141,14 +160,15 @@ def scan_shipped_scopes():
             if not fn.endswith((".cpp", ".h")):
                 continue
             p = os.path.join(root, fn)
-            for line, txt in enumerate(open(p, encoding="utf-8", errors="replace"), 1):
-                # NOT anchored at the start of the line, and comments dropped first: anchoring made this
-                # count read 0 for a scope written `{ ProducerScope p(...); }` on one line, which is a
-                # real construction. A census that under-counts is how an unmeasured producer slips past.
-                txt = re.sub(r"//.*", "", txt)
-                if re.search(r"\bProducerScope\s+\w+\s*\(", txt):
-                    lab = re.search(r'"([^"]*)"', txt)
-                    found.append((os.path.relpath(p, REPO), line, lab.group(1) if lab else None))
+            text = open(p, encoding="utf-8", errors="replace").read()
+            code = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+            code = re.sub(r"//[^\n]*", "", code)
+            # Parse through the closing `);`, not one physical line: the second producer exposed that
+            # line-oriented scanning found the construction but lost its label on the next line.
+            for m in re.finditer(r"\bProducerScope\s+\w+\s*\(([^;]*?)\)\s*;", code, re.S):
+                lab = re.search(r'"([^"]*)"', m.group(1))
+                line = code.count("\n", 0, m.start()) + 1
+                found.append((os.path.relpath(p, REPO), line, lab.group(1) if lab else None))
     return found
 
 
@@ -170,6 +190,20 @@ def overlay_base(name):
 
 
 def load_image(name, image_dir=None):
+    if name == "MAIN":
+        path = os.path.join(image_dir, "MAIN.BIN") if image_dir else MAIN_EXE
+        if not os.path.isfile(path):
+            raise Refuse(f"MAIN: no PS-X EXE at {path}. It is produced by tools/ensure_recomp.py "
+                         "from the user's disc (gitignored). NOTHING was measured; this is not a pass.")
+        raw = open(path, "rb").read()
+        if len(raw) < 0x800 or raw[:8] != b"PS-X EXE":
+            raise Refuse(f"MAIN: {path} is not a PS-X EXE ({len(raw)} bytes scanned)")
+        base, size = struct.unpack_from("<II", raw, 0x18)
+        if size == 0 or size % 4 or 0x800 + size > len(raw):
+            raise Refuse(f"MAIN: header declares base={base:#010x}, text={size} bytes, but file is "
+                         f"{len(raw)} bytes — no complete word corpus")
+        words = list(struct.unpack_from("<%dI" % (size // 4), raw, 0x800))
+        return words, base, path
     d = image_dir or OVL_DIR
     path = os.path.join(d, name + ".BIN")
     if not os.path.isfile(path):
@@ -188,9 +222,28 @@ def measure(prod, image_dir=None):
     here and must not be — that is the entire point."""
     name = prod["image"]
     words, base, path = load_image(name, image_dir)
+    where = f"{name} ({len(words)} words at {base:#010x}, {os.path.relpath(path, REPO)})"
+    if "entry_sequence" in prod:
+        desc, seq = prod["entry_sequence"]
+        sites = [i for i in range(0, len(words) - len(seq) + 1)
+                 if tuple(words[i:i + len(seq)]) == seq]
+        if len(sites) != 1:
+            raise Refuse(f"{prod['label']}: entry fingerprint {desc} matched {len(sites)} site(s) "
+                         f"in {where}; exactly 1 is required. "
+                         + (f"sites: {[hex(base + 4 * i) for i in sites[:8]]}" if sites else
+                            "0 sites means the fingerprint no longer describes this image — "
+                            "measured nothing; refusing."))
+        site = sites[0]
+        entry = base + 4 * site
+        callers = sum(1 for w in words
+                      if (w >> 26) == OP_JAL and ((((w & 0x3FFFFFF) << 2) | 0x80000000) == entry))
+        return {
+            "addr": entry, "image": name, "words": len(words), "base": base,
+            "fingerprint_at": entry, "fingerprint": desc,
+            "body_words": None, "callers": callers, "where": where,
+        }
     desc, op, imm = prod["fingerprint"]
     sites = [i for i, w in enumerate(words) if (w >> 26) == op and (w & 0xFFFF) == imm]
-    where = f"{name} ({len(words)} words at {base:#010x}, {os.path.relpath(path, REPO)})"
     if len(sites) != 1:
         raise Refuse(f"{prod['label']}: fingerprint {desc} matched {len(sites)} site(s) in {where}; "
                      f"exactly 1 is required for it to IDENTIFY a function. "
@@ -414,6 +467,55 @@ def selftest():
             '"prims_native":0,"frames":1,"first_frame":0,"last_frame":0}\n')
         expect("mutant: run row has 0 native prims", lambda: run_check(db=zero, quiet=True),
                "DISAGREE", because="prims_native=0")
+
+    # The MAIN-image producer gets the same two classes of negative. Keeping this separate from the
+    # legacy overlay block makes it explicit that adding a recipe is unfinished until ITS bytes and
+    # ITS shipped constant have both demonstrated the other answer.
+    prod = PRODUCERS[1]
+    with tempfile.TemporaryDirectory(dir=os.path.join(REPO, "scratch")) as td:
+        src = os.path.join(REPO, prod["src"])
+        text = open(src, encoding="utf-8").read()
+        mut = os.path.join(td, "mut-main.cpp")
+        open(mut, "w", encoding="utf-8").write(
+            re.sub(r"(constexpr\s+uint32_t\s+" + re.escape(prod["const"]) + r"\s*=\s*)0x[0-9A-Fa-f]+",
+                   r"\g<1>0x80022A24", text, count=1))
+        expect("MAIN mutant: shipped constant off by 8",
+               lambda: run_check(src_overrides={prod["label"]: mut}, quiet=True), "DISAGREE",
+               because="SHIPS 0x80022a24")
+
+        # Stage every recipe's corpus because run_check deliberately checks ALL shipped producers.
+        shutil.copy2(MAIN_EXE, os.path.join(td, "MAIN.BIN"))
+        for p in PRODUCERS:
+            if p["image"] != "MAIN":
+                shutil.copy2(os.path.join(OVL_DIR, p["image"] + ".BIN"),
+                             os.path.join(td, p["image"] + ".BIN"))
+        words, base, path = load_image("MAIN", td)
+        _desc, seq = prod["entry_sequence"]
+        sites = [i for i in range(len(words) - len(seq) + 1)
+                 if tuple(words[i:i + len(seq)]) == seq]
+        if len(sites) != 1:
+            raise Refuse(f"MAIN selftest corpus: entry sequence matched {len(sites)} site(s), wanted 1")
+
+        raw = bytearray(open(path, "rb").read())
+        struct.pack_into("<I", raw, 0x800 + 4 * sites[0], 0)
+        open(os.path.join(td, "MAIN.BIN"), "wb").write(raw)
+        expect("MAIN mutant: entry sequence blanked",
+               lambda: run_check(image_dir=td, quiet=True), "REFUSE",
+               because="matched 0 site(s)")
+
+        # Restore, then duplicate the WHOLE sequence into a zero run. Duplicating one word would not
+        # exercise a sequence discriminator and could pass for the wrong reason.
+        raw = bytearray(open(MAIN_EXE, "rb").read())
+        spare = next((i for i in range(len(words) - len(seq) + 1)
+                      if i != sites[0] and all(w == 0 for w in words[i:i + len(seq)])), None)
+        if spare is None:
+            raise Refuse("MAIN selftest corpus has no zero run long enough to duplicate the entry "
+                         "sequence — the ambiguity negative could not run")
+        struct.pack_into("<%dI" % len(seq), raw, 0x800 + 4 * spare, *seq)
+        open(os.path.join(td, "MAIN.BIN"), "wb").write(raw)
+        expect("MAIN mutant: entry sequence duplicated",
+               lambda: run_check(image_dir=td, quiet=True), "REFUSE",
+               because="matched 2 site(s)")
 
     print(f"[selftest] {len(fails)} FAIL(s)" + ("" if not fails else ": " + ", ".join(fails)))
     return 1 if fails else 0

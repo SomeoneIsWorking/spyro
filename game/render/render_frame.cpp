@@ -76,6 +76,11 @@ void SpyroRenderer::renderScene(const Scene& sc) const {
   const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
   const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
   const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
+  if (mC->mem_r32(0x80078D78u) == 3u) {
+    if (!stage13Mode3Render())
+      abortUnimplemented(sc, "mode 3 also armed paired-actor renderer 0x80023AC4");
+    return;
+  }
   if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1))
     abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
 }

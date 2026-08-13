@@ -1,11 +1,11 @@
 ---
 id: 39
 title: Widescreen: the wide band beyond 512 shows uncleared texture-atlas VRAM
-status: open
+status: resolved
 symptom: At 16:9 the 684-wide framebuffer renders correctly and centred with more world visible on the left, but the rightmost ~34 columns show raw texture-atlas VRAM rather than scene content.
 tags: gpu,widescreen
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-08-13
 ---
 
 VISUALLY CONFIRMED that widescreen renders correctly and wider — this is the pixel verification C131 was missing, since a prim count is not a picture. At 16:9 the 684-wide framebuffer is correctly centred (DEMO MODE centred, Spyro mid-frame) and shows genuinely more world on the left than the 4:3 capture of the same frame. Side by side: scratch/screenshots/aspect_43.png (512) vs wide684.png (684).
@@ -118,3 +118,6 @@ AND THE OBVIOUS MODEL IS WRONG. PSXPORT_PRIMDUMP on frame 46501 (2048 prims) sho
 INSTRUMENT TRAP, mine, worth remembering: the primdump's coordinates are VRAM-space, not display-space (this frame's display origin is y=248, prims run y=210..492). Comparing them against display rows first produced '0 prims overlap the margin' for EVERY band, which read as a clean answer and was a space mismatch. Also, bbox extents from this dump are not usable for 'how far right does geometry reach' — several bands report x_max=1023, the full VRAM width, because the dump includes prims in atlas space.
 
 WHERE TO GO NEXT: the artefact is 34 columns wide and 10 rows tall at each end; the primdump says prims cover it. So the question is no longer WHO draws there but WHAT LANDS ON TOP — or whether those rows are outside the VK render target's cleared/loaded region (the margin columns are LOAD_OP_LOAD, persistent across frames, per gpu_native.cpp's own note). Check the render-target load/clear rect before touching the guest-side backdrop again.
+
+### Resolution (2026-08-13)
+Resolved by psxport c1e10128. A clean control at present 2100 reproduced 5,543 colors in the 960x720 sink's rightmost 240 pixels (mean 0.13997); the patched build made that crop exactly one color, black (mean 0), without writing guest VRAM. The native producer census still reported its one expected row and zero unscoped-native primitives. Evidence: scratch/logs/wide-margin-{control,patched}.log and scratch/screenshots/wide-ab/{control,patched}_2100.ppm.

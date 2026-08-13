@@ -286,7 +286,7 @@ bool g_in_field = false;
 
 unsigned long g_field_refused = 0;   // fields a caller asked for while one was already in flight
 
-bool deliver_field(Core* c, const char* site) {
+bool deliver_field(Core* c, const char* site, bool needsPacing) {
   // See the header: a field cannot begin inside a field. A host turn is taken at a guest function
   // entry or loop back-edge, and the guest code this function runs contains plenty of both — the
   // card state machine's own retry loops among them — so without this the game's vblank handler
@@ -377,8 +377,16 @@ bool deliver_field(Core* c, const char* site) {
   // Found in spider1, which had the identical omission (that port's silent intro), and confirmed
   // here by grep before writing this: zero call sites.
   c->game->spu_audio.frame();
-  gpu_pace_frame(c);
-  ++g_pace_entries;
+  // A host turn is already released by the framework's monotonic field clock. Sleeping here would
+  // make that clock overdue by another field; the next guest boundary would immediately take
+  // another host turn, sleep again, and repeat forever. That feedback loop advances VBlank/audio/
+  // present while starving the guest's frame logic — picture crawls while audio runs ahead.
+  // Explicit guest/native frame boundaries are not clock-released, so they still own the sleep.
+  if (needsPacing) {
+    gpu_pace_frame(c);
+    ++g_pace_entries;
+    rec_host_turn_field_delivered(c);
+  }
   // Deliver the per-frame IRQ-driven BIOS events. The framework normally does this in
   // native_step_frame — but that loop NEVER RUNS here, because the guest still owns its own frame
   // loop (game_hooks.cpp). This wait is the port's real per-frame point, so it is where the events
@@ -436,7 +444,7 @@ void vblank_wait(Core* c) {
       cur = target;   // satisfy the caller rather than hang, but the warning above is the real output
       break;
     }
-    if (deliver_field(c, "vsync")) cur = (int32_t)c->mem_r32(kVblankCounter);
+    if (deliver_field(c, "vsync", true)) cur = (int32_t)c->mem_r32(kVblankCounter);
     else                           cur++;
     advanced++;
   }
@@ -461,7 +469,7 @@ void spyro_host_turn(Core* c) {
   ++g_host_turns;
   lucent::debug("hostturn", "turn #{} at pc=0x{:08X} ra=0x{:08X} sp=0x{:08X} gp=0x{:08X}",
                 g_host_turns, c->pc, c->r[31], c->r[29], c->r[28]);
-  deliver_field(c, "hostturn");
+  deliver_field(c, "hostturn", false);
 }
 
 }  // namespace
@@ -473,7 +481,7 @@ void spyro_host_turn(Core* c) {
 // callback, present — or the two legs run on two timebases that drift. So the field is exported
 // rather than reimplemented; `deliver_field` itself stays file-local because its re-entrancy guard
 // and its logging are this file's business.
-bool spyro_deliver_field(Core* c, const char* site) { return deliver_field(c, site); }
+bool spyro_deliver_field(Core* c, const char* site) { return deliver_field(c, site, true); }
 
 void spyro_register_vsync(Game* g) {
   // Registration goes through PlatformHle::register_, which validates the address against

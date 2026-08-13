@@ -14,6 +14,7 @@ generated/
 # The framework submodule's own working-tree noise
 external/psxport/build/
 external/psxport/scratch/
+psxport_settings.ini
 *.log
 
 # Python bytecode — never committed. Compiled .pyc embed ABSOLUTE SOURCE PATHS, i.e. a machine-path

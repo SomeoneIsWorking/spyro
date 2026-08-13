@@ -9,8 +9,10 @@
 #include "fx_paired_actor.h"
 #include "cfg.h"
 #include "core.h"
+#include "paired_actor_decode.h"
 #include <lucent/log.h>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <vector>
 
@@ -57,9 +59,87 @@ struct GuestXyzCapture {
   uint64_t allRtps = 0;
   std::vector<uint32_t> rtpsPcs;
   bool warmup = true;
+  std::vector<spyro::paired_actor::ProjectedVertex> projected;
+  spyro::paired_actor::ProjectedVertex pending{};
+  bool hasPending = false;
+  uint32_t projectedCompared = 0;
+  uint32_t projectedMismatches = 0;
+  spyro::paired_actor::ProjectedVertex firstGuestProjected{};
+  spyro::paired_actor::ProjectedVertex firstNativeProjected{};
+  uint32_t firstProjected = 0;
 };
 
 static GuestXyzCapture sGuest;
+
+struct DivTable { uint8_t value[0x101]; };
+static constexpr DivTable make_div_table() {
+  DivTable d{};
+  for (uint32_t v = 0x8000; v < 0x10000; v += 0x80) {
+    uint32_t x = 512;
+    for (int i = 1; i < 5; ++i)
+      x = (x * (1024 * 512 - ((v >> 7) * x))) >> 18;
+    d.value[(v >> 7) & 0xff] = (uint8_t)(((x + 1) >> 1) - 0x101);
+  }
+  d.value[0x100] = d.value[0xff];
+  return d;
+}
+static constexpr DivTable kDivTable = make_div_table();
+
+static int32_t reciprocal(uint16_t divisor) {
+  int32_t x = 0x101 + kDivTable.value[((divisor & 0x7fff) + 0x40) >> 7];
+  int32_t t = (((int32_t)divisor * -x) + 0x80) >> 8;
+  return ((x * (131072 + t)) + 0x80) >> 8;
+}
+
+static uint32_t divide_unr(uint16_t h, uint16_t z) {
+  if ((uint32_t)z * 2 <= h) return 0x1ffff;
+  unsigned shift = std::countl_zero(z);
+  uint32_t dividend = (uint32_t)h << shift;
+  uint32_t divisor = (uint32_t)z << shift;
+  uint32_t r = (uint32_t)(((uint64_t)dividend *
+      reciprocal((uint16_t)(divisor | 0x8000)) + 32768) >> 16);
+  return r > 0x1ffff ? 0x1ffff : r;
+}
+
+static int64_t wrap44(int64_t v) {
+  return (int64_t)((uint64_t)v << 20) >> 20;
+}
+
+static int32_t clampi(int32_t v, int32_t lo, int32_t hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static spyro::paired_actor::ProjectedVertex project_rtps(
+    uint32_t d0, uint32_t d1, const std::array<uint32_t,27>& cr) {
+  const int32_t v[3] = {(int16_t)d0, (int16_t)(d0 >> 16), (int16_t)d1};
+  const uint32_t c0 = cr[0], c1 = cr[1], c2 = cr[2], c3 = cr[3], c4 = cr[4];
+  const int32_t m[3][3] = {
+    {(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
+    {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
+    {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}};
+  int32_t ir[3]{};
+  int64_t zUnshifted = 0;
+  for (int row = 0; row < 3; ++row) {
+    int64_t a = (int64_t)(int32_t)cr[5 + row] << 12;
+    for (int col = 0; col < 3; ++col)
+      a = wrap44(a + (int64_t)m[row][col] * v[col]);
+    if (row == 2) zUnshifted = a;
+    ir[row] = clampi((int32_t)(a >> 12), -32768, 32767);
+  }
+  const uint16_t sz = (uint16_t)clampi((int32_t)(zUnshifted >> 12), 0, 65535);
+  const uint32_t ratio = divide_unr((uint16_t)cr[26], sz);
+  const int32_t sx = clampi((int32_t)(((int64_t)(int32_t)cr[24] +
+      (int64_t)ir[0] * ratio) >> 16), -1024, 1023);
+  const int32_t sy = clampi((int32_t)(((int64_t)(int32_t)cr[25] +
+      (int64_t)ir[1] * ratio) >> 16), -1024, 1023);
+  return {(int16_t)sx, (int16_t)sy, sz};
+}
+
+static spyro::paired_actor::ProjectedVertex project_live_rtps() {
+  std::array<uint32_t,27> cr{};
+  for (uint32_t i = 0; i < cr.size(); ++i) cr[i] = gte_read_ctrl(i);
+  return project_rtps(gte_read_data(0), gte_read_data(1), cr);
+}
 
 static int32_t sar32(uint32_t v, unsigned shift) {
   return (int32_t)v >> shift;
@@ -254,9 +334,33 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
   const uint32_t vz = gte_read_data(1);
   capture.vertices.push_back({(int16_t)vz, (int16_t)vxy,
                               (int16_t)(vxy >> 16)});
+  capture.pending = project_live_rtps();
+  capture.hasPending = true;
   if (pc == 0x80024A14u) {
     capture.warmup = true;
   }
+}
+
+static void capture_guest_projection(Core*, uint64_t, uint32_t pc,
+                                     uint32_t insn, void* user) {
+  auto& capture = *static_cast<GuestXyzCapture*>(user);
+  if (insn != 0x4A180001u || !vertex_rtps_pc(pc) || !capture.hasPending)
+    return;
+  const uint32_t sxy = gte_read_data(14);
+  const spyro::paired_actor::ProjectedVertex g{
+    (int16_t)sxy, (int16_t)(sxy >> 16), (uint16_t)gte_read_data(19)};
+  const spyro::paired_actor::ProjectedVertex n = capture.pending;
+  capture.projected.push_back(n);
+  ++capture.projectedCompared;
+  if (g.x != n.x || g.y != n.y || g.depth != n.depth) {
+    if (capture.projectedMismatches == 0) {
+      capture.firstProjected = capture.projectedCompared - 1;
+      capture.firstGuestProjected = g;
+      capture.firstNativeProjected = n;
+    }
+    ++capture.projectedMismatches;
+  }
+  capture.hasPending = false;
 }
 
 static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
@@ -304,9 +408,23 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                   firstNative.x, firstNative.y, firstNative.z);
     return false;
   }
+  if (guest.hasPending || guest.projectedCompared != expectedVertices ||
+      guest.projectedMismatches) {
+    lucent::error("pairedpose",
+                  "actual guest projection: compared={}/{} pending={} mismatches={} "
+                  "first={} guest=({},{},{}) native=({},{},{})",
+                  guest.projectedCompared, expectedVertices, guest.hasPending,
+                  guest.projectedMismatches, guest.firstProjected,
+                  guest.firstGuestProjected.x, guest.firstGuestProjected.y,
+                  guest.firstGuestProjected.depth, guest.firstNativeProjected.x,
+                  guest.firstNativeProjected.y, guest.firstNativeProjected.depth);
+    return false;
+  }
   lucent::info("pairedpose",
-               "actual guest XYZ: armed_ops={} all_rtps={} target_rtps={}/{} compared={}/{} mismatches=0",
-               armed, guest.allRtps, guest.targeted, expectedRtps, compared, expectedVertices);
+               "actual guest XYZ+projection: armed_ops={} all_rtps={} target_rtps={}/{} "
+               "xyz={}/{} projected={}/{} mismatches=0",
+               armed, guest.allRtps, guest.targeted, expectedRtps, compared,
+               expectedVertices, guest.projectedCompared, expectedVertices);
   return true;
 }
 
@@ -333,7 +451,7 @@ bool spyro_paired_actor_decode_pose(Core* c) {
 
 void spyro_paired_actor_oracle_arm(Core* c) {
   sGuest = {};
-  gte_preop_observer_arm(c, capture_guest_xyz, &sGuest);
+  gte_op_observer_arm(c, capture_guest_xyz, capture_guest_projection, &sGuest);
 }
 
 bool spyro_paired_actor_oracle_finish(Core* c) {
@@ -349,6 +467,17 @@ int spyro_paired_actor_selftest() {
   };
   bool ok = true;
   ok &= expect(unpack_accum(0x00200801u).x == 1, "packed X extraction");
+  std::array<uint32_t,27> identity{};
+  identity[0] = 4096; identity[2] = 4096; identity[4] = 4096;
+  identity[7] = 1000;
+  identity[24] = 256u << 16; identity[25] = 120u << 16; identity[26] = 341;
+  const auto center = project_rtps(0, 0, identity);
+  ok &= expect(center.x == 256 && center.y == 120 && center.depth == 1000,
+               "identity projection center and view depth");
+  identity[7] = 170;
+  const auto near = project_rtps(1, 0, identity);
+  ok &= expect(near.x == 257 && near.y == 120 && near.depth == 170,
+               "near-plane saturated UNR projection");
   ok &= expect(blend16({0,0,0}, {16,-16,32}, 8).x == 8,
                "half-frame positive blend");
   const Vec3i half = blend16({0,0,0}, {16,-16,32}, 8);

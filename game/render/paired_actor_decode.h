@@ -8,6 +8,14 @@
 
 namespace spyro::paired_actor {
 
+// Exact integer projection product consumed by the pure face/material/OT slice.
+// `offset` fields in Primitive select these records in the producer-owned table.
+struct ProjectedVertex {
+  int16_t x = 0;
+  int16_t y = 0;
+  uint16_t depth = 0;
+};
+
 // Pure, projection-free decode of 0x80023AC4's normal primitive stream. Offsets remain byte offsets
 // into the function's projected-vertex and material tables; the eventual producer owns mapping them.
 struct Primitive {

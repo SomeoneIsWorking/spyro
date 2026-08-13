@@ -234,6 +234,17 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: DONE. The rule works and the earlier doubt was my own bad measurement: I had reported that the confirmed entries were NOT in main's install table, which was wrong — the value-extraction scan was grabbing a neighbouring store's lui/addiu pair. Redone correctly, the table has 43 store sites yielding 36 DISTINCT addresses, matching the 36 code overlays of C033 and the ~37 the decomps describe, and every confirmed entry is in it. An address is claimed by an overlay only when it is prologue-shaped (addiu sp,sp,-N) in THAT overlay's own bytes, which is what stops another level's entry being seeded into the wrong module — all overlays share one base, so 35 of 36 would otherwise land mid-function. The test separates cleanly: each level overlay claims exactly one (OV_237D000 0x8007AEB8, OV_2F5B000 0x8007B7A8, OV_502F800 0x8007CFB4), the two small data-only reads claim none, and OV_B83800 claims two. tools/overlay_scan.py derives them into game/overlays.json; ensure_recomp.py merges them with the hand-reasoned seeds into generated/.recomp_seeds_merged.json and hashes them into the recomp identity so a newly-derived entry cannot leave generated/ looking current. The hand file's overlay_seeds is now empty by design. 0x8007CFB4 — the address that cost a whole wrong diagnosis — is now supplied automatically.
 
 
+## input
+
+### input.start-skip-sequences — Start skips logos, loading overlays, and scripted sequences
+- status: re-partial
+- deps: input.pad
+- evidence: C110; issue 0027; generated `0x800127C0`; docs/findings/start-skip-map.md
+- where: game/core/cd_queue.cpp `lp_800127C0`; game/core/vsync.cpp `deliver_field`; `PSXPORT_DEBUG=skipmap`
+- gap: Boot is mapped exactly: two fade/hold logo sections surround a required loading-phase 3→10 loop, and the function contains no guest pad branch. The title/attract sequence already has a legitimate guest Start transition and must not be replaced with a state poke. The shipping feature is NOT implemented: classify level scripted/cutscene and loading-overlay states from a played/replayed run, identify each natural completion writer, then consume one Start edge only within those positively identified states. Never pulse Start across a handoff into gameplay, where it means pause.
+- notes: `skipmap` has a negative denominator every 600 fields and reports every edge/state transition uncapped. Boot classification uses the dynamic lifetime of `0x800127C0`, not a frame threshold.
+
+
 ## ownership
 
 ### own.next-targets — Own more guest functions natively, each gated by PSXPORT_NDIFF

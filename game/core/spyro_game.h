@@ -18,6 +18,10 @@ void spyro_register_vsync(Game* g);
 // game/core/cd_queue.cpp — observes (and will own) the CD request queue service routine.
 void spyro_register_cd_queue();
 
+// True only while the guest's boot/logo/loading sequence at 0x800127C0 is executing.  The
+// observer in vsync.cpp uses this lifetime rather than guessing boot from a frame number.
+bool spyro_boot_sequence_active();
+
 // The first guest function this port OWNS outright (native_rand.cpp) — the recompiled body never
 // runs once installed. Verified per call against that body under PSXPORT_NDIFF.
 void spyro_register_native_rand();

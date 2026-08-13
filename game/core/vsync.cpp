@@ -334,6 +334,48 @@ bool deliver_field(Core* c, const char* site, bool needsPacing) {
   // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
   // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
   const bool guestOwnsCount = run_vblank_callback(c);
+
+  // Map Start to the state the GUEST actually sees before adding any skip behaviour.  This is an
+  // observer, not a skip implementation: boot has no Start branch at all, whereas the title state
+  // uses both held and edge-shaped globals (C110).  Treating every frame with Start down as an
+  // advance would leak through loading into gameplay's pause action.
+  //
+  // NEGATIVE FIRST: every 600 fields the line reports the complete denominator and explicitly says
+  // how many Start edges were seen.  Thus silence means the channel is off / this path never ran;
+  // `start_edges=0` means we scanned and found none.  State changes and every edge are never capped.
+  {
+    constexpr uint16_t kPadStart = 0x0008u; // host/PSX active-low bit; guest decoder publishes 0x800
+    constexpr uint32_t kStageMode = 0x800757D8u;
+    constexpr uint32_t kStageSub = 0x80078D78u;
+    constexpr uint32_t kStageSubSub = 0x80078D7Cu;
+    constexpr uint32_t kBootLoadPhase = 0x80075864u;
+    static uint16_t prev_buttons = 0xFFFFu;
+    static uint32_t fields = 0, boot_fields = 0, stage_fields = 0, start_edges = 0;
+    static uint32_t prev_mode = ~0u, prev_sub = ~0u, prev_subsub = ~0u, prev_phase = ~0u;
+    static bool prev_boot = false;
+    const uint16_t buttons = c->game->pad.buttons;
+    const bool start_edge = !(buttons & kPadStart) && (prev_buttons & kPadStart);
+    prev_buttons = buttons;
+    ++fields;
+    const bool boot = spyro_boot_sequence_active();
+    boot ? ++boot_fields : ++stage_fields;
+    const uint32_t mode = c->mem_r32(kStageMode);
+    const uint32_t sub = c->mem_r32(kStageSub);
+    const uint32_t subsub = c->mem_r32(kStageSubSub);
+    const uint32_t phase = c->mem_r32(kBootLoadPhase);
+    const bool changed = mode != prev_mode || sub != prev_sub || subsub != prev_subsub ||
+                         phase != prev_phase || boot != prev_boot;
+    if (start_edge) ++start_edges;
+    if (start_edge || changed)
+      lucent::debug("skipmap", "field={} start_edge={} region={} boot_phase={} stage={}/{}/{} "
+                               "edges={}", fields, start_edge ? 1 : 0, boot ? "boot" : "stage",
+                    phase, mode, sub, subsub, start_edges);
+    if (fields % 600u == 0)
+      lucent::debug("skipmap", "scanned {} fields: start_edges={} boot_fields={} stage_fields={} "
+                               "current={}", fields, start_edges, boot_fields, stage_fields,
+                    boot ? "boot" : "stage");
+    prev_mode = mode; prev_sub = sub; prev_subsub = subsub; prev_phase = phase; prev_boot = boot;
+  }
   // A COMPLETED FRAME is the only safe place to capture guest RAM: mid-frame the OT and packet pool
   // are half-built, which is the one state nobody wants to reason about. The guest still owns its
   // frame loop here, so the framework cannot know where that boundary is — this wait does.

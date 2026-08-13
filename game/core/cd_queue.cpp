@@ -300,8 +300,26 @@ void cd_stream_read(Core* c) {
   }
 LOADER_PROBE(8001250C, 0x8001250Cu)
 LOADER_PROBE(80012480, 0x80012480u)
-LOADER_PROBE(800127C0, 0x800127C0u)
 #undef LOADER_PROBE
+
+// 0x800127C0 owns the complete two-logo boot sequence and its intervening overlay load.  Keep an
+// exact dynamic lifetime for the Start/skip mapper in vsync.cpp.  A frame-number threshold would
+// turn headless speed, CD latency, or a future boot change into a silent misclassification.
+bool g_boot_sequence_active = false;
+
+void lp_800127C0(Core* c) {
+  static unsigned calls = 0;
+  ++calls;
+  if (g_boot_sequence_active)
+    lucent::error("skipmap", "boot sequence re-entered at call {} — classification is invalid", calls);
+  g_boot_sequence_active = true;
+  lucent::debug("skipmap", "boot sequence ENTER call={} phase={} vblank={}", calls,
+                c->mem_r32(0x80075864u), c->mem_r32(0x800749E0u));
+  gen_func_800127C0(c);
+  lucent::debug("skipmap", "boot sequence EXIT call={} phase={} vblank={}", calls,
+                c->mem_r32(0x80075864u), c->mem_r32(0x800749E0u));
+  g_boot_sequence_active = false;
+}
 
 
 // ── post-CD stall probe (issue 0012) ─────────────────────────────────────────────────────────────
@@ -347,6 +365,8 @@ void probe_8005DB84(Core* c) {
 }
 
 }  // namespace
+
+bool spyro_boot_sequence_active() { return g_boot_sequence_active; }
 
 void spyro_register_cd_queue() {
   psxport_recomp()->shard_set_override(0x8005BB78u, probe_8005BB78);

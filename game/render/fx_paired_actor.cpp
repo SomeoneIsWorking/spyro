@@ -67,6 +67,34 @@ struct GuestXyzCapture {
   spyro::paired_actor::ProjectedVertex firstGuestProjected{};
   spyro::paired_actor::ProjectedVertex firstNativeProjected{};
   uint32_t firstProjected = 0;
+  spyro::paired_actor::ResolveResult faces;
+  bool facesResolved = false;
+  uint32_t guestCandidates = 0;
+  uint32_t guestNclipOps = 0;
+  uint32_t guestFront = 0;
+  uint32_t guestBackOrZero = 0;
+  uint32_t malformedNclip = 0;
+  struct PacketObservation {
+    uint32_t sourceOrdinal = 0;
+    uint32_t fragment = 0;
+    uint32_t address = 0;
+    uint32_t otLink = 0;
+    uint8_t command = 0;
+  };
+  std::vector<PacketObservation> guestPackets;
+  bool packetCandidateActive = false;
+  uint32_t packetCandidateOrdinal = 0;
+  uint32_t packetCandidateStart = 0;
+  uint32_t packetSourcesResolved = 0;
+  uint32_t packetSourcesWithOutput = 0;
+  uint32_t packetBytesUnparsed = 0;
+  uint32_t packetGt3 = 0;
+  uint32_t packetGt4 = 0;
+  uint32_t malformedOtTags = 0;
+  uint32_t faceKeyMatches = 0;
+  uint32_t faceKeyMismatches = 0;
+  uint32_t firstFaceKeyMismatch = UINT32_MAX;
+  spyro::paired_actor::FaceCompareResult packetContentCompare;
 };
 
 static GuestXyzCapture sGuest;
@@ -311,9 +339,126 @@ static bool vertex_rtps_pc(uint32_t pc) {
   }
 }
 
+static void finish_packet_candidate(Core* c, GuestXyzCapture& capture,
+                                    uint32_t end) {
+  if (!capture.packetCandidateActive) return;
+  ++capture.packetSourcesResolved;
+  uint32_t at = capture.packetCandidateStart;
+  uint32_t fragment = 0;
+  while (at < end) {
+    const uint8_t command = (uint8_t)(c->mem_r32(at + 4u) >> 24);
+    const uint8_t kind = command & (uint8_t)~2u;
+    const uint32_t size = kind == 0x34u ? 40u : (kind == 0x3Cu ? 52u : 0u);
+    if (!size || size > end - at) {
+      capture.packetBytesUnparsed += end - at;
+      break;
+    }
+    const uint32_t tag = c->mem_r32(at);
+    if ((tag >> 24) != size / 4u - 1u) ++capture.malformedOtTags;
+    kind == 0x34u ? ++capture.packetGt3 : ++capture.packetGt4;
+    capture.guestPackets.push_back({capture.packetCandidateOrdinal, fragment++, at,
+                                    tag, command});
+    at += size;
+  }
+  if (fragment) ++capture.packetSourcesWithOutput;
+  capture.packetCandidateActive = false;
+}
+
+static void compare_face_keys(GuestXyzCapture& capture) {
+  if (!capture.faces || capture.packetCandidateActive) return;
+  std::vector<std::pair<uint32_t,bool>> native;
+  native.reserve(capture.faces.faces.size());
+  for (const auto& face : capture.faces.faces)
+    native.emplace_back(face.source_ordinal, face.quad);
+  std::sort(native.begin(), native.end());
+  std::vector<std::pair<uint32_t,bool>> guest;
+  guest.reserve(capture.guestPackets.size());
+  for (const auto& packet : capture.guestPackets)
+    guest.emplace_back(packet.sourceOrdinal,
+                       (packet.command & (uint8_t)~2u) == 0x3Cu);
+  std::sort(guest.begin(), guest.end());
+  const size_t common = std::min(native.size(), guest.size());
+  for (size_t i = 0; i < common; ++i) {
+    if (native[i] == guest[i]) ++capture.faceKeyMatches;
+    else {
+      if (capture.firstFaceKeyMismatch == UINT32_MAX)
+        capture.firstFaceKeyMismatch = (uint32_t)i;
+      ++capture.faceKeyMismatches;
+    }
+  }
+  capture.faceKeyMismatches += (uint32_t)(native.size() + guest.size() - 2 * common);
+}
+
+static void compare_packet_content(Core* c, GuestXyzCapture& capture) {
+  std::vector<spyro::paired_actor::ResolvedFace> guest;
+  guest.reserve(capture.guestPackets.size());
+  for (const auto& packet : capture.guestPackets) {
+    spyro::paired_actor::ResolvedFace face;
+    face.source_ordinal = packet.sourceOrdinal;
+    face.fragment_ordinal = packet.fragment;
+    face.quad = (packet.command & (uint8_t)~2u) == 0x3Cu;
+    face.material.command = packet.command;
+    const int nv = face.quad ? 4 : 3;
+    for (int v = 0; v < nv; ++v) {
+      const uint32_t color = c->mem_r32(packet.address + 4u + (uint32_t)v * 12u);
+      const uint32_t sxy = c->mem_r32(packet.address + 8u + (uint32_t)v * 12u);
+      face.material.rgb[v] = color & 0x00FFFFFFu;
+      face.vertex[v].x = (int16_t)sxy;
+      face.vertex[v].y = (int16_t)(sxy >> 16);
+      face.packet_attr[v] = c->mem_r32(packet.address + 12u + (uint32_t)v * 12u);
+    }
+    guest.push_back(face);
+  }
+  std::vector<spyro::paired_actor::ResolvedFace> native = capture.faces.faces;
+  auto key = [](const auto& face) {
+    return std::pair(face.source_ordinal, face.fragment_ordinal);
+  };
+  std::sort(native.begin(), native.end(), [&](const auto& a, const auto& b) { return key(a) < key(b); });
+  std::sort(guest.begin(), guest.end(), [&](const auto& a, const auto& b) { return key(a) < key(b); });
+  capture.packetContentCompare = spyro::paired_actor::compare_ordered_faces(
+      native, guest, {.depth = false, .ot_bin = false});
+}
+
 static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
                               uint32_t insn, void* user) {
   auto& capture = *static_cast<GuestXyzCapture*>(user);
+  if (insn == 0x4B400006u &&
+      (pc == 0x80024CECu || pc == 0x80024EF0u)) {
+    finish_packet_candidate(c, capture, c->r[24]);
+    capture.packetCandidateActive = true;
+    capture.packetCandidateOrdinal = capture.guestCandidates;
+    capture.packetCandidateStart = c->r[24];
+  }
+  if (pc == 0x80024CECu && !capture.facesResolved) {
+    capture.facesResolved = true;
+    if (capture.desc[0].a.model && capture.projected.size() == 238) {
+      const uint32_t stream = c->mem_r32(capture.desc[0].a.model + 0x14u);
+      const uint32_t colors = c->mem_r32(capture.desc[0].a.model + 0x18u);
+      if (stream && colors) {
+        const uint32_t bytes = c->mem_r32(stream);
+        std::vector<uint32_t> words(1u + bytes / 4u);
+        for (uint32_t i = 0; i < words.size(); ++i)
+          words[i] = c->mem_r32(stream + i * 4u);
+        const auto decoded = spyro::paired_actor::decode_normal_stream(words);
+        std::vector<uint32_t> base(512);
+        for (uint32_t i = 0; i < 512; ++i) {
+          base[i] = c->mem_r32(colors + i * 4u);
+        }
+        if (decoded) {
+          capture.faces = spyro::paired_actor::resolve_normal_faces(
+              decoded.primitives, capture.projected,
+              {base, c->mem_r32(0x80078A80u)},
+              gte_read_ctrl(15), (uint8_t)(gte_read_ctrl(13) + 4u));
+        } else {
+          capture.faces.error = decoded.error;
+        }
+      } else {
+        capture.faces.error = "normal stream or material table pointer is null";
+      }
+    } else {
+      capture.faces.error = "face resolution reached before 238 projected vertices";
+    }
+  }
   if (insn != 0x4A180001u) return;
   ++capture.allRtps;
   bool novel = true;
@@ -344,6 +489,15 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
 static void capture_guest_projection(Core*, uint64_t, uint32_t pc,
                                      uint32_t insn, void* user) {
   auto& capture = *static_cast<GuestXyzCapture*>(user);
+  if (insn == 0x4B400006u) {
+    ++capture.guestNclipOps;
+    if (pc == 0x80024CECu || pc == 0x80024EF0u) ++capture.guestCandidates;
+    else if (pc != 0x80024D1Cu && pc != 0x800251A8u)
+      ++capture.malformedNclip;
+    const int32_t area = (int32_t)gte_read_data(24);
+    area > 0 ? ++capture.guestFront : ++capture.guestBackOrZero;
+    return;
+  }
   if (insn != 0x4A180001u || !vertex_rtps_pc(pc) || !capture.hasPending)
     return;
   const uint32_t sxy = gte_read_data(14);
@@ -364,6 +518,9 @@ static void capture_guest_projection(Core*, uint64_t, uint32_t pc,
 }
 
 static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
+  finish_packet_candidate(c, guest, c->r[24]);
+  compare_face_keys(guest);
+  compare_packet_content(c, guest);
   const uint64_t armed = gte_preop_observer_disarm(c);
   if (guest.targeted == 0 && !guest.decoded) {
     lucent::debug("pairedpose",
@@ -420,6 +577,36 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                   guest.firstNativeProjected.y, guest.firstNativeProjected.depth);
     return false;
   }
+  lucent::info("pairedpose",
+               "normal-face discriminator: decoded={} naive_accepted={} gt3={} gt4={} "
+               "guest_candidates={} nclip_ops={} front={} back_or_zero={} malformed={} "
+               "state-specific packet contribution is read from the source-keyed guest oracle; "
+               "error={}",
+               guest.faces.candidates, guest.faces.faces.size(), guest.faces.triangles,
+               guest.faces.quads, guest.guestCandidates, guest.guestNclipOps,
+               guest.guestFront, guest.guestBackOrZero, guest.malformedNclip,
+               guest.faces.error);
+  lucent::info("pairedpose",
+               "guest packet/source oracle: candidates={} sources_resolved={} unresolved={} "
+               "sources_with_packets={} packets_parsed={} gt3={} gt4={} bytes_unparsed={} "
+               "nclip_records={} malformed_nclip={} malformed_ot_tags={} "
+               "(each packet keyed source_ordinal+fragment; word0 OT-link captured)",
+               guest.guestCandidates, guest.packetSourcesResolved,
+               guest.packetCandidateActive ? 1 : 0, guest.packetSourcesWithOutput,
+               guest.guestPackets.size(), guest.packetGt3, guest.packetGt4,
+               guest.packetBytesUnparsed, guest.guestNclipOps, guest.malformedNclip,
+               guest.malformedOtTags);
+  lucent::info("pairedpose",
+               "normal face/source compare: native={} guest={} compared={} mismatches={} "
+               "first_mismatch={} (key=source_ordinal+GT3/GT4; OT drain order compared separately)",
+               guest.faces.faces.size(), guest.guestPackets.size(), guest.faceKeyMatches,
+               guest.faceKeyMismatches, guest.firstFaceKeyMismatch);
+  lucent::info("pairedpose",
+               "normal packet content compare: compared={}/{} actual={} mismatch_index={} "
+               "first_field={} depth=UNAVAILABLE ot_bin=UNAVAILABLE order=source+fragment",
+               guest.packetContentCompare.compared, guest.packetContentCompare.expected,
+               guest.packetContentCompare.actual, guest.packetContentCompare.mismatch_index,
+               guest.packetContentCompare.first_field);
   lucent::info("pairedpose",
                "actual guest XYZ+projection: armed_ops={} all_rtps={} target_rtps={}/{} "
                "xyz={}/{} projected={}/{} mismatches=0",

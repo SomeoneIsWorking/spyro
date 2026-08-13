@@ -13,7 +13,7 @@ void require(bool condition, const char* what) {
 }
 
 uint32_t tri_w0(uint16_t a, uint16_t b, uint16_t c) {
-  return ((uint32_t)a << 18) | ((uint32_t)b << 9) | c;
+  return ((uint32_t)a << 20) | ((uint32_t)b << 11) | ((uint32_t)c << 2);
 }
 
 uint32_t mat_w1(uint16_t a, uint16_t b, uint16_t c, int8_t adjust, bool semi) {
@@ -53,22 +53,15 @@ int main() {
   const DecodeResult bad = decode_normal_stream(truncated_quad);
   require(!bad && bad.primitives.empty(), "truncated sign-bit quad was silently accepted");
 
-  std::array<uint32_t, 128> base{}, override_colors{};
+  std::array<uint32_t, 128> base{};
   base[0x40 / 4] = 0xAA010203u; base[0x80 / 4] = 0xBB040506u; base[0xC0 / 4] = 0xCC070809u;
-  override_colors[0x40 / 4] = 0xDD111213u;
-  override_colors[0x80 / 4] = 0xEE141516u;
-  override_colors[0xC0 / 4] = 0xFF171819u;
   ResolvedMaterial material{}; std::string error;
-  require(resolve_material(tri, {base, override_colors, 0}, material, error),
+  require(resolve_material(tri, {base, 0}, material, error),
           "base material resolution failed");
   require(material.command == 0x36 && material.rgb[0] == 0x010203,
           "base material/opcode resolution is wrong");
-  require(resolve_material(tri, {base, override_colors, 0x01000000u}, material, error),
-          "override material resolution failed");
-  require(material.rgb[0] == 0x111213 && material.rgb[2] == 0x171819,
-          "active override did not replace every vertex color");
-  require(!resolve_material(tri, {base, {}, 0x01000000u}, material, error),
-          "active-but-missing override table did not fail loudly");
+  require(!resolve_material(tri, {base, 0x01000000u}, material, error),
+          "normal resolver silently treated the alternate override parser as a color-table swap");
 
   Primitive depth_prim = tri; depth_prim.ot_adjust = -1;
   const uint32_t depth[4] = {100u, 80u, 60u, 0u};
@@ -96,5 +89,116 @@ int main() {
   require(ordered[0].primitive.source_ordinal == 1 && ordered[1].primitive.source_ordinal == 2 &&
           ordered[2].primitive.source_ordinal == 0 && ordered[3].primitive.source_ordinal == 3,
           "bins are not descending and stable within equal bins");
+
+  std::array<ProjectedVertex, 256> projected{};
+  projected[0x120 / 4] = {10, 10, 100};
+  projected[0x240 / 4] = {20, 10, 80};
+  projected[0x360 / 4] = {10, 20, 60};
+  projected[0x150 / 4] = {40, 40, 10};
+  projected[0x250 / 4] = {40, 50, 20};
+  projected[0x350 / 4] = {50, 40, 30};
+  projected[0x1A0 / 4] = {50, 50, 40};
+  const ResolveResult faces = resolve_normal_faces(decoded.primitives, projected,
+      {base, 0}, 4u, 1u);
+  require(faces && faces.candidates == 2 && faces.triangles == 1 && faces.quads == 1,
+          "resolved face census lost a primitive variant");
+  require(faces.faces.size() == 2 && faces.faces[0].source_ordinal == 0 &&
+          faces.faces[1].source_ordinal == 1,
+          "resolved faces lost descending-bin/source-ordinal ordering");
+  require(faces.faces[0].vertex[1].x == 20 &&
+          faces.faces[0].material.rgb[2] == 0x070809 &&
+          faces.faces[0].packet_attr[1] == 0x33334444u,
+          "resolved face did not join projection, material and packet attributes");
+
+  // Negative discriminator: the previous accept-all resolver emitted a clockwise triangle.
+  auto culled_projected = projected;
+  culled_projected[0x240 / 4] = {10, 20, 80};
+  culled_projected[0x360 / 4] = {20, 10, 60};
+  const std::array<Primitive, 1> tri_only{tri};
+  const ResolveResult culled = resolve_normal_faces(tri_only, culled_projected,
+      {base, 0}, 4u, 1u);
+  require(culled && culled.candidates == 1 && culled.faces.empty(),
+          "normal NCLIP<=0 triangle retained by the old accept-all behavior");
+  Primitive two_sided_tri = tri;
+  two_sided_tri.two_sided = true;
+  const std::array<Primitive, 1> two_sided_only{two_sided_tri};
+  const ResolveResult two_sided_faces = resolve_normal_faces(two_sided_only, culled_projected,
+      {base, 0}, 4u, 1u);
+  require(two_sided_faces && two_sided_faces.faces.size() == 1,
+          "word-0 two-sided bit did not bypass the NCLIP gate");
+
+  // Positive first and second NCLIPs take the guest's d-for-a diagonal substitution.
+  auto split_projected = projected;
+  split_projected[0x150 / 4] = {0, 0, 10};
+  split_projected[0x250 / 4] = {10, 0, 20};
+  split_projected[0x350 / 4] = {0, 10, 30};
+  split_projected[0x1A0 / 4] = {-10, -10, 40};
+  const std::array<Primitive, 1> quad_only{quad};
+  const ResolveResult split = resolve_normal_faces(quad_only, split_projected,
+      {base, 0}, 0u, 1u);
+  require(split && split.faces.size() == 1 && split.faces[0].vertex[0].x == -10 &&
+          !split.faces[0].quad && split.triangles == 1 && split.quads == 0 &&
+          split.faces[0].material.command == 0x34 &&
+          split.faces[0].material.rgb[0] == split.faces[0].material.rgb[3] &&
+          (split.faces[0].packet_attr[0] & 0xFFFFu) == (quad.packet_attr[2] >> 16),
+          "quad positive/positive NCLIP diagonal substitution differs from the guest");
+  // A<0,B<=0 emits the other GT3 diagonal without substituting vertex zero.
+  auto first_split_projected = projected;
+  first_split_projected[0x150 / 4] = {0, 0, 10};
+  first_split_projected[0x250 / 4] = {0, 10, 20};
+  first_split_projected[0x350 / 4] = {10, 0, 30};
+  first_split_projected[0x1A0 / 4] = {-10, -10, 40};
+  const ResolveResult first_split = resolve_normal_faces(quad_only, first_split_projected,
+      {base, 0}, 0u, 1u);
+  require(first_split && first_split.faces.size() == 1 && !first_split.faces[0].quad &&
+          first_split.faces[0].vertex[0].x == 0 && first_split.faces[0].material.command == 0x34,
+          "quad negative/nonpositive NCLIP did not emit its first GT3 diagonal");
+  // A>=0,B<=0 is the sole rejected quad sign pair; accept-all and one-NCLIP implementations fail.
+  auto rejected_quad_projected = split_projected;
+  rejected_quad_projected[0x1A0 / 4] = {20, 20, 40};
+  const ResolveResult rejected_quad = resolve_normal_faces(quad_only, rejected_quad_projected,
+      {base, 0}, 0u, 1u);
+  require(rejected_quad && rejected_quad.faces.empty(),
+          "quad nonnegative/nonpositive NCLIP sign pair was not rejected");
+
+  // Runtime-oracle comparator is ordered, content-complete, and negative-first.
+  const FaceCompareResult identical = compare_ordered_faces(faces.faces, faces.faces);
+  require(identical && identical.compared == 2 && identical.expected == 2 && identical.actual == 2,
+          "identical face census did not report both denominators");
+  auto changed_faces = faces.faces;
+  changed_faces[1].fragment_ordinal = 1;
+  FaceCompareResult difference = compare_ordered_faces(faces.faces, changed_faces);
+  require(!difference && difference.compared == 1 && difference.mismatch_index == 1 &&
+          difference.first_field == "fragment_ordinal" && difference.expected == 2 &&
+          difference.actual == 2, "first keyed face mismatch was not named exactly");
+  changed_faces = faces.faces;
+  changed_faces[0].packet_attr[1] ^= 1u;
+  difference = compare_ordered_faces(faces.faces, changed_faces);
+  require(!difference && difference.first_field == "attr[1]",
+          "face comparator did not inspect compact packet attributes");
+  changed_faces = faces.faces;
+  changed_faces[0].material.command ^= 0x02u;
+  difference = compare_ordered_faces(faces.faces, changed_faces);
+  require(!difference && difference.first_field == "semi",
+          "face comparator did not distinguish opcode from semi-transparency");
+  changed_faces = faces.faces;
+  changed_faces[0].vertex[0].depth ^= 1u;
+  changed_faces[0].ot_bin ^= 1u;
+  const FaceCompareResult packet_only = compare_ordered_faces(
+      faces.faces, changed_faces, {.depth = false, .ot_bin = false});
+  require(packet_only && packet_only.compared == 2,
+          "packet-only oracle required depth or numeric OT bins absent from guest packets");
+  const std::array<ResolvedFace, 0> no_faces{};
+  difference = compare_ordered_faces(faces.faces, no_faces);
+  require(!difference && difference.first_field == "count" && difference.compared == 0 &&
+          difference.expected == 2 && difference.actual == 0,
+          "empty runtime census produced a silent or denominator-free result");
+  Primitive outside = tri;
+  outside.projected_offset[0] = 0x7FC;
+  const std::array<Primitive,1> outside_list{outside};
+  const ResolveResult rejected = resolve_normal_faces(outside_list, projected,
+      {base, 0}, 0, 1);
+  require(!rejected && rejected.faces.empty(),
+          "out-of-range projected offset returned a plausible partial face list");
   return 0;
 }

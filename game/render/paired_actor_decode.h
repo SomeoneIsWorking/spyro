@@ -21,6 +21,7 @@ struct ProjectedVertex {
 struct Primitive {
   uint32_t source_ordinal = 0;
   bool quad = false;
+  bool two_sided = false;               // word 0 bit 0; bypasses normal-path NCLIP rejection
   bool semi_transparent = false;
   int8_t ot_adjust = 0;                 // signed high nibble of word 1
   uint16_t projected_offset[4]{};
@@ -41,8 +42,7 @@ DecodeResult decode_normal_stream(std::span<const uint32_t> words);
 
 struct MaterialTables {
   std::span<const uint32_t> base;
-  std::span<const uint32_t> override_colors;
-  uint32_t override_control = 0;        // 0x80078A80; byte 3 selects the transformed table
+  uint32_t override_control = 0;        // nonzero high byte selects the separate alternate parser
 };
 
 struct ResolvedMaterial {
@@ -57,6 +57,55 @@ struct OrderedPrimitive {
   Primitive primitive;
   uint32_t ot_bin = 0;
 };
+
+struct ResolvedFace {
+  uint32_t source_ordinal = 0;
+  uint32_t fragment_ordinal = 0;        // zero for normal unsplit/full faces; split key is explicit
+  bool quad = false;
+  ProjectedVertex vertex[4]{};
+  ResolvedMaterial material{};
+  uint32_t packet_attr[4]{};
+  uint32_t ot_raw = 0;
+  uint32_t ot_bin = 0;
+};
+
+struct FaceCompareResult {
+  uint32_t compared = 0;
+  uint32_t expected = 0;
+  uint32_t actual = 0;
+  uint32_t mismatch_index = 0;
+  std::string first_field;              // empty only when every ordered face matches
+  explicit operator bool() const { return first_field.empty(); }
+};
+
+struct FaceCompareOptions {
+  bool depth = true;
+  bool ot_bin = true;
+};
+
+// Ordered runtime-oracle comparison. The result always contains both denominators and names the
+// first differing field; an empty side is therefore a count mismatch, never a silent success.
+FaceCompareResult compare_ordered_faces(std::span<const ResolvedFace> expected,
+                                        std::span<const ResolvedFace> actual,
+                                        FaceCompareOptions options = {});
+
+struct ResolveResult {
+  std::vector<ResolvedFace> faces;
+  uint32_t candidates = 0;
+  uint32_t triangles = 0;
+  uint32_t quads = 0;
+  std::string error;
+  explicit operator bool() const { return error.empty(); }
+};
+
+// Resolve the normal stream against the producer-owned projected table. Primitive projected offsets
+// are guest byte offsets into its four-byte SXY/SZ slots, hence offset/4 selects ProjectedVertex.
+// Rejected raw<=0 OT candidates are counted but omitted. Output is guest drain order: descending bin,
+// stable source order within a bin, with source_ordinal retained as the oracle join key.
+ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
+                                   std::span<const ProjectedVertex> projected,
+                                   const MaterialTables& materials,
+                                   uint32_t depth_origin, uint8_t shift);
 
 // Exact 0x80025348/0x800255F0 normal-path bin expression. Returns false for the guest's raw<=0 gate.
 bool compute_ot_bin(const Primitive& primitive, const uint32_t vertex_depth[4],

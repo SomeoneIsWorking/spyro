@@ -74,14 +74,18 @@ int main() {
   const uint32_t depth[4] = {100u, 80u, 60u, 0u};
   uint32_t raw = 0, bin = 0;
   require(compute_ot_bin(depth_prim, depth, 20u, 2u, raw, bin), "positive OT case rejected");
-  // 100 + 50 + 40 + 60 - 80 + (-4 << 2) = 154; 154 >> 2 = 38.
-  require(raw == 154u && bin == 38u, "OT-bin formula differs from 0x80023AC4");
+  // 100 + 50 + 80 + 40 + 60 - 80 + (-4 << 2) = 234; 234 >> 2 = 58.
+  // The second vertex appears both whole and halved; omitting the whole term was a plausible but
+  // wrong reading that this asymmetric vector discriminates.
+  require(raw == 234u && bin == 58u, "triangle OT-bin formula differs from 0x80023AC4");
   require(!compute_ot_bin(depth_prim, depth, 100u, 2u, raw, bin),
           "raw<=0 OT candidate was not rejected");
   Primitive quad_depth = quad; quad_depth.ot_adjust = 0;
   const uint32_t quad_z[4] = {10u, 20u, 30u, 40u};
   require(compute_ot_bin(quad_depth, quad_z, 4u, 1u, raw, bin) && raw == 84u && bin == 42u,
           "quad OT bin did not use the executable's four-depth sum");
+  require(compute_ot_bin(quad_depth, quad_z, 4u, 33u, raw, bin) && bin == 42u,
+          "OT shift did not retain the R3000 low-five-bit mask");
 
   std::array<OrderedPrimitive, 4> unordered{};
   unordered[0].primitive.source_ordinal = 0; unordered[0].ot_bin = 2;

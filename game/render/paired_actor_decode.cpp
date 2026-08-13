@@ -96,14 +96,15 @@ bool resolve_material(const Primitive& primitive, const MaterialTables& tables,
 
 bool compute_ot_bin(const Primitive& primitive, const uint32_t vertex_depth[4],
                     uint32_t depth_origin, uint8_t shift, uint32_t& raw, uint32_t& bin) {
-  if (shift >= 32u) {
-    raw = bin = 0;
-    return false;
-  }
+  // R3000 variable shifts use only the low five bits. `shift` is CR29+4 in the guest and retaining
+  // this mask matters even for malformed/control-state inputs: rejecting >=32 is not what hardware
+  // does.
+  shift &= 31u;
   // Unsigned operations deliberately retain the R3000's 32-bit wrapping. The final gate is signed.
   const uint32_t weighted = primitive.quad
       ? vertex_depth[0] + vertex_depth[1] + vertex_depth[2] + vertex_depth[3]
-      : vertex_depth[0] + (vertex_depth[0] >> 1) + (vertex_depth[1] >> 1) + vertex_depth[2];
+      : vertex_depth[0] + (vertex_depth[0] >> 1) +
+        vertex_depth[1] + (vertex_depth[1] >> 1) + vertex_depth[2];
   const uint32_t adjust = ((uint32_t)(int32_t)primitive.ot_adjust * 4u) << shift;
   raw = weighted - depth_origin * 4u + adjust;
   if ((int32_t)raw <= 0) {

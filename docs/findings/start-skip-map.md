@@ -60,8 +60,23 @@ inside a positively identified skippable state and release it before the next st
 
 ## Still unclassified
 
-The level scripted/cutscene states and in-level loading overlays have not yet been mapped to exact
-guest completion transitions. They are not safe to special-case by stage number alone. The next
-measurement is a played/replayed run with `PSXPORT_DEBUG=skipmap`, correlating each Start edge with
-the uncapped `(stage mode, sub, sub-sub, loading phase)` transitions, followed by a writer trace on
-the transition that an unskipped sequence takes naturally.
+Stage mode 14 is now classified: it is recorded/demo playback, and Start handling is already guest
+owned. `0x800331AC` advances the playback cursor each frame. When state `[0x8007566C] == 1`, it tests
+held input `[0x80077380] & 0x840` (Start or Cross). Once the cursor is at least 241 and before the
+last 32 samples, that input rewrites the cursor to `cursor / 2 + 16`, accelerating toward the same
+natural terminal condition. It does not jump state. When `cursor >= sample_count * 2`, the function
+calls the natural completion writer `0x8002D440`; that body performs the cleanup and writes stage
+mode 13 plus the appropriate stage-state handoff. A native Start transition here would duplicate and
+potentially conflict with a mechanism the game already has, so none is installed.
+
+Live replay `scratch/logs/skipmap-replay-play.log` reaches mode 14 at field 1912 and leaves it through
+the normal path at field 2183 while receiving Start edges. It then traverses another phase-driven
+load and reaches gameplay modes 0/2. This also demonstrates why a global Start-to-next-state rule is
+invalid: the same replay continues generating Start edges in modes 0/2, where Start is gameplay UI.
+
+The observed loading surface is stage 13/sub 3 with `[0x80075864]` progressing through 0/1/3/4/5/6/7
+and later 8/9/10/11/12/13. Those are actual streaming/load phases (`0x80032B08` / `0x80014564`), not
+a presentation timer: the run cannot bypass them without skipping required I/O. No independently
+owned "loading overlay finished displaying" transition has yet been observed, so no loading skip is
+installed. The next safe target requires a run that distinguishes load completion from a subsequent
+presentation-only hold and traces that hold's natural writer.

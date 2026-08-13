@@ -33,6 +33,7 @@ endif()
 # still runs as recompiled substrate. Native reimplementations get added here as they are RE'd and
 # byte-gated — see docs/re-frontier.md.
 set(GAME_SRC
+  game/core/boot_skip.cpp
   game/core/main.cpp
   game/core/game_config.cpp
   game/core/game_hooks.cpp

@@ -33,9 +33,14 @@
 #include "snapshot.h"     // snapshot_tick — on-demand guest RAM capture at a frame boundary
 #include "repl.h"         // class Repl — interactive inspection, pumped from this frame boundary
 #include "producer_run.h" // spyro_producer_run_frame — the producer DB's per-frame boundary (issue #58)
+#include "boot_skip.h"
 #include <time.h>         // clock_gettime — wall clock on the PSXPORT_DEBUG=pace lines
 
 namespace {
+
+constexpr uint32_t kBootLogoHoldFields = 0xD2u; // both guest waits compare VSync delta against 210
+constexpr uint16_t kPadStart = 0x0008u;         // framework/PSX active-low Start bit
+BootSkipState g_boot_skip;
 
 // ── The VBlank callback ────────────────────────────────────────────────────────────────────────────
 // The boot's input setup at 0x800123C8 does three things in a row, and the third is the one that
@@ -331,6 +336,18 @@ bool deliver_field(Core* c, const char* site, bool needsPacing) {
   // this wait IS the port's per-frame boundary — and it must run BEFORE the guest's decoder, which
   // it does: the guest reads input inside its own frame body, after returning from this wait.
   c->game->pad.serviceFrame();
+  const bool startDown = (c->game->pad.buttons & kPadStart) == 0;
+  const BootSkipAction skip = boot_skip_sample(g_boot_skip, startDown);
+  if (skip == BootSkipAction::Baseline) {
+    lucent::debug("bootskip", "baseline: Start is {} on first boot field; held entry is suppressed",
+                  startDown ? "DOWN" : "up");
+  } else if (skip == BootSkipAction::AdvancePresentation) {
+    const uint32_t before = c->mem_r32(kVblankCounter);
+    c->mem_w32(kVblankCounter, before + kBootLogoHoldFields);
+    lucent::info("bootskip", "fresh Start edge: presentation clock {} -> {} (+{}); guest boot "
+                             "continues through all loading and final setup",
+                 before, before + kBootLogoHoldFields, kBootLogoHoldFields);
+  }
   // …then run the vblank handler the game registered, which is what CONSUMES that packet. Order
   // matters and is the console's: SIO fills the buffer, then the VBlank callback decodes it.
   const bool guestOwnsCount = run_vblank_callback(c);
@@ -515,6 +532,18 @@ void spyro_host_turn(Core* c) {
 }
 
 }  // namespace
+
+void spyro_boot_skip_begin() {
+  boot_skip_begin(g_boot_skip);
+  lucent::debug("bootskip", "armed for guest boot function 0x800127C0");
+}
+
+void spyro_boot_skip_end() {
+  lucent::debug("bootskip", "disarmed: scanned {} boot fields, saw {} fresh edge(s), advanced {} "
+                             "time(s)",
+                g_boot_skip.fields, g_boot_skip.edges, g_boot_skip.advances);
+  g_boot_skip.active = false;
+}
 
 // spyro_deliver_field — ONE display field, for a caller outside this file.
 //

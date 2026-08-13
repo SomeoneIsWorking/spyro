@@ -22,10 +22,26 @@ enhancement, not a dormant guest branch. The safe semantic boundary is also narr
 boot": the 3→10 loop is required loading work and may not be bypassed. Start may shorten a completed
 logo's hold/fade, but cannot skip the I/O phases or the final display setup.
 
-`PSXPORT_DEBUG=skipmap` now measures this live. The observer wraps `0x800127C0`, so `region=boot` is
+`PSXPORT_DEBUG=skipmap` measures this live. The observer wraps `0x800127C0`, so `region=boot` is
 derived from the function's actual dynamic lifetime rather than a guessed frame range. Each Start
 edge and every boot-phase/stage-state change is uncapped; every 600 fields it prints the denominator
 including `start_edges=0` when it scanned input and found none.
+
+The boot-only enhancement is now implemented through that same exact lifetime. On the first boot
+field it records the Start level as a baseline, so a button already held when boot begins cannot
+skip. A later up→down edge advances `[0x800749E0]`, the guest's own VBlank counter, by `0xD2` — the
+exact threshold both logo holds compare against. It does not branch around any guest code. Thus all
+fade iterations, the phase 3→10 loading loop, and final display setup still run.
+
+Runtime discriminators, same shipping binary:
+
+- Idle: 437 boot fields scanned, 0 fresh edges, 0 advances, clean exit.
+- Pulsed Start: first field was DOWN and suppressed as held-at-entry; two later fresh edges produced
+  two advances. Loading phase still transitioned 0→4→8→10, boot exited cleanly after 74 fields, and
+  later stage Start edges did not reach the boot enhancer. See `scratch/logs/bootskip-negative.log`
+  and `scratch/logs/bootskip-positive.log`.
+- `PSXPORT_SELFTEST=bootskip`: 9 checks covering inactive input, held-entry suppression, release,
+  one fresh edge, non-repeating hold, denominators, and released-entry positive path.
 
 ## Title / attract sequence
 
@@ -49,4 +65,3 @@ guest completion transitions. They are not safe to special-case by stage number 
 measurement is a played/replayed run with `PSXPORT_DEBUG=skipmap`, correlating each Start edge with
 the uncapped `(stage mode, sub, sub-sub, loading phase)` transitions, followed by a writer trace on
 the transition that an unskipped sequence takes naturally.
-

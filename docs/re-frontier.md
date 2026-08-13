@@ -240,8 +240,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - status: re-partial
 - deps: input.pad
 - evidence: C110; issue 0027; generated `0x800127C0`; docs/findings/start-skip-map.md
-- where: game/core/cd_queue.cpp `lp_800127C0`; game/core/vsync.cpp `deliver_field`; `PSXPORT_DEBUG=skipmap`
-- gap: Boot is mapped exactly: two fade/hold logo sections surround a required loading-phase 3→10 loop, and the function contains no guest pad branch. The title/attract sequence already has a legitimate guest Start transition and must not be replaced with a state poke. The shipping feature is NOT implemented: classify level scripted/cutscene and loading-overlay states from a played/replayed run, identify each natural completion writer, then consume one Start edge only within those positively identified states. Never pulse Start across a handoff into gameplay, where it means pause.
+- where: game/core/boot_skip.{h,cpp}; game/core/cd_queue.cpp `lp_800127C0`; game/core/vsync.cpp `deliver_field`; `PSXPORT_DEBUG=bootskip,skipmap`
+- gap: BOOT COMPLETE, BROADER STEP PARTIAL. Two logo holds surround a required loading-phase 3→10 loop. A fresh Start edge advances only the guest's boot VBlank clock by the exact 0xD2 hold threshold; it never branches around the boot body. Held-at-entry is suppressed. Positive run still reaches loading phases 4/8/10 and exits; idle run scans 437 fields with 0 edges/advances. The title/attract sequence keeps its legitimate guest Start transition. NEXT: classify level scripted/cutscene and loading-overlay states from a played/replayed run, identify each natural completion writer, then consume one edge only inside those positively identified states. Never pulse Start across gameplay, where it means pause.
 - notes: `skipmap` has a negative denominator every 600 fields and reports every edge/state transition uncapped. Boot classification uses the dynamic lifetime of `0x800127C0`, not a frame threshold.
 
 

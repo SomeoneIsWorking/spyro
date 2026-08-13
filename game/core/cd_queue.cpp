@@ -313,11 +313,13 @@ void lp_800127C0(Core* c) {
   if (g_boot_sequence_active)
     lucent::error("skipmap", "boot sequence re-entered at call {} — classification is invalid", calls);
   g_boot_sequence_active = true;
+  spyro_boot_skip_begin();
   lucent::debug("skipmap", "boot sequence ENTER call={} phase={} vblank={}", calls,
                 c->mem_r32(0x80075864u), c->mem_r32(0x800749E0u));
   gen_func_800127C0(c);
   lucent::debug("skipmap", "boot sequence EXIT call={} phase={} vblank={}", calls,
                 c->mem_r32(0x80075864u), c->mem_r32(0x800749E0u));
+  spyro_boot_skip_end();
   g_boot_sequence_active = false;
 }
 

@@ -16,6 +16,17 @@ ours to make — a green row above a red gate is the failure this file exists to
 
 ---
 
+## Title coverage
+
+| title | status |
+|---|---|
+| Spyro the Dragon | 🟡 current implementation; native rendering coverage remains partial |
+| Spyro 2 | ⬜ title slot only; executable identity and seam not yet derived |
+| Spyro 3 | ⬜ title slot only; executable identity and seam not yet derived |
+
+The repository-level `game/` currently implements Spyro 1. Shared lineage code must be extracted
+from measured common behavior as the later titles are brought up.
+
 ## The two halves
 
 | | |

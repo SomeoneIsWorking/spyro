@@ -1,7 +1,10 @@
-# SpyroEngine
+# SpyroEngine — Spyro 1, 2, and 3
 
-A **native PC port of Spyro the Dragon (PS1)** built on the
+A multi-title native PC port for the original PlayStation **Spyro trilogy**, built on the
 [psxport](https://github.com/SomeoneIsWorking/psxport) static-recompilation framework.
+
+Spyro the Dragon is the current implemented target. Spyro 2 and Spyro 3 have explicit title slots
+under `titles/`, but are not implemented yet; the status below describes Spyro 1 only.
 
 psxport statically recompiles the game's MIPS R3000A machine code into C and runs it on a native
 platform layer — so the result is a PC program, not an emulator. This repo is the *game* half: the
@@ -72,6 +75,7 @@ Useful knobs: `PSXPORT_NOAUDIO=1`, `PSXPORT_NOWINDOW=1` (headless), `PSXPORT_FOR
 
 ```
 game/           the Spyro-specific code
+titles/         per-title identity and status (Spyro 1/2/3)
   core/         the framework seam: GameConfig (guest addresses), GameHooks, the recomp registry, main()
   recomp_seeds.json   our recompiler seeds — addresses discovery can't see (a GAME fact, see below)
 generated/      the recompiled substrate (git-ignored; rebuilt from your disc)

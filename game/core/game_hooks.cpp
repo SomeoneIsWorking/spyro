@@ -19,6 +19,7 @@
 #include "hostprof.h"
 #include <lucent/log.h>
 #include "fntrace.h"
+#include "fx_paired_actor.h"
 #include <cstring>
 
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
@@ -127,6 +128,7 @@ static void spyro_fps60ReadSceneCam(Core* c, float R[3][3], float T[3]) {
 }
 
 static int spyro_selftestGame(const char* which, const char*) {
+  if (std::strcmp(which, "pairedpose") == 0) return spyro_paired_actor_selftest();
   if (std::strcmp(which, "scenecam") != 0) return 2;
 
   float R[3][3], T[3];

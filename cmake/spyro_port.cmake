@@ -14,6 +14,16 @@ option(PSXPORT_BUILD_PORT "Build the Spyro native port binary (spyro_port)" ON)
 # buildable even when the game target is off.
 include(${PSXPORT_DIR}/cmake/psxport.cmake)
 
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(test_paired_actor_decode
+    ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_decode.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/paired_actor_decode.cpp)
+  target_include_directories(test_paired_actor_decode PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_paired_actor_decode PRIVATE cxx_std_20)
+  add_test(NAME paired_actor_decode COMMAND test_paired_actor_decode)
+endif()
+
 if(NOT PSXPORT_BUILD_PORT)
   return()
 endif()
@@ -35,6 +45,8 @@ set(GAME_SRC
   game/render/frame_env.cpp
   game/render/fx_title_menu.cpp
   game/render/fx_sprite_queue.cpp
+  game/render/paired_actor_decode.cpp
+  game/render/fx_paired_actor.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
   game/core/native_leaf.cpp

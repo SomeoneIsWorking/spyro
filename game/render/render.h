@@ -93,7 +93,8 @@ private:
                   int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1) const;
   // fx_sprite_queue.cpp — native screen-space class of RasterizeSpritePrimQueue 0x80022A2C.
   // Also owns stage-13/mode-3's text-actor construction. False means the handler's separate
-  // paired-actor pass 0x80023AC4 is armed and remains unowned.
+  // paired-actor pass 0x80023AC4 is armed. Its three-layer pose input is owned,
+  // but face projection/submission remains deliberately incomplete.
   bool stage13Mode3Render() const;
 
   Core* mC;

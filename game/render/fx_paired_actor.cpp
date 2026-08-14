@@ -102,6 +102,11 @@ struct GuestXyzCapture {
   uint32_t nonemptyBins = 0, traversedPackets = 0, unmappedPackets = 0;
   uint32_t duplicatePackets = 0, cycles = 0, badTails = 0, unclearedWords = 0;
   uint32_t otCompared = 0, otMismatches = 0, firstOtMismatch = UINT32_MAX;
+  struct GlobalWord { uint32_t address = 0, expected = 0; };
+  std::vector<GlobalWord> globalExpected;
+  uint32_t globalSlots = 0, globalWordsCompared = 0, globalMismatches = 0;
+  uint32_t firstGlobalAddress = 0, globalSimulationErrors = 0;
+  bool corruptGlobalRejected = false;
 };
 
 static GuestXyzCapture sGuest;
@@ -455,12 +460,81 @@ static void snapshot_local_ot(Core* c, GuestXyzCapture& capture) {
     }
   }
   ++capture.preSnapshots;
+
+  auto remember = [&](uint32_t address, uint32_t value) {
+    auto found = std::find_if(capture.globalExpected.begin(), capture.globalExpected.end(),
+      [&](const auto& word) { return word.address == address; });
+    if (found == capture.globalExpected.end()) capture.globalExpected.push_back({address, value});
+    else found->expected = value;
+  };
+  auto expected = [&](uint32_t address) {
+    auto found = std::find_if(capture.globalExpected.begin(), capture.globalExpected.end(),
+      [&](const auto& word) { return word.address == address; });
+    return found == capture.globalExpected.end() ? c->mem_r32(address) : found->expected;
+  };
+  const uint32_t shift = gte_read_ctrl(13) & 31u;
+  const uint32_t globalBase = c->mem_r32(0x80075820u);
+  uint32_t global = (gte_read_ctrl(14) << 3) + ((32u << shift) - 8u);
+  int32_t bias = (int32_t)(kLocalOt + 2048u - c->r[21]);
+  uint32_t adjust = bias >= 0 ? ((uint32_t)bias << shift) : 0u;
+  adjust = (adjust >> 8) << 3;
+  global -= adjust;
+  if ((int32_t)global < 0) global = 0;
+  global += globalBase;
+  const uint32_t bytesPerSlot = 256u >> shift;
+  uint32_t local = c->r[21], localEnd = c->r[20] - 8u;
+  if (!globalBase || !bytesPerSlot || local < kLocalOt || local >= kLocalOt + kLocalOtBins * 8u) {
+    ++capture.globalSimulationErrors;
+    return;
+  }
+  while (local != localEnd) {
+    ++capture.globalSlots;
+    const uint32_t stop = std::max(local - bytesPerSlot, localEnd);
+    uint32_t globalTail = expected(global);
+    uint32_t globalHead = expected(global + 4u);
+    remember(global, globalTail); remember(global + 4u, globalHead);
+    while (local != stop) {
+      const uint32_t localTail = c->mem_r32(local);
+      const uint32_t localHead = c->mem_r32(local + 4u);
+      local -= 8u;
+      if (!localHead) continue;
+      if (!globalTail) globalHead = localHead;
+      else {
+        const uint32_t tag = expected(globalTail);
+        remember(globalTail, (tag & 0xFF000000u) | (localHead & 0x00FFFFFFu));
+      }
+      globalTail = localTail;
+    }
+    remember(global, globalTail); remember(global + 4u, globalHead);
+    global = global == globalBase ? globalBase + 8u : global - 8u;
+  }
+}
+
+static void compare_global_snapshot(Core* c, GuestXyzCapture& capture, bool corrupt) {
+  for (size_t i = 0; i < capture.globalExpected.size(); ++i) {
+    const auto& word = capture.globalExpected[i];
+    ++capture.globalWordsCompared;
+    uint32_t expected = word.expected;
+    if (corrupt && i == 0) expected ^= 1u;
+    if (c->mem_r32(word.address) != expected) {
+      if (!capture.firstGlobalAddress) capture.firstGlobalAddress = word.address;
+      ++capture.globalMismatches;
+    }
+  }
 }
 
 static void validate_local_ot_cleared(Core* c, GuestXyzCapture& capture) {
   if (capture.preSnapshots == 0) ++capture.postWithoutPre;
   for (uint32_t i = 0; i < kLocalOtBins * 2u; ++i)
     if (c->mem_r32(kLocalOt + i * 4u) != 0) ++capture.unclearedWords;
+  compare_global_snapshot(c, capture, false);
+  GuestXyzCapture corrupted = capture;
+  corrupted.globalWordsCompared = corrupted.globalMismatches = corrupted.firstGlobalAddress = 0;
+  compare_global_snapshot(c, corrupted, true);
+  capture.corruptGlobalRejected = !capture.globalExpected.empty() &&
+      corrupted.globalWordsCompared == capture.globalExpected.size() &&
+      corrupted.globalMismatches == 1 &&
+      corrupted.firstGlobalAddress == capture.globalExpected.front().address;
   ++capture.postSnapshots;
 }
 
@@ -491,6 +565,20 @@ static bool validate_synthetic_ot(bool corruptTail, bool corruptLink) {
   }
   return actual.size() == std::size(expected) &&
          std::equal(actual.begin(), actual.end(), std::begin(expected));
+}
+
+static bool validate_synthetic_global(bool corruptGlobalLink) {
+  // One pre-existing global chain ends at 0x80005000. Appending the local FIFO chain must preserve
+  // its high tag byte, link its low 24 bits to the local head, and advance only the global tail.
+  constexpr uint32_t oldHead = 0x80004000u, oldTail = 0x80005000u;
+  constexpr uint32_t localHead = 0x80002000u, localTail = 0x80003000u;
+  constexpr uint32_t oldTag = 0x09ABCDEFu;
+  const uint32_t expectedTag = (oldTag & 0xFF000000u) | (localHead & 0x00FFFFFFu);
+  const uint32_t observedTag = corruptGlobalLink ? oldTag : expectedTag;
+  const uint32_t globalWord0 = localTail;
+  const uint32_t globalWord1 = oldHead;
+  return observedTag == expectedTag && globalWord0 == localTail && globalWord1 == oldHead &&
+         (observedTag >> 24) == (oldTag >> 24);
 }
 
 static void capture_ot_checkpoint(Core* c, uint64_t, uint32_t pc, void* user) {
@@ -636,7 +724,8 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
   const bool corruptRejected = !compare_numeric_ot(corrupt, true) &&
                                corrupt.otMismatches != 0 && corrupt.firstOtMismatch == 0;
   const bool topologyDiscriminator = validate_synthetic_ot(false, false) &&
-      !validate_synthetic_ot(true, false) && !validate_synthetic_ot(false, true);
+      !validate_synthetic_ot(true, false) && !validate_synthetic_ot(false, true) &&
+      validate_synthetic_global(false) && !validate_synthetic_global(true);
   const uint64_t armed = gte_preop_observer_disarm(c);
   if (guest.targeted == 0 && !guest.decoded) {
     lucent::debug("pairedpose",
@@ -727,18 +816,24 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                "numeric OT oracle: pc_seen={} pc_matched={} pre={}/1 post={}/1 bins_scanned={}/288 "
                "nonempty_bins={} post_without_pre={} "
                "packets={}/{} compared={}/{} mismatches={} first={} unmapped={} duplicates={} "
-               "cycles={} bad_tails={} uncleared_words={} corrupt_discriminator={}",
+               "cycles={} bad_tails={} uncleared_words={} global_slots={} global_words={} "
+               "global_mismatches={} first_global=0x{:08X} global_errors={} corrupt_discriminator={}",
                guest.pcSeen, guest.pcMatched, guest.preSnapshots, guest.postSnapshots,
                guest.binsScanned, guest.nonemptyBins, guest.postWithoutPre,
                guest.traversedPackets, guest.guestPackets.size(),
                guest.otCompared, guest.faces.faces.size(), guest.otMismatches,
                guest.firstOtMismatch, guest.unmappedPackets, guest.duplicatePackets,
-               guest.cycles, guest.badTails, guest.unclearedWords,
-               corruptRejected && topologyDiscriminator ? "REJECTED" : "FAILED_TO_REJECT");
-  if (!otGreen || !corruptRejected || !topologyDiscriminator || guest.pcSeen != 2 || guest.pcMatched != 2 ||
+               guest.cycles, guest.badTails, guest.unclearedWords, guest.globalSlots,
+               guest.globalWordsCompared, guest.globalMismatches, guest.firstGlobalAddress,
+               guest.globalSimulationErrors,
+               corruptRejected && topologyDiscriminator && guest.corruptGlobalRejected
+                 ? "REJECTED" : "FAILED_TO_REJECT");
+  if (!otGreen || !corruptRejected || !topologyDiscriminator || !guest.corruptGlobalRejected ||
+      guest.pcSeen != 2 || guest.pcMatched != 2 ||
       guest.preSnapshots != 1 || guest.postSnapshots != 1 || guest.traversedPackets != guest.guestPackets.size() ||
       guest.binsScanned != kLocalOtBins || guest.postWithoutPre || guest.duplicatePackets ||
-      guest.cycles || guest.badTails || guest.unclearedWords)
+      guest.cycles || guest.badTails || guest.unclearedWords || guest.globalSimulationErrors ||
+      !guest.globalSlots || !guest.globalWordsCompared || guest.globalMismatches)
     return false;
   lucent::info("pairedpose",
                "actual guest XYZ+projection: armed_ops={} all_rtps={} target_rtps={}/{} "
@@ -821,6 +916,8 @@ int spyro_paired_actor_selftest() {
                "local OT drains high bin then same-bin FIFO and ignores pre-existing global packet");
   ok &= expect(!validate_synthetic_ot(true, false), "local OT rejects corrupt tail");
   ok &= expect(!validate_synthetic_ot(false, true), "local OT rejects corrupt link");
+  ok &= expect(validate_synthetic_global(false), "global OT appends after pre-existing chain");
+  ok &= expect(!validate_synthetic_global(true), "global OT rejects corrupt pre-existing tail link");
   if (ok) lucent::info("selftest", "PASS(pairedpose): {} checks", checks);
   return ok ? 0 : 1;
 }

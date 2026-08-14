@@ -246,4 +246,10 @@ same-bin chains, a preexisting global chain, empty global adoption, base bounce,
 clears, a corrupted predicted word, an untouched global tail corruption and an untouched local-word
 corruption. Thus the reached empty-global splice is proven, while live
 preexisting-global, bounce, and multiple populated records remain corpus gaps. Unreached FT4/raw
-and the live-negative outcode/skip/depth arms still prohibit native submission.
+and the live-negative outcode/skip/depth arms still prohibit native submission. Direct ownership
+also has a concrete upstream prerequisite: `0x8001F158` writes only the 56-byte actor records;
+`0x8001F798` PCs `0x8001F7FC..0x8001FFF8` freshly decode, transform and project each record's model
+vertices into the scratch XY/status and depth tables consumed at candidate A. The current oracle
+captures those post-projection values from inside the guest producer, so they are diagnostic evidence,
+not a shipping recipe. A root-correct producer must first own and oracle that projection prefix; it
+must not run a partial guest `0x8001F798` or reuse stale/guest-computed scratch.

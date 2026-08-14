@@ -161,7 +161,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   populated plus one no-local record and empty global slots only; hermetic shipping fixtures cover
   preexisting-global append, two groups, base bounce, and corrupt/no-local cases. Multiple populated
   records and live preexisting-global/bounce remain corpus gaps. Live evidence for outcode, skip,
-  final-depth and the unreached FT4/raw arms is still required before any native producer.
+  final-depth and the unreached FT4/raw arms is still required before any native producer. The next
+  implementation dependency is now exact: own/oracle `0x8001F798`'s pre-candidate projection prefix
+  (`0x8001F7FC..0x8001FFF8`). `0x8001F158` creates records but not the scratch XY/status/depth values;
+  using the current A-checkpoint snapshot for shipping would be a guest-compute fallback.
 
 
 ## harness

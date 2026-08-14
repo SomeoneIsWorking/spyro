@@ -253,3 +253,18 @@ vertices into the scratch XY/status and depth tables consumed at candidate A. Th
 captures those post-projection values from inside the guest producer, so they are diagnostic evidence,
 not a shipping recipe. A root-correct producer must first own and oracle that projection prefix; it
 must not run a partial guest `0x8001F798` or reuse stale/guest-computed scratch.
+One owner-qualified `PSXPORT_ACTOR_CHAIN_ORACLE=prefix` diagnostic exposes the missing prefix
+reachability without changing rendering. Its eight checkpoints observe setup/vertex count, all six
+exact primary/alternate full-word-versus-s16 selector sites, and the unified `0x8001FF64` color
+selection. At that final checkpoint CR29/CR30 independently predict the color arm while LO and the
+selected primitive/color/fog outputs classify the actual arm. The census prints every site and arm,
+requires exact observer accounting, and explicitly labels far reject, terminator and outcode as
+unobserved. It is a reachability instrument, not the production projection builder or authorization
+to consume guest scratch.
+A 500-present combined run produced 32/32 `PASS`, zero `FAIL` and zero `NO_CORPUS`
+(`scratch/logs/actorchain_prefix_combined.log`). It observed 64 setups and 6,240 declared vertices;
+all six selector sites fired (primary 32/662/2,458/3,120; alternate 660/2,460), totaling 1,984
+full-word and 7,408 s16 decisions. The same invocations classified 64/64 color outputs with zero
+mismatch: 45 direct-high and 19 positive-blend. Plain and negative-fog were zero and remain unowned
+corpus gaps. Far reject, terminator and outcode are omitted by the eight-PC budget and explicitly
+remain unmeasured.

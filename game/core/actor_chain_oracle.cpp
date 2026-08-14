@@ -129,6 +129,160 @@ struct PacketCensus {
   const char *first = "none";
   std::vector<PacketKey> entries;
 };
+
+enum class PrefixColorArm : uint8_t { High, PositiveBlend, Plain, NegativeBlend, Invalid };
+struct PrefixCensus {
+  uint32_t setups = 0, declaredVertices = 0;
+  uint32_t primaryAbsolute = 0, primaryDelta = 0, alternateAbsolute = 0, alternateDelta = 0;
+  uint32_t primaryDecisions = 0, alternateDecisions = 0;
+  std::array<uint32_t, 4> primarySites{};
+  std::array<uint32_t, 2> alternateSites{};
+  uint32_t colorSelected = 0, high = 0, positiveBlend = 0, plain = 0, negativeBlend = 0;
+  uint32_t colorMismatch = 0;
+  uint64_t matched = 0;
+};
+
+enum class PrefixResult : uint8_t { NoCorpus, Pass, Fail };
+
+static PrefixResult prefix_result(uint32_t setups, bool complete) {
+  if (setups == 0) {
+    return PrefixResult::NoCorpus;
+  }
+  return complete ? PrefixResult::Pass : PrefixResult::Fail;
+}
+
+static const char *prefix_result_name(PrefixResult result) {
+  switch (result) {
+  case PrefixResult::NoCorpus:
+    return "NO_CORPUS";
+  case PrefixResult::Pass:
+    return "PASS";
+  case PrefixResult::Fail:
+    return "FAIL";
+  }
+  return "FAIL";
+}
+
+static bool prefix_complete(const PrefixCensus &c) {
+  const uint32_t primarySites =
+      c.primarySites[0] + c.primarySites[1] + c.primarySites[2] + c.primarySites[3];
+  const uint32_t alternateSites = c.alternateSites[0] + c.alternateSites[1];
+  const uint64_t expectedMatched =
+      (uint64_t)c.setups + c.primaryDecisions + c.alternateDecisions + c.colorSelected;
+  return c.setups != 0 && c.declaredVertices != 0 &&
+         c.primaryDecisions == c.primaryAbsolute + c.primaryDelta &&
+         c.alternateDecisions == c.alternateAbsolute + c.alternateDelta &&
+         c.primaryDecisions == primarySites && c.alternateDecisions == alternateSites &&
+         c.colorSelected == c.high + c.positiveBlend + c.plain + c.negativeBlend &&
+         c.colorSelected != 0 && c.colorMismatch == 0 && c.matched == expectedMatched;
+}
+
+static PrefixColorArm expected_color_arm(int32_t cr29, int32_t cr30) {
+  if (cr30 >= 1024) {
+    return PrefixColorArm::High;
+  }
+  if (cr30 > 0) {
+    return PrefixColorArm::PositiveBlend;
+  }
+  if (cr29 > 0 && cr30 < -2048) {
+    return PrefixColorArm::NegativeBlend;
+  }
+  return PrefixColorArm::Plain;
+}
+
+static void
+prefix_count_selector(PrefixCensus &o, bool alternate, uint32_t site, uint32_t selector) {
+  if (alternate) {
+    ++o.alternateDecisions;
+    ++o.alternateSites[site];
+    ((selector & 1u) ? o.alternateDelta : o.alternateAbsolute)++;
+  } else {
+    ++o.primaryDecisions;
+    ++o.primarySites[site];
+    ((selector & 1u) ? o.primaryDelta : o.primaryAbsolute)++;
+  }
+}
+
+template <class Read>
+static PrefixColorArm
+actual_color_arm(Read read, uint32_t descriptor, uint32_t commands, uint32_t colors, uint32_t fog) {
+  if (!ram_word_span(descriptor, 36u)) {
+    return PrefixColorArm::Invalid;
+  }
+  const bool high =
+      commands == read(descriptor + 20u) && colors == read(descriptor + 24u) && fog == 0;
+  const bool positive = commands == read(descriptor + 20u) && colors == 0x80070DF4u;
+  const bool plain =
+      commands == read(descriptor + 28u) && colors == read(descriptor + 32u) && fog == 0;
+  const bool negative = commands == read(descriptor + 28u) && colors == 0x80070DF4u;
+  if ((unsigned)high + (unsigned)positive + (unsigned)plain + (unsigned)negative != 1u) {
+    return PrefixColorArm::Invalid;
+  }
+  if (high) {
+    return PrefixColorArm::High;
+  }
+  if (positive) {
+    return PrefixColorArm::PositiveBlend;
+  }
+  if (plain) {
+    return PrefixColorArm::Plain;
+  }
+  return PrefixColorArm::NegativeBlend;
+}
+
+static void prefix_checkpoint(Core *c, uint64_t, uint32_t pc, void *user) {
+  auto &o = *static_cast<PrefixCensus *>(user);
+  switch (pc) {
+  case 0x8001FA1Cu:
+    ++o.setups;
+    o.declaredVertices += c->r[31];
+    break;
+  case 0x8001FA88u:
+    prefix_count_selector(o, false, 0, c->r[6]);
+    break;
+  case 0x8001FB30u:
+    prefix_count_selector(o, false, 1, c->r[6]);
+    break;
+  case 0x8001FC20u:
+    prefix_count_selector(o, false, 2, c->r[6]);
+    break;
+  case 0x8001FCD8u:
+    prefix_count_selector(o, false, 3, c->r[6]);
+    break;
+  case 0x8001FAC4u:
+    prefix_count_selector(o, true, 0, c->r[12]);
+    break;
+  case 0x8001FB84u:
+    prefix_count_selector(o, true, 1, c->r[12]);
+    break;
+  case 0x8001FF64u: {
+    ++o.colorSelected;
+    const PrefixColorArm expected =
+        expected_color_arm((int32_t)gte_read_ctrl(29), (int32_t)gte_read_ctrl(30));
+    const PrefixColorArm actual = actual_color_arm(
+        [&](uint32_t p) {
+          return c->mem_r32(p);
+        },
+        c->lo,
+        c->r[30],
+        c->r[25],
+        c->r[18]);
+    if (actual == PrefixColorArm::High) {
+      ++o.high;
+    } else if (actual == PrefixColorArm::PositiveBlend) {
+      ++o.positiveBlend;
+    } else if (actual == PrefixColorArm::Plain) {
+      ++o.plain;
+    } else if (actual == PrefixColorArm::NegativeBlend) {
+      ++o.negativeBlend;
+    }
+    if (actual != expected) {
+      ++o.colorMismatch;
+    }
+    break;
+  }
+  }
+}
 struct EpochState {
   bool active = false, bSeen = false, familySeen = false;
   uint32_t source = 0, record = 0;
@@ -879,6 +1033,56 @@ static void actor_ot_checkpoint(Core *c, uint64_t, uint32_t pc, void *user) {
   o.expected.push_back({c->r[24], (addr - o.source.localOt) / 8u});
 }
 
+static void actor_chain_prefix_oracle(Core *c) {
+  static constexpr uint32_t targets[] = {0x8001FA1Cu,
+                                         0x8001FA88u,
+                                         0x8001FAC4u,
+                                         0x8001FB30u,
+                                         0x8001FB84u,
+                                         0x8001FC20u,
+                                         0x8001FCD8u,
+                                         0x8001FF64u};
+  PrefixCensus census{};
+  if (!c->pcObserver.arm(targets, std::size(targets), prefix_checkpoint, &census)) {
+    abort();
+  }
+  gen_func_8001F798(c);
+  const uint64_t seen = c->pcObserver.seen(), matched = c->pcObserver.matched();
+  c->pcObserver.disarm();
+  census.matched = matched;
+  const PrefixResult result = prefix_result(census.setups, prefix_complete(census));
+  lucent::info(
+      "actorchainprefix",
+      "pass=prefix checkpoints={}/{} setups={} vertices_declared={} "
+      "primary[decisions={} absolute={} delta={} sites={},{},{},{}] "
+      "alternate[decisions={} absolute={} delta={} sites={},{}] "
+      "color[selected={} high={} positive_blend={} plain={} negative_blend={} mismatch={}] "
+      "omitted[far=unobserved terminator=unobserved outcode=unobserved] result={}",
+      seen,
+      matched,
+      census.setups,
+      census.declaredVertices,
+      census.primaryDecisions,
+      census.primaryAbsolute,
+      census.primaryDelta,
+      census.primarySites[0],
+      census.primarySites[1],
+      census.primarySites[2],
+      census.primarySites[3],
+      census.alternateDecisions,
+      census.alternateAbsolute,
+      census.alternateDelta,
+      census.alternateSites[0],
+      census.alternateSites[1],
+      census.colorSelected,
+      census.high,
+      census.positiveBlend,
+      census.plain,
+      census.negativeBlend,
+      census.colorMismatch,
+      prefix_result_name(result));
+}
+
 static void actor_chain_ot_oracle(Core *c) {
   if (gpu_vk_wide_engine(c)) {
     lucent::error("actorchainoracle",
@@ -1420,9 +1624,11 @@ void spyro_register_actor_chain_oracle() {
   if (!mode || !*mode) {
     return;
   }
-  if (std::string_view(mode) != "payload" && std::string_view(mode) != "ot") {
-    lucent::error(
-        "actorchainoracle", "REFUSED: PSXPORT_ACTOR_CHAIN_ORACLE={} requires payload or ot", mode);
+  const std::string_view selected(mode);
+  if (selected != "payload" && selected != "ot" && selected != "prefix") {
+    lucent::error("actorchainoracle",
+                  "REFUSED: PSXPORT_ACTOR_CHAIN_ORACLE={} requires payload, ot, or prefix",
+                  mode);
     abort();
   }
   if (const char *identity = cfg_str("PSXPORT_NDIFF_IDENTITY"); identity && *identity) {
@@ -1441,11 +1647,76 @@ void spyro_register_actor_chain_oracle() {
   lucent::info("actorchainoracle",
                "armed pass={} 0x8001F798; diagnostic only, native submission remains disabled",
                mode);
-  psxport_recomp()->shard_set_override(
-      0x8001F798u, std::string_view(mode) == "ot" ? actor_chain_ot_oracle : actor_chain_oracle);
+  auto overrideFn = actor_chain_oracle;
+  if (selected == "ot") {
+    overrideFn = actor_chain_ot_oracle;
+  } else if (selected == "prefix") {
+    overrideFn = actor_chain_prefix_oracle;
+  }
+  psxport_recomp()->shard_set_override(0x8001F798u, overrideFn);
 }
 
 int spyro_actor_chain_oracle_selftest() {
+  PrefixCensus prefixPositive{};
+  prefixPositive.setups = 2;
+  prefixPositive.declaredVertices = 7;
+  prefix_count_selector(prefixPositive, false, 0, 0);
+  prefix_count_selector(prefixPositive, false, 1, 1);
+  prefix_count_selector(prefixPositive, false, 2, 0);
+  for (unsigned i = 0; i < 4; ++i) {
+    prefix_count_selector(prefixPositive, false, 3, 1);
+  }
+  prefix_count_selector(prefixPositive, true, 0, 0);
+  for (unsigned i = 0; i < 3; ++i) {
+    prefix_count_selector(prefixPositive, true, 1, 1);
+  }
+  prefixPositive.colorSelected = 4;
+  prefixPositive.high = prefixPositive.positiveBlend = prefixPositive.plain =
+      prefixPositive.negativeBlend = 1;
+  prefixPositive.matched = (uint64_t)prefixPositive.setups + prefixPositive.primaryDecisions +
+                           prefixPositive.alternateDecisions + prefixPositive.colorSelected;
+  PrefixCensus prefixBadSite = prefixPositive;
+  --prefixBadSite.primarySites[3];
+  PrefixCensus prefixBadColor = prefixPositive;
+  prefixBadColor.colorMismatch = 1;
+  PrefixCensus prefixBadMatched = prefixPositive;
+  --prefixBadMatched.matched;
+  std::array<uint32_t, 9> descriptor{};
+  descriptor[5] = 0x80002000u;
+  descriptor[6] = 0x80003000u;
+  descriptor[7] = 0x80004000u;
+  descriptor[8] = 0x80005000u;
+  const uint32_t descriptorBase = 0x80001000u;
+  auto descriptorRead = [&](uint32_t p) {
+    return descriptor[(p - descriptorBase) / 4u];
+  };
+  auto ambiguousDescriptor = descriptor;
+  ambiguousDescriptor[7] = ambiguousDescriptor[5];
+  ambiguousDescriptor[8] = ambiguousDescriptor[6];
+  auto ambiguousRead = [&](uint32_t p) {
+    return ambiguousDescriptor[(p - descriptorBase) / 4u];
+  };
+  const bool colorClassification =
+      expected_color_arm(0, 1024) == PrefixColorArm::High &&
+      actual_color_arm(descriptorRead, descriptorBase, descriptor[5], descriptor[6], 0) ==
+          PrefixColorArm::High &&
+      actual_color_arm(descriptorRead, descriptorBase, descriptor[5], 0x80070DF4u, 4) ==
+          PrefixColorArm::PositiveBlend &&
+      actual_color_arm(descriptorRead, descriptorBase, descriptor[7], descriptor[8], 0) ==
+          PrefixColorArm::Plain &&
+      actual_color_arm(descriptorRead, descriptorBase, descriptor[7], 0x80070DF4u, 2) ==
+          PrefixColorArm::NegativeBlend &&
+      actual_color_arm(descriptorRead, descriptorBase, 0xDEADBEEFu, descriptor[8], 0) ==
+          PrefixColorArm::Invalid &&
+      actual_color_arm(
+          ambiguousRead, descriptorBase, ambiguousDescriptor[5], ambiguousDescriptor[6], 0) ==
+          PrefixColorArm::Invalid;
+  const bool prefixResultAnswers = prefix_result(0, true) == PrefixResult::NoCorpus &&
+                                   prefix_result(1, true) == PrefixResult::Pass &&
+                                   prefix_result(1, false) == PrefixResult::Fail;
+  bool ok = prefix_complete(prefixPositive) && !prefix_complete(prefixBadSite) &&
+            !prefix_complete(prefixBadColor) && !prefix_complete(prefixBadMatched) &&
+            !prefix_complete(PrefixCensus{}) && colorClassification && prefixResultAnswers;
   constexpr uint32_t base = 0x1000u;
   std::array<uint32_t, 49> w{};
   w[0] = 0x08001024u;
@@ -1459,16 +1730,16 @@ int spyro_actor_chain_oracle_selftest() {
   w[39] = 0x09000000u;
   w[40] = 0x2C000000u; // FT4, 10 words
   PacketCensus good{};
-  bool ok = parse_packets(
-                base,
-                base + 196u,
-                [&](uint32_t p) {
-                  return w[(p - base) / 4u];
-                },
-                good) &&
-            good.packets == 5u && good.g4 == 1u && good.gt4 == 1u && good.g3 == 1u &&
-            good.gt3 == 1u && good.ft4 == 1u && good.semi == 1u && good.raw == 1u &&
-            good.bytes == 196u;
+  ok = ok &&
+       parse_packets(
+           base,
+           base + 196u,
+           [&](uint32_t p) {
+             return w[(p - base) / 4u];
+           },
+           good) &&
+       good.packets == 5u && good.g4 == 1u && good.gt4 == 1u && good.g3 == 1u && good.gt3 == 1u &&
+       good.ft4 == 1u && good.semi == 1u && good.raw == 1u && good.bytes == 196u;
   std::vector<PacketKey> expected = good.entries, corruptAddress = expected,
                          corruptFamily = expected;
   corruptAddress[0].packet += 4u;
@@ -1732,7 +2003,10 @@ int spyro_actor_chain_oracle_selftest() {
       "corrupt_command_color={} ot_walk[positive={} bins={} empty={} append={} corrupt_bin={} "
       "corrupt_link={} cycle={} duplicate={} out_of_range={} one_sided={}] global[positive={} "
       "groups={} preexisting={} empty={} bounce={} patches={} clears={} corrupt={} "
-      "corrupt_untouched_global_tail={} corrupt_untouched_local={} no_local={}]",
+      "corrupt_untouched_global_tail={} corrupt_untouched_local={} no_local={}] "
+      "prefix[positive={} site_corrupt_rejected={} color_corrupt_rejected={} "
+      "matched_corrupt_rejected={} no_corpus_rejected={} classification_both_answers={} "
+      "ambiguous_rejected={} result_answers={}]",
       ok ? "PASS" : "FAIL",
       good.packets,
       good.bytes,
@@ -1780,6 +2054,16 @@ int spyro_actor_chain_oracle_selftest() {
       spliceCorrupt,
       corruptGlobalTail,
       corruptUntouchedLocal,
-      noLocal);
+      noLocal,
+      prefix_complete(prefixPositive),
+      !prefix_complete(prefixBadSite),
+      !prefix_complete(prefixBadColor),
+      !prefix_complete(prefixBadMatched),
+      !prefix_complete(PrefixCensus{}),
+      colorClassification,
+      actual_color_arm(
+          ambiguousRead, descriptorBase, ambiguousDescriptor[5], ambiguousDescriptor[6], 0) ==
+          PrefixColorArm::Invalid,
+      prefixResultAnswers);
   return ok ? 0 : 1;
 }

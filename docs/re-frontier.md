@@ -165,6 +165,13 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   implementation dependency is now exact: own/oracle `0x8001F798`'s pre-candidate projection prefix
   (`0x8001F7FC..0x8001FFF8`). `0x8001F158` creates records but not the scratch XY/status/depth values;
   using the current A-checkpoint snapshot for shipping would be a guest-compute fallback.
+  One bounded `prefix` census now observes setup/count, all six exact codec selector PCs, and color
+  expected/actual classification together in the same generated invocation. Its exact observer
+  accounting removes the former cross-run join problem. Far reject, terminator and outcode remain
+  explicitly unobserved, and no projection prefix is yet owned.
+  The combined 500-present run produced 32/32 PASS with 64 setups, 6,240 vertices, every selector
+  site nonzero, both full-word and s16 choices, and 64/64 color classifications with zero mismatch
+  (45 direct-high, 19 positive-blend). Plain and negative-fog remained zero and unowned.
 
 
 ## harness

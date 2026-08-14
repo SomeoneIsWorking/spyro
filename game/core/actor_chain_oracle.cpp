@@ -24,15 +24,19 @@ enum class Family:uint8_t { G4,GT4,G3,GT3,FT4,Unsupported };
 struct PacketKey { uint32_t packet=0,record=0;Family family=Family::Unsupported; };
 struct SourceSnapshot {
   uint32_t record=0,source=0,r1=0,aux=0,scratch=0,depthOrigin=0,shift=0;
-  std::array<uint32_t,8> words{};
+  uint32_t depthBase=0,colorBase=0,fog=0,pool=0,localOt=0;
+  std::array<uint32_t,10> words{};
+  std::array<uint32_t,4> xy{},depth{},color{};
 };
 static bool durable_record(uint32_t p){return p>=kRecordBase&&p<kRecordBase+kDurableRecords*kRecordSize&&((p-kRecordBase)%kRecordSize)==0;}
 static bool ram_word_span(uint32_t p,uint32_t bytes){
   return (p&3u)==0u&&p>=0x80000000u&&bytes>=4u&&p<=0x801FFFFFu-(bytes-1u);
 }
+static bool scratch_word(uint32_t p){return (p&3u)==0u&&p>=0x1F800000u&&p<=0x1F8003FCu;}
+static bool guest_word(uint32_t p){return scratch_word(p)||ram_word_span(p,4u);}
 template<class Read> static bool capture_source(Read read,uint32_t record,uint32_t source,uint32_t auxAddr,
     uint32_t r1,uint32_t scratch,uint32_t depthOrigin,uint32_t shift,SourceSnapshot& out){
-  if(!durable_record(record)||!ram_word_span(source,32u)||!ram_word_span(auxAddr,4u))return false;
+  if(!durable_record(record)||!ram_word_span(source,40u)||!ram_word_span(auxAddr,4u))return false;
   out={};out.record=record;out.source=source;out.r1=r1;out.scratch=scratch;
   out.depthOrigin=depthOrigin;out.shift=shift;out.aux=read(auxAddr);
   for(uint32_t i=0;i<out.words.size();++i)out.words[i]=read(source+i*4u);
@@ -45,23 +49,88 @@ struct PacketCensus {
   const char* first="none";
   std::vector<PacketKey> entries;
 };
+struct EpochState {bool active=false,bSeen=false,familySeen=false;uint32_t source=0,record=0;};
+static void epoch_clear(EpochState& e){e={};}
+static void epoch_open(EpochState& e,uint32_t source,uint32_t record){e={true,false,false,source,record};}
+static bool epoch_subset(EpochState& e,uint32_t source,uint32_t record){
+  if(!e.active||e.bSeen||e.source!=source||e.record!=record)return false;e.bSeen=true;return true;
+}
+static bool epoch_family(EpochState& e,uint32_t cursor,uint32_t record,uint32_t expectedCursor){
+  const bool ok=e.active&&!e.familySeen&&e.record==record&&cursor==expectedCursor;e.familySeen=true;e.active=false;return ok;
+}
 struct CheckpointCensus {
   uint32_t insertions=0,g4=0,gt4=0,g3=0,gt3=0,ft4=0,recordJoins=0,
     badRecord=0,badPacket=0,postSplice=0,finals=0,firstRecord=0,minRecord=0xFFFFFFFFu,maxRecord=0,
-    sourceA=0,sourceB=0,badSource=0,badSourceRecord=0;
+    sourceA=0,sourceB=0,badSource=0,badSourceRecord=0,badClassifier=0,badTables=0,
+    payloadCompared=0,payloadMismatch=0,directTri=0,quadFirst=0,quadSecond=0,unsupportedPayload=0;
+  uint32_t firstBadTable=0;
+  EpochState epoch{};
   std::vector<SourceSnapshot> sources;
   std::vector<PacketKey> entries;
+  struct Expected { uint32_t packet=0;Family family=Family::Unsupported;std::vector<uint32_t> words; };
+  std::vector<Expected> expected;
 };
+
+static uint32_t sar(uint32_t v,uint32_t n){return (uint32_t)((int32_t)v>>(n&31u));}
+static bool capture_tables(Core* c,SourceSnapshot& s,uint32_t& badAddr){
+  const uint32_t w0=s.words[0],w1=s.words[1],w2=s.words[2];
+  const uint32_t vo[]={ (w0>>20)&0x7FCu,(w0>>11)&0x7FCu,(w0>>2)&0x7FCu,w2&0x7FCu };
+  const uint32_t co[]={ (w1>>17)&0x7FCu,(w1>>8)&0x7FCu,(w1<<1)&0x7FCu,(w2>>9)&0x7FCu };
+  const unsigned count=(int32_t)w0<0?4u:3u;
+  for(unsigned i=0;i<count;++i){const uint32_t xp=s.scratch+vo[i],zp=s.depthBase+vo[i],cp=s.colorBase+co[i];
+    if(!scratch_word(xp)){badAddr=xp;return false;}if(!guest_word(zp)){badAddr=zp;return false;}
+    if(!ram_word_span(cp,4u)){badAddr=cp;return false;}}
+  for(unsigned i=0;i<count;++i){uint32_t xy=c->mem_r32(s.scratch+vo[i]);s.xy[i]=(int32_t(s.shift)<0)?sar(xy,5):xy;
+    s.depth[i]=c->mem_r32(s.depthBase+vo[i]);s.color[i]=c->mem_r32(s.colorBase+co[i]);}
+  s.color[0]&=0x00FFFFFFu;return true;
+}
+
+static std::vector<uint32_t> expected_payload(const SourceSnapshot& s,Family f,bool quadSecond){
+  const uint32_t semi=(s.words[1]&1u)<<25;
+  switch(f){
+    case Family::G4:return {0x08000000u,s.color[0]+0x38000000u,s.xy[0],s.color[1],s.xy[1],s.color[2],s.xy[2],s.color[3],s.xy[3]};
+    case Family::GT4:return {0x0C000000u,s.color[0]+0x3C000000u+semi,s.xy[0],s.words[3]+s.fog,s.color[1],s.xy[1],s.words[4],s.color[2],s.xy[2],s.words[5],s.color[3],s.xy[3],s.words[5]>>16};
+    case Family::G3:if(quadSecond)return {0x06000000u,(s.color[3]&0x00FFFFFFu)+0x30000000u,s.xy[3],s.color[1],s.xy[1],s.color[2],s.xy[2]};
+      else return {0x06000000u,s.color[0]+0x30000000u,s.xy[0],s.color[1],s.xy[1],s.color[2],s.xy[2]};
+    case Family::GT3:{const bool quad=(int32_t)s.words[0]<0;uint32_t uv0=(quad?s.words[3]:s.words[2])+s.fog;
+      const uint32_t uv1=quad?s.words[4]:s.words[3],uv2=quad?s.words[5]:s.words[4];
+      if(quadSecond)uv0=(uv0&0xFFFF0000u)|(s.words[5]>>16);
+      const unsigned a=quadSecond?3u:0u;
+      return {0x09000000u,(s.color[a]&0x00FFFFFFu)+0x34000000u+semi,s.xy[a],uv0,s.color[1],s.xy[1],uv1,s.color[2],s.xy[2],uv2};}
+    default:return {};
+  }
+}
+struct PayloadCompare {uint32_t compared=0,mismatches=0,expected=0,actual=0,packet=0,index=0;const char* first="none";};
+template<class Read> static PayloadCompare compare_payloads(const std::vector<CheckpointCensus::Expected>& expected,
+    uint32_t poolBegin,uint32_t poolEnd,Read read){
+  PayloadCompare out{};
+  for(const auto& e:expected){
+    const uint64_t end=(uint64_t)e.packet+e.words.size()*4u;
+    if(e.words.empty()||e.packet<poolBegin||end>poolEnd){++out.mismatches;if(out.first==std::string_view("none"))out.first="span";continue;}
+    for(size_t i=0;i<e.words.size();++i){const uint32_t actual=read(e.packet+(uint32_t)i*4u);
+      const bool same=i==0?(actual&0xFF000000u)==e.words[i]:actual==e.words[i];
+      if(!same){++out.mismatches;if(out.first==std::string_view("none")){out.first=i==0?"tag":i==1?"command_color":i%2==0?"xy":"color_uv";
+          out.expected=e.words[i];out.actual=actual;out.packet=e.packet;out.index=(uint32_t)i;}break;}}
+    ++out.compared;
+  }
+  return out;
+}
 
 void actor_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
   auto& o=*static_cast<CheckpointCensus*>(user);
-  if(pc==0x8001FFF8u||pc==0x8002031Cu){
+  if(pc==0x8002031Cu){
+    ++o.sourceB;if(!epoch_subset(o.epoch,c->r[30],c->lo))++o.badClassifier;return;
+  }
+  if(pc==0x8001FFF8u){
+    epoch_clear(o.epoch);
     SourceSnapshot s{};const uint32_t record=c->lo,source=c->r[30],auxAddr=c->r[30]+4u;
     if(!capture_source([&](uint32_t p){return c->mem_r32(p);},record,source,auxAddr,
         c->r[1],c->r[29],c->r[22],c->r[23],s)){
       ++o.badSource;if(!durable_record(record))++o.badSourceRecord;
-    }else o.sources.push_back(s);
-    (pc==0x8001FFF8u?o.sourceA:o.sourceB)++;return;
+    }else{s.depthBase=c->r[28];s.colorBase=c->r[25];s.fog=c->r[18];s.pool=c->r[24];s.localOt=c->r[19];
+      uint32_t badAddr=0;if(!capture_tables(c,s,badAddr)){++o.badSource;++o.badTables;if(!o.firstBadTable)o.firstBadTable=badAddr;}
+      else{o.sources.push_back(s);epoch_open(o.epoch,source,record);}}
+    ++o.sourceA;return;
   }
   if(pc==0x80020860u){++o.postSplice;return;}if(pc==0x800208ACu){++o.finals;return;}
   Family family=Family::Unsupported;
@@ -76,6 +145,16 @@ void actor_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
   else ++o.badRecord;
   if(packet<pool||packet>=0x80200000u)++o.badPacket;
   o.entries.push_back({packet,record,family});
+  if(o.sources.empty()){++o.unsupportedPayload;return;}
+  const bool quad=(int32_t)o.sources.back().words[0]<0;
+  uint32_t expectedCursor=o.epoch.source;
+  if(family==Family::G4||family==Family::G3)expectedCursor+=quad?12u:8u;
+  else if(family==Family::GT4||family==Family::GT3)expectedCursor+=quad?24u:20u;
+  if(!epoch_family(o.epoch,c->r[30],record,expectedCursor)){++o.badClassifier;++o.unsupportedPayload;return;}
+  const bool second=(family==Family::G3||family==Family::GT3)&&quad&&(int32_t)c->r[17]>0;
+  if(family==Family::G3||family==Family::GT3){if(!quad)++o.directTri;else if(second)++o.quadSecond;else ++o.quadFirst;}
+  auto words=expected_payload(o.sources.back(),family,second);
+  if(words.empty())++o.unsupportedPayload;else o.expected.push_back({packet,family,std::move(words)});
 }
 
 static Family command_family(uint8_t cmd){switch(cmd&0xFCu){case 0x38:return Family::G4;
@@ -126,24 +205,27 @@ void actor_chain_oracle(Core* c){
   const uint64_t seen=c->pcObserver.seen(),matched=c->pcObserver.matched();c->pcObserver.disarm();
   const uint32_t after=c->mem_r32(kPoolPtr);PacketCensus census{};
   const bool parsed=parse_packets(before,after,[&](uint32_t p){return c->mem_r32(p);},census);
+  const PayloadCompare payload=compare_payloads(checkpoints.expected,before,after,[&](uint32_t p){return c->mem_r32(p);});
   bool ordered=compare_ordered(checkpoints.entries,census.entries);
   const char* orderedFirst="none";
   if(!ordered)orderedFirst="address_or_family";
   const bool families=checkpoints.g4==census.g4&&checkpoints.gt4==census.gt4&&checkpoints.g3==census.g3&&
     checkpoints.gt3==census.gt3&&checkpoints.ft4==census.ft4&&census.f3==0&&census.ft3==0&&census.f4==0&&census.other==0;
-  const uint64_t expectedMatched=(uint64_t)checkpoints.sources.size()+checkpoints.insertions+checkpoints.finals;
+  const uint64_t expectedMatched=(uint64_t)checkpoints.sourceA+checkpoints.sourceB+checkpoints.insertions+checkpoints.finals;
   const bool positive=terminated&&parsed&&ordered&&families&&
     checkpoints.insertions==census.packets&&checkpoints.insertions==checkpoints.recordJoins&&checkpoints.badRecord==0&&checkpoints.badPacket==0&&
-    checkpoints.sourceA>0&&checkpoints.sourceB>0&&!checkpoints.sources.empty()&&checkpoints.badSource==0&&
-    checkpoints.badSourceRecord==0&&checkpoints.finals==1&&matched==expectedMatched;
+    checkpoints.sourceA>0&&checkpoints.sourceB>0&&!checkpoints.sources.empty()&&checkpoints.badSource==0&&checkpoints.badClassifier==0&&
+    checkpoints.badSourceRecord==0&&checkpoints.badTables==0&&checkpoints.finals==1&&matched==expectedMatched&&
+    checkpoints.unsupportedPayload==0&&payload.compared==census.packets&&payload.mismatches==0;
   bool negative=false;
   if(after>before){PacketCensus corrupt{};negative=!parse_packets(before,after,[&](uint32_t p){
       uint32_t v=c->mem_r32(p);if(p==before+4u)v=(v&0x00FFFFFFu)|0x7C000000u;return v;},corrupt)&&
       corrupt.first==std::string_view("command");}
   const char* result=!terminated?"NO_TERMINATOR":after==before?"NO_PACKETS":positive&&negative?"PASS":"FAIL";
-  lucent::info("actorchainoracle","pass=payload-source-census records={}/{} terminated={} checkpoints={}/{} sources={}/{} emitted={} source_minus_packets={} bad_source={} bad_source_record={} joins={} ordered={} ordered_first={} bad_record={} record_range={:08X}..{:08X} first_record={:08X} bad_packet={} families[G4={} GT4={} G3={} GT3={} FT4={}] final={} packets={} bytes={} F3={} G3={} FT3={} GT3={} F4={} G4={} FT4={} GT4={} semi={} raw={} other={} corrupt_rejected={} first={} result={}",
+  lucent::info("actorchainoracle","pass=payload records={}/{} terminated={} checkpoints={}/{} candidates={} positive_subset={} emitted={} candidate_minus_packets={} bad_source={} bad_source_record={} bad_classifier={} bad_tables={} first_bad_table={:08X} joins={} ordered={} ordered_first={} payload={}/{} payload_mismatch={} payload_first={} payload_witness[p={:08X} i={} exp={:08X} act={:08X}] unsupported_payload={} origin[direct={} quad_first={} quad_second={}] bad_record={} record_range={:08X}..{:08X} first_record={:08X} bad_packet={} families[G4={} GT4={} G3={} GT3={} FT4={}] final={} packets={} bytes={} F3={} G3={} FT3={} GT3={} F4={} G4={} FT4={} GT4={} semi={} raw={} other={} corrupt_rejected={} first={} result={}",
     records.size(),kDurableRecords,terminated,seen,matched,checkpoints.sourceA,checkpoints.sourceB,checkpoints.insertions,
-    (int64_t)checkpoints.sources.size()-(int64_t)checkpoints.insertions,checkpoints.badSource,checkpoints.badSourceRecord,checkpoints.recordJoins,ordered,orderedFirst,
+    (int64_t)checkpoints.sourceA-(int64_t)checkpoints.insertions,checkpoints.badSource,checkpoints.badSourceRecord,checkpoints.badClassifier,checkpoints.badTables,checkpoints.firstBadTable,checkpoints.recordJoins,ordered,orderedFirst,
+    payload.compared,census.packets,payload.mismatches,payload.first,payload.packet,payload.index,payload.expected,payload.actual,checkpoints.unsupportedPayload,checkpoints.directTri,checkpoints.quadFirst,checkpoints.quadSecond,
     checkpoints.badRecord,checkpoints.minRecord,checkpoints.maxRecord,checkpoints.firstRecord,checkpoints.badPacket,checkpoints.g4,checkpoints.gt4,checkpoints.g3,checkpoints.gt3,checkpoints.ft4,
     checkpoints.finals,census.packets,census.bytes,census.f3,census.g3,census.ft3,census.gt3,
     census.f4,census.g4,census.ft4,census.gt4,census.semi,census.raw,census.other,negative,census.first,result);
@@ -184,14 +266,35 @@ int spyro_actor_chain_oracle_selftest(){
   PacketCensus bad{};w[1]=0x7C000000u;ok=ok&&!parse_packets(base,base+196u,[&](uint32_t p){return w[(p-base)/4u];},bad)&&bad.other==1u;
   uint32_t reads=0;SourceSnapshot snap{};auto read=[&](uint32_t p){++reads;return p;};
   const uint32_t lastRecord=kRecordBase+(kDurableRecords-1u)*kRecordSize;
-  ok=ok&&capture_source(read,lastRecord,0x801FFFE0u,0x801FFFFCu,1,2,3,4,snap)&&reads==9u&&
-    snap.words.front()==0x801FFFE0u&&snap.words.back()==0x801FFFFCu&&snap.aux==0x801FFFFCu;
+  ok=ok&&capture_source(read,lastRecord,0x801FFFD8u,0x801FFFFCu,1,2,3,4,snap)&&reads==11u&&
+    snap.words.front()==0x801FFFD8u&&snap.words.back()==0x801FFFFCu&&snap.aux==0x801FFFFCu;
   auto rejects_without_read=[&](uint32_t record,uint32_t source,uint32_t aux){reads=0;SourceSnapshot reject{};
     return !capture_source(read,record,source,aux,1,2,3,4,reject)&&reads==0u;};
   ok=ok&&rejects_without_read(kRecordBase-4u,0x80001000u,0x80002000u)&&
-    rejects_without_read(kRecordBase,0x801FFFE4u,0x80002000u)&&
+    rejects_without_read(kRecordBase,0x801FFFDCu,0x80002000u)&&
     rejects_without_read(kRecordBase,0x80001002u,0x80002000u)&&
     rejects_without_read(kRecordBase,0x80001000u,0x801FFFFEu);
-  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=9 source_invalid_cases=4 source_invalid_reads=0",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u);
+  EpochState ep{};
+  const bool bWithoutA=!epoch_subset(ep,0x80001000u,kRecordBase);
+  epoch_open(ep,0x80001000u,kRecordBase);const bool bOnce=epoch_subset(ep,0x80001000u,kRecordBase);
+  const bool duplicateB=!epoch_subset(ep,0x80001000u,kRecordBase);
+  epoch_open(ep,0x80001000u,kRecordBase);const bool changedSource=!epoch_subset(ep,0x80001004u,kRecordBase);
+  epoch_open(ep,0x80001000u,kRecordBase);const bool changedRecord=!epoch_subset(ep,0x80001000u,kRecordBase+kRecordSize);
+  epoch_clear(ep);const bool familyAfterFailedA=!epoch_family(ep,0x80001008u,kRecordBase,0x80001008u);
+  epoch_open(ep,0x80001000u,kRecordBase);const bool wrongFamilyCursor=!epoch_family(ep,0x8000100Cu,kRecordBase,0x80001008u);
+  epoch_open(ep,0x80001000u,kRecordBase);const bool wrongFamilyRecord=!epoch_family(ep,0x80001008u,kRecordBase+kRecordSize,0x80001008u);
+  epoch_open(ep,0x80001000u,kRecordBase);const bool familyOnce=epoch_family(ep,0x80001008u,kRecordBase,0x80001008u);
+  const bool staleFamily=!epoch_family(ep,0x80001008u,kRecordBase,0x80001008u);
+  ok=ok&&bWithoutA&&bOnce&&duplicateB&&changedSource&&changedRecord&&familyAfterFailedA&&
+    wrongFamilyCursor&&wrongFamilyRecord&&familyOnce&&staleFamily;
+  CheckpointCensus::Expected pe{base,Family::G3,{0x06000000u,0x30112233u,0x00020001u,0x00445566u,0x00040003u,0x00778899u,0x00060005u}};
+  std::vector<uint32_t> actual=pe.words;actual[0]|=0x00123456u;
+  auto payloadRead=[&](uint32_t p){return actual[(p-base)/4u];};
+  const auto payloadGood=compare_payloads({pe},base,base+28u,payloadRead);actual[2]^=1u;
+  const auto payloadBadXy=compare_payloads({pe},base,base+28u,payloadRead);actual[2]^=1u;actual[1]^=1u;
+  const auto payloadBadColor=compare_payloads({pe},base,base+28u,payloadRead);
+  ok=ok&&payloadGood.compared==1&&payloadGood.mismatches==0&&payloadBadXy.mismatches==1&&
+    std::string_view(payloadBadXy.first)=="xy"&&payloadBadColor.mismatches==1&&std::string_view(payloadBadColor.first)=="command_color";
+  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] payload_good={} corrupt_xy={} corrupt_command_color={}",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1);
   return ok?0:1;
 }

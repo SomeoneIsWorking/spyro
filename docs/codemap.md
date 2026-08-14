@@ -207,14 +207,18 @@ the final pool span. A 500-present 4:3 guest-render corpus observed 32 calls and
 with nonzero G4/GT4/G3/GT3, zero FT4/semi/raw, exact ordered address+family joins and zero bad
 record/pool joins (`scratch/logs/actorchain_oracle_reviewfix_final.log`). Only durable record index 0
 emitted packets in this corpus; indices 0..52 are valid sources and index 53 is the terminator, never
-a source. A second, explicitly selected `PSXPORT_ACTOR_CHAIN_ORACLE=payload` phase-1 run captured
-6,528 source-head-A and 1,888 source-head-B immutable snapshots over 32 calls while reproducing the
-same 3,021 ordered packet-family joins (`scratch/logs/actorchain_payload_source_corrected.log`). The snapshot
-owns the exact source address, adjacent auxiliary word, scratch base, record, projection controls,
-and eight raw primitive words; invalid spans and invalid source records were both 0. The capture
-prevalidates the complete aligned source/auxiliary spans and durable record before its first read.
-This is a source/branch census,
-not a payload oracle: source heads are rejection candidates and are not assumed one-packet-per-source.
-This is groundwork, not acceptance: payload
-XY/RGB/UV, outcode/NCLIP/two-sided/compressed/fog branches, numeric local bins and global OT splice
-remain unjoined, so native submission is prohibited.
+a source. `PSXPORT_ACTOR_CHAIN_ORACLE=payload` now treats `0x8001FFF8` as the sole candidate epoch;
+`0x8002031C` is a positive-command subset classifier for the same epoch, not a second source. It
+captures ten immutable primitive words plus the referenced scratch XY/status, raw depth and colour
+table inputs before packet writes. Expected G4/GT4/G3/GT3 payloads are built only from that capture;
+the actual side reads only the final packet pool and ignores the subsequently-mutated tag link's low
+24 bits. The corrected 500-present corpus compared 3,021/3,021 packets with zero field mismatches:
+G4=945, GT4=548, G3=1,208 and GT3=320, including 884 direct triangles, 266 quad-first fallbacks and
+378 quad-second fallbacks (`scratch/logs/actorchain_payload_epoch_final.log`). Explicit epoch state
+rejects B-without-A, duplicate B, changed source/record, family-after-failed-A and stale-family reuse.
+Named `xy` and
+`command_color` mutations fail through the same comparator. All 6,528 candidates had valid source,
+scratch/depth/colour spans; the positive subset fired 1,888 times. This proves reached packet payload,
+not acceptance: outcode/NCLIP/two-sided/skip rejection semantics, FT4, numeric local bins and global
+OT splice remain unjoined. Semi/raw command bits were both zero in this corpus; raw behavior is not
+modeled. Native submission is therefore prohibited.

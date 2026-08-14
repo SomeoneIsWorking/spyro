@@ -141,13 +141,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   0x8001F798. A 32-call live checkpoint census joins all 3,021 observed packet-family sites to the
   immutable 0x38-byte record cursor and independently parses the five-family-capable packet span;
   the reached corpus contains G4/GT4/G3/GT3 and no FT4/semi/raw; only durable record index 0 emitted.
-  A separate 32-call source-head pass captured 6,528 A-arm and 1,888 B-arm raw primitive snapshots
-  with 0 invalid spans/records and the same 3,021 ordered emitted packets. Capture validates every
-  full aligned source/auxiliary span and durable record before reading. It proves checkpoint
-  reachability and immutable input capture only; the many rejected source candidates are not yet
-  classified and no one-source/one-packet premise is made.
-  This remains in-progress: exact
-  payload/material/branch and local/global OT comparisons are required before any native producer.
+  The source oracle now correctly treats A as 6,528 candidate epochs and B as a 1,888-event positive
+  subset of the same epochs. Immutable source/scratch/depth/colour inputs independently reproduced
+  every final-pool payload: 3,021/3,021 exact, spanning all reached families and direct/quad-first/
+  quad-second triangle origins, with named XY and colour corruptions rejected by the same comparator.
+  Explicit epoch lifecycle negatives reject missing/duplicate subset classifiers, changed source or
+  record, and stale family reuse. Semi/raw were unreached and raw behavior remains unmodeled.
+  This remains in-progress: rejection/visibility semantics, the unreached FT4 arm, and numeric local
+  plus global OT comparisons are required before any native producer.
 
 
 ## harness

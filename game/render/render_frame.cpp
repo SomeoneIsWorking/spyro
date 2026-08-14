@@ -98,7 +98,8 @@ void SpyroRenderer::renderScene(const Scene& sc) const {
 // ONE frame's picture.
 void SpyroRenderer::drawFrame() {
   const Scene sc = classifyScene();
-  spyro_paired_actor_frame_begin(mPaired);
+  const bool pairedState=mC->mem_r32(0x80078D7Cu)==2u;
+  spyro_paired_actor_frame_begin(mPaired,pairedState,mC->rsub.mode.psxRender());
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the denominator
   // is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It is how "which
   // scenes does a real run actually reach" gets answered with data rather than from the stage table,

@@ -136,6 +136,7 @@ private:
   rc0(c, kBootInit);
   lucent::info("frameloop", "the PORT owns Spyro's frame loop (guest main 0x{:08X} is not dispatched)",
                0x80012204u);
+  SpyroRenderer renderer(c);
   for (;;) {
     // THE LOGIC-FRAME COUNTER, advanced HERE because this loop is this port's logic frame.
     // `Timing::logicFrame` is the framework's per-Core "which logic frame is this", and its ONLY
@@ -199,7 +200,7 @@ private:
     const bool suppressed = fs.renderSuppressed();
     fs.restartVblankCount();
     if (suppressed) continue;
-    SpyroRenderer(c).drawFrame();
+    renderer.drawFrame();
   }
 }
 

@@ -57,7 +57,8 @@ struct Scene {
 
 // class SpyroRenderer — the render seam for ONE frame on ONE core.
 //
-// Constructed per frame on the stack; its paired-producer census is therefore frame- and core-local.
+// Constructed once per Core by the native frame loop; paired producer history therefore survives
+// logic-frame boundaries without file-static or guest memory state.
 class SpyroRenderer {
 public:
   explicit SpyroRenderer(Core* c) : mC(c) {}

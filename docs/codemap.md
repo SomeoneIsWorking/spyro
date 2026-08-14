@@ -219,13 +219,22 @@ rejects B-without-A, duplicate B, changed source/record, family-after-failed-A a
 Named `xy` and
 `command_color` mutations fail through the same comparator. All 6,528 candidates had valid source,
 scratch/depth/colour spans; the positive subset fired 1,888 times. This proves reached packet payload,
-not acceptance: outcode/NCLIP/two-sided/skip rejection semantics, FT4, numeric local bins and global
-OT splice remain unjoined. Semi/raw command bits were both zero in this corpus; raw behavior is not
+not acceptance: outcode/NCLIP/two-sided/skip rejection semantics and FT4 remain unjoined. Semi/raw command bits were both zero in this corpus; raw behavior is not
 modeled. A separate `PSXPORT_ACTOR_CHAIN_ORACLE=ot` pass now derives each numeric local bin from the
 same immutable source depths/controls, snapshots all 288 `[head/newest,tail/oldest]` slots at the
 qualified pre-global `0x8002074C` checkpoint, and walks oldest-to-newest FIFO links before mutation.
 Across 32 calls it scanned 18,432 slots and joined 3,021/3,021 packets with exact bin and FIFO order:
 1,091 first inserts into empty bins plus 1,930 appends to nonempty bins, with zero cycles, duplicates
 or out-of-range links (`scratch/logs/actorchain_ot_local_final.log`). Bin and link-order corruptions
-fail the same comparator. The later global splice is still unmodeled, so native submission remains
-prohibited.
+fail the same comparator. The same OT pass also snapshots every relevant global root/tag at `0x8002074C`, runs
+an injectable copy-on-write transcription of the exact window/group/base-bounce splice, and compares
+the complete traversed footprint at `0x80020860`: every global `[head,tail]` pair and every scanned
+local pair, including unchanged words, plus preserved/patched packet tags. A 15-call complete-footprint
+run produced zero mismatches; each invocation had one populated record and one no-local record, while
+all reached global slots were initially empty (`scratch/logs/actorchain_global_fullfootprint.log`). The
+earlier 32-call formula/corpus run is retained in `scratch/logs/actorchain_global_final.log`. Hermetic shipping-path fixtures cover two groups,
+same-bin chains, a preexisting global chain, empty global adoption, base bounce, no-local, local
+clears, a corrupted predicted word, an untouched global tail corruption and an untouched local-word
+corruption. Thus the reached empty-global splice is proven, while live
+preexisting-global, bounce, and multiple populated records remain corpus gaps. Rejection/visibility
+and FT4 still prohibit native submission.

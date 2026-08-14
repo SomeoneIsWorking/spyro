@@ -150,8 +150,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   A separate pre-global pass now proves numeric local-bin insertion and per-bin FIFO order for all
   3,021 reached packets over all 18,432 scanned slots, including both empty-bin insertion and
   nonempty append, with bin/link corruption negatives and zero cycles/duplicates/out-of-range links.
-  This remains in-progress: rejection/visibility semantics, the unreached FT4 arm, and the global OT
-  splice are required before any native producer.
+  The post checkpoint now matches a pure exact global-splice simulator with zero word mismatches,
+  including every traversed global pair and scanned local pair (changed or unchanged), local clears,
+  tag patches and roots. Untouched global-tail/local-word corruption negatives prove that coverage.
+  Live calls reached one
+  populated plus one no-local record and empty global slots only; hermetic shipping fixtures cover
+  preexisting-global append, two groups, base bounce, and corrupt/no-local cases. Multiple populated
+  records and live preexisting-global/bounce remain corpus gaps. Rejection/visibility semantics and
+  the unreached FT4 arm are still required before any native producer.
 
 
 ## harness

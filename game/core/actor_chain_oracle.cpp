@@ -122,7 +122,33 @@ struct OtCensus {
   uint32_t candidates=0,emitted=0,pre=0,post=0,finals=0,binsScanned=0,nonempty=0,nodes=0,
     badSource=0,badEpoch=0,badBin=0,cycles=0,duplicates=0,outOfRange=0,emptyAppend=0,nonemptyAppend=0;
   std::vector<OtEntry> expected,actual;
+  struct Word {uint32_t addr=0,value=0;};std::vector<Word> globalExpected;
+  uint32_t globalRecords=0,noLocal=0,groups=0,globalEmpty=0,globalPreexisting=0,baseBounce=0,
+    tagPatches=0,localClears=0,globalCompared=0,globalMismatch=0;
 };
+template<class Read> static bool simulate_global(Read read,uint32_t minPair,uint32_t maxPair,uint32_t cr13,uint32_t cr14,
+    uint32_t globalBase,std::vector<OtCensus::Word>& writes,OtCensus& count){
+  writes.clear();auto get=[&](uint32_t a){for(auto i=writes.rbegin();i!=writes.rend();++i)if(i->addr==a)return i->value;return read(a);};
+  auto put=[&](uint32_t a,uint32_t v){for(auto i=writes.rbegin();i!=writes.rend();++i)if(i->addr==a){i->value=v;return;}writes.push_back({a,v});};++count.globalRecords;
+  if((int32_t)(maxPair-minPair)<0){++count.noLocal;return true;}
+  const uint32_t s=((cr13>>8)+(cr13&255u))&31u,step=256u>>s;if(!step||minPair>maxPair||((maxPair-minPair)&7u))return false;
+  uint32_t off=(cr14<<3)+((32u<<s)-8u);const uint32_t gap=0x800704F4u-maxPair;
+  const uint32_t adjust=(int32_t)gap<0?0u:(((gap<<s)>>8)<<3);off-=adjust;if((int32_t)off<0)off=0;
+  uint32_t global=globalBase+off,scan=maxPair,terminal=minPair-8u;
+  while(true){++count.groups;uint32_t candidate=scan-step;const uint32_t limit=(int32_t)(terminal-candidate)>0?terminal:candidate;
+    uint32_t head=get(global),tail=get(global+4u),cursor=head;put(global,head);put(global+4u,tail);bool have=head!=0;
+    if(have){++count.globalPreexisting;if(!tail)return false;}else {++count.globalEmpty;if(tail)return false;}
+    for(uint32_t p=scan;p!=limit;p-=8u){const uint32_t newest=get(p),oldest=get(p+4u);put(p,newest);put(p+4u,oldest);if(!newest&&!oldest)continue;
+      if(!newest||!oldest)return false;if(!have){tail=oldest;cursor=newest;have=true;}else {const uint32_t tag=get(cursor);put(cursor,(tag&0xFF000000u)|(oldest&0x00FFFFFFu));++count.tagPatches;cursor=newest;}
+      put(p,0);put(p+4u,0);count.localClears+=2;}
+    if(have){put(global,cursor);put(global+4u,tail);}
+    if(limit==terminal)break;scan=limit;if(global==globalBase){global=globalBase+8u;++count.baseBounce;}else global-=8u;
+  }
+  return true;
+}
+template<class Read> static uint32_t compare_global_words(const std::vector<OtCensus::Word>& expected,Read read){
+  uint32_t mismatches=0;for(const auto& w:expected)mismatches+=read(w.addr)!=w.value;return mismatches;
+}
 static uint32_t expected_bin(const SourceSnapshot& s,Family f,bool second){
   const bool quad=f==Family::G4||f==Family::GT4;
   uint32_t d=0;
@@ -164,7 +190,12 @@ static void actor_ot_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
     if(!capture_source([&](uint32_t p){return c->mem_r32(p);},record,source,source+4u,c->r[1],c->r[29],c->r[22],c->r[23],s)){++o.badSource;return;}
     s.depthBase=c->r[28];s.colorBase=c->r[25];s.fog=c->r[18];s.pool=c->r[24];s.localOt=c->r[19];uint32_t bad=0;
     if(!capture_tables(c,s,bad)){++o.badSource;return;}o.source=s;o.haveSource=true;epoch_open(o.epoch,source,record);return;}
-  if(pc==0x8002074Cu){++o.pre;snapshot_ot(c,o);return;}if(pc==0x80020860u){++o.post;return;}if(pc==0x800208ACu){++o.finals;return;}
+  if(pc==0x8002074Cu){++o.pre;snapshot_ot(c,o);const uint32_t globalBase=c->mem_r32(0x80075820u);
+    if(!simulate_global([&](uint32_t p){return c->mem_r32(p);},c->r[20],c->r[21],gte_read_ctrl(13),gte_read_ctrl(14),globalBase,o.globalExpected,o))++o.outOfRange;
+    return;}
+  if(pc==0x80020860u){++o.post;o.globalMismatch+=compare_global_words(o.globalExpected,[&](uint32_t p){return c->mem_r32(p);});o.globalCompared+=o.globalExpected.size();
+    return;}
+  if(pc==0x800208ACu){++o.finals;return;}
   Family f=Family::Unsupported;if(pc==0x800201A8u)f=Family::G4;else if(pc==0x8002023Cu)f=Family::GT4;
   else if(pc==0x80020430u)f=Family::G3;else if(pc==0x8002051Cu)f=Family::GT3;else return;
   ++o.emitted;if(!o.haveSource){++o.badEpoch;return;}const bool quad=(int32_t)o.source.words[0]<0;
@@ -185,8 +216,9 @@ static void actor_chain_ot_oracle(Core* c){
   const uint64_t expectedMatched=(uint64_t)o.candidates+o.emitted+o.pre+o.post+o.finals;
   const bool ordered=compare_ot(o.expected,o.actual,first,field);const bool positive=o.candidates>0&&o.emitted>0&&matched==expectedMatched&&o.pre>0&&o.pre==o.post&&o.finals==1&&
     o.binsScanned==288u*o.pre&&o.nonempty>0&&o.emptyAppend>0&&o.nonemptyAppend>0&&o.expected.size()==o.emitted&&o.nodes==o.emitted&&
-    o.badSource==0&&o.badEpoch==0&&o.badBin==0&&o.cycles==0&&o.duplicates==0&&o.outOfRange==0&&ordered;
-  lucent::info("actorchainoracle","pass=ot checkpoints={}/{} candidates={} emitted={} expected={} actual={} bins_scanned={} nonempty={} append[empty={} nonempty={}] pre/post/final={}/{}/{} bad_source={} bad_epoch={} bad_bin={} cycles={} duplicates={} out_of_range={} ordered={} first={} field={} result={}",seen,matched,o.candidates,o.emitted,o.expected.size(),o.actual.size(),o.binsScanned,o.nonempty,o.emptyAppend,o.nonemptyAppend,o.pre,o.post,o.finals,o.badSource,o.badEpoch,o.badBin,o.cycles,o.duplicates,o.outOfRange,ordered,first,field,positive?"PASS":"FAIL");
+    o.globalRecords==o.pre&&o.globalCompared>0&&o.globalMismatch==0&&o.badSource==0&&o.badEpoch==0&&o.badBin==0&&
+    o.cycles==0&&o.duplicates==0&&o.outOfRange==0&&ordered;
+  lucent::info("actorchainoracle","pass=ot checkpoints={}/{} candidates={} emitted={} expected={} actual={} bins_scanned={} nonempty={} append[empty={} nonempty={}] pre/post/final={}/{}/{} global[records={} no_local={} groups={} empty={} preexisting={} bounce={} patches={} clears={} compared={} mismatch={}] bad_source={} bad_epoch={} bad_bin={} cycles={} duplicates={} out_of_range={} ordered={} first={} field={} result={}",seen,matched,o.candidates,o.emitted,o.expected.size(),o.actual.size(),o.binsScanned,o.nonempty,o.emptyAppend,o.nonemptyAppend,o.pre,o.post,o.finals,o.globalRecords,o.noLocal,o.groups,o.globalEmpty,o.globalPreexisting,o.baseBounce,o.tagPatches,o.localClears,o.globalCompared,o.globalMismatch,o.badSource,o.badEpoch,o.badBin,o.cycles,o.duplicates,o.outOfRange,ordered,first,field,positive?"PASS":"FAIL");
 }
 
 void actor_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
@@ -319,7 +351,7 @@ void spyro_register_actor_chain_oracle(){
     lucent::error("actorchainoracle","REFUSED: PSXPORT_NDIFF_IDENTITY can overwrite the 0x8001F798 diagnostic override");abort();}
   if(const char* trace=cfg_str("PSXPORT_FNTRACE");trace&&(std::string_view(trace).find("1F798")!=std::string_view::npos||std::string_view(trace).find("1f798")!=std::string_view::npos)){
     lucent::error("actorchainoracle","REFUSED: PSXPORT_FNTRACE targets the same 0x8001F798 override slot");abort();}
-  lucent::info("actorchainoracle","armed pass={} 0x8001F798; global splice remains unimplemented",mode);
+  lucent::info("actorchainoracle","armed pass={} 0x8001F798; diagnostic only, native submission remains disabled",mode);
   psxport_recomp()->shard_set_override(0x8001F798u,std::string_view(mode)=="ot"?actor_chain_ot_oracle:actor_chain_oracle);
 }
 
@@ -389,7 +421,26 @@ int spyro_actor_chain_oracle_selftest(){
   auto rangeMem=validMem;rangeMem.push_back({ob+24,0x80200000u});rangeMem.push_back({ob+28,0x80200000u});
   const auto walkRange=runOt(rangeMem);const bool walkOutOfRange=walkRange.outOfRange>0;
   auto oneSideMem=validMem;oneSideMem.push_back({ob+24,p1});const auto walkOneSide=runOt(oneSideMem);const bool walkOneSided=walkOneSide.outOfRange>0;
-  ok=ok&&otGood&&otBadBin&&otBadLink&&walkPositive&&walkBadOrder&&walkHasCycle&&walkHasDuplicate&&walkOutOfRange&&walkOneSided;
-  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] payload_good={} corrupt_xy={} corrupt_command_color={} ot_walk[positive={} bins={} empty={} append={} corrupt_bin={} corrupt_link={} cycle={} duplicate={} out_of_range={} one_sided={}]",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1,walkPositive,walkGood.binsScanned,walkGood.emptyAppend,walkGood.nonemptyAppend,otBadBin,walkBadOrder,walkHasCycle,walkHasDuplicate,walkOutOfRange,walkOneSided);
+  constexpr uint32_t gb=0x80030000u,lmin=0x8006FCF4u,lmax=lmin+320u,oldh=0x80021000u,oldt=0x80021020u,p4=0x80020060u;
+  std::vector<Cell> spliceMem{{gb,oldh},{gb+4,oldt},{oldh,0x0CABCDEFu},{lmax,p2},{lmax+4,p1},{p1,p2&0xFFFFFFu},
+    {lmax-8,p3},{lmax-4,p3},{lmin,p4},{lmin+4,p4}};
+  auto spliceRead=[&](uint32_t p){for(auto i=spliceMem.rbegin();i!=spliceMem.rend();++i)if(i->first==p)return i->second;return 0u;};
+  OtCensus spliceCount{};std::vector<OtCensus::Word> spliceExpected;
+  const bool spliceSim=simulate_global(spliceRead,lmin,lmax,0,0,gb,spliceExpected,spliceCount);
+  auto splicePost=[&](uint32_t p){for(auto i=spliceExpected.rbegin();i!=spliceExpected.rend();++i)if(i->addr==p)return i->value;return spliceRead(p);};
+  const bool splicePositive=spliceSim&&spliceCount.groups>=2&&spliceCount.globalPreexisting>0&&spliceCount.globalEmpty>0&&
+    spliceCount.baseBounce>0&&spliceCount.tagPatches>=2&&spliceCount.localClears==6&&compare_global_words(spliceExpected,splicePost)==0&&
+    splicePost(oldh)==((0x0CABCDEFu&0xFF000000u)|(p1&0xFFFFFFu))&&splicePost(gb)==p3&&splicePost(gb+4)==oldt&&
+    splicePost(gb+8)==p4&&splicePost(gb+12)==p4&&splicePost(lmax)==0&&splicePost(lmax+4)==0;
+  auto corruptExpected=spliceExpected;corruptExpected.front().value^=1u;
+  const bool spliceCorrupt=compare_global_words(corruptExpected,splicePost)>0;
+  const uint32_t untouchedLocal=lmax-16u;
+  const bool hasUntouchedLocal=std::any_of(spliceExpected.begin(),spliceExpected.end(),[&](const OtCensus::Word& w){return w.addr==untouchedLocal&&w.value==0;});
+  const bool corruptGlobalTail=compare_global_words(spliceExpected,[&](uint32_t p){return splicePost(p)^(p==gb+4u?1u:0u);})>0;
+  const bool corruptUntouchedLocal=hasUntouchedLocal&&compare_global_words(spliceExpected,[&](uint32_t p){return splicePost(p)^(p==untouchedLocal?1u:0u);})>0;
+  OtCensus noLocalCount{};std::vector<OtCensus::Word> noLocalExpected;
+  const bool noLocal=simulate_global(spliceRead,lmax,lmin,0,0,gb,noLocalExpected,noLocalCount)&&noLocalCount.noLocal==1&&noLocalExpected.empty();
+  ok=ok&&otGood&&otBadBin&&otBadLink&&walkPositive&&walkBadOrder&&walkHasCycle&&walkHasDuplicate&&walkOutOfRange&&walkOneSided&&splicePositive&&spliceCorrupt&&corruptGlobalTail&&corruptUntouchedLocal&&noLocal;
+  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] payload_good={} corrupt_xy={} corrupt_command_color={} ot_walk[positive={} bins={} empty={} append={} corrupt_bin={} corrupt_link={} cycle={} duplicate={} out_of_range={} one_sided={}] global[positive={} groups={} preexisting={} empty={} bounce={} patches={} clears={} corrupt={} corrupt_untouched_global_tail={} corrupt_untouched_local={} no_local={}]",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1,walkPositive,walkGood.binsScanned,walkGood.emptyAppend,walkGood.nonemptyAppend,otBadBin,walkBadOrder,walkHasCycle,walkHasDuplicate,walkOutOfRange,walkOneSided,splicePositive,spliceCount.groups,spliceCount.globalPreexisting,spliceCount.globalEmpty,spliceCount.baseBounce,spliceCount.tagPatches,spliceCount.localClears,spliceCorrupt,corruptGlobalTail,corruptUntouchedLocal,noLocal);
   return ok?0:1;
 }

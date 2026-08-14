@@ -102,6 +102,7 @@ Output build(const Input &input) {
 
   const uint8_t coordShift = input.header >> 24;
   const int8_t translationBias = (int8_t)(input.header >> 16);
+  const bool clipMode = (int32_t)input.header < 0;
   int32_t cr14 = ((int32_t)input.tz >> 5) - translationBias;
   if (cr14 < 0) {
     cr14 = 0;
@@ -113,10 +114,11 @@ Output build(const Input &input) {
   out.controls[13] = (coordShift & 31u) + ((uint32_t)input.transformShift << 8);
   out.controls[14] = (uint32_t)cr14;
   out.controls[15] = (uint32_t)wrapSub(affine.t[2], 512u << (coordShift & 31u));
+  out.depthOrigin = out.controls[15] << 2;
+  out.otShift = (out.controls[13] & 255u) + 4u + (clipMode ? 0x80000000u : 0u);
 
   const uint16_t vertexScale = (uint16_t)((input.header & 0xff00u) >> 2);
   const bool paired = vertexScale != 0;
-  const bool clipMode = (int32_t)input.header < 0;
   const auto primary = decode(input.primary, input.vertexCount, input.streamShift);
   if (primary.status != actor_model_codec::StreamStatus::Ok) {
     out.status = Status::Stream;
@@ -162,6 +164,7 @@ Output build(const Input &input) {
       return out;
     }
     const int16_t factor = (int16_t)((1024 - input.cr30) * 4);
+    out.fog = ((uint32_t)(uint16_t)factor >> 9) << 22;
     out.colors.reserve(input.primaryColors.size());
     for (size_t i = 0; i < input.primaryColors.size(); ++i) {
       out.colors.push_back(actor_model_codec::depthCueRgb(
@@ -231,6 +234,9 @@ CompareResult compareOutputs(const Output &expected, const Output &actual) {
     mismatch(a.scratchWord != b.scratchWord, "scratch_word");
   }
   mismatch(expected.commonStatus != actual.commonStatus, "common_status");
+  mismatch(expected.depthOrigin != actual.depthOrigin, "depth_origin");
+  mismatch(expected.otShift != actual.otShift, "ot_shift");
+  mismatch(expected.fog != actual.fog, "fog");
   mismatch(expected.colors.size() != actual.colors.size(), "color_count");
   result.colors = (uint32_t)std::min(expected.colors.size(), actual.colors.size());
   for (size_t i = 0; i < result.colors; ++i) {

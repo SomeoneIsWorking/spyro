@@ -318,3 +318,21 @@ were zero, so the live corpus reached 21 clip-mode records and zero visibility r
 calls, 19 PositiveBlend records independently compared 1,094 scratch colors; 43 High records/2,316
 colors and 702 primitive words per call remain capture-only evidence
 (`scratch/logs/actorchain_prefix_status.log`).
+
+Phase 4 composes those immutable prefix outputs without submitting them. The pure
+`game/render/actor_draw_recipe.{h,cpp}` evaluator is now the single acceptance, family, payload and
+numeric-bin implementation used by both the diagnostic and the future recipe. `compose` walks every
+owned primitive in source order, preserves valid empty calls, and atomically discards all faces on
+semi-transparency, FT4, malformed spans or out-of-range bins. The payload pass independently joins
+the composed recipe back to each qualified A checkpoint: all selected source words, status/XY,
+depth-table values, colors, depth origin, shift and fog must match before final-pool family order and
+payload are compared. A fresh 500-present run produced 32/32 PASS: 6,464/6,464 candidate inputs and
+3,021/3,021 reached G4/GT4/G3/GT3 faces matched with zero input, order or payload mismatches
+(`scratch/logs/actorchain_recipe_payload.log`). Named source-word, depth and fog corruptions exercise
+the other answer. The separate OT pass captures the same immutable recipe in the same invocation and
+uses its face bins as the expected side; it again matched 6,464/6,464 candidates and 3,021/3,021
+faces, scanned 18,432 local slots, and compared 5,076 predicted global/local/tag words with zero
+mismatches (`scratch/logs/actorchain_recipe_ot.log`). Thus the reached immutable composition is
+joined through packet content and local/global OT mutation. It remains diagnostic-only: no
+RenderQueue submission or guest suppression exists, and unreached FT4/semi/raw plus live
+preexisting-global/multi-populated-record coverage remain ownership gates.

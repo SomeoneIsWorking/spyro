@@ -1,4 +1,5 @@
 // Observation-only groundwork for the 0x800521C0 -> 0x8001F158 -> 0x8001F798 actor chain.
+#include "actor_draw_recipe.h"
 #include "actor_prefix_builder.h"
 #include "cfg.h"
 #include "core.h"
@@ -26,7 +27,7 @@ struct PrefixBuildCapture {
   struct Record {
     spyro::actor_prefix::Input input;
     spyro::actor_prefix::Output expected;
-    uint32_t descriptor = 0, command = 0, colorBase = 0;
+    uint32_t descriptor = 0, command = 0, colorBase = 0, fog = 0;
     bool colorSeen = false;
   };
   std::vector<Record> records;
@@ -172,9 +173,6 @@ static bool capture_source(Read read,
   return true;
 }
 
-struct ActorRecordRecipe {
-  std::array<uint32_t, 14> words{};
-};
 struct PacketCensus {
   uint32_t packets = 0, bytes = 0, f3 = 0, g3 = 0, ft3 = 0, gt3 = 0, f4 = 0, g4 = 0, ft4 = 0,
            gt4 = 0, semi = 0, raw = 0, other = 0;
@@ -449,110 +447,41 @@ static bool capture_tables(Core *c, SourceSnapshot &s, uint32_t &badAddr) {
   s.color[0] &= 0x00FFFFFFu;
   return true;
 }
-static int32_t nclip3(uint32_t a, uint32_t b, uint32_t c) {
-  const int32_t x0 = (int16_t)a, y0 = (int16_t)(a >> 16), x1 = (int16_t)b, y1 = (int16_t)(b >> 16),
-                x2 = (int16_t)c, y2 = (int16_t)(c >> 16);
-  return (int32_t)((int64_t)x0 * y1 + (int64_t)x1 * y2 + (int64_t)x2 * y0 - (int64_t)x0 * y2 -
-                   (int64_t)x1 * y0 - (int64_t)x2 * y1);
+static spyro::actor_draw_recipe::PrimitiveInput recipe_input(const SourceSnapshot &s) {
+  return {s.words, s.status, s.xy, s.depth, s.color, s.depthOrigin, s.shift, s.fog};
 }
-enum class QuadChoice : uint8_t { Reject, First, Second, Full };
-static QuadChoice quad_choice(int32_t n0, int32_t n1, bool twoSided) {
-  if (twoSided && n0 > 0) {
-    n0 = -n0;
-  }
-  if (twoSided && n1 < 0) {
-    n1 = -n1;
-  }
-  if (n0 >= 0) {
-    return n1 > 0 ? QuadChoice::Second : QuadChoice::Reject;
-  }
-  return n1 > 0 ? QuadChoice::Full : QuadChoice::First;
-}
+
 static CheckpointCensus::Prediction evaluate_candidate(const SourceSnapshot &s) {
   using O = CheckpointCensus::Outcome;
   using R = CheckpointCensus::Origin;
-  CheckpointCensus::Prediction p{true, O::Reject, R::None, 0, "none"};
-  const uint32_t w = s.words[0], control = w, material = s.words[1],
-                 stride = (control & 2u) ? 20u : 8u;
-  const bool quad = (int32_t)w < 0;
-  if (quad && control & 4u) {
+  const auto result = spyro::actor_draw_recipe::evaluate(recipe_input(s));
+  CheckpointCensus::Prediction p{true, O::Reject, R::None, s.source + result.nextWord * 4u, "none"};
+  using AF = spyro::actor_draw_recipe::Family;
+  using AO = spyro::actor_draw_recipe::Origin;
+  using AR = spyro::actor_draw_recipe::Reason;
+  if (!result.supported) {
     p.outcome = O::Unsupported;
-    p.next = s.source + 20u;
-    p.reason = "ft4";
-    return p;
+  } else if (result.emitted) {
+    p.outcome = result.family == AF::G4    ? O::G4
+                : result.family == AF::GT4 ? O::GT4
+                : result.family == AF::G3  ? O::G3
+                                           : O::GT3;
   }
-  const unsigned count = quad ? 4u : 3u;
-  if ((int32_t)s.shift < 0) {
-    uint32_t all = ~0u;
-    for (unsigned i = 0; i < count; ++i) {
-      all &= s.status[i];
-    }
-    if (all & 31u) {
-      p.next = s.source + (quad ? ((control & 2u) ? 24u : 12u) : stride);
-      p.reason = "outcode";
-      return p;
-    }
+  if (result.emitted) {
+    p.origin = result.origin == AO::Direct       ? R::Direct
+               : result.origin == AO::QuadFirst  ? R::QuadFirst
+               : result.origin == AO::QuadSecond ? R::QuadSecond
+               : result.origin == AO::FullQuad   ? R::FullQuad
+                                                 : R::None;
   }
-  p.next = s.source + (quad ? ((control & 2u) ? 24u : 12u) : stride);
-  if (control & 8u) {
-    p.reason = "skip";
-    return p;
-  }
-  int32_t n0 = nclip3(s.xy[0], s.xy[1], s.xy[2]);
-  bool second = false, full = false;
-  if (!quad) {
-    if ((control & 1u) ? n0 == 0 : n0 <= 0) {
-      p.reason = n0 == 0 ? "zero" : "nclip";
-      return p;
-    }
-    p.origin = R::Direct;
-  } else {
-    const int32_t n1 = nclip3(s.xy[1], s.xy[2], s.xy[3]);
-    switch (quad_choice(n0, n1, (control & 1u) != 0)) {
-    case QuadChoice::Reject:
-      p.reason = (n0 == 0 || n1 == 0) ? "zero" : "nclip";
-      return p;
-    case QuadChoice::First:
-      p.origin = R::QuadFirst;
-      break;
-    case QuadChoice::Second:
-      second = true;
-      p.origin = R::QuadSecond;
-      break;
-    case QuadChoice::Full:
-      full = true;
-      p.origin = R::FullQuad;
-      break;
-    }
-  }
-  uint32_t d;
-  if (full) {
-    d = s.depth[0] - s.depthOrigin + s.depth[1] + s.depth[2] + s.depth[3];
-  } else {
-    const unsigned a = second ? 3u : 0u;
-    d = s.depth[a] + (s.depth[a] >> 1) - s.depthOrigin + s.depth[1] + (s.depth[1] >> 1) +
-        s.depth[2];
-  }
-  if ((int32_t)d < 0) {
-    p.reason = "depth";
-    return p;
-  }
-  const uint32_t bias = (uint32_t)((int32_t)material >> 28) << 1;
-  uint32_t q;
-  if (full) {
-    q = sar(d + (bias << (s.shift & 31u)), s.shift);
-  } else {
-    q = sar(d, s.shift) + bias;
-  }
-  if ((int32_t)q < 0) {
-    p.reason = "depth";
-    return p;
-  }
-  if (full) {
-    p.outcome = (control & 2u) ? O::GT4 : O::G4;
-  } else {
-    p.outcome = (control & 2u) ? O::GT3 : O::G3;
-  }
+  p.reason = result.reason == AR::Outcode    ? "outcode"
+             : result.reason == AR::Nclip    ? "nclip"
+             : result.reason == AR::ZeroArea ? "zero"
+             : result.reason == AR::Skip     ? "skip"
+             : result.reason == AR::Depth    ? "depth"
+             : result.reason == AR::Ft4      ? "ft4"
+             : result.reason == AR::Semi     ? "semi"
+                                             : "none";
   return p;
 }
 static void finish_prediction(CheckpointCensus &o, Core *c) {
@@ -656,72 +585,65 @@ static void finish_prediction(CheckpointCensus &o, Core *c) {
 }
 
 static std::vector<uint32_t> expected_payload(const SourceSnapshot &s, Family f, bool quadSecond) {
-  const uint32_t semi = (s.words[1] & 1u) << 25;
-  switch (f) {
-  case Family::G4:
-    return {0x08000000u,
-            s.color[0] + 0x38000000u,
-            s.xy[0],
-            s.color[1],
-            s.xy[1],
-            s.color[2],
-            s.xy[2],
-            s.color[3],
-            s.xy[3]};
-  case Family::GT4:
-    return {0x0C000000u,
-            s.color[0] + 0x3C000000u + semi,
-            s.xy[0],
-            s.words[3] + s.fog,
-            s.color[1],
-            s.xy[1],
-            s.words[4],
-            s.color[2],
-            s.xy[2],
-            s.words[5],
-            s.color[3],
-            s.xy[3],
-            s.words[5] >> 16};
-  case Family::G3:
-    if (quadSecond) {
-      return {0x06000000u,
-              (s.color[3] & 0x00FFFFFFu) + 0x30000000u,
-              s.xy[3],
-              s.color[1],
-              s.xy[1],
-              s.color[2],
-              s.xy[2]};
-    } else {
-      return {
-          0x06000000u, s.color[0] + 0x30000000u, s.xy[0], s.color[1], s.xy[1], s.color[2], s.xy[2]};
-    }
-  case Family::GT3: {
-    const bool quad = (int32_t)s.words[0] < 0;
-    uint32_t uv0 = (quad ? s.words[3] : s.words[2]) + s.fog;
-    const uint32_t uv1 = quad ? s.words[4] : s.words[3], uv2 = quad ? s.words[5] : s.words[4];
-    if (quadSecond) {
-      uv0 = (uv0 & 0xFFFF0000u) | (s.words[5] >> 16);
-    }
-    const unsigned a = quadSecond ? 3u : 0u;
-    return {0x09000000u,
-            (s.color[a] & 0x00FFFFFFu) + 0x34000000u + semi,
-            s.xy[a],
-            uv0,
-            s.color[1],
-            s.xy[1],
-            uv1,
-            s.color[2],
-            s.xy[2],
-            uv2};
-  }
-  default:
-    return {};
-  }
+  (void)quadSecond;
+  const auto result = spyro::actor_draw_recipe::evaluate(recipe_input(s));
+  const bool family =
+      (f == Family::G4 && result.family == spyro::actor_draw_recipe::Family::G4) ||
+      (f == Family::GT4 && result.family == spyro::actor_draw_recipe::Family::GT4) ||
+      (f == Family::G3 && result.family == spyro::actor_draw_recipe::Family::G3) ||
+      (f == Family::GT3 && result.family == spyro::actor_draw_recipe::Family::GT3);
+  return result.emitted && family ? result.payload : std::vector<uint32_t>{};
 }
 struct PayloadCompare {
   uint32_t compared = 0, mismatches = 0, expected = 0, actual = 0, packet = 0, index = 0;
   const char *first = "none";
 };
+
+struct RecipeJoin {
+  uint32_t candidatesCompared = 0, inputMismatch = 0, orderMismatch = 0;
+  PayloadCompare payload{};
+  const char *first = "none";
+};
+
+static Family recipe_family(spyro::actor_draw_recipe::Family family) {
+  using F = spyro::actor_draw_recipe::Family;
+  return family == F::G4    ? Family::G4
+         : family == F::GT4 ? Family::GT4
+         : family == F::G3  ? Family::G3
+                            : Family::GT3;
+}
+
+static const char *compare_recipe_input(const spyro::actor_draw_recipe::PrimitiveInput &expected,
+                                        uint32_t sourceWords,
+                                        const SourceSnapshot &actual) {
+  if (sourceWords > expected.words.size() || !std::equal(expected.words.begin(),
+                                                         expected.words.begin() + sourceWords,
+                                                         actual.words.begin())) {
+    return "source_words";
+  }
+  if (expected.status != actual.status) {
+    return "status";
+  }
+  if (expected.xy != actual.xy) {
+    return "xy";
+  }
+  if (expected.depth != actual.depth) {
+    return "depth";
+  }
+  if (expected.color != actual.color) {
+    return "color";
+  }
+  if (expected.depthOrigin != actual.depthOrigin) {
+    return "depth_origin";
+  }
+  if (expected.shift != actual.shift) {
+    return "ot_shift";
+  }
+  if (expected.fog != actual.fog) {
+    return "fog";
+  }
+  return "none";
+}
 template <class Read>
 static PayloadCompare compare_payloads(const std::vector<CheckpointCensus::Expected> &expected,
                                        uint32_t poolBegin,
@@ -771,6 +693,10 @@ struct OtCensus {
   std::vector<WordWrite> globalExpected;
   uint32_t globalRecords = 0, noLocal = 0, groups = 0, globalEmpty = 0, globalPreexisting = 0,
            baseBounce = 0, tagPatches = 0, localClears = 0, globalCompared = 0, globalMismatch = 0;
+  const spyro::actor_draw_recipe::Recipe *recipe = nullptr;
+  const std::vector<PrefixBuildCapture::Record> *prefixRecords = nullptr;
+  uint32_t recipeCandidate = 0, recipeFace = 0, recipeInputMismatch = 0, recipeOrderMismatch = 0;
+  const char *recipeFirst = "none";
 };
 template <class Read>
 static bool simulate_global(Read read,
@@ -867,25 +793,6 @@ static uint32_t compare_global_words(const std::vector<WordWrite> &expected, Rea
     mismatches += read(w.addr) != w.value;
   }
   return mismatches;
-}
-static uint32_t expected_bin(const SourceSnapshot &s, Family f, bool second) {
-  const bool quad = f == Family::G4 || f == Family::GT4;
-  uint32_t d = 0;
-  if (quad) {
-    d = s.depth[0] - s.depthOrigin + s.depth[1] + s.depth[2] + s.depth[3];
-  } else {
-    const unsigned a = second ? 3u : 0u;
-    d = s.depth[a] + (s.depth[a] >> 1) - s.depthOrigin + s.depth[1] + (s.depth[1] >> 1) +
-        s.depth[2];
-  }
-  const uint32_t bias = (uint32_t)((int32_t)s.words[1] >> 28) << 1;
-  uint32_t q;
-  if (quad) {
-    q = sar(d + (bias << (s.shift & 31u)), s.shift);
-  } else {
-    q = sar(d, s.shift) + bias;
-  }
-  return s.localOt + (q << 3);
 }
 static bool compare_ot(const std::vector<OtEntry> &a,
                        const std::vector<OtEntry> &b,
@@ -990,6 +897,7 @@ static void actor_ot_checkpoint(Core *c, uint64_t, uint32_t pc, void *user) {
     ++o.candidates;
     SourceSnapshot s{};
     const uint32_t record = c->lo, source = c->r[30];
+    const bool terminator = source == c->r[31];
     if (!capture_source(
             [&](uint32_t p) {
               return c->mem_r32(p);
@@ -1018,6 +926,29 @@ static void actor_ot_checkpoint(Core *c, uint64_t, uint32_t pc, void *user) {
     o.source = s;
     o.haveSource = true;
     epoch_open(o.epoch, source, record);
+    if (terminator) {
+      return;
+    }
+    if (!o.recipe || !o.prefixRecords || o.recipeCandidate >= o.recipe->candidateOrder.size()) {
+      ++o.recipeInputMismatch;
+      if (o.recipeFirst == std::string_view{"none"}) {
+        o.recipeFirst = "candidate_count";
+      }
+      return;
+    }
+    const auto &expected = o.recipe->candidateOrder[o.recipeCandidate++];
+    const bool recordInRange = expected.record < o.prefixRecords->size();
+    const bool identity =
+        recordInRange && record == kRecordBase + expected.record * kRecordSize &&
+        source == (*o.prefixRecords)[expected.record].command + 4u + expected.sourceWord * 4u;
+    const char *inputField =
+        identity ? compare_recipe_input(expected.input, expected.evaluation.nextWord, s) : "none";
+    if (!identity || inputField != std::string_view{"none"}) {
+      ++o.recipeInputMismatch;
+      if (o.recipeFirst == std::string_view{"none"}) {
+        o.recipeFirst = identity ? inputField : "candidate_identity";
+      }
+    }
     return;
   }
   if (pc == 0x8002074Cu) {
@@ -1075,8 +1006,19 @@ static void actor_ot_checkpoint(Core *c, uint64_t, uint32_t pc, void *user) {
     ++o.badEpoch;
     return;
   }
-  const bool second = (f == Family::G3 || f == Family::GT3) && quad && (int32_t)c->r[17] > 0;
-  const uint32_t addr = expected_bin(o.source, f, second);
+  if (!o.recipe || o.recipeFace >= o.recipe->faces.size()) {
+    ++o.recipeOrderMismatch;
+    o.recipeFirst = "face_count";
+    return;
+  }
+  const auto &face = o.recipe->faces[o.recipeFace++];
+  if (recipe_family(face.family) != f) {
+    ++o.recipeOrderMismatch;
+    if (o.recipeFirst == std::string_view{"none"}) {
+      o.recipeFirst = "family_order";
+    }
+  }
+  const uint32_t addr = o.source.localOt + (face.localBin << 3);
   if (addr < o.source.localOt || ((addr - o.source.localOt) & 7u) ||
       (addr - o.source.localOt) / 8u >= 288u) {
     ++o.badBin;
@@ -1253,7 +1195,38 @@ static bool capture_prefix_record(Core *c, uint32_t record, PrefixBuildCapture::
   capture.colorBase =
       input.colorArm == spyro::actor_prefix::ColorArm::High ? kseg(primaryColors) : 0x80070DF4u;
   capture.expected = spyro::actor_prefix::build(input);
+  capture.fog = capture.expected.fog;
   return true;
+}
+
+static bool capture_prefix_records(Core *c, std::vector<PrefixBuildCapture::Record> &records) {
+  records.clear();
+  records.reserve(kDurableRecords);
+  for (uint32_t i = 0; i <= kTerminatorIndex; ++i) {
+    const uint32_t address = kRecordBase + i * kRecordSize;
+    if (c->mem_r32(address) == 0) {
+      return !records.empty();
+    }
+    PrefixBuildCapture::Record record{};
+    if (i == kTerminatorIndex || !capture_prefix_record(c, address, record)) {
+      records.clear();
+      return false;
+    }
+    records.push_back(std::move(record));
+  }
+  records.clear();
+  return false;
+}
+
+static spyro::actor_draw_recipe::Recipe
+compose_prefix_records(std::span<const PrefixBuildCapture::Record> records,
+                       std::vector<spyro::actor_prefix::Output> &outputs) {
+  outputs.clear();
+  outputs.reserve(records.size());
+  for (const auto &record : records) {
+    outputs.push_back(record.expected);
+  }
+  return spyro::actor_draw_recipe::compose(outputs);
 }
 
 static void prefix_build_first(PrefixBuildCapture &capture,
@@ -1366,7 +1339,8 @@ static void prefix_build_color(Core *c, uint64_t, uint32_t, void *user) {
     return;
   }
   auto &record = capture.records[capture.activeRecord];
-  if (c->lo != record.descriptor || c->r[30] != record.command || c->r[25] != record.colorBase) {
+  if (c->lo != record.descriptor || c->r[30] != record.command || c->r[25] != record.colorBase ||
+      c->r[18] != record.fog) {
     ++capture.pointerMismatch;
     prefix_build_first(capture, "final_pointer");
   }
@@ -1418,36 +1392,11 @@ static void prefix_build_checkpoint(Core *c, uint64_t cycle, uint32_t pc, void *
 
 static void actor_chain_prefix_build_oracle(Core *c) {
   PrefixBuildCapture capture{};
-  bool captured = true, terminated = false;
-  const uint32_t firstRecord = kRecordBase;
-  if (!durable_record(firstRecord)) {
-    captured = false;
-  }
-  for (uint32_t i = 0; i <= kTerminatorIndex; ++i) {
-    const uint32_t address = firstRecord + i * kRecordSize;
-    if (!captured || address < firstRecord ||
-        address > kRecordBase + kTerminatorIndex * kRecordSize) {
-      captured = false;
-      break;
-    }
-    if (c->mem_r32(address) == 0) {
-      terminated = true;
-      break;
-    }
-    PrefixBuildCapture::Record record{};
-    if (i == kTerminatorIndex || !capture_prefix_record(c, address, record)) {
-      captured = false;
-      break;
-    }
-    capture.records.push_back(std::move(record));
-  }
-  captured = captured && terminated && !capture.records.empty();
+  const bool captured = capture_prefix_records(c, capture.records);
   std::vector<spyro::actor_prefix::Output> outputs;
-  outputs.reserve(capture.records.size());
   std::array<uint32_t, 9> statusCounts{};
   uint32_t expectedVertices = 0, expectedPositiveColors = 0, expectedVisibleRecords = 0;
   for (const auto &record : capture.records) {
-    outputs.push_back(record.expected);
     ++statusCounts[(uint32_t)record.expected.status];
     expectedVertices += (uint32_t)record.expected.vertices.size();
     if ((int32_t)record.input.header < 0) {
@@ -1464,8 +1413,12 @@ static void actor_chain_prefix_build_oracle(Core *c) {
     }
     expectedVisibleRecords += record.expected.status == spyro::actor_prefix::Status::Ok;
   }
+  const auto recipe = compose_prefix_records(capture.records, outputs);
   const auto boundary = spyro::actor_prefix::classifyCall(outputs);
-  const bool supported = captured && boundary.status == spyro::actor_prefix::CallStatus::Owned;
+  const bool recipeComplete = recipe.status == spyro::actor_draw_recipe::Status::Ready ||
+                              recipe.status == spyro::actor_draw_recipe::Status::ValidEmpty;
+  const bool supported =
+      captured && boundary.status == spyro::actor_prefix::CallStatus::Owned && recipeComplete;
   static constexpr uint32_t targets[] = {0x8001FF64u, 0x80020860u};
   if (supported) {
     if (!c->pcObserver.arm(targets, std::size(targets), prefix_build_checkpoint, &capture)) {
@@ -1502,6 +1455,7 @@ static void actor_chain_prefix_build_oracle(Core *c) {
                "scratch_words={}/{} "
                "colors[high_records={} high_captured={} positive_records={} "
                "positive_compared={}/{}] primitive_words_captured={} "
+               "recipe[status={} candidates={} rejected={} faces={} first_reason={}] "
                "first={}#{}[exp={:08X} act={:08X}] result={}",
                captured,
                supported,
@@ -1558,6 +1512,14 @@ static void actor_chain_prefix_build_oracle(Core *c) {
                capture.positiveColorsCompared,
                expectedPositiveColors,
                capture.primitiveWordsCaptured,
+               recipe.status == spyro::actor_draw_recipe::Status::NoCorpus     ? "NO_CORPUS"
+               : recipe.status == spyro::actor_draw_recipe::Status::Ready      ? "READY"
+               : recipe.status == spyro::actor_draw_recipe::Status::ValidEmpty ? "VALID_EMPTY"
+                                                                               : "UNSUPPORTED",
+               recipe.candidates,
+               recipe.rejectedCandidates,
+               recipe.faces.size(),
+               (unsigned)recipe.firstReason,
                capture.first,
                capture.firstIndex,
                capture.firstExpected,
@@ -1582,7 +1544,13 @@ static void actor_chain_ot_oracle(Core *c) {
                                          0x8002074Cu,
                                          0x80020860u,
                                          0x800208ACu};
+  std::vector<PrefixBuildCapture::Record> prefixRecords;
+  const bool recipeCaptured = capture_prefix_records(c, prefixRecords);
+  std::vector<spyro::actor_prefix::Output> prefixOutputs;
+  const auto recipe = compose_prefix_records(prefixRecords, prefixOutputs);
   OtCensus o{};
+  o.recipe = &recipe;
+  o.prefixRecords = &prefixRecords;
   if (!c->pcObserver.arm(targets, std::size(targets), actor_ot_checkpoint, &o)) {
     abort();
   }
@@ -1597,19 +1565,24 @@ static void actor_chain_ot_oracle(Core *c) {
   const uint64_t expectedMatched = (uint64_t)o.candidates + o.emitted + o.pre + o.post + o.finals;
   const bool ordered = compare_ot(o.expected, o.actual, first, field);
   const bool positive =
-      o.candidates > 0 && o.emitted > 0 && matched == expectedMatched && o.pre > 0 &&
-      o.pre == o.post && o.finals == 1 && o.binsScanned == 288u * o.pre && o.nonempty > 0 &&
-      o.emptyAppend > 0 && o.nonemptyAppend > 0 && o.expected.size() == o.emitted &&
-      o.nodes == o.emitted && o.globalRecords == o.pre && o.globalCompared > 0 &&
-      o.globalMismatch == 0 && o.badSource == 0 && o.badEpoch == 0 && o.badBin == 0 &&
-      o.cycles == 0 && o.duplicates == 0 && o.outOfRange == 0 && ordered;
+      recipeCaptured && recipe.status == spyro::actor_draw_recipe::Status::Ready &&
+      o.recipeCandidate == recipe.candidateOrder.size() && o.recipeFace == recipe.faces.size() &&
+      o.recipeInputMismatch == 0 && o.recipeOrderMismatch == 0 && o.candidates > 0 &&
+      o.emitted > 0 && matched == expectedMatched && o.pre > 0 && o.pre == o.post &&
+      o.finals == 1 && o.binsScanned == 288u * o.pre && o.nonempty > 0 && o.emptyAppend > 0 &&
+      o.nonemptyAppend > 0 && o.expected.size() == o.emitted && o.nodes == o.emitted &&
+      o.globalRecords == o.pre && o.globalCompared > 0 && o.globalMismatch == 0 &&
+      o.badSource == 0 && o.badEpoch == 0 && o.badBin == 0 && o.cycles == 0 && o.duplicates == 0 &&
+      o.outOfRange == 0 && ordered;
   lucent::info(
       "actorchainoracle",
       "pass=ot checkpoints={}/{} candidates={} emitted={} expected={} actual={} bins_scanned={} "
       "nonempty={} append[empty={} nonempty={}] pre/post/final={}/{}/{} global[records={} "
       "no_local={} groups={} empty={} preexisting={} bounce={} patches={} clears={} compared={} "
       "mismatch={}] bad_source={} bad_epoch={} bad_bin={} cycles={} duplicates={} out_of_range={} "
-      "ordered={} first={} field={} result={}",
+      "ordered={} first={} field={} recipe[captured={} status={} candidates={}/{} "
+      "input_mismatch={} "
+      "faces={}/{} order_mismatch={} first={}] result={}",
       seen,
       matched,
       o.candidates,
@@ -1642,6 +1615,15 @@ static void actor_chain_ot_oracle(Core *c) {
       ordered,
       first,
       field,
+      recipeCaptured,
+      (unsigned)recipe.status,
+      o.recipeCandidate,
+      recipe.candidateOrder.size(),
+      o.recipeInputMismatch,
+      o.recipeFace,
+      recipe.faces.size(),
+      o.recipeOrderMismatch,
+      o.recipeFirst,
       positive ? "PASS" : "FAIL");
 }
 
@@ -1912,24 +1894,10 @@ void actor_chain_oracle(Core *c) {
                   "REFUSED: diagnostic override would displace active 0x8001F798 widescreen hook");
     abort();
   }
-  std::vector<ActorRecordRecipe> records;
-  records.reserve(kDurableRecords);
-  bool terminated = false;
-  for (uint32_t i = 0; i <= kTerminatorIndex; ++i) {
-    const uint32_t p = kRecordBase + i * kRecordSize;
-    if (c->mem_r32(p) == 0u) {
-      terminated = true;
-      break;
-    }
-    ActorRecordRecipe r{};
-    if (i == kTerminatorIndex) {
-      break;
-    }
-    for (uint32_t w = 0; w < 14; ++w) {
-      r.words[w] = c->mem_r32(p + w * 4u);
-    }
-    records.push_back(r);
-  }
+  std::vector<PrefixBuildCapture::Record> prefixRecords;
+  const bool recipeCaptured = capture_prefix_records(c, prefixRecords);
+  std::vector<spyro::actor_prefix::Output> prefixOutputs;
+  const auto recipe = compose_prefix_records(prefixRecords, prefixOutputs);
   const uint32_t before = c->mem_r32(kPoolPtr);
   // Payload/source pass: two source heads + five family sites + final = PcObserver's exact limit.
   static constexpr uint32_t targets[] = {0x8001FFF8u,
@@ -1960,6 +1928,45 @@ void actor_chain_oracle(Core *c) {
       compare_payloads(checkpoints.expected, before, after, [&](uint32_t p) {
         return c->mem_r32(p);
       });
+  RecipeJoin recipeJoin{};
+  const size_t candidateCount = std::min(recipe.candidateOrder.size(), checkpoints.sources.size());
+  for (size_t i = 0; i < candidateCount; ++i) {
+    const auto &expected = recipe.candidateOrder[i];
+    const auto &actual = checkpoints.sources[i];
+    ++recipeJoin.candidatesCompared;
+    const bool recordInRange = expected.record < prefixRecords.size();
+    const bool identity =
+        recordInRange && actual.record == kRecordBase + expected.record * kRecordSize &&
+        actual.source == prefixRecords[expected.record].command + 4u + expected.sourceWord * 4u;
+    const char *inputField =
+        identity ? compare_recipe_input(expected.input, expected.evaluation.nextWord, actual)
+                 : "none";
+    if (!identity || inputField != std::string_view{"none"}) {
+      ++recipeJoin.inputMismatch;
+      if (recipeJoin.first == std::string_view{"none"}) {
+        recipeJoin.first = identity ? inputField : "candidate_identity";
+      }
+    }
+  }
+  if (recipe.candidateOrder.size() != checkpoints.sources.size()) {
+    ++recipeJoin.inputMismatch;
+    recipeJoin.first = "candidate_count";
+  }
+  std::vector<CheckpointCensus::Expected> recipePayloads;
+  if (recipe.faces.size() == census.entries.size()) {
+    recipePayloads.reserve(recipe.faces.size());
+    for (size_t i = 0; i < recipe.faces.size(); ++i) {
+      const Family family = recipe_family(recipe.faces[i].family);
+      recipeJoin.orderMismatch += family != census.entries[i].family;
+      recipePayloads.push_back({census.entries[i].packet, family, recipe.faces[i].payload});
+    }
+    recipeJoin.payload = compare_payloads(recipePayloads, before, after, [&](uint32_t p) {
+      return c->mem_r32(p);
+    });
+  } else {
+    ++recipeJoin.orderMismatch;
+    recipeJoin.first = "face_count";
+  }
   bool ordered = compare_ordered(checkpoints.entries, census.entries);
   const char *orderedFirst = "none";
   if (!ordered) {
@@ -1973,7 +1980,7 @@ void actor_chain_oracle(Core *c) {
                                    checkpoints.sourceB + checkpoints.familyArms +
                                    checkpoints.finals;
   const bool positive =
-      terminated && parsed && ordered && families && checkpoints.insertions == census.packets &&
+      recipeCaptured && parsed && ordered && families && checkpoints.insertions == census.packets &&
       checkpoints.insertions == checkpoints.recordJoins && checkpoints.badRecord == 0 &&
       checkpoints.badPacket == 0 && checkpoints.sourceA > 0 && !checkpoints.sources.empty() &&
       checkpoints.badSource == 0 && checkpoints.badClassifier == 0 &&
@@ -1987,6 +1994,11 @@ void actor_chain_oracle(Core *c) {
                          checkpoints.predictedUnsupported,
                          census.packets) &&
       checkpoints.evalMismatch == 0 && checkpoints.cursorMismatch == 0;
+  const bool recipePositive =
+      recipeCaptured && recipe.status == spyro::actor_draw_recipe::Status::Ready &&
+      recipeJoin.candidatesCompared == recipe.candidateOrder.size() &&
+      recipeJoin.inputMismatch == 0 && recipeJoin.orderMismatch == 0 &&
+      recipeJoin.payload.compared == recipe.faces.size() && recipeJoin.payload.mismatches == 0;
   const bool corruptionApplicable = after > before;
   bool negative = false;
   if (after > before) {
@@ -2005,8 +2017,10 @@ void actor_chain_oracle(Core *c) {
                corrupt.first == std::string_view("command");
   }
   const char *result =
-      !terminated ? "NO_TERMINATOR"
-                  : payload_result(checkpoints.sourceA, positive, corruptionApplicable, negative);
+      !recipeCaptured
+          ? "NO_TERMINATOR"
+          : payload_result(
+                checkpoints.sourceA, positive && recipePositive, corruptionApplicable, negative);
   lucent::info(
       "actorchainoracle",
       "pass=payload records={}/{} terminated={} checkpoints={}/{} candidates={} "
@@ -2020,10 +2034,12 @@ void actor_chain_oracle(Core *c) {
       "unsupported_payload={} origin[direct={} quad_first={} quad_second={}] bad_record={} "
       "record_range={:08X}..{:08X} first_record={:08X} bad_packet={} families[G4={} GT4={} G3={} "
       "GT3={} FT4={}] final={} packets={} bytes={} F3={} G3={} FT3={} GT3={} F4={} G4={} FT4={} "
-      "GT4={} semi={} raw={} other={} corruption[applicable={} rejected={}] first={} result={}",
-      records.size(),
+      "GT4={} semi={} raw={} other={} recipe[captured={} candidates={}/{} input_mismatch={} "
+      "faces={}/{} order_mismatch={} payload={}/{} payload_mismatch={} first={}] "
+      "corruption[applicable={} rejected={}] first={} result={}",
+      prefixRecords.size(),
       kDurableRecords,
-      terminated,
+      recipeCaptured,
       seen,
       matched,
       checkpoints.sourceA,
@@ -2094,6 +2110,17 @@ void actor_chain_oracle(Core *c) {
       census.semi,
       census.raw,
       census.other,
+      recipeCaptured,
+      recipeJoin.candidatesCompared,
+      recipe.candidateOrder.size(),
+      recipeJoin.inputMismatch,
+      recipe.faces.size(),
+      census.packets,
+      recipeJoin.orderMismatch,
+      recipeJoin.payload.compared,
+      recipe.faces.size(),
+      recipeJoin.payload.mismatches,
+      recipeJoin.first,
       corruptionApplicable,
       negative,
       census.first,
@@ -2146,6 +2173,24 @@ void spyro_register_actor_chain_oracle() {
 }
 
 int spyro_actor_chain_oracle_selftest() {
+  spyro::actor_draw_recipe::PrimitiveInput recipeInput{};
+  SourceSnapshot recipeActual{};
+  const bool recipeInputPositive =
+      compare_recipe_input(recipeInput, 6, recipeActual) == std::string_view{"none"};
+  recipeActual.words[7] = 1;
+  const bool recipeLookaheadIgnored =
+      compare_recipe_input(recipeInput, 6, recipeActual) == std::string_view{"none"};
+  recipeActual.words[2] = 1;
+  const bool recipeSourceCorruption =
+      compare_recipe_input(recipeInput, 6, recipeActual) == std::string_view{"source_words"};
+  recipeActual.words = {};
+  recipeActual.depth[2] = 1;
+  const bool recipeDepthCorruption =
+      compare_recipe_input(recipeInput, 6, recipeActual) == std::string_view{"depth"};
+  recipeActual.depth[2] = 0;
+  recipeActual.fog = 1;
+  const bool recipeFogCorruption =
+      compare_recipe_input(recipeInput, 6, recipeActual) == std::string_view{"fog"};
   uint32_t primitiveReads = 0, primitiveBytes = 0;
   std::vector<uint32_t> primitiveWords;
   auto malformedPrimitiveRead = [&](uint32_t) {
@@ -2224,10 +2269,12 @@ int spyro_actor_chain_oracle_selftest() {
   const bool prefixResultAnswers = prefix_result(0, true) == PrefixResult::NoCorpus &&
                                    prefix_result(1, true) == PrefixResult::Pass &&
                                    prefix_result(1, false) == PrefixResult::Fail;
-  bool ok = malformedAddressRejected && oversizedPrimitiveRejected && validPrimitiveCopied &&
-            prefix_complete(prefixPositive) && !prefix_complete(prefixBadSite) &&
-            !prefix_complete(prefixBadColor) && !prefix_complete(prefixBadMatched) &&
-            !prefix_complete(PrefixCensus{}) && colorClassification && prefixResultAnswers;
+  bool ok = recipeInputPositive && recipeLookaheadIgnored && recipeSourceCorruption &&
+            recipeDepthCorruption && recipeFogCorruption && malformedAddressRejected &&
+            oversizedPrimitiveRejected && validPrimitiveCopied && prefix_complete(prefixPositive) &&
+            !prefix_complete(prefixBadSite) && !prefix_complete(prefixBadColor) &&
+            !prefix_complete(prefixBadMatched) && !prefix_complete(PrefixCensus{}) &&
+            colorClassification && prefixResultAnswers;
   constexpr uint32_t base = 0x1000u;
   std::array<uint32_t, 49> w{};
   w[0] = 0x08001024u;
@@ -2354,14 +2401,15 @@ int spyro_actor_chain_oracle_selftest() {
       std::string_view(outcode.reason) == "outcode" &&
       std::string_view(depthReject.reason) == "depth" && ft4Reject.outcome == EO::Unsupported &&
       ft4Reject.next == 0x80001014u;
-  const bool quadTable = quad_choice(-1, 1, false) == QuadChoice::Full &&
-                         quad_choice(-1, -1, false) == QuadChoice::First &&
-                         quad_choice(1, 1, false) == QuadChoice::Second &&
-                         quad_choice(1, -1, false) == QuadChoice::Reject &&
-                         quad_choice(1, -1, true) == QuadChoice::Full &&
-                         quad_choice(-1, 1, true) == QuadChoice::Full &&
-                         quad_choice(0, 1, false) == QuadChoice::Second &&
-                         quad_choice(0, 0, false) == QuadChoice::Reject;
+  using QD = spyro::actor_draw_recipe::QuadDecision;
+  const bool quadTable = spyro::actor_draw_recipe::classifyQuad(-1, 1, false) == QD::Full &&
+                         spyro::actor_draw_recipe::classifyQuad(-1, -1, false) == QD::First &&
+                         spyro::actor_draw_recipe::classifyQuad(1, 1, false) == QD::Second &&
+                         spyro::actor_draw_recipe::classifyQuad(1, -1, false) == QD::Reject &&
+                         spyro::actor_draw_recipe::classifyQuad(1, -1, true) == QD::Full &&
+                         spyro::actor_draw_recipe::classifyQuad(-1, 1, true) == QD::Full &&
+                         spyro::actor_draw_recipe::classifyQuad(0, 1, false) == QD::Second &&
+                         spyro::actor_draw_recipe::classifyQuad(0, 0, false) == QD::Reject;
   const bool allRejectAccounting =
       payload_accounting(4, 4, 0, 4, 0, 0) &&
       std::string_view(payload_result(4, true, false, false)) == "PASS";
@@ -2517,7 +2565,8 @@ int spyro_actor_chain_oracle_selftest() {
       "corrupt_untouched_global_tail={} corrupt_untouched_local={} no_local={}] "
       "prefix[positive={} site_corrupt_rejected={} color_corrupt_rejected={} "
       "matched_corrupt_rejected={} no_corpus_rejected={} classification_both_answers={} "
-      "ambiguous_rejected={} result_answers={}]",
+      "ambiguous_rejected={} result_answers={}] recipe_input[positive={} lookahead_ignored={} "
+      "source_corrupt={} depth_corrupt={} fog_corrupt={}]",
       ok ? "PASS" : "FAIL",
       good.packets,
       good.bytes,
@@ -2575,6 +2624,11 @@ int spyro_actor_chain_oracle_selftest() {
       actual_color_arm(
           ambiguousRead, descriptorBase, ambiguousDescriptor[5], ambiguousDescriptor[6], 0) ==
           PrefixColorArm::Invalid,
-      prefixResultAnswers);
+      prefixResultAnswers,
+      recipeInputPositive,
+      recipeLookaheadIgnored,
+      recipeSourceCorruption,
+      recipeDepthCorruption,
+      recipeFogCorruption);
   return ok ? 0 : 1;
 }

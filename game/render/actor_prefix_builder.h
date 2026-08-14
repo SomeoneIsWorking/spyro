@@ -67,6 +67,9 @@ struct Output {
   std::vector<uint32_t> colors;
   std::vector<uint32_t> primitiveWords;
   uint32_t commonStatus = 0;
+  uint32_t depthOrigin = 0;
+  uint32_t otShift = 0;
+  uint32_t fog = 0;
 };
 
 enum class CallStatus : uint8_t { NoCorpus, Owned, Unsupported };

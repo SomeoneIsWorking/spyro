@@ -189,8 +189,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   vertices with exact status scratch words and zero live common-status rejections. `classifyCall`
   accepts only complete `Ok`/`VisibilityRejected` record sets and
   refuses empty or unsupported sets before a future queue mutation. High colors and primitive words
-  remain capture-only. The next REAL step is to compose this prefix recipe with the independently
-  proven acceptance/payload/OT evaluator as one atomic native owner; RQ submission is still absent.
+  remain capture-only. The pure `actor_draw_recipe` now performs the next composition step without
+  submitting: one 32-call payload pass joined all 6,464 immutable candidate inputs and 3,021 ordered
+  faces to the independent final packet pool, and a separate same-invocation OT pass joined the same
+  6,464 candidates/3,021 faces to 18,432 local slots and 5,076 compared splice words with zero
+  mismatch. Semi/FT4/malformed/bin-range inputs atomically refuse and valid empty is explicit. The
+  next REAL step is queue/planner preflight plus one native PainterObject submission while retaining
+  the guest leg as reference; RQ submission and guest suppression are still absent, and unreached
+  FT4/semi/raw remain refusal gates.
 
 
 ## harness

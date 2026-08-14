@@ -85,7 +85,8 @@ void testPositiveBlendAndRefusals() {
   input.secondaryColors = {0x00554433u};
   const Output blended = build(input);
   require(blended.status == Status::Ok && blended.vertices.size() == 1 &&
-              blended.colors.size() == 1 && blended.colors[0] != input.primaryColors[0],
+              blended.colors.size() == 1 && blended.colors[0] != input.primaryColors[0] &&
+              blended.fog == 0x01000000u,
           "reached PositiveBlend input refused or not blended");
 
   input.optionalExpansion = true;

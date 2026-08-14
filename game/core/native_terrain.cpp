@@ -20,7 +20,7 @@
 //        b. if every vertex shares an off-screen side, skip the object entirely.
 //        c. walk the face list, index three cached vertices by pre-scaled byte offsets, reject the
 //           face if the three clip codes share a side, then unshift and emit F3 (stride 0x14) or
-//           FT3 (stride 0x1C) packets into the pool.
+//           untextured Gouraud G3 (stride 0x1C) packets into the pool.
 //   5. publish the pool pointer and link the batch into the display list.
 //
 // BYTE-EXACT IS THE ADMISSION REQUIREMENT, not a stretch goal. ndiff snapshots RAM, the scratchpad,
@@ -39,6 +39,9 @@
 #include "cfg.h"      // cfg_on — PSXPORT_NATIVE_TERRAIN is a feature flag, not a diagnostic
 #include <lucent/log.h>
 #include "spyro_game.h"
+#include <array>
+#include <cstring>
+#include <vector>
 
 // psxport's widescreen state: whether a wider aspect is selected, and the wide native width (which
 // now scales from this game's own 512-wide 4:3 frame rather than a hardcoded 320).
@@ -78,8 +81,76 @@ constexpr uint32_t kClipRight  = 0x02000000u;   //   sx >= 512      -> bit 8   (
 
 // Packet tags the face loop stamps into the OT link word.
 constexpr uint32_t kTagF3  = 0x84000000u;   // 4 words of payload -> stride 0x14
-constexpr uint32_t kTagFT3 = 0x86000000u;   // 6 words of payload -> stride 0x1C
+constexpr uint32_t kTagG3 = 0x86000000u;    // 6 words of payload -> stride 0x1C
 constexpr uint32_t kTagSub = 0x10000000u;   // subtracted from the fetched colour word
+
+struct TerrainObservedFace {
+  uint32_t object=0,source=0,pool=0;
+  bool gouraud=false;
+  std::array<uint32_t,3> xy{},rgb{};
+};
+struct TerrainOracleCapture {
+  std::vector<TerrainObservedFace> emitted;
+  TerrainObservedFace pending{};
+  bool hasPending=false,poolRejected=false;
+  uint32_t objects=0,candidates=0,clipRejects=0,f3=0,g3=0,other=0,poolRejects=0;
+  uint32_t currentObject=0;
+  uint32_t checkpoints=0,bytesCompared=0,mismatched=0,maxFaces=0;
+  uint32_t poolStart=0,otBase=0,oldTail=0,oldHead=0,chainCompared=0,spliceCompared=0;
+  const char* first="none";
+};
+static void terrain_bad(TerrainOracleCapture& o,const char* field){++o.mismatched;if(!std::strcmp(o.first,"none"))o.first=field;}
+static void terrain_finish_candidate(Core* c,TerrainOracleCapture& o){
+  if(!o.hasPending)return;
+  const uint32_t delta=c->r[30]-o.pending.pool;
+  if(delta==0){++o.clipRejects;}
+  else if(delta==20u&&!o.pending.gouraud){++o.f3;o.emitted.push_back(o.pending);}
+  else if(delta==28u&&o.pending.gouraud){++o.g3;o.emitted.push_back(o.pending);}
+  else terrain_bad(o,"cursor_delta");
+  o.hasPending=false;
+}
+static void terrain_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
+  auto& o=*static_cast<TerrainOracleCapture*>(user);++o.checkpoints;
+  if(pc==0x8004EF68u){o.hasPending=false;o.poolRejected=true;++o.poolRejects;return;}
+  if(pc==0x8004EF78u){terrain_finish_candidate(c,o);return;}
+  if(pc==0x8004ED44u){terrain_finish_candidate(c,o);const uint32_t next=c->mem_r32(c->r[31]);
+    if(next){o.currentObject=next;++o.objects;}return;}
+  if(pc!=0x8004EE84u)return;
+  terrain_finish_candidate(c,o);
+  if(c->r[21]==c->r[22])return;
+  TerrainObservedFace f{};f.object=o.currentObject;f.source=c->r[21];++o.candidates;f.pool=c->r[30];
+  const uint32_t face=c->mem_r32(c->r[21]),material=c->mem_r32(c->r[21]+4u);
+  const uint32_t vo[3]={face>>20,(face>>10)&0x3FCu,face&0x3FCu};
+  const uint32_t co[3]={material>>20,(material>>10)&0x3FCu,material&0x3FCu};
+  for(int i=0;i<3;++i)f.xy[i]=(uint32_t)((int32_t)c->mem_r32(c->r[23]+vo[i])>>5);
+  f.gouraud=!(co[0]==co[1]&&co[0]==co[2]);
+  for(int i=0;i<3;++i)f.rgb[i]=c->mem_r32(c->r[20]+co[i]);
+  if(!f.gouraud)for(int i=0;i<3;++i)f.rgb[i]-=kTagSub;
+  o.pending=f;o.hasPending=true;
+}
+template<class Read> static bool terrain_compare_read(TerrainOracleCapture& o,Read read){
+  for(const auto& f:o.emitted){const uint32_t words=(read(f.pool)>>24)&0x7Fu,cmd=read(f.pool+4u)>>24;
+    if(words!=(f.gouraud?6u:4u))terrain_bad(o,"tag_words");
+    if(cmd!=(f.gouraud?0x30u:0x20u)){++o.other;terrain_bad(o,"command");}
+    if(f.gouraud){for(int i=0;i<3;++i){if(read(f.pool+4u+i*8u)!=f.rgb[i])terrain_bad(o,"rgb");if(read(f.pool+8u+i*8u)!=f.xy[i])terrain_bad(o,"xy");}o.bytesCompared+=28u;}
+    else {if(read(f.pool+4u)!=f.rgb[0])terrain_bad(o,"rgb");for(int i=0;i<3;++i)if(read(f.pool+8u+i*4u)!=f.xy[i])terrain_bad(o,"xy");o.bytesCompared+=20u;}}
+  o.maxFaces=(uint32_t)o.emitted.size();return o.mismatched==0;
+}
+static bool terrain_compare_packets(Core* c,TerrainOracleCapture& o){return terrain_compare_read(o,[&](uint32_t a){return c->mem_r32(a);});}
+template<class Read> static bool terrain_compare_chain_read(TerrainOracleCapture& o,Read read){
+  for(size_t i=0;i<o.emitted.size();++i){const uint32_t tag=read(o.emitted[i].pool);
+    const uint32_t expected=i+1<o.emitted.size()?o.emitted[i+1].pool:0u;
+    if((tag&0x00FFFFFFu)!=(expected&0x00FFFFFFu))terrain_bad(o,"packet_link");++o.chainCompared;}
+  if(o.emitted.empty())return o.mismatched==0;
+  const uint32_t newTail=o.emitted.back().pool,newHead=o.emitted.front().pool;
+  if(newHead!=o.poolStart+4u)terrain_bad(o,"pool_first");
+  if(read(o.otBase+16376u)!=newTail)terrain_bad(o,"ot_tail");
+  if(!o.oldTail){if(read(o.otBase+16380u)!=newHead)terrain_bad(o,"ot_head");}
+  else {if(read(o.otBase+16380u)!=o.oldHead)terrain_bad(o,"ot_head_preserve");
+    if((read(o.oldTail)&0x00FFFFFFu)!=(newHead&0x00FFFFFFu))terrain_bad(o,"ot_append");}
+  o.spliceCompared=1;return o.mismatched==0;
+}
+static bool terrain_compare_chain(Core* c,TerrainOracleCapture& o){return terrain_compare_chain_read(o,[&](uint32_t a){return c->mem_r32(a);});}
 
 void terrain_native(Core* c) {
   uint32_t* R = c->r;
@@ -266,7 +337,7 @@ void terrain_native(Core* c) {
     s4 = s2 - 8;
     s5 = (t4 >> 14) + s4;
     s6 = ((t4 << 3) & 0xFFF8) + s5;
-    s3 = kTagFT3; s2 = kTagF3; s1 = kTagSub;
+    s3 = kTagG3; s2 = kTagF3; s1 = kTagSub;
     for (;;) {
       t4 = c->mem_r32(s5);
       if (s5 == s6) break;
@@ -309,7 +380,7 @@ void terrain_native(Core* c) {
         c->mem_w32(fp + 12, v0);
         c->mem_w32(fp + 16, v1);
         fp += 20;
-      } else {                               // three colours -> gouraud FT3
+      } else {                               // three colours -> untextured Gouraud G3
         t6 = t6 + s4; t7 = t7 + s4; s0 = s0 + s4;
         t6 = c->mem_r32(t6); t7 = c->mem_r32(t7); s0 = c->mem_r32(s0);
         t9 = s3;
@@ -354,10 +425,65 @@ void terrain_native(Core* c) {
 }
 
 void terrain_owned(Core* c) {
-  ndiff_run(c, "terrain@0x8004EBA8", terrain_native, gen_func_8004EBA8);
+  if(!cfg_on("PSXPORT_TERRAIN_ORACLE")){
+    ndiff_run(c,"terrain@0x8004EBA8",terrain_native,gen_func_8004EBA8);return;
+  }
+  TerrainOracleCapture capture{};
+  capture.poolStart=c->mem_r32(kPoolPtr);capture.otBase=c->mem_r32(kOtBase);
+  capture.oldTail=c->mem_r32(capture.otBase+16376u);capture.oldHead=c->mem_r32(capture.otBase+16380u);
+  static constexpr uint32_t targets[]={0x8004ED44u,0x8004EE84u,0x8004EF68u,0x8004EF78u};
+  if(!c->pcObserver.arm(targets,std::size(targets),terrain_checkpoint,&capture))abort();
+  ndiff_run(c,"terrain@0x8004EBA8",terrain_native,gen_func_8004EBA8);
+  const uint64_t seen=c->pcObserver.seen(),matched=c->pcObserver.matched();c->pcObserver.disarm();
+  if(!seen||!matched||!capture.checkpoints){
+    lucent::debug("terrainoracle","objects=0 candidates=0 clip_rejects=0 F3=0 G3=0 other_command=0 pool_rejection=0 emitted=0 bytes_compared=0 chain_compared=0 splice_compared=0 mismatched=0 max_faces=0 checkpoints={} seen={} matched={} corrupt_rejected=false first=checkpoint_not_reached result=NO_CORPUS (NDIFF budget exhausted or generated leg not executed)",capture.checkpoints,seen,matched);
+    return;
+  }
+  const bool positive=terrain_compare_packets(c,capture)&&terrain_compare_chain(c,capture);
+  bool negative=false;
+  if(!capture.emitted.empty()){
+    TerrainOracleCapture corrupt=capture;corrupt.mismatched=0;corrupt.first="none";
+    corrupt.emitted[0].xy[0]^=1u;negative=!terrain_compare_packets(c,corrupt)&&corrupt.mismatched>0;
+    TerrainOracleCapture brokenLink=capture;brokenLink.mismatched=0;brokenLink.first="none";
+    brokenLink.emitted[0].pool^=4u;negative=negative&&!terrain_compare_chain(c,brokenLink)&&brokenLink.mismatched>0;
+  }
+  const bool corpus=!capture.emitted.empty();
+  lucent::info("terrainoracle","objects={} candidates={} clip_rejects={} F3={} G3={} other_command={} pool_rejection={} emitted={} bytes_compared={} chain_compared={} splice_compared={} mismatched={} max_faces={} checkpoints={} seen={} matched={} corrupt_rejected={} first={} result={}",
+    capture.objects,capture.candidates,capture.clipRejects,capture.f3,capture.g3,capture.other,
+    capture.poolRejects,capture.emitted.size(),capture.bytesCompared,capture.chainCompared,capture.spliceCompared,capture.mismatched,capture.maxFaces,
+    capture.checkpoints,seen,matched,negative,capture.first,corpus&&positive&&negative?"PASS":"FAIL");
+  if(!corpus||!positive||!negative)abort();
 }
 
 }  // namespace
+
+int spyro_native_terrain_selftest(){
+  TerrainOracleCapture o{};constexpr uint32_t base=0x80001000u;
+  TerrainObservedFace f{1,0,base,false,{0x00020001u,0x00040003u,0x00060005u},{0x20112233u,0x20112233u,0x20112233u}};
+  TerrainObservedFace g{2,0,base+20u,true,{0x00120011u,0x00140013u,0x00160015u},{0x30112233u,0x30445566u,0x30778899u}};
+  o.emitted={f,g};o.poolStart=base-4u;o.otBase=0x80002000u;
+  std::vector<uint32_t> w{0x84001014u,f.rgb[0],f.xy[0],f.xy[1],f.xy[2],0x86000000u,g.rgb[0],g.xy[0],g.rgb[1],g.xy[1],g.rgb[2],g.xy[2]};
+  auto read=[&](uint32_t a){if(a==o.otBase+16376u)return base+20u;if(a==o.otBase+16380u)return base;return w.at((a-base)/4u);};
+  bool ok=terrain_compare_read(o,read)&&terrain_compare_chain_read(o,read)&&o.bytesCompared==48u&&o.mismatched==0;
+  TerrainOracleCapture corrupt{};corrupt.emitted={f,g};w[9]^=1u;
+  ok=ok&&!terrain_compare_read(corrupt,read)&&corrupt.mismatched>0&&!std::strcmp(corrupt.first,"xy");
+  TerrainOracleCapture badLink{};badLink.emitted={f,g};badLink.otBase=o.otBase;w[0]^=1u;
+  ok=ok&&!terrain_compare_chain_read(badLink,read)&&badLink.mismatched>0&&!std::strcmp(badLink.first,"packet_link");
+  w[0]^=1u;
+  TerrainOracleCapture existing{};existing.emitted={f,g};existing.poolStart=base-4u;
+  existing.otBase=o.otBase;existing.oldTail=0x80003000u;existing.oldHead=0x80003100u;
+  auto existingRead=[&](uint32_t a){if(a==existing.otBase+16376u)return base+20u;
+    if(a==existing.otBase+16380u)return existing.oldHead;if(a==existing.oldTail)return 0x09001000u;
+    return w.at((a-base)/4u);};
+  ok=ok&&terrain_compare_chain_read(existing,existingRead);
+  TerrainOracleCapture badHead=existing;badHead.mismatched=0;badHead.first="none";
+  auto corruptHeadRead=[&](uint32_t a){if(a==badHead.otBase+16380u)return badHead.oldHead+4u;return existingRead(a);};
+  ok=ok&&!terrain_compare_chain_read(badHead,corruptHeadRead)&&badHead.mismatched>0&&
+    !std::strcmp(badHead.first,"ot_head_preserve");
+  if(ok)lucent::info("selftest","PASS(terrainrecipe): F3=1 G3=1 bytes=48 corrupt_packet_rejected=1 corrupt_link_rejected=1 existing_head_preserved=1 corrupt_head_rejected=1");
+  else lucent::error("selftest","FAIL(terrainrecipe): positive={} corrupt_mismatches={} first={}",o.mismatched,corrupt.mismatched,corrupt.first);
+  return ok?0:1;
+}
 
 void spyro_register_native_terrain() {
   // OWNED. Verified byte-exact against the recompiled body over 400 consecutive calls — RAM,

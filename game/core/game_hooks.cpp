@@ -133,6 +133,7 @@ static void spyro_fps60ReadSceneCam(Core* c, float R[3][3], float T[3]) {
 
 static int spyro_selftestGame(const char* which, const char*) {
   if (std::strcmp(which, "pairedpose") == 0) return spyro_paired_actor_selftest();
+  if (std::strcmp(which, "terrainrecipe") == 0) return spyro_native_terrain_selftest();
   if (std::strcmp(which, "bootskip") == 0) return spyro_boot_skip_selftest();
   if (std::strcmp(which, "scenecam") != 0) return 2;
 

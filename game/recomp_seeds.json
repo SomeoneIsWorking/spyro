@@ -44,7 +44,11 @@
   // indirect continuation at 0x80024054 exactly once.
   "diagnostic_pcs": [
     {"owner": "0x80024054", "pc": "0x800257A0"},
-    {"owner": "0x80024054", "pc": "0x800258B0"}
+    {"owner": "0x80024054", "pc": "0x800258B0"},
+    {"owner": "0x8004EBA8", "pc": "0x8004ED44"},
+    {"owner": "0x8004EBA8", "pc": "0x8004EE84"},
+    {"owner": "0x8004EBA8", "pc": "0x8004EF68"},
+    {"owner": "0x8004EBA8", "pc": "0x8004EF78"}
   ],
 
   // ── overlays ──────────────────────────────────────────────────────────────────────────────────

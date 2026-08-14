@@ -141,6 +141,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   0x8001F798. A 32-call live checkpoint census joins all 3,021 observed packet-family sites to the
   immutable 0x38-byte record cursor and independently parses the five-family-capable packet span;
   the reached corpus contains G4/GT4/G3/GT3 and no FT4/semi/raw; only durable record index 0 emitted.
+  A separate 32-call source-head pass captured 6,528 A-arm and 1,888 B-arm raw primitive snapshots
+  with 0 invalid spans/records and the same 3,021 ordered emitted packets. Capture validates every
+  full aligned source/auxiliary span and durable record before reading. It proves checkpoint
+  reachability and immutable input capture only; the many rejected source candidates are not yet
+  classified and no one-source/one-packet premise is made.
   This remains in-progress: exact
   payload/material/branch and local/global OT comparisons are required before any native producer.
 

@@ -207,6 +207,14 @@ the final pool span. A 500-present 4:3 guest-render corpus observed 32 calls and
 with nonzero G4/GT4/G3/GT3, zero FT4/semi/raw, exact ordered address+family joins and zero bad
 record/pool joins (`scratch/logs/actorchain_oracle_reviewfix_final.log`). Only durable record index 0
 emitted packets in this corpus; indices 0..52 are valid sources and index 53 is the terminator, never
-a source. This is groundwork, not acceptance: payload
+a source. A second, explicitly selected `PSXPORT_ACTOR_CHAIN_ORACLE=payload` phase-1 run captured
+6,528 source-head-A and 1,888 source-head-B immutable snapshots over 32 calls while reproducing the
+same 3,021 ordered packet-family joins (`scratch/logs/actorchain_payload_source_corrected.log`). The snapshot
+owns the exact source address, adjacent auxiliary word, scratch base, record, projection controls,
+and eight raw primitive words; invalid spans and invalid source records were both 0. The capture
+prevalidates the complete aligned source/auxiliary spans and durable record before its first read.
+This is a source/branch census,
+not a payload oracle: source heads are rejection candidates and are not assumed one-packet-per-source.
+This is groundwork, not acceptance: payload
 XY/RGB/UV, outcode/NCLIP/two-sided/compressed/fog branches, numeric local bins and global OT splice
 remain unjoined, so native submission is prohibited.

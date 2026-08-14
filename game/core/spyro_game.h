@@ -46,6 +46,7 @@ void spyro_register_native_util();
 // body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();
 int spyro_native_terrain_selftest();
+bool spyro_terrain_submit(Core*, int32_t selector, uint32_t matrix1, uint32_t matrix2);
 
 // native_render.cpp — MEASUREMENT, installs nothing unless PSXPORT_NDIFF_IDENTITY=<addr,…>: can the
 // per-call differential validate a geometry renderer at all? (re-frontier render.own-geometry-family)

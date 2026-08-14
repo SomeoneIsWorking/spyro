@@ -39,14 +39,22 @@
 #include "cfg.h"      // cfg_on — PSXPORT_NATIVE_TERRAIN is a feature flag, not a diagnostic
 #include <lucent/log.h>
 #include "spyro_game.h"
+#include "game.h"
+#include "render_queue.h"
+#include "producer_scope.h"
+#include "proj_vtx.h"
+#include "proj_params.h"
 #include <array>
 #include <cstring>
+#include <cmath>
 #include <vector>
 
 // psxport's widescreen state: whether a wider aspect is selected, and the wide native width (which
 // now scales from this game's own 512-wide 4:3 frame rather than a hardcoded 320).
 int gpu_vk_wide_engine(Core*);
 int gpu_vk_wide_engine_w(Core*);
+void proj_native_xform(int,int,int,ProjVtx*);
+bool gpu_vk_order_bias_distinguishes(uint32_t);
 
 namespace {
 
@@ -93,12 +101,111 @@ struct TerrainOracleCapture {
   std::vector<TerrainObservedFace> emitted;
   TerrainObservedFace pending{};
   bool hasPending=false,poolRejected=false;
-  uint32_t objects=0,candidates=0,clipRejects=0,f3=0,g3=0,other=0,poolRejects=0;
+  uint32_t objects=0,vertexIterations=0,candidates=0,clipRejects=0,f3=0,g3=0,other=0,poolRejects=0;
   uint32_t currentObject=0;
   uint32_t checkpoints=0,bytesCompared=0,mismatched=0,maxFaces=0;
   uint32_t poolStart=0,otBase=0,oldTail=0,oldHead=0,chainCompared=0,spliceCompared=0;
   const char* first="none";
 };
+
+struct TerrainDirectVertex { ProjVtx p{}; float rawX=0,rawY=0,rawZ=0; uint32_t clip=0; };
+struct TerrainDirectFace {
+  uint32_t object=0,source=0; bool gouraud=false;
+  std::array<TerrainDirectVertex,3> v{}; std::array<uint32_t,3> rgb{};
+};
+struct TerrainDirectRecipe {
+  std::vector<TerrainDirectFace> faces;
+  uint32_t objects=0,candidates=0,rejects=0,f3=0,g3=0,vertices=0;
+  const char* refusal="none";
+};
+
+// Recipe construction uses the shared Beetle GTE only as an exact fixed-point evaluator. It is a
+// read-only native producer from the game's point of view: every control/data register is restored
+// on success, valid-empty, and every refusal return.
+struct TerrainGteGuard {
+  std::array<uint32_t,32> dr{},cr{};
+  ProjParams* pp=nullptr; ProjParams::Snapshot proj{};
+  explicit TerrainGteGuard(Core* c=nullptr){
+    for(uint32_t i=0;i<32;++i){dr[i]=gte_read_data(i);cr[i]=gte_read_ctrl(i);}
+    if(c){pp=&c->rsub.projParams;proj=pp->snapshot();}
+  }
+  ~TerrainGteGuard(){
+    for(uint32_t i=0;i<32;++i){gte_write_data(i,dr[i]);gte_write_ctrl(i,cr[i]);}
+    if(pp)pp->restore(proj);
+  }
+};
+
+static bool terrain_ram(uint32_t a,uint32_t n){const uint32_t p=a&0x1FFFFFFFu;
+  return (a<0x00200000u||(a>=0x80000000u&&a<0x80200000u))&&p<=0x200000u&&n<=0x200000u-p;}
+static int64_t terrain_wrap44(int64_t v){return (int64_t)((uint64_t)v<<20)>>20;}
+static void terrain_raw_xyz(int vx,int vy,int vz,float& x,float& y,float& z){
+  const uint32_t c0=gte_read_ctrl(0),c1=gte_read_ctrl(1),c2=gte_read_ctrl(2),c3=gte_read_ctrl(3),c4=gte_read_ctrl(4);
+  const int32_t m[3][3]={{(int16_t)c0,(int16_t)(c0>>16),(int16_t)c1},
+    {(int16_t)(c1>>16),(int16_t)c2,(int16_t)(c2>>16)},
+    {(int16_t)c3,(int16_t)(c3>>16),(int16_t)c4}};
+  const int32_t tr[3]={(int32_t)gte_read_ctrl(5),(int32_t)gte_read_ctrl(6),(int32_t)gte_read_ctrl(7)};
+  const int16_t v[3]={(int16_t)vx,(int16_t)vy,(int16_t)vz};float* o[3]={&x,&y,&z};
+  for(int r=0;r<3;++r){int64_t t=(int64_t)tr[r]<<12;t=terrain_wrap44(t+(int64_t)m[r][0]*v[0]);
+    t=terrain_wrap44(t+(int64_t)m[r][1]*v[1]);t=terrain_wrap44(t+(int64_t)m[r][2]*v[2]);*o[r]=(float)t/4096.0f;}
+}
+static TerrainDirectVertex terrain_project(int vx,int vy,int vz){TerrainDirectVertex out{};
+  terrain_raw_xyz(vx,vy,vz,out.rawX,out.rawY,out.rawZ);proj_native_xform(vx,vy,vz,&out.p);return out;}
+
+static bool terrain_build_direct(Core* c,int32_t selector,uint32_t mat1,uint32_t mat2,TerrainDirectRecipe& out){
+  auto refuse=[&](const char* why){out.refusal=why;out.faces.clear();return false;};
+  if(!terrain_ram(mat1,20)||!terrain_ram(mat2,20))return refuse("matrix_bounds");
+  auto load_matrix=[&](uint32_t p){for(uint32_t i=0;i<5;++i)gte_write_ctrl(i,c->mem_r32(p+i*4));
+    gte_write_ctrl(5,0);gte_write_ctrl(6,0);gte_write_ctrl(7,0);};
+  load_matrix(mat1);std::vector<uint32_t> survivors;survivors.reserve(256);
+  uint32_t listBase=c->mem_r32(kObjListSel+4),cursor=0,end=0;
+  if(selector<0){const uint32_t count=c->mem_r32(kObjListSel);cursor=listBase;end=listBase+(count<<2);}
+  else {const uint32_t table=c->mem_r32(kObjListSel+12);if(!terrain_ram(table+(uint32_t)selector*4,4))return refuse("selector_bounds");cursor=c->mem_r32(table+(uint32_t)selector*4);}
+  for(uint32_t guard=0;guard<4096;++guard){uint32_t obj=0;
+    if(selector<0){if(cursor==end)break;if(!terrain_ram(cursor,4))return refuse("object_list_bounds");obj=c->mem_r32(cursor);cursor+=4;}
+    else {if(!terrain_ram(cursor,1))return refuse("object_index_bounds");const uint8_t ix=c->mem_r8(cursor++);if(ix==255)break;
+      if(!terrain_ram(listBase+(uint32_t)ix*4,4))return refuse("object_index_target");obj=c->mem_r32(listBase+(uint32_t)ix*4);}
+    if(!terrain_ram(obj,24))return refuse("object_bounds");const uint32_t xy=c->mem_r32(obj),zz=c->mem_r32(obj+4);
+    auto p=terrain_project((int16_t)xy,(int16_t)(xy>>16),(int16_t)(zz>>16));const int32_t limit=(int16_t)zz;
+    if((int32_t)((uint32_t)(int32_t)p.rawZ-(uint32_t)limit)>0)survivors.push_back(obj);
+    if(selector<0&&cursor==end)break;if(guard==4095)return refuse("object_list_unterminated");}
+  load_matrix(mat2);uint32_t virtualFp=c->mem_r32(kPoolPtr)+4u;const uint32_t poolEnd=c->mem_r32(kPoolLimit)-1024u;
+  for(uint32_t obj:survivors){++out.objects;const uint32_t originXY=c->mem_r32(obj+8),meta=c->mem_r32(obj+12),faceMeta=c->mem_r32(obj+16);
+    const int32_t oy=(int16_t)originXY,ox=(int16_t)(originXY>>16),oz=(int16_t)(meta>>16);const uint32_t vertexCount=(meta&0xFFFFu)+1u;
+    // The guest preloads one further word for the software pipeline even though it never projects
+    // that word, so malformed input must still provide the complete read span.
+    if(vertexCount>=1024u||!terrain_ram(obj+24,(vertexCount+1u)*4u))return refuse("vertex_span");
+    std::vector<TerrainDirectVertex> vertices;vertices.reserve(vertexCount);uint32_t all=0xFFFFFFFFu;
+    for(uint32_t i=0;i<vertexCount;++i){const uint32_t w=c->mem_r32(obj+24+i*4u);
+      const uint32_t packed=(uint32_t)(oy-(int)((w>>10)&0x7FFu))+((uint32_t)(ox-(int)(w&0x3FFu))<<16);
+      // DR_VXY0 is packed VX in the low half and VY in the high half.  The guest's full-word add
+      // above must retain its carry/borrow, but the halves must then be decoded in GTE register
+      // order; swapping them makes every candidate share a clip side on the live corpus.
+      const int vx=(int16_t)packed,vy=(int16_t)(packed>>16),vz=(int16_t)((uint32_t)(w>>21)+(uint32_t)oz);
+      auto p=terrain_project(vx,vy,vz);
+      uint32_t clip=0;if(p.p.sy<=0)clip|=1;if(p.p.sy>=256)clip|=2;if(p.p.sx<=0)clip|=4;if(p.p.sx>=512)clip|=8;
+      p.clip=clip;all&=clip;vertices.push_back(p);++out.vertices;}
+    // Guest s4 is `s2-8`: the software pipeline executes N+1 RTPS/store iterations and preloads one
+    // additional word without projecting it.  The colour/face tail therefore starts one word before
+    // the projected-span end expression; treating the lookahead as a vertex mistakes its sentinel
+    // for live geometry.
+    if(all&0xFu)continue;const uint32_t colorBase=obj+24+(vertexCount-1u)*4u;
+    const uint32_t faceBegin=colorBase+(faceMeta>>14),faceBytes=(faceMeta<<3)&0xFFF8u;
+    if(!terrain_ram(faceBegin,faceBytes))return refuse("face_span");
+    for(uint32_t a=faceBegin;a<faceBegin+faceBytes;a+=8){++out.candidates;const uint32_t fw=c->mem_r32(a),mw=c->mem_r32(a+4);
+      const uint32_t vi[3]={fw>>20,(fw>>10)&0x3FCu,fw&0x3FCu};uint32_t ix[3]{},clips[3]{};bool external[3]{};
+      for(int i=0;i<3;++i){if(vi[i]&3u)return refuse("vertex_index_alignment");ix[i]=vi[i]/4u;
+        external[i]=ix[i]>=vertices.size();clips[i]=external[i]?(c->mem_r32(kScratchpad+vi[i])&0x1Fu):vertices[ix[i]].clip;}
+      if(clips[0]&clips[1]&clips[2]&0x1Fu){++out.rejects;continue;}
+      if(external[0]||external[1]||external[2]){lucent::error("terraindirect","live external scratch vertex object=0x{:08X} source=0x{:08X} begin=0x{:08X} end=0x{:08X} face_meta=0x{:08X} face=0x{:08X} offsets={}/{}/{} clips={}/{}/{}",
+        obj,a,faceBegin,faceBegin+faceBytes,faceMeta,fw,vi[0],vi[1],vi[2],clips[0],clips[1],clips[2]);return refuse("external_vertex_survived_clip");}
+      const uint32_t co[3]={mw>>20,(mw>>10)&0x3FCu,mw&0x3FCu};TerrainDirectFace f{};f.object=obj;f.source=a;
+      f.gouraud=!(co[0]==co[1]&&co[0]==co[2]);const uint32_t stride=f.gouraud?28u:20u;
+      if((int32_t)(poolEnd-virtualFp)<=0)return refuse("pool_exhaustion_equivalent");virtualFp+=stride;
+      for(int i=0;i<3;++i){if(!terrain_ram(colorBase+co[i],4))return refuse("color_index");f.v[i]=vertices[ix[i]];f.rgb[i]=c->mem_r32(colorBase+co[i]);}
+      if(!f.gouraud)for(auto& rgb:f.rgb)rgb-=kTagSub;out.faces.push_back(f);f.gouraud?++out.g3:++out.f3;}
+  }
+  return true;
+}
 static void terrain_bad(TerrainOracleCapture& o,const char* field){++o.mismatched;if(!std::strcmp(o.first,"none"))o.first=field;}
 static void terrain_finish_candidate(Core* c,TerrainOracleCapture& o){
   if(!o.hasPending)return;
@@ -114,7 +221,7 @@ static void terrain_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
   if(pc==0x8004EF68u){o.hasPending=false;o.poolRejected=true;++o.poolRejects;return;}
   if(pc==0x8004EF78u){terrain_finish_candidate(c,o);return;}
   if(pc==0x8004ED44u){terrain_finish_candidate(c,o);const uint32_t next=c->mem_r32(c->r[31]);
-    if(next){o.currentObject=next;++o.objects;}return;}
+    if(next){o.currentObject=next;++o.objects;o.vertexIterations+=(c->mem_r32(next+12u)&0xFFFFu)+1u;}return;}
   if(pc!=0x8004EE84u)return;
   terrain_finish_candidate(c,o);
   if(c->r[21]==c->r[22])return;
@@ -151,6 +258,17 @@ template<class Read> static bool terrain_compare_chain_read(TerrainOracleCapture
   o.spliceCompared=1;return o.mismatched==0;
 }
 static bool terrain_compare_chain(Core* c,TerrainOracleCapture& o){return terrain_compare_chain_read(o,[&](uint32_t a){return c->mem_r32(a);});}
+static bool terrain_compare_direct(const TerrainOracleCapture& guest,const TerrainDirectRecipe& native,const char** first){
+  if(guest.vertexIterations!=native.vertices){*first="vertex_iterations";return false;}
+  if(guest.emitted.size()!=native.faces.size()){*first="face_count";return false;}
+  for(size_t n=0;n<guest.emitted.size();++n){const auto& g=guest.emitted[n];const auto& p=native.faces[n];
+    if(g.object!=p.object){*first="object";return false;}if(g.source!=p.source){*first="source";return false;}
+    if(g.gouraud!=p.gouraud){*first="gouraud";return false;}
+    for(int i=0;i<3;++i){const uint32_t xy=(uint16_t)p.v[i].p.sx|((uint32_t)(uint16_t)p.v[i].p.sy<<16);
+      if(g.xy[i]!=xy){*first="sxy";return false;}if(g.rgb[i]!=p.rgb[i]){*first="rgb";return false;}
+      if(!std::isfinite(p.v[i].rawX)||!std::isfinite(p.v[i].rawY)||!std::isfinite(p.v[i].rawZ)||p.v[i].p.sz<0){*first="projection";return false;}}
+  }return true;
+}
 
 void terrain_native(Core* c) {
   uint32_t* R = c->r;
@@ -429,6 +547,8 @@ void terrain_owned(Core* c) {
     ndiff_run(c,"terrain@0x8004EBA8",terrain_native,gen_func_8004EBA8);return;
   }
   TerrainOracleCapture capture{};
+  TerrainDirectRecipe direct{};const uint32_t arg0=c->r[4],arg1=c->r[5],arg2=c->r[6];bool directBuilt=false;
+  { TerrainGteGuard preserve(c);directBuilt=terrain_build_direct(c,(int32_t)arg0,arg1,arg2,direct); }
   capture.poolStart=c->mem_r32(kPoolPtr);capture.otBase=c->mem_r32(kOtBase);
   capture.oldTail=c->mem_r32(capture.otBase+16376u);capture.oldHead=c->mem_r32(capture.otBase+16380u);
   static constexpr uint32_t targets[]={0x8004ED44u,0x8004EE84u,0x8004EF68u,0x8004EF78u};
@@ -439,23 +559,74 @@ void terrain_owned(Core* c) {
     lucent::debug("terrainoracle","objects=0 candidates=0 clip_rejects=0 F3=0 G3=0 other_command=0 pool_rejection=0 emitted=0 bytes_compared=0 chain_compared=0 splice_compared=0 mismatched=0 max_faces=0 checkpoints={} seen={} matched={} corrupt_rejected=false first=checkpoint_not_reached result=NO_CORPUS (NDIFF budget exhausted or generated leg not executed)",capture.checkpoints,seen,matched);
     return;
   }
-  const bool positive=terrain_compare_packets(c,capture)&&terrain_compare_chain(c,capture);
+  const char* directFirst="none";const bool directPositive=directBuilt&&terrain_compare_direct(capture,direct,&directFirst);
+  const bool positive=terrain_compare_packets(c,capture)&&terrain_compare_chain(c,capture)&&directPositive;
   bool negative=false;
   if(!capture.emitted.empty()){
     TerrainOracleCapture corrupt=capture;corrupt.mismatched=0;corrupt.first="none";
     corrupt.emitted[0].xy[0]^=1u;negative=!terrain_compare_packets(c,corrupt)&&corrupt.mismatched>0;
     TerrainOracleCapture brokenLink=capture;brokenLink.mismatched=0;brokenLink.first="none";
     brokenLink.emitted[0].pool^=4u;negative=negative&&!terrain_compare_chain(c,brokenLink)&&brokenLink.mismatched>0;
+    TerrainDirectRecipe corruptDirect=direct;if(!corruptDirect.faces.empty())corruptDirect.faces[0].v[0].p.sx^=1;
+    const char* corruptFirst="none";negative=negative&&!terrain_compare_direct(capture,corruptDirect,&corruptFirst)&&!std::strcmp(corruptFirst,"sxy");
   }
   const bool corpus=!capture.emitted.empty();
   lucent::info("terrainoracle","objects={} candidates={} clip_rejects={} F3={} G3={} other_command={} pool_rejection={} emitted={} bytes_compared={} chain_compared={} splice_compared={} mismatched={} max_faces={} checkpoints={} seen={} matched={} corrupt_rejected={} first={} result={}",
     capture.objects,capture.candidates,capture.clipRejects,capture.f3,capture.g3,capture.other,
     capture.poolRejects,capture.emitted.size(),capture.bytesCompared,capture.chainCompared,capture.spliceCompared,capture.mismatched,capture.maxFaces,
     capture.checkpoints,seen,matched,negative,capture.first,corpus&&positive&&negative?"PASS":"FAIL");
+  lucent::info("terrainoracle","direct_recipe faces={}/{} objects={} vertices={}/{} candidates={} rejects={} F3={} G3={} raw_xyz={} first={} result={}",
+    direct.faces.size(),capture.emitted.size(),direct.objects,direct.vertices,capture.vertexIterations,direct.candidates,direct.rejects,direct.f3,direct.g3,
+    directPositive?direct.faces.size()*3u:0u,directFirst,directPositive?"PASS":"FAIL");
   if(!corpus||!positive||!negative)abort();
 }
 
+static bool terrain_submit_direct(Core* c,int32_t selector,uint32_t mat1,uint32_t mat2){
+  TerrainGteGuard preserveGte(c);
+  TerrainDirectRecipe recipe{};if(!terrain_build_direct(c,selector,mat1,mat2,recipe)){
+    lucent::error("terraindirect","REFUSED objects={} candidates={} rejects={} F3={} G3={} faces={} first={}",
+      recipe.objects,recipe.candidates,recipe.rejects,recipe.f3,recipe.g3,recipe.faces.size(),recipe.refusal);return false;}
+  RenderQueue& rq=c->game->rq;const int queued=rq.consumed?0:rq.n;
+  if(recipe.faces.empty()){lucent::debug("terraindirect","owned valid-empty objects={} candidates={} rejects={}",recipe.objects,recipe.candidates,recipe.rejects);return true;}
+  if(recipe.faces.size()>(size_t)(RQ_MAX-queued)||recipe.faces.size()>PainterObjectLimits{}.max_faces||
+     rq.mPainterScopeDepth||rq.mPainterInvalidId)return false;
+  std::array<uint32_t,256> ids{};size_t idn=0,painterFaces=0;
+  for(int i=0;i<queued;++i)if(rq.items[i].painter_object){const uint32_t id=rq.items[i].painter_object;
+    const RqItem& existing=rq.items[i];++painterFaces;
+    if(existing.semi||existing.layer!=RQ_WORLD||existing.order_mode!=RQ_OM_DEPTH||
+       existing.mode<0||existing.mode>3)return false;
+    if(id==0x8004EBA8u)return false;bool found=false;for(size_t k=0;k<idn;++k)found|=ids[k]==id;
+    if(!found){if(idn==ids.size())return false;ids[idn++]=id;}}
+  if(idn>=PainterObjectLimits{}.max_objects)return false;
+  if(painterFaces+recipe.faces.size()>PainterObjectLimits{}.max_faces)return false;
+  const uint32_t baseSeq=rq.consumed?0u:rq.seq;if(recipe.faces.size()-1u>UINT32_MAX-baseSeq)return false;
+  const uint32_t finalSeq=baseSeq+(uint32_t)recipe.faces.size()-1u;
+  if((queued||idn)&&!gpu_vk_order_bias_distinguishes(finalSeq))return false;
+  const GpuState gpu=c->game->gpu; // immutable per-call draw state before queue mutation
+  if(gpu.s_da_x0>gpu.s_da_x1||gpu.s_da_y0>gpu.s_da_y1)return false;
+  ProducerScope producer(&c->rsub.producerScope,0x8004EBA8u,"terrain:F3G3");
+  RenderQueue::PainterObjectScope painter(rq,0x8004EBA8u);
+  for(const auto& f:recipe.faces){int xs[4]{},ys[4]{},us[4]{},vs[4]{};float xf[4]{},yf[4]{},depth[4]{};
+    unsigned char rs[4]{},gs[4]{},bs[4]{};
+    for(int i=0;i<3;++i){xs[i]=f.v[i].p.sx+gpu.s_off_x;ys[i]=f.v[i].p.sy+gpu.s_off_y;
+      xf[i]=f.v[i].p.px+gpu.s_off_x;yf[i]=f.v[i].p.py+gpu.s_off_y;rs[i]=(uint8_t)f.rgb[i];gs[i]=(uint8_t)(f.rgb[i]>>8);bs[i]=(uint8_t)(f.rgb[i]>>16);
+      depth[i]=proj_pz_to_ord(f.v[i].p.pz);}
+    rq.emitOrQueue(c,1,RQ_WORLD,RQ_OM_DEPTH,3,0,0,xs,ys,xf,yf,us,vs,rs,gs,bs,depth,3,0,0,0,0,
+      gpu.s_tw_mx,gpu.s_tw_my,gpu.s_tw_ox,gpu.s_tw_oy,gpu.s_da_x0,gpu.s_da_y0,gpu.s_da_x1,gpu.s_da_y1,0,nullptr,-1,0.0f,
+      f.gouraud?1:0,gpu.s_tp_dither?1:0);
+  }
+  uint32_t grouped=0;for(int i=0;i<rq.n;++i)if(rq.items[i].painter_object==0x8004EBA8u)++grouped;
+  if(grouped!=recipe.faces.size()){lucent::error("terraindirect","FATAL grouped={}/{}",grouped,recipe.faces.size());abort();}
+  lucent::debug("terraindirect","PASS objects={} candidates={} rejects={} F3={} G3={} faces={} vertices={} dither={} painters_before={}",
+    recipe.objects,recipe.candidates,recipe.rejects,recipe.f3,recipe.g3,recipe.faces.size(),recipe.vertices,gpu.s_tp_dither,idn);
+  return true;
+}
+
 }  // namespace
+
+bool spyro_terrain_submit(Core* c,int32_t selector,uint32_t mat1,uint32_t mat2){
+  return terrain_submit_direct(c,selector,mat1,mat2);
+}
 
 int spyro_native_terrain_selftest(){
   TerrainOracleCapture o{};constexpr uint32_t base=0x80001000u;
@@ -480,7 +651,12 @@ int spyro_native_terrain_selftest(){
   auto corruptHeadRead=[&](uint32_t a){if(a==badHead.otBase+16380u)return badHead.oldHead+4u;return existingRead(a);};
   ok=ok&&!terrain_compare_chain_read(badHead,corruptHeadRead)&&badHead.mismatched>0&&
     !std::strcmp(badHead.first,"ot_head_preserve");
-  if(ok)lucent::info("selftest","PASS(terrainrecipe): F3=1 G3=1 bytes=48 corrupt_packet_rejected=1 corrupt_link_rejected=1 existing_head_preserved=1 corrupt_head_rejected=1");
+  { TerrainGteGuard restoreOriginal;
+    gte_write_ctrl(0,0x12345678u);gte_write_data(0,0x89ABCDEFu);
+    { TerrainGteGuard restoreSentinel;gte_write_ctrl(0,0);gte_write_data(0,0); }
+    ok=ok&&gte_read_ctrl(0)==0x12345678u&&gte_read_data(0)==0x89ABCDEFu;
+  }
+  if(ok)lucent::info("selftest","PASS(terrainrecipe): F3=1 G3=1 bytes=48 corrupt_packet_rejected=1 corrupt_link_rejected=1 existing_head_preserved=1 corrupt_head_rejected=1 gte_guard=1");
   else lucent::error("selftest","FAIL(terrainrecipe): positive={} corrupt_mismatches={} first={}",o.mismatched,corrupt.mismatched,corrupt.first);
   return ok?0:1;
 }

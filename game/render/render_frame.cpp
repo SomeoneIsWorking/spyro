@@ -12,6 +12,7 @@
 #include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
 #include "frame_env.h"    // nativeFrameBegin/End — the frame the native producers draw into
 #include "fx_paired_actor.h"
+#include "spyro_game.h"
 #include <lucent/log.h>
 #include <stdlib.h>       // abort
 
@@ -82,10 +83,13 @@ void SpyroRenderer::renderScene(const Scene& sc) const {
   if (mC->mem_r32(0x80078D78u) == 3u) {
     if (!stage13Mode3Render())
       abortUnimplemented(sc, "mode 3 also armed paired-actor renderer 0x80023AC4");
-    return;
-  }
-  if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1))
+  } else if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1)) {
     abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
+  }
+  // 0x8004EBA8 is the common post-mode tail and final WORLD producer, with these exact arguments.
+  // The direct leg builds an immutable recipe and never calls or suppresses the guest packet body.
+  if (!spyro_terrain_submit(mC,-1,0x80076DE4u,0x80076DD0u))
+    abortUnimplemented(sc,"terrain producer 0x8004EBA8 refused its atomic recipe");
 }
 
 [[noreturn]] void SpyroRenderer::abortUnimplemented(const Scene& sc, const char* why) const {
@@ -152,7 +156,9 @@ void SpyroRenderer::drawFrame() {
   // Those delegated fields deliberately do not present or sleep; frame_commit owns exactly two
   // presents and two subframe paces on that current page.
   if(mC->game->fps60.active()) {
-    mC->game->fps60.frame_commit(mC);
+    // nativeFrameEnd advanced two guest fields. Spyro's ordinary paceQuota is one because that path
+    // sleeps once per field; this synthesized commit owns the complete two-field logic interval.
+    mC->game->fps60.frame_commit(mC, 2);
     spyro_fps60_commit_field_delivered(mC);
   }
 }

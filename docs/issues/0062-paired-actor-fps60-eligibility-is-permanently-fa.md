@@ -12,3 +12,6 @@ Live native 4100-frame run scratch/logs/paired_fps60_current.log proved framebuf
 
 ### Resolution (2026-08-14)
 Root cause fixed by resolving the invariant source primitive stream continuously at strict interior t rather than comparing endpoint-cull outputs. Live paired_temporal_paced.log: 160/160 compatible midpoint resolves accepted and 320/320 temporal calls emitted; forced endpoints and audio-paced run exit 0; wrong_half=0/1830.
+
+### Note (2026-08-14)
+Correction: paired_temporal_audio_paced.log did NOT prove audio/video cadence. It advanced two guest fields per logic frame but frame_commit paced only one field total, reaching ~108 VBlanks/s in the native interval. Its face-eligibility evidence remains useful; its sync claim is invalid.

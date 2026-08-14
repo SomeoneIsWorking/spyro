@@ -1506,8 +1506,13 @@ static bool submit_native(Core* c,SpyroPairedActorFrameState& state) {
     return refuse_shipping(state,"painter group exceeds framework face limit");
   if(rq.mPainterScopeDepth||rq.mPainterInvalidId)
     return refuse_shipping(state,"render queue painter lifecycle is already invalid");
-  for(int i=0;i<queued;++i) if(rq.items[i].painter_object)
-    return refuse_shipping(state,"another painter object already exists in this frame");
+  std::array<uint32_t,256> painterIds{};size_t painterIdCount=0;
+  for(int i=0;i<queued;++i)if(rq.items[i].painter_object){const uint32_t id=rq.items[i].painter_object;
+    if(id==0x80023AC4u)return refuse_shipping(state,"duplicate paired painter object already exists");
+    bool found=false;for(size_t k=0;k<painterIdCount;++k)found|=painterIds[k]==id;
+    if(!found){if(painterIdCount==painterIds.size())return refuse_shipping(state,"painter object capacity exhausted");painterIds[painterIdCount++]=id;}}
+  if(painterIdCount>=PainterObjectLimits{}.max_objects)
+    return refuse_shipping(state,"painter object capacity exhausted");
   const uint32_t baseSeq=rq.consumed?0u:rq.seq;
   if(faces.faces.size()-1u>UINT32_MAX-baseSeq)
     return refuse_shipping(state,"painter sequence range overflows");

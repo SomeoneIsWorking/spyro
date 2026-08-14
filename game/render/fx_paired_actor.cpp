@@ -1,17 +1,19 @@
 // fx_paired_actor.cpp — first native ownership slice of Spyro renderer 0x80023AC4.
 //
-// This file owns the producer's INPUT side only: the six animation/frame selectors
-// at 0x80078A70..7B are resolved through the actor table, all three compressed
-// vertex layers are decoded, and the guest's per-layer A->B /16 interpolation is
-// applied in model space.  It does not project, clip, decode faces, or submit a
-// RenderQueue item yet.  Keeping that boundary explicit prevents a plausible but
-// incomplete actor from being presented as a finished producer.
+// This file owns the normal opaque/textured arm of 0x80023AC4 end-to-end: animation inputs,
+// three layer transforms, fixed-point projection, face/material acceptance and authored-order
+// PainterObject submission.  The alternate/status-plane arm remains a loud refusal.
 #include "fx_paired_actor.h"
 #include "cfg.h"
 #include "core.h"
+#include "game.h"
+#include "gpu_vk.h"
 #include "paired_actor_decode.h"
+#include "producer_scope.h"
 #include "proj_params.h"
+#include "render_queue.h"
 #include <lucent/log.h>
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -184,6 +186,14 @@ static std::array<int32_t,3> mvmva_r(const Mat3i& m, const std::array<int32_t,3>
   }
   return r;
 }
+static std::array<int32_t,3> mvmva_r_mac(const Mat3i& m,const std::array<int32_t,3>& x){
+  std::array<int32_t,3> r{};
+  for(int row=0;row<3;++row){int64_t a=0;
+    for(int col=0;col<3;++col)a=wrap44(a+(int64_t)m.v[row][col]*x[col]);
+    r[row]=(int32_t)(a>>12);
+  }
+  return r;
+}
 static std::array<int32_t,3> mvmva_rt(const Mat3i& m,const std::array<int32_t,3>& x,
                                       const std::array<int32_t,3>& tr){
   std::array<int32_t,3> r{};
@@ -230,7 +240,8 @@ static bool build_transform(Core* c, SpyroPairedActorTransform& out) {
   const int32_t dz=(int32_t)((uint32_t)c->mem_r32(camera+48u)-c->mem_r32(instance+8u));
   // 0x80023F38 writes r1=dx to DR11(IR3), r2=dy to DR9(IR1), r3=dz to DR10(IR2).
   const std::array<int32_t,3> delta={(int16_t)dy,(int16_t)dz,(int16_t)dx};
-  const auto tr=mvmva_r(m,delta);
+  const auto tr=mvmva_r_mac(m,delta);
+  out.base_mac=tr;
   const uint32_t angles=c->mem_r32(instance+12u);
   auto trig=[&](uint32_t byte,int32_t& si,int32_t& co){
     const uint32_t off=(byte&255u)*2u;
@@ -308,6 +319,25 @@ static bool build_transform(Core* c, SpyroPairedActorTransform& out) {
   out.ofx=(uint32_t)(int32_t)c->rsub.projParams.geomOfx()<<16;
   out.ofy=(uint32_t)(int32_t)c->rsub.projParams.geomOfy()<<16;
   out.h=(uint32_t)(int32_t)c->rsub.projParams.geomH();
+  // 0x80023FA4..23FC8: the branch delay slot writes distance=512 on BOTH arms; only the
+  // control selection differs (primary when secondary-primary is negative, secondary otherwise).
+  // CR15 subtracts 512<<control from the unclamped MVMVA MAC3 and signed-clamps at zero.
+  const uint32_t table=c->mem_r32(kActorTable);
+  const uint32_t primary=table?c->mem_r32(table+(uint32_t)c->mem_r8(instance+24u)*4u+0x38u):0;
+  const uint32_t secondary=blend&&table?
+    c->mem_r32(table+(uint32_t)c->mem_r8(instance+25u)*4u+0x38u):0;
+  if(!primary || (blend&&!secondary)) return false;
+  const uint32_t primaryShift=c->mem_r8(primary+11u);
+  const uint32_t secondaryShift=secondary?c->mem_r8(secondary+11u):0u;
+  uint32_t control=secondaryShift;
+  if((int32_t)(secondaryShift-primaryShift)<0)control=primaryShift;
+  const uint32_t distance=512u;
+  out.ot_control=control;
+  out.ot_shift=(uint8_t)((control+4u)&31u);
+  const uint32_t rawOrigin=(uint32_t)tr[2]-(distance<<(control&31u));
+  out.depth_origin=(int32_t)rawOrigin<0?0u:rawOrigin;
+  const uint32_t rawNear=(uint32_t)((int32_t)tr[2]>>7)-c->mem_r8(instance+39u);
+  out.depth_near=(int32_t)rawNear<0?0u:rawNear;
   return true;
 }
 
@@ -832,11 +862,14 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
     const uint32_t transformLayer=capture.transformSnapshots;
     ++capture.transformSnapshots;
     const auto& layerCr=capture.nativeTransform.layer_cr[transformLayer<3?transformLayer:2];
-    const uint32_t native[11]={layerCr[0],layerCr[1],layerCr[2],layerCr[3],layerCr[4],
+    const uint32_t native[14]={layerCr[0],layerCr[1],layerCr[2],layerCr[3],layerCr[4],
       layerCr[5],layerCr[6],layerCr[7],
-      capture.nativeTransform.ofx,capture.nativeTransform.ofy,capture.nativeTransform.h};
-    const uint32_t regs[11]={0,1,2,3,4,5,6,7,24,25,26};
-    for(uint32_t i=0;i<11;++i){
+      capture.nativeTransform.ofx,capture.nativeTransform.ofy,capture.nativeTransform.h,
+      capture.nativeTransform.ot_control,capture.nativeTransform.depth_near,
+      capture.nativeTransform.depth_origin};
+    const uint32_t regs[14]={0,1,2,3,4,5,6,7,24,25,26,13,14,15};
+    const uint32_t nregs=transformLayer==0?14u:11u;
+    for(uint32_t i=0;i<nregs;++i){
       ++capture.transformCompared;
       const uint32_t actual=gte_read_ctrl(regs[i]);
       if(!capture.transformBuilt||actual!=native[i]){
@@ -1006,20 +1039,20 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
     return false;
   }
   lucent::info("pairedpose",
-               "transform snapshot oracle: built={} layers={}/3 regs={}/33 mismatches={} first_pc=0x{:08X} "
+               "transform snapshot oracle: built={} layers={}/3 regs={}/36 mismatches={} first_pc=0x{:08X} "
                "first_cr={} guest=0x{:08X} native=0x{:08X} negative_inputs={} perturb_cr0_diff={} perturb_h_diff={}",
                guest.transformBuilt,guest.transformSnapshots,guest.transformCompared,
                guest.transformMismatches,guest.firstTransformPc,guest.firstTransformReg,
                guest.firstTransformGuest,guest.firstTransformNative,guest.transformNegativeInputs,
                guest.transformNegativeCr0Diff,guest.transformNegativeHDiff);
   const bool transformGreen=guest.transformBuilt&&guest.transformSnapshots==3&&
-    guest.transformCompared==33&&!guest.transformMismatches&&
+    guest.transformCompared==36&&!guest.transformMismatches&&
     guest.rootInputsCompared==6&&!guest.rootInputMismatches&&
     guest.projectedCompared==expectedVertices&&!guest.projectedMismatches&&
     guest.transformNegativeInputs==expectedVertices&&guest.transformNegativeCr0Diff&&
     guest.transformNegativeHDiff;
   if(cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE")){
-    lucent::info("pairedpose","transform-only gate: layers={}/3 regs={}/33 roots={}/6 vertices={}/{} "
+    lucent::info("pairedpose","transform-only gate: layers={}/3 regs={}/36 roots={}/6 vertices={}/{} "
       "mismatches={} perturb_cr0={}/{} perturb_h={}/{} => {}",
       guest.transformSnapshots,guest.transformCompared,guest.rootInputsCompared,
       guest.projectedCompared,expectedVertices,
@@ -1083,7 +1116,7 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                "disjoint={} tri_tri={} tri_quad={} quad_quad={} opaque_opaque={} opaque_semi={} "
                "semi_semi={} tpage_bit9={}/{} inv_same={} inv_diff={} max_bin_delta={} "
                "max_required_bias={:.9f} first_inverted={}:{} pixel=({},{}), ord_near={:.9f} "
-               "ord_far={:.9f} proposed_sort_key={}",
+               "ord_far={:.9f} painter_required={}",
                guest.faces.faces.size(), guest.overlap.pairs, guest.overlap.bbox_overlap,
                guest.overlap.sampled_overlap, guest.overlap.opaque_comparable,
                guest.overlap.covered_pixels, guest.overlap.stable, guest.overlap.inverted,
@@ -1096,7 +1129,7 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                guest.overlap.first_inverted_a, guest.overlap.first_inverted_b,
                guest.overlap.first_x, guest.overlap.first_y,
                guest.overlap.first_game_near_ord, guest.overlap.first_game_far_ord,
-               guest.overlap.inverted == 0 && guest.overlap.opaque_comparable > 0 ? -1 : 0);
+               guest.overlap.inverted!=0);
   if (guest.overlap.first_inverted_a < guest.faces.faces.size() &&
       guest.overlap.first_inverted_b < guest.faces.faces.size()) {
     const auto& a=guest.faces.faces[guest.overlap.first_inverted_a];
@@ -1105,7 +1138,7 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
       a.source_ordinal,a.fragment_ordinal,a.ot_bin,a.quad?4:3,a.vertex[0].x,a.vertex[0].y,a.vertex[0].view_z,a.vertex[1].x,a.vertex[1].y,a.vertex[1].view_z,a.vertex[2].x,a.vertex[2].y,a.vertex[2].view_z,a.vertex[3].x,a.vertex[3].y,a.vertex[3].view_z,
       b.source_ordinal,b.fragment_ordinal,b.ot_bin,b.quad?4:3,b.vertex[0].x,b.vertex[0].y,b.vertex[0].view_z,b.vertex[1].x,b.vertex[1].y,b.vertex[1].view_z,b.vertex[2].x,b.vertex[2].y,b.vertex[2].view_z,b.vertex[3].x,b.vertex[3].y,b.vertex[3].view_z);
   }
-  if (!guest.transformBuilt || guest.transformSnapshots!=3 || guest.transformCompared!=33 ||
+  if (!guest.transformBuilt || guest.transformSnapshots!=3 || guest.transformCompared!=36 ||
       guest.transformMismatches || guest.rootInputsCompared!=6 || guest.rootInputMismatches ||
       guest.transformNegativeInputs!=expectedVertices ||
       !guest.transformNegativeCr0Diff || !guest.transformNegativeHDiff ||
@@ -1115,13 +1148,171 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
       guest.binsScanned != kLocalOtBins || guest.postWithoutPre || guest.duplicatePackets ||
       guest.cycles || guest.badTails || guest.unclearedWords || guest.globalSimulationErrors ||
       !guest.globalSlots || !guest.globalWordsCompared || guest.globalMismatches ||
-      !guest.overlap.opaque_comparable || guest.overlap.inverted)
+      !guest.overlap.opaque_comparable)
     return false;
   lucent::info("pairedpose",
                "actual guest XYZ+projection: armed_ops={} all_rtps={} target_rtps={}/{} "
                "xyz={}/{} projected={}/{} mismatches=0",
                armed, guest.allRtps, guest.targeted, expectedRtps, compared,
                expectedVertices, guest.projectedCompared, expectedVertices);
+  return true;
+}
+
+static bool refuse_shipping(SpyroPairedActorFrameState& state,const char* why) {
+  state.refusal=why;
+  lucent::error("pairedactor","0x80023AC4 native refusal: invocations={} groups={} candidates={} faces={} reason={}",
+    state.invocations,state.groups,state.candidates,state.faces,why);
+  return false;
+}
+
+static bool submit_native(Core* c,SpyroPairedActorFrameState& state) {
+  if(++state.invocations!=1) return refuse_shipping(state,"second invocation in one drawn frame");
+  if((c->mem_r32(0x80078A80u)>>24)!=0)
+    return refuse_shipping(state,"alternate/status-plane parser is active");
+
+  std::array<LayerDesc,kLayers> desc{};
+  PairedPose pose;
+  std::array<uint32_t,kLayers> decoded{};
+  if(!build_descs(c,desc) || !decode_pose(c,desc,pose,decoded))
+    return refuse_shipping(state,"incomplete animation descriptors or pose");
+  const uint32_t vertexCount=decoded[0]+decoded[1]+decoded[2];
+  for(uint32_t layer=0;layer<kLayers;++layer)
+    if(!decoded[layer]||decoded[layer]!=desc[layer].a.count)
+      return refuse_shipping(state,"resolved layer count does not match its descriptor");
+
+  SpyroPairedActorTransform transform{};
+  if(!build_transform(c,transform)) return refuse_shipping(state,"production transform/projection inputs missing");
+  // 0x80023F50..23F8C rejects the whole invocation before primitive decode. This is a valid
+  // no-output result, distinct from a missing group or a producer refusal.
+  const int32_t tx=transform.base_mac[0],ty=transform.base_mac[1],tz=transform.base_mac[2];
+  const int32_t zp=(int32_t)((uint32_t)tz+2048u);
+  if((int32_t)((uint32_t)tz-16384u)>=0 ||
+     (int32_t)((uint32_t)zp-(uint32_t)tx)<=0 ||
+     (int32_t)((uint32_t)zp+(uint32_t)tx)<=0 ||
+     (int32_t)((uint32_t)zp-(uint32_t)ty)<=0 ||
+     (int32_t)((uint32_t)zp+(uint32_t)ty)<=0){
+    state.culled=true;
+    return true;
+  }
+  std::vector<spyro::paired_actor::ProjectedVertex> projected;
+  projected.reserve(vertexCount);
+  for(uint32_t layer=0;layer<kLayers;++layer){
+    std::array<uint32_t,27> cr{};
+    for(uint32_t i=0;i<8;++i)cr[i]=transform.layer_cr[layer][i];
+    cr[24]=transform.ofx;cr[25]=transform.ofy;cr[26]=transform.h;
+    for(const Vec3i& v:pose.layers[layer].vertices){
+      const uint32_t d0=(uint16_t)v.y|((uint32_t)(uint16_t)v.z<<16);
+      projected.push_back(project_rtps(d0,(uint16_t)v.x,cr));
+    }
+  }
+  if(projected.size()!=vertexCount) return refuse_shipping(state,"projection table incomplete");
+
+  const uint32_t stream=c->mem_r32(desc[0].a.model+0x14u);
+  const uint32_t colors=c->mem_r32(desc[0].a.model+0x18u);
+  if(!stream||!colors) return refuse_shipping(state,"normal stream or material table missing");
+  const uint32_t bytes=c->mem_r32(stream);
+  const uint32_t streamPhys=stream&0x1FFFFFFFu;
+  if((stream&0xFFE00000u)!=0x80000000u || (bytes&3u) || streamPhys>0x1FFFFCu ||
+     bytes>0x200000u-streamPhys-4u)
+    return refuse_shipping(state,"normal stream byte count is unaligned or outside guest RAM");
+  std::vector<uint32_t> words(1u+bytes/4u);
+  for(uint32_t i=0;i<words.size();++i)words[i]=c->mem_r32(stream+i*4u);
+  const auto primitives=spyro::paired_actor::decode_normal_stream(words);
+  if(!primitives) return refuse_shipping(state,"normal primitive stream malformed");
+  uint32_t maxMaterial=0;
+  for(const auto& primitive:primitives.primitives){
+    const uint32_t nv=primitive.quad?4u:3u;
+    for(uint32_t v=0;v<nv;++v){
+      if((primitive.material_offset[v]&3u)||primitive.material_offset[v]>0x7FCu)
+        return refuse_shipping(state,"normal material offset is unaligned or outside encoded table range");
+      maxMaterial=std::max(maxMaterial,(uint32_t)primitive.material_offset[v]);
+    }
+  }
+  std::vector<uint32_t> base(maxMaterial/4u+1u);
+  const uint32_t colorPhys=colors&0x1FFFFFFFu;
+  if((colors&0xFFE00000u)!=0x80000000u || colorPhys>0x1FFFFCu ||
+     maxMaterial>0x200000u-colorPhys-4u)
+    return refuse_shipping(state,"normal material span is outside guest RAM");
+  for(uint32_t i=0;i<base.size();++i)base[i]=c->mem_r32(colors+i*4u);
+  auto faces=spyro::paired_actor::resolve_normal_faces(primitives.primitives,projected,
+    {base,c->mem_r32(0x80078A80u)},transform.depth_origin,transform.ot_shift);
+  state.candidates=faces.candidates;state.faces=(uint32_t)faces.faces.size();
+  if(!faces || faces.candidates!=primitives.primitives.size())
+    return refuse_shipping(state,"normal face census incomplete");
+  const GpuState& current=c->game->gpu;
+  const int offX=current.s_off_x,offY=current.s_off_y;
+  const int daX0=current.s_da_x0,daY0=current.s_da_y0,daX1=current.s_da_x1,daY1=current.s_da_y1;
+  const int twMx=current.s_tw_mx,twMy=current.s_tw_my,twOx=current.s_tw_ox,twOy=current.s_tw_oy;
+  for(const auto& face:faces.faces){
+    if(face.material.command&2u) return refuse_shipping(state,"semi-transparent face in opaque group");
+    if((face.material.command&~2u)!=(face.quad?0x3Cu:0x34u))
+      return refuse_shipping(state,"untextured or unsupported primitive command");
+    const uint16_t tpage=(uint16_t)(face.packet_attr[1]>>16);
+    if(tpage&0x0200u) return refuse_shipping(state,"TPAGE dither bit is active");
+    if(((tpage>>7)&3u)>2u) return refuse_shipping(state,"TPAGE texture mode is unsupported");
+  }
+  if(daX0>daX1||daY0>daY1)
+    return refuse_shipping(state,"active GPU draw area is empty");
+  if(faces.faces.empty()){
+    lucent::debug("pairedactor","native joined zero-output invocation: candidates={} faces=0 vertices={}",
+      state.candidates,vertexCount);
+    return true;
+  }
+  RenderQueue& rq=c->game->rq;
+  const int queued=rq.consumed?0:rq.n;
+  if(faces.faces.size()>(size_t)(RQ_MAX-queued))
+    return refuse_shipping(state,"render queue lacks capacity for atomic painter group");
+  if(faces.faces.size()>PainterObjectLimits{}.max_faces)
+    return refuse_shipping(state,"painter group exceeds framework face limit");
+  if(rq.mPainterScopeDepth||rq.mPainterInvalidId)
+    return refuse_shipping(state,"render queue painter lifecycle is already invalid");
+  for(int i=0;i<queued;++i) if(rq.items[i].painter_object)
+    return refuse_shipping(state,"another painter object already exists in this frame");
+  const uint32_t baseSeq=rq.consumed?0u:rq.seq;
+  if(faces.faces.size()-1u>UINT32_MAX-baseSeq)
+    return refuse_shipping(state,"painter sequence range overflows");
+  const uint32_t finalSeq=baseSeq+(uint32_t)faces.faces.size()-1u;
+  if(queued&&(!gpu_vk_order_bias_distinguishes(finalSeq)))
+    return refuse_shipping(state,"painter/ordinary tie channel would saturate");
+  {
+   ProducerScope producer(&c->rsub.producerScope,0x80023AC4u,"pairedactor:normal");
+   RenderQueue::PainterObjectScope painter(rq,0x80023AC4u);
+   for(const auto& face:faces.faces){
+    int xs[4]{},ys[4]{},us[4]{},vs[4]{};unsigned char rs[4]{},gs[4]{},bs[4]{};float depth[4]{};
+    const uint16_t clut=(uint16_t)(face.packet_attr[0]>>16);
+    const uint16_t tpage=(uint16_t)(face.packet_attr[1]>>16);
+    const uint32_t nv=face.quad?4u:3u;
+    for(uint32_t v=0;v<nv;++v){
+      xs[v]=face.vertex[v].x+offX;ys[v]=face.vertex[v].y+offY;
+      us[v]=face.packet_attr[v]&0xFFu;vs[v]=(face.packet_attr[v]>>8)&0xFFu;
+      const uint32_t rgb=face.material.rgb[v];rs[v]=rgb;gs[v]=rgb>>8;bs[v]=rgb>>16;
+      depth[v]=proj_pz_to_ord(face.vertex[v].view_z);
+    }
+     rq.emitOrQueue(c,1,RQ_WORLD,RQ_OM_DEPTH,(int)nv,0,0,xs,ys,nullptr,nullptr,us,vs,
+      rs,gs,bs,depth,(tpage>>7)&3u,(tpage&0x0Fu)*64,((tpage>>4)&1u)*256,
+      (clut&0x3Fu)*16,(clut>>6)&0x1FFu,twMx,twMy,twOx,twOy,daX0,daY0,daX1,daY1,
+      (tpage>>5)&3u,nullptr,-1,0.0f);
+   }
+  }
+  uint32_t grouped=0;
+  for(int i=0;i<rq.n;++i) if(rq.items[i].painter_object==0x80023AC4u){
+    ++grouped;
+    const RqItem& item=rq.items[i];
+    if(item.semi||item.painter_flags||item.layer!=RQ_WORLD||item.order_mode!=RQ_OM_DEPTH||
+       item.mode==3){
+      lucent::error("pairedactor","FATAL: emitted painter item violates prevalidated planner contract");
+      abort();
+    }
+  }
+  if(grouped!=faces.faces.size()){
+    lucent::error("pairedactor","FATAL: painter accounting grouped={}/{} after atomic emit",
+      grouped,faces.faces.size());
+    abort();
+  }
+  state.groups=1;
+  lucent::debug("pairedactor","native joined group: invocations=1 groups=1 candidates={} faces={} vertices={} offset=({}, {}) draw=({},{})-({},{}) tw=({},{},{},{})",
+    state.candidates,state.faces,vertexCount,offX,offY,daX0,daY0,
+    daX1,daY1,twMx,twMy,twOx,twOy);
   return true;
 }
 
@@ -1147,6 +1338,24 @@ bool spyro_paired_actor_decode_pose(Core* c) {
                 decoded[0], descriptors ? desc[0].a.count : 0,
                 decoded[1], descriptors ? desc[1].a.count : 0,
                 decoded[2], descriptors ? desc[2].a.count : 0);
+  return ok;
+}
+
+bool spyro_paired_actor_submit(Core* c,SpyroPairedActorFrameState& state) {
+  return submit_native(c,state);
+}
+
+void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState& state) { state={}; }
+
+bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState& state,
+                                     bool reference_leg,bool expect_group) {
+  const uint32_t expected=expect_group?1u:0u;
+  const bool validZero=expect_group&&(state.culled||state.faces==0)&&state.groups==0;
+  const bool ok=!state.refusal&&(state.groups==expected||validZero)&&
+    state.invocations==(expect_group?1u:0u);
+  lucent::debug("pairedactor","ownership gate: leg={} armed_groups={}/{} invocations={} faces={} culled={} refusal={} => {}",
+    reference_leg?"reference":"native",state.groups,expected,state.invocations,
+    state.faces,state.culled,state.refusal?state.refusal:"none",ok?"PASS":"FAIL");
   return ok;
 }
 

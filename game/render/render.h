@@ -18,6 +18,7 @@
 // wrong-source failure this project keeps paying for. Hence: no PSXPORT_SPYRO_* render switch;
 // `PSXPORT_RENDER_PSX=1` selects the reference, exactly as it does for Tomba!2.
 #pragma once
+#include "fx_paired_actor.h"
 #include <cstdint>
 class Core;
 
@@ -56,9 +57,7 @@ struct Scene {
 
 // class SpyroRenderer — the render seam for ONE frame on ONE core.
 //
-// Deliberately stateless (it holds only the Core it was handed) and constructed per frame on the
-// stack: there is nothing to leak between frames and nothing for a second core to share, so the
-// per-Core correctness SBS needs is structural rather than asserted.
+// Constructed per frame on the stack; its paired-producer census is therefore frame- and core-local.
 class SpyroRenderer {
 public:
   explicit SpyroRenderer(Core* c) : mC(c) {}
@@ -93,12 +92,12 @@ private:
                   int32_t clipX0, int32_t clipY0, int32_t clipX1, int32_t clipY1) const;
   // fx_sprite_queue.cpp — native screen-space class of RasterizeSpritePrimQueue 0x80022A2C.
   // Also owns stage-13/mode-3's text-actor construction. False means the handler's separate
-  // paired-actor pass 0x80023AC4 is armed. Its three-layer pose input is owned,
-  // but face projection/submission remains deliberately incomplete.
+  // paired-actor pass 0x80023AC4 is armed; its normal opaque/textured group is owned.
   bool stage13Mode3Render() const;
 
   Core* mC;
   // The DRAWENV this frame is being drawn with, set by drawFrame()'s call to nativeFrameBegin() on
   // the native leg only. 0 on the reference leg, where the guest's own driver owns the env.
   uint32_t mEnv = 0;
+  mutable SpyroPairedActorFrameState mPaired{};
 };

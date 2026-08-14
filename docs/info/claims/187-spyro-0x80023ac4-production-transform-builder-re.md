@@ -13,7 +13,7 @@ On the reached front-end path, Spyro's 0x80023AC4 production transform builder r
 
 ## Evidence
 
-scratch/logs/paired_transform_oracle_final.log: 384/384 transform-only gates PASS over 4100 presented frames; each reports layers=3/3 regs=33/33 roots=6/6 vertices=238/238 mismatches=0, with nonzero CR0 and H perturbation discriminators; PSXPORT_SELFTEST=pairedpose passes 15/15 including packed negative-low borrow
+scratch/logs/paired_transform_oracle_join2.log: 384/384 transform-only gates PASS over 4100 presented frames; each reports layers=3/3 regs=36/36 (including owned CR13..15) roots=6/6 vertices=238/238 mismatches=0, with nonzero CR0 and H perturbation discriminators; PSXPORT_SELFTEST=pairedpose passes 15/15 including packed negative-low borrow
 
 ## What would falsify it
 

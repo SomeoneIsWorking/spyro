@@ -453,23 +453,7 @@ bool SpyroRenderer::stage13Mode3Render() const {
   append_pending_actors(c);
   const bool complete_queue = emit_screen_queue(c);
 
-  // First ownership slice of the separate 0x80023AC4 pass: resolve all three
-  // animation layers now, from the same live state the eventual face producer
-  // will consume.  It deliberately emits zero faces, so the completeness gate
-  // below remains loud until projection/face ownership lands.
-  const bool complete_pose = state != 2u || spyro_paired_actor_decode_pose(c);
+  const bool complete_paired = state != 2u || spyro_paired_actor_submit(c, mPaired);
 
-  // 0x80023AC4 is a different producer, not a missing variant of this one. Refuse the frame while it
-  // is armed so the native path cannot present a plausible text-only picture as complete.
-  if (state == 2u && cfg_str("PSXPORT_SPRITE_QUEUE_SCREEN_TEST")) {
-    static bool warned = false;
-    if (!warned) {
-      warned = true;
-      lucent::warn("spriteq", "DIAGNOSTIC: presenting the native screen-queue layer while the separate "
-                              "paired-actor pass 0x80023AC4 is OMITTED. This is a layer-isolation test, "
-                              "not a complete native frame.");
-    }
-    return complete_queue && complete_pose;
-  }
-  return complete_queue && complete_pose && state != 2u;
+  return complete_queue && complete_paired;
 }

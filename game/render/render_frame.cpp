@@ -98,6 +98,7 @@ void SpyroRenderer::renderScene(const Scene& sc) const {
 // ONE frame's picture.
 void SpyroRenderer::drawFrame() {
   const Scene sc = classifyScene();
+  spyro_paired_actor_frame_begin(mPaired);
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the denominator
   // is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It is how "which
   // scenes does a real run actually reach" gets answered with data rather than from the stage table,
@@ -114,6 +115,7 @@ void SpyroRenderer::drawFrame() {
     if (pairedOracle) spyro_paired_actor_oracle_arm(mC);
     referenceOtWalk();
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) abort();
+    if (!spyro_paired_actor_frame_finish(mPaired, true, false)) abort();
     return;
   }
   // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
@@ -122,6 +124,8 @@ void SpyroRenderer::drawFrame() {
   // re-frontier `frame.own-render-driver` parts (1) and (2), written from the game's own DRAWENV.
   mEnv = nativeFrameBegin(mC);
   renderScene(sc);
+  const bool expectPaired = sc.stage == kStageFrontEnd && mC->mem_r32(0x80078D7Cu) == 2u;
+  if (!spyro_paired_actor_frame_finish(mPaired, false, expectPaired)) abort();
   // THE ONE PLACE NATIVE PRIMS REACH THE RENDERER. Producers push into the render queue as they draw;
   // nothing is on screen until the queue is emitted, and this is that emit. Unreachable while every
   // scene aborts above — which is exactly why it is written now, next to the branch that will reach

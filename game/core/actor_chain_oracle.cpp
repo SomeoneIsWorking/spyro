@@ -1,4 +1,5 @@
 // Observation-only groundwork for the 0x800521C0 -> 0x8001F158 -> 0x8001F798 actor chain.
+#include "actor_prefix_builder.h"
 #include "cfg.h"
 #include "core.h"
 #include "rec_decls.h"
@@ -20,6 +21,54 @@ constexpr uint32_t kRecordSize = 56u;
 constexpr uint32_t kDurableRecords = 53u;  // source indices 0..52 only
 constexpr uint32_t kTerminatorIndex = 53u; // exact terminator observed at 0x80071E8C
 constexpr uint32_t kPoolPtr = 0x800757B0u;
+
+struct PrefixBuildCapture {
+  struct Record {
+    spyro::actor_prefix::Input input;
+    spyro::actor_prefix::Output expected;
+    uint32_t descriptor = 0, command = 0, colorBase = 0;
+  };
+  std::vector<Record> records;
+  uint32_t activeRecord = 0;
+  uint32_t verticesPre = 0, verticesPost = 0, controlsCompared = 0;
+  uint32_t inputMismatch = 0, controlMismatch = 0, rawViewMismatch = 0;
+  std::array<uint32_t, 16> controlMismatchByReg{};
+  uint32_t firstExpected = 0, firstActual = 0, firstIndex = 0;
+  uint32_t irMismatch = 0, sxyMismatch = 0, szMismatch = 0;
+  uint32_t finalCheckpoint = 0, pointerMismatch = 0;
+  uint32_t highRecords = 0, highColorsCaptured = 0;
+  uint32_t positiveRecords = 0, positiveColorsCompared = 0, colorMismatch = 0;
+  uint32_t primitiveWordsCaptured = 0;
+  const char *first = "none";
+};
+
+static bool physical_span(uint32_t p, uint32_t bytes) {
+  const uint32_t physical = p & 0x1fffffffu;
+  return (p & 3u) == 0u && bytes >= 4u && bytes <= 0x200000u && physical <= 0x200000u - bytes;
+}
+
+static uint32_t kseg(uint32_t p) {
+  return 0x80000000u | (p & 0x1fffffu);
+}
+
+template <class Read>
+static bool
+copy_primitive_words(Read read, uint32_t command, std::vector<uint32_t> &words, uint32_t &bytes) {
+  words.clear();
+  bytes = 0;
+  if (!physical_span(command, 4u)) {
+    return false;
+  }
+  bytes = read(kseg(command));
+  if ((bytes & 3u) != 0u || bytes > 0x1ffffcu || !physical_span(command, bytes + 4u)) {
+    return false;
+  }
+  words.reserve(bytes / 4u);
+  for (uint32_t offset = 4; offset < bytes + 4u; offset += 4u) {
+    words.push_back(read(kseg(command + offset)));
+  }
+  return true;
+}
 
 struct WordWrite {
   uint32_t addr = 0, value = 0;
@@ -1083,6 +1132,380 @@ static void actor_chain_prefix_oracle(Core *c) {
       prefix_result_name(result));
 }
 
+static bool
+copy_prefix_stream(Core *c, uint32_t model, uint32_t count, spyro::actor_prefix::OwnedStream &out) {
+  if (!physical_span(model, 8u)) {
+    return false;
+  }
+  const uint32_t model0 = c->mem_r32(kseg(model));
+  const uint32_t model1 = c->mem_r32(kseg(model + 4u));
+  uint32_t full = model0 & 0x1fffffu;
+  uint32_t delta = full + ((model1 >> 24) << 2);
+  if (!physical_span(full, 4u) || delta > 0x1fffffu) {
+    return false;
+  }
+  out = {};
+  out.firstFull = c->mem_r32(kseg(full));
+  full += 4;
+  uint32_t selector = out.firstFull;
+  for (uint32_t i = 1; i < count; ++i) {
+    if (selector & 1u) {
+      if (delta > 0x1ffffeu) {
+        return false;
+      }
+      const int16_t word = (int16_t)c->mem_r16(kseg(delta));
+      out.deltaWords.push_back(word);
+      selector = (uint16_t)word;
+      delta += 2;
+    } else {
+      if (!physical_span(full, 4u)) {
+        return false;
+      }
+      selector = c->mem_r32(kseg(full));
+      out.fullWords.push_back(selector);
+      full += 4;
+    }
+  }
+  return true;
+}
+
+static bool capture_prefix_record(Core *c, uint32_t record, PrefixBuildCapture::Record &capture) {
+  if (c->mem_r32(record) == 0) {
+    return false;
+  }
+  const uint32_t descriptor = c->mem_r32(record + 4u);
+  const uint32_t model = c->mem_r32(record + 8u);
+  const uint32_t alternate = c->mem_r32(record + 12u);
+  if (!physical_span(descriptor, 36u) || !physical_span(model, 8u)) {
+    return false;
+  }
+  auto &input = capture.input;
+  input = {};
+  input.header = c->mem_r32(record);
+  input.tx = (int32_t)c->mem_r32(record + 16u);
+  input.ty = (int32_t)c->mem_r32(record + 20u);
+  input.tz = (int32_t)c->mem_r32(record + 24u);
+  for (uint32_t i = 0; i < input.matrixWords.size(); ++i) {
+    input.matrixWords[i] = c->mem_r32(record + 28u + i * 4u);
+  }
+  input.cr29 = (int32_t)gte_read_ctrl(29);
+  input.cr30 = (int16_t)(input.matrixWords[4] >> 16);
+  input.transformShift = c->mem_r8(kseg(descriptor + 5u));
+  input.streamShift = (uint8_t)(c->mem_r8(kseg(descriptor + 6u)) + 1u);
+  input.vertexCount = c->mem_r8(kseg(descriptor + 8u));
+  const uint32_t modelMeta = c->mem_r32(kseg(model + 4u));
+  input.optionalExpansion = input.cr30 > 0 && (((modelMeta << 16) >> 14) != 0);
+  const uint16_t blend = (uint16_t)((input.header & 0xff00u) >> 2);
+  if (input.vertexCount != 0 && !copy_prefix_stream(c, model, input.vertexCount, input.primary)) {
+    return false;
+  }
+  if (blend != 0 && (!physical_span(alternate, 8u) ||
+                     !copy_prefix_stream(c, alternate, input.vertexCount, input.alternate))) {
+    return false;
+  }
+  input.projection = {.ofx = (int32_t)gte_read_ctrl(24),
+                      .ofy = (int32_t)gte_read_ctrl(25),
+                      .h = (uint16_t)gte_read_ctrl(26)};
+  if (input.cr30 >= 1024) {
+    input.colorArm = spyro::actor_prefix::ColorArm::High;
+  } else if (input.cr30 > 0) {
+    input.colorArm = spyro::actor_prefix::ColorArm::PositiveBlend;
+  } else if (input.cr29 <= 0 || input.cr30 >= -2048) {
+    input.colorArm = spyro::actor_prefix::ColorArm::Plain;
+  } else {
+    input.colorArm = spyro::actor_prefix::ColorArm::NegativeBlend;
+  }
+  const uint32_t colorCount = c->mem_r16(kseg(descriptor + 2u));
+  const uint32_t primaryColors = c->mem_r32(kseg(descriptor + 24u));
+  const uint32_t secondaryColors = c->mem_r32(kseg(descriptor + 32u));
+  if (!physical_span(primaryColors, std::max(1u, colorCount) * 4u)) {
+    return false;
+  }
+  input.primaryColors.reserve(colorCount);
+  for (uint32_t i = 0; i < colorCount; ++i) {
+    input.primaryColors.push_back(c->mem_r32(kseg(primaryColors + i * 4u)));
+  }
+  if (input.colorArm == spyro::actor_prefix::ColorArm::PositiveBlend) {
+    if (!physical_span(secondaryColors, std::max(1u, colorCount) * 4u)) {
+      return false;
+    }
+    input.secondaryColors.reserve(colorCount);
+    for (uint32_t i = 0; i < colorCount; ++i) {
+      input.secondaryColors.push_back(c->mem_r32(kseg(secondaryColors + i * 4u)));
+    }
+  }
+  const uint32_t command = c->mem_r32(kseg(descriptor + 20u));
+  uint32_t primitiveBytes = 0;
+  if (!copy_primitive_words(
+          [&](uint32_t p) {
+            return c->mem_r32(p);
+          },
+          command,
+          input.primitiveWords,
+          primitiveBytes)) {
+    return false;
+  }
+  capture.descriptor = kseg(descriptor);
+  capture.command = kseg(command);
+  capture.colorBase =
+      input.colorArm == spyro::actor_prefix::ColorArm::High ? kseg(primaryColors) : 0x80070DF4u;
+  capture.expected = spyro::actor_prefix::build(input);
+  return true;
+}
+
+static void prefix_build_first(PrefixBuildCapture &capture,
+                               const char *field,
+                               uint32_t index = 0,
+                               uint32_t expected = 0,
+                               uint32_t actual = 0) {
+  if (capture.first == std::string_view{"none"}) {
+    capture.first = field;
+    capture.firstIndex = index;
+    capture.firstExpected = expected;
+    capture.firstActual = actual;
+  }
+}
+
+static bool prefix_build_rtps(uint32_t pc) {
+  return pc == 0x8001FAC0u || pc == 0x8001FB80u || pc == 0x8001FCE0u || pc == 0x8001FD14u;
+}
+
+static uint32_t prefix_build_record_vertex_base(const PrefixBuildCapture &capture) {
+  uint32_t base = 0;
+  for (uint32_t i = 0; i < capture.activeRecord; ++i) {
+    base += (uint32_t)capture.records[i].expected.vertices.size();
+  }
+  return base;
+}
+
+static void prefix_build_pre(Core *, uint64_t, uint32_t pc, uint32_t, void *user) {
+  auto &capture = *static_cast<PrefixBuildCapture *>(user);
+  if (!prefix_build_rtps(pc)) {
+    return;
+  }
+  if (capture.activeRecord >= capture.records.size()) {
+    ++capture.inputMismatch;
+    prefix_build_first(capture, "extra_rtps");
+    return;
+  }
+  const auto &expected = capture.records[capture.activeRecord].expected;
+  const uint32_t index = capture.verticesPre++ - prefix_build_record_vertex_base(capture);
+  if (index >= expected.vertices.size()) {
+    ++capture.inputMismatch;
+    prefix_build_first(capture, "extra_rtps");
+    return;
+  }
+  const auto &vertex = expected.vertices[index];
+  const uint32_t dr0 =
+      (uint16_t)vertex.projectionInput.x | ((uint32_t)(uint16_t)vertex.projectionInput.y << 16);
+  if (gte_read_data(0) != dr0 || (int16_t)gte_read_data(1) != vertex.projectionInput.z) {
+    ++capture.inputMismatch;
+    prefix_build_first(capture, "projection_input", index, dr0, gte_read_data(0));
+  }
+  for (uint32_t i = 0; i < 8; ++i) {
+    ++capture.controlsCompared;
+    if (gte_read_ctrl(i) != expected.controls[i]) {
+      ++capture.controlMismatch;
+      ++capture.controlMismatchByReg[i];
+      prefix_build_first(capture, "control", i, expected.controls[i], gte_read_ctrl(i));
+    }
+  }
+  for (uint32_t i = 13; i < 16; ++i) {
+    ++capture.controlsCompared;
+    if (gte_read_ctrl(i) != expected.controls[i]) {
+      ++capture.controlMismatch;
+      ++capture.controlMismatchByReg[i];
+      prefix_build_first(capture, "control", i, expected.controls[i], gte_read_ctrl(i));
+    }
+  }
+}
+
+static void prefix_build_post(Core *, uint64_t, uint32_t pc, uint32_t, void *user) {
+  auto &capture = *static_cast<PrefixBuildCapture *>(user);
+  if (!prefix_build_rtps(pc)) {
+    return;
+  }
+  if (capture.activeRecord >= capture.records.size()) {
+    return;
+  }
+  const auto &expected = capture.records[capture.activeRecord].expected;
+  const uint32_t index = capture.verticesPost++ - prefix_build_record_vertex_base(capture);
+  if (index >= expected.vertices.size()) {
+    return;
+  }
+  const auto &projected = expected.vertices[index].projected;
+  for (uint32_t i = 0; i < 3; ++i) {
+    if ((int32_t)gte_read_data(25u + i) != (int32_t)(projected.raw_view_fixed[i] >> 12)) {
+      ++capture.rawViewMismatch;
+      prefix_build_first(capture, "mac");
+    }
+    if ((int16_t)gte_read_data(9u + i) != projected.ir[i]) {
+      ++capture.irMismatch;
+      prefix_build_first(capture, "ir");
+    }
+  }
+  const uint32_t sxy = (uint16_t)projected.sx | ((uint32_t)(uint16_t)projected.sy << 16);
+  if (gte_read_data(14) != sxy) {
+    ++capture.sxyMismatch;
+    prefix_build_first(capture, "sxy");
+  }
+  if ((uint16_t)gte_read_data(19) != projected.sz) {
+    ++capture.szMismatch;
+    prefix_build_first(capture, "sz");
+  }
+}
+
+static void prefix_build_final(Core *c, uint64_t, uint32_t, void *user) {
+  auto &capture = *static_cast<PrefixBuildCapture *>(user);
+  ++capture.finalCheckpoint;
+  if (capture.activeRecord >= capture.records.size()) {
+    ++capture.pointerMismatch;
+    prefix_build_first(capture, "extra_record");
+    return;
+  }
+  const auto &record = capture.records[capture.activeRecord];
+  if (c->lo != record.descriptor || c->r[30] != record.command || c->r[25] != record.colorBase) {
+    ++capture.pointerMismatch;
+    prefix_build_first(capture, "final_pointer");
+  }
+  if (record.input.colorArm == spyro::actor_prefix::ColorArm::PositiveBlend) {
+    for (uint32_t i = 0; i < record.expected.colors.size(); ++i) {
+      ++capture.positiveColorsCompared;
+      if (c->mem_r32(record.colorBase + i * 4u) != record.expected.colors[i]) {
+        ++capture.colorMismatch;
+        prefix_build_first(capture, "positive_color");
+      }
+    }
+  }
+  ++capture.activeRecord;
+}
+
+static void actor_chain_prefix_build_oracle(Core *c) {
+  PrefixBuildCapture capture{};
+  bool captured = true, terminated = false;
+  const uint32_t firstRecord = kRecordBase;
+  if (!durable_record(firstRecord)) {
+    captured = false;
+  }
+  for (uint32_t i = 0; i <= kTerminatorIndex; ++i) {
+    const uint32_t address = firstRecord + i * kRecordSize;
+    if (!captured || address < firstRecord ||
+        address > kRecordBase + kTerminatorIndex * kRecordSize) {
+      captured = false;
+      break;
+    }
+    if (c->mem_r32(address) == 0) {
+      terminated = true;
+      break;
+    }
+    PrefixBuildCapture::Record record{};
+    if (i == kTerminatorIndex || !capture_prefix_record(c, address, record)) {
+      captured = false;
+      break;
+    }
+    capture.records.push_back(std::move(record));
+  }
+  captured = captured && terminated && !capture.records.empty();
+  bool supported = captured;
+  std::array<uint32_t, 9> statusCounts{};
+  uint32_t expectedVertices = 0, expectedPositiveColors = 0;
+  for (const auto &record : capture.records) {
+    ++statusCounts[(uint32_t)record.expected.status];
+    supported &= record.expected.status == spyro::actor_prefix::Status::Ok;
+    expectedVertices += (uint32_t)record.expected.vertices.size();
+    capture.primitiveWordsCaptured += (uint32_t)record.expected.primitiveWords.size();
+    if (record.input.colorArm == spyro::actor_prefix::ColorArm::PositiveBlend) {
+      ++capture.positiveRecords;
+      expectedPositiveColors += (uint32_t)record.expected.colors.size();
+    } else if (record.input.colorArm == spyro::actor_prefix::ColorArm::High) {
+      ++capture.highRecords;
+      capture.highColorsCaptured += (uint32_t)record.input.primaryColors.size();
+    }
+  }
+  static constexpr uint32_t target = 0x8001FF64u;
+  if (supported) {
+    if (!c->pcObserver.arm(&target, 1, prefix_build_final, &capture)) {
+      abort();
+    }
+    gte_op_observer_arm(c, prefix_build_pre, prefix_build_post, &capture);
+  }
+  gen_func_8001F798(c);
+  const uint64_t gteSeen = gte_preop_observer_disarm(c);
+  const uint64_t pcSeen = c->pcObserver.seen(), pcMatched = c->pcObserver.matched();
+  c->pcObserver.disarm();
+  const bool pass = supported && capture.verticesPre == expectedVertices &&
+                    capture.verticesPost == expectedVertices && capture.inputMismatch == 0 &&
+                    capture.controlMismatch == 0 && capture.rawViewMismatch == 0 &&
+                    capture.irMismatch == 0 && capture.sxyMismatch == 0 &&
+                    capture.szMismatch == 0 && capture.finalCheckpoint == capture.records.size() &&
+                    capture.pointerMismatch == 0 && capture.colorMismatch == 0 &&
+                    capture.positiveColorsCompared == expectedPositiveColors &&
+                    pcMatched == capture.records.size();
+  lucent::info("actorchainprefixbuild",
+               "captured={} supported={} records={} vertices[expected={} pre={} post={}] "
+               "gte_seen={} controls={} "
+               "mismatch[input={} control={} raw_view={} ir={} sxy={} sz={} pointer={} "
+               "positive_color={}] control_regs[0..7={},{},{},{},{},{},{},{} 13..15={},{},{}] "
+               "final={}/{} pc_seen={} status[ok={} optional_expansion={} transform_blend={} "
+               "clip_status={} count_zero={} stream={} plain={} negative={} color_count={}] "
+               "colors[high_records={} high_captured={} positive_records={} "
+               "positive_compared={}/{}] primitive_words_captured={} "
+               "first={}#{}[exp={:08X} act={:08X}] result={}",
+               captured,
+               supported,
+               capture.records.size(),
+               expectedVertices,
+               capture.verticesPre,
+               capture.verticesPost,
+               gteSeen,
+               capture.controlsCompared,
+               capture.inputMismatch,
+               capture.controlMismatch,
+               capture.rawViewMismatch,
+               capture.irMismatch,
+               capture.sxyMismatch,
+               capture.szMismatch,
+               capture.pointerMismatch,
+               capture.colorMismatch,
+               capture.controlMismatchByReg[0],
+               capture.controlMismatchByReg[1],
+               capture.controlMismatchByReg[2],
+               capture.controlMismatchByReg[3],
+               capture.controlMismatchByReg[4],
+               capture.controlMismatchByReg[5],
+               capture.controlMismatchByReg[6],
+               capture.controlMismatchByReg[7],
+               capture.controlMismatchByReg[13],
+               capture.controlMismatchByReg[14],
+               capture.controlMismatchByReg[15],
+               capture.finalCheckpoint,
+               capture.records.size(),
+               pcSeen,
+               statusCounts[0],
+               statusCounts[1],
+               statusCounts[2],
+               statusCounts[3],
+               statusCounts[4],
+               statusCounts[5],
+               statusCounts[6],
+               statusCounts[7],
+               statusCounts[8],
+               capture.highRecords,
+               capture.highColorsCaptured,
+               capture.positiveRecords,
+               capture.positiveColorsCompared,
+               expectedPositiveColors,
+               capture.primitiveWordsCaptured,
+               capture.first,
+               capture.firstIndex,
+               capture.firstExpected,
+               capture.firstActual,
+               !captured    ? "NO_CORPUS"
+               : !supported ? "REFUSED"
+               : pass       ? "PASS"
+                            : "FAIL");
+}
+
 static void actor_chain_ot_oracle(Core *c) {
   if (gpu_vk_wide_engine(c)) {
     lucent::error("actorchainoracle",
@@ -1625,9 +2048,11 @@ void spyro_register_actor_chain_oracle() {
     return;
   }
   const std::string_view selected(mode);
-  if (selected != "payload" && selected != "ot" && selected != "prefix") {
+  if (selected != "payload" && selected != "ot" && selected != "prefix" &&
+      selected != "prefix-build") {
     lucent::error("actorchainoracle",
-                  "REFUSED: PSXPORT_ACTOR_CHAIN_ORACLE={} requires payload, ot, or prefix",
+                  "REFUSED: PSXPORT_ACTOR_CHAIN_ORACLE={} requires payload, ot, prefix, or "
+                  "prefix-build",
                   mode);
     abort();
   }
@@ -1652,11 +2077,34 @@ void spyro_register_actor_chain_oracle() {
     overrideFn = actor_chain_ot_oracle;
   } else if (selected == "prefix") {
     overrideFn = actor_chain_prefix_oracle;
+  } else if (selected == "prefix-build") {
+    overrideFn = actor_chain_prefix_build_oracle;
   }
   psxport_recomp()->shard_set_override(0x8001F798u, overrideFn);
 }
 
 int spyro_actor_chain_oracle_selftest() {
+  uint32_t primitiveReads = 0, primitiveBytes = 0;
+  std::vector<uint32_t> primitiveWords;
+  auto malformedPrimitiveRead = [&](uint32_t) {
+    ++primitiveReads;
+    return 0xffffffffu;
+  };
+  const bool malformedAddressRejected =
+      !copy_primitive_words(malformedPrimitiveRead, 0x80001002u, primitiveWords, primitiveBytes) &&
+      primitiveReads == 0;
+  primitiveReads = 0;
+  const bool oversizedPrimitiveRejected =
+      !copy_primitive_words(malformedPrimitiveRead, 0x80001000u, primitiveWords, primitiveBytes) &&
+      primitiveReads == 1;
+  primitiveReads = 0;
+  auto validPrimitiveRead = [&](uint32_t p) {
+    ++primitiveReads;
+    return p == 0x80001000u ? 8u : p;
+  };
+  const bool validPrimitiveCopied =
+      copy_primitive_words(validPrimitiveRead, 0x80001000u, primitiveWords, primitiveBytes) &&
+      primitiveReads == 3 && primitiveBytes == 8 && primitiveWords.size() == 2;
   PrefixCensus prefixPositive{};
   prefixPositive.setups = 2;
   prefixPositive.declaredVertices = 7;
@@ -1714,7 +2162,8 @@ int spyro_actor_chain_oracle_selftest() {
   const bool prefixResultAnswers = prefix_result(0, true) == PrefixResult::NoCorpus &&
                                    prefix_result(1, true) == PrefixResult::Pass &&
                                    prefix_result(1, false) == PrefixResult::Fail;
-  bool ok = prefix_complete(prefixPositive) && !prefix_complete(prefixBadSite) &&
+  bool ok = malformedAddressRejected && oversizedPrimitiveRejected && validPrimitiveCopied &&
+            prefix_complete(prefixPositive) && !prefix_complete(prefixBadSite) &&
             !prefix_complete(prefixBadColor) && !prefix_complete(prefixBadMatched) &&
             !prefix_complete(PrefixCensus{}) && colorClassification && prefixResultAnswers;
   constexpr uint32_t base = 0x1000u;

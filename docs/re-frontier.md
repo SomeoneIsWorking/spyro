@@ -184,6 +184,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   is the caller-specific record/model deep copy, transform/setup and projection-loop join;
   Plain/NegativeBlend, optional expansion and other uncovered branches remain explicit refusals. No
   ActorRecipe or native 1F798 submission exists; the eight-PC output oracle budget is otherwise sufficient.
+  Phase 3 now has a pure immutable `actor_prefix_builder` and a green live `prefix-build` endpoint
+  discriminator for reached High/PositiveBlend inputs. The repaired 500-present corpus produced ten
+  supported PASS calls, 22 explicit `ClipStatus` refusals and zero FAIL/NO_CORPUS. Each supported call
+  joined 195/195 RTPS inputs/post-ops and 2,145 controls. Nineteen PositiveBlend records independently
+  compared 1,094 scratch colors; one High record's six aliased colors and every call's 702 unchanged
+  primitive words are capture denominators, not output proof. The next REAL step is the status-output
+  arm and atomic call-level ownership/fallback boundary before any RQ submission; optional expansion,
+  transform blend and uncovered color arms stay outside the reached builder.
 
 
 ## harness

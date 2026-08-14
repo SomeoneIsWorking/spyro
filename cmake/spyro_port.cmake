@@ -36,6 +36,14 @@ if(BUILD_TESTING)
   target_compile_features(test_actor_model_codec PRIVATE cxx_std_20)
   target_link_libraries(test_actor_model_codec PRIVATE psxport)
   add_test(NAME actor_model_codec COMMAND test_actor_model_codec)
+  add_executable(test_actor_prefix_builder
+    ${CMAKE_SOURCE_DIR}/tests/test_actor_prefix_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_actor_prefix_builder PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_actor_prefix_builder PRIVATE cxx_std_20)
+  target_link_libraries(test_actor_prefix_builder PRIVATE psxport)
+  add_test(NAME actor_prefix_builder COMMAND test_actor_prefix_builder)
   add_test(
     NAME format_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --check)
@@ -68,6 +76,7 @@ set(GAME_SRC
   game/render/fx_sprite_queue.cpp
   game/render/paired_actor_decode.cpp
   game/render/actor_model_codec.cpp
+  game/render/actor_prefix_builder.cpp
   game/render/fx_paired_actor.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp

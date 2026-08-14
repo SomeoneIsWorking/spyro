@@ -295,3 +295,21 @@ coverage is not an oracle differential: hand-derived fixed vectors cover both cu
 shift masking/wrap and branch errors, while a changed packed delta is an input-sensitivity negative.
 This still does not own the 1F798 record/descriptor/model recipe, transform setup, optional expansion,
 projection loop, or Plain/NegativeBlend arms, and it does not submit faces.
+
+Phase 3 now owns the reached prefix endpoint. `game/render/actor_prefix_builder.{h,cpp}` is a pure
+immutable-input seam over `actor_model_codec` and psxport `native_projection`; it owns reached
+transform setup, model decode, endpoint projection and High/PositiveBlend color selection,
+and explicitly refuses optional expansion, transform blend, status output, count zero and uncovered
+color arms. `PSXPORT_ACTOR_CHAIN_ORACLE=prefix-build` deep-copies every durable record before the
+generated body and compares RTPS inputs, CR0..7/13..15 and MAC/IR/SXY/SZ. PositiveBlend scratch
+colors are independently compared; High colors alias their source and primitive words are immutable
+capture denominators only, not construction evidence. The live discriminator corrected three real
+transcription errors: CR4's packed
+CR30 high half, header translation bias bits 16..23, and the distinction between descriptor byte5
+transform shift and `(byte6+1)` vertex-delta shift. The repaired 500-present run produced ten
+supported `PASS` calls, 22 explicit `ClipStatus` refusals and zero `FAIL`/`NO_CORPUS`. Supported calls
+compared 195/195 RTPS inputs/post-ops and 2,145 controls each; across them 19 PositiveBlend records
+compared 1,094 scratch colors, while one High record captured six aliased colors. All ten captured 702
+primitive words without comparing them back to their unchanged source
+(`scratch/logs/actorchain_prefix_scoped.log`). This proves only the reached transform/projection and
+PositiveBlend scratch output; no native producer or claim is enabled.

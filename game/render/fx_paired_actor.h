@@ -1,6 +1,18 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
+
 class Core;
+
+struct SpyroPairedActorTransform {
+  std::array<std::array<uint32_t, 8>, 3> layer_cr{};
+  std::array<std::array<int32_t, 3>, 2> root_input{};
+  uint32_t root_words[4]{};
+  uint32_t ofx = 0, ofy = 0, h = 0;
+};
+
+bool spyro_paired_actor_build_transform(Core* c, SpyroPairedActorTransform& out);
 
 // First ownership slice of guest renderer 0x80023AC4.  It resolves the three
 // animation layers into host-side model-space vertices, but deliberately emits

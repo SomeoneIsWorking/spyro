@@ -10,6 +10,7 @@
 #include "cfg.h"
 #include "core.h"
 #include "paired_actor_decode.h"
+#include "proj_params.h"
 #include <lucent/log.h>
 #include <array>
 #include <bit>
@@ -109,6 +110,13 @@ struct GuestXyzCapture {
   bool corruptGlobalRejected = false;
   spyro::paired_actor::OverlapDepthStats overlap;
   uint32_t ditherBit9 = 0;
+  SpyroPairedActorTransform nativeTransform{};
+  bool transformBuilt = false;
+  uint32_t transformSnapshots = 0, transformCompared = 0, transformMismatches = 0;
+  uint32_t firstTransformPc = 0, firstTransformReg = UINT32_MAX;
+  uint32_t firstTransformGuest = 0, firstTransformNative = 0;
+  uint32_t rootInputsCompared = 0, rootInputMismatches = 0;
+  uint32_t transformNegativeInputs = 0, transformNegativeCr0Diff = 0, transformNegativeHDiff = 0;
 };
 
 static GuestXyzCapture sGuest;
@@ -151,6 +159,158 @@ static int32_t clampi(int32_t v, int32_t lo, int32_t hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
+struct Mat3i { int32_t v[3][3]{}; };
+
+static Mat3i unpack_matrix(const std::array<uint32_t,5>& p) {
+  return {{{(int16_t)p[0],(int16_t)(p[0]>>16),(int16_t)p[1]},
+           {(int16_t)(p[1]>>16),(int16_t)p[2],(int16_t)(p[2]>>16)},
+           {(int16_t)p[3],(int16_t)(p[3]>>16),(int16_t)p[4]}}};
+}
+
+static std::array<uint32_t,5> pack_matrix(const Mat3i& m) {
+  auto hw=[](int32_t x){ return (uint32_t)(uint16_t)x; };
+  return {hw(m.v[0][0])|(hw(m.v[0][1])<<16),
+          hw(m.v[0][2])|(hw(m.v[1][0])<<16),
+          hw(m.v[1][1])|(hw(m.v[1][2])<<16),
+          hw(m.v[2][0])|(hw(m.v[2][1])<<16),(uint32_t)(int32_t)(int16_t)m.v[2][2]};
+}
+
+static std::array<int32_t,3> mvmva_r(const Mat3i& m, const std::array<int32_t,3>& x) {
+  std::array<int32_t,3> r{};
+  for (int row=0;row<3;++row) {
+    int64_t a=0;
+    for (int col=0;col<3;++col) a=wrap44(a+(int64_t)m.v[row][col]*x[col]);
+    r[row]=clampi((int32_t)(a>>12),-32768,32767);
+  }
+  return r;
+}
+static std::array<int32_t,3> mvmva_rt(const Mat3i& m,const std::array<int32_t,3>& x,
+                                      const std::array<int32_t,3>& tr){
+  std::array<int32_t,3> r{};
+  for(int row=0;row<3;++row){
+    int64_t a=(int64_t)tr[row]<<12;
+    for(int col=0;col<3;++col)a=wrap44(a+(int64_t)m.v[row][col]*x[col]);
+    r[row]=clampi((int32_t)(a>>12),-32768,32767);
+  }
+  return r;
+}
+
+static void rotate_y(Mat3i& m,int32_t si,int32_t co) {
+  const auto a=mvmva_r(m,{co,0,si}), b=mvmva_r(m,{-si,0,co});
+  for(int r=0;r<3;++r){m.v[r][0]=a[r];m.v[r][2]=b[r];}
+}
+static void rotate_x(Mat3i& m,int32_t si,int32_t co) {
+  // 0x800242C4 packs DR0=(cos<<16), DR1=sin; 0x800242EC packs
+  // DR0=(-sin<<16), DR1=cos. Vector order is therefore (0,cos,sin)/(0,-sin,cos).
+  const auto a=mvmva_r(m,{0,co,si}), b=mvmva_r(m,{0,-si,co});
+  for(int r=0;r<3;++r){m.v[r][1]=a[r];m.v[r][2]=b[r];}
+}
+static void rotate_z(Mat3i& m,int32_t si,int32_t co) {
+  const auto a=mvmva_r(m,{co,si,0}), b=mvmva_r(m,{-si,co,0});
+  for(int r=0;r<3;++r){m.v[r][0]=a[r];m.v[r][1]=b[r];}
+}
+
+static std::array<int32_t,3> packed_root_input(const std::array<int32_t,3>& root) {
+  const uint32_t xy = (uint32_t)(0u - (uint32_t)root[1]) +
+                      ((uint32_t)(0u - (uint32_t)root[2]) << 16);
+  return {(int16_t)xy, (int16_t)(xy >> 16), (int16_t)root[0]};
+}
+
+static bool build_transform(Core* c, SpyroPairedActorTransform& out) {
+  constexpr uint32_t instance=0x80078A58u, camera=0x80076DD0u;
+  constexpr uint32_t sinTable=0x8006CBF8u, cosTable=0x8006CC78u;
+  if (!c->rsub.projParams.geomValid()) return false;
+  std::array<uint32_t,5> packed{};
+  for(uint32_t i=0;i<5;++i) packed[i]=c->mem_r32(camera+i*4u);
+  Mat3i m=unpack_matrix(packed);
+  // The subtractions are guest signed 32-bit operations. The following MTC2 writes target IR1..3,
+  // whose architectural write rule is `(int16_t)value`; model that boundary explicitly here.
+  const int32_t dx=(int32_t)((uint32_t)c->mem_r32(instance+0u)-c->mem_r32(camera+40u));
+  const int32_t dy=(int32_t)((uint32_t)c->mem_r32(camera+44u)-c->mem_r32(instance+4u));
+  const int32_t dz=(int32_t)((uint32_t)c->mem_r32(camera+48u)-c->mem_r32(instance+8u));
+  // 0x80023F38 writes r1=dx to DR11(IR3), r2=dy to DR9(IR1), r3=dz to DR10(IR2).
+  const std::array<int32_t,3> delta={(int16_t)dy,(int16_t)dz,(int16_t)dx};
+  const auto tr=mvmva_r(m,delta);
+  const uint32_t angles=c->mem_r32(instance+12u);
+  auto trig=[&](uint32_t byte,int32_t& si,int32_t& co){
+    const uint32_t off=(byte&255u)*2u;
+    si=(int16_t)c->mem_r16(sinTable+off); co=(int16_t)c->mem_r16(cosTable+off);
+  };
+  int32_t si=0,co=0;
+  if((int32_t)angles>0){
+    if((angles>>16)&255u){trig(angles>>16,si,co);rotate_y(m,si,co);}
+    if((angles>>8)&255u){trig(angles>>8,si,co);rotate_x(m,si,co);}
+    if(angles&255u){trig(angles,si,co);rotate_z(m,si,co);}
+  }
+  const auto final=pack_matrix(m);
+  for(uint32_t layer=0;layer<3;++layer)
+    for(uint32_t i=0;i<5;++i) out.layer_cr[layer][i]=final[i];
+  // 0x800240D8/24194 independently compose child packed rotations +16/+20 from the same parent
+  // matrix. Translation roots were projected before these rotations are installed.
+  for(uint32_t layer=1;layer<3;++layer){
+    Mat3i child=m;const uint32_t childAngles=c->mem_r32(instance+12u+layer*4u);
+    if((int32_t)childAngles>0){
+      if((childAngles>>16)&255u){trig(childAngles>>16,si,co);rotate_y(child,si,co);}
+      if((childAngles>>8)&255u){trig(childAngles>>8,si,co);rotate_x(child,si,co);}
+      if(childAngles&255u){trig(childAngles,si,co);rotate_z(child,si,co);}
+    }
+    const auto childPacked=pack_matrix(child);
+    for(uint32_t i=0;i<5;++i)out.layer_cr[layer][i]=childPacked[i];
+  }
+  std::array<int32_t,3> layerTr=tr;
+  for(uint32_t i=0;i<3;++i) out.layer_cr[0][5+i]=(uint32_t)layerTr[i];
+
+  // 0x80023B00..23ED0 resolves the two packed root vectors from layer-0's selected keyframes.
+  // 0x80024088/240A8 transform both as sibling offsets from the same base translation.
+  auto root_words=[&](uint8_t anim,uint8_t frame,uint32_t& a,uint32_t& b)->bool{
+    const uint32_t table=c->mem_r32(kActorTable);
+    const uint32_t model=table?c->mem_r32(table+(uint32_t)anim*4u+0x38u):0;
+    if(!model)return false;
+    const uint32_t fw=c->mem_r32(model+0x24u+(uint32_t)frame*4u);
+    const uint32_t key=(fw&0x001FFFFFu)<<1; if(!key)return false;
+    a=c->mem_r32(key+16u);b=c->mem_r32(key+20u);return true;
+  };
+  uint32_t a0=0,a1=0,b0=0,b1=0;
+  if(!root_words(c->mem_r8(instance+24u),c->mem_r8(instance+30u),a0,a1))return false;
+  const uint8_t blend=c->mem_r8(instance+36u);
+  if(blend&&!root_words(c->mem_r8(instance+25u),c->mem_r8(instance+31u),b0,b1))return false;
+  out.root_words[0]=a0;out.root_words[1]=a1;out.root_words[2]=b0;out.root_words[3]=b1;
+  auto root=[&](uint32_t a,uint32_t b){
+    std::array<int32_t,3> av={(int32_t)a>>21,(int32_t)(a<<11)>>21,(int32_t)(a<<22)>>21};
+    if(!blend)return av;
+    const std::array<int32_t,3> bv={(int32_t)b>>21,(int32_t)(b<<11)>>21,(int32_t)(b<<22)>>21};
+    for(int i=0;i<3;++i){
+      // Exact vendor INTPL sequence; the guest consumes MAC1..3 (DR25..27), not IR1..3.
+      const int64_t first=wrap44((int64_t)(int32_t)bv[i]*4096-
+        (int32_t)((uint32_t)av[i]<<12));
+      const int32_t diff=clampi((int32_t)(first>>12),-32768,32767);
+      const int64_t second=wrap44((int64_t)av[i]*4096+(int32_t)(blend*256u)*diff);
+      av[i]=(int32_t)(second>>12);
+    }
+    return av;
+  };
+  const std::array<std::array<int32_t,3>,2> roots={root(a0,b0),root(a1,b1)};
+  for(uint32_t layer=1;layer<3;++layer){
+    const auto& rv=roots[layer-1];
+    // 0x80024074..2409C packs X/Y with `(-y) + ((-z) << 16)`, not two independent
+    // halfwords.  A negative low word therefore borrows from the high word (for example
+    // -4 + (194 << 16) encodes high=193).  Preserve that defined 32-bit guest arithmetic.
+    const std::array<int32_t,3> rootInput=packed_root_input(rv);
+    out.root_input[layer-1]=rootInput;
+    // 0x80024088 and 0x800240A8 both run before either derived TR is installed, so each root is
+    // transformed from the same base translation; they are sibling offsets, not cumulative ones.
+    layerTr=mvmva_rt(m,rootInput,tr);
+    // Opcode 0x4A49E012 selects CR5..7 as its translation vector.
+    for(uint32_t i=0;i<3;++i){
+      out.layer_cr[layer][5+i]=(uint32_t)layerTr[i];
+    }
+  }
+  out.ofx=(uint32_t)(int32_t)c->rsub.projParams.geomOfx()<<16;
+  out.ofy=(uint32_t)(int32_t)c->rsub.projParams.geomOfy()<<16;
+  out.h=(uint32_t)(int32_t)c->rsub.projParams.geomH();
+  return true;
+}
+
 static spyro::paired_actor::ProjectedVertex project_rtps(
     uint32_t d0, uint32_t d1, const std::array<uint32_t,27>& cr) {
   const int32_t v[3] = {(int16_t)d0, (int16_t)(d0 >> 16), (int16_t)d1};
@@ -175,12 +335,6 @@ static spyro::paired_actor::ProjectedVertex project_rtps(
   const int32_t sy = clampi((int32_t)(((int64_t)(int32_t)cr[25] +
       (int64_t)ir[1] * ratio) >> 16), -1024, 1023);
   return {(int16_t)sx, (int16_t)sy, sz, (float)zUnshifted / 4096.0f};
-}
-
-static spyro::paired_actor::ProjectedVertex project_live_rtps() {
-  std::array<uint32_t,27> cr{};
-  for (uint32_t i = 0; i < cr.size(); ++i) cr[i] = gte_read_ctrl(i);
-  return project_rtps(gte_read_data(0), gte_read_data(1), cr);
 }
 
 static int32_t sar32(uint32_t v, unsigned shift) {
@@ -617,6 +771,18 @@ static bool compare_numeric_ot(GuestXyzCapture& capture, bool corrupt) {
 static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
                               uint32_t insn, void* user) {
   auto& capture = *static_cast<GuestXyzCapture*>(user);
+  if(insn==0x4A180001u&&(pc==0x80024088u||pc==0x800240A8u)){
+    if(!capture.transformBuilt)capture.transformBuilt=build_transform(c,capture.nativeTransform);
+    const uint32_t root=pc==0x80024088u?0u:1u;
+    const auto& n=capture.nativeTransform.root_input[root];
+    const uint32_t d0=gte_read_data(0),d1=gte_read_data(1);
+    const int32_t g[3]={(int16_t)d0,(int16_t)(d0>>16),(int16_t)d1};
+    for(int i=0;i<3;++i){++capture.rootInputsCompared;capture.rootInputMismatches+=g[i]!=n[i];}
+    if(root==1&&capture.rootInputMismatches)
+      lucent::error("pairedpose","root2 input blend={} words={:08X}/{:08X}->{:08X}/{:08X} guest=({},{},{}) native=({},{},{}) compared={} mismatches={}",
+        c->mem_r8(0x80078A7Cu),capture.nativeTransform.root_words[0],capture.nativeTransform.root_words[1],
+        capture.nativeTransform.root_words[2],capture.nativeTransform.root_words[3],g[0],g[1],g[2],n[0],n[1],n[2],capture.rootInputsCompared,capture.rootInputMismatches);
+  }
   if (insn == 0x4B400006u &&
       (pc == 0x80024CECu || pc == 0x80024EF0u)) {
     finish_packet_candidate(c, capture, c->r[24]);
@@ -660,6 +826,26 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
   for (uint32_t seen : capture.rtpsPcs) novel &= seen != pc;
   if (novel) capture.rtpsPcs.push_back(pc);
   if (!vertex_rtps_pc(pc)) return;
+  if (!capture.transformBuilt)
+    capture.transformBuilt=build_transform(c,capture.nativeTransform);
+  if (capture.warmup) {
+    const uint32_t transformLayer=capture.transformSnapshots;
+    ++capture.transformSnapshots;
+    const auto& layerCr=capture.nativeTransform.layer_cr[transformLayer<3?transformLayer:2];
+    const uint32_t native[11]={layerCr[0],layerCr[1],layerCr[2],layerCr[3],layerCr[4],
+      layerCr[5],layerCr[6],layerCr[7],
+      capture.nativeTransform.ofx,capture.nativeTransform.ofy,capture.nativeTransform.h};
+    const uint32_t regs[11]={0,1,2,3,4,5,6,7,24,25,26};
+    for(uint32_t i=0;i<11;++i){
+      ++capture.transformCompared;
+      const uint32_t actual=gte_read_ctrl(regs[i]);
+      if(!capture.transformBuilt||actual!=native[i]){
+        if(!capture.transformMismatches){capture.firstTransformPc=pc;capture.firstTransformReg=regs[i];
+          capture.firstTransformGuest=actual;capture.firstTransformNative=native[i];}
+        ++capture.transformMismatches;
+      }
+    }
+  }
   if (!capture.decoded) {
     std::array<uint32_t,kLayers> counts{};
     capture.decoded = build_descs(c, capture.desc) &&
@@ -674,7 +860,11 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
   const uint32_t vz = gte_read_data(1);
   capture.vertices.push_back({(int16_t)vz, (int16_t)vxy,
                               (int16_t)(vxy >> 16)});
-  capture.pending = project_live_rtps();
+  std::array<uint32_t,27> tcr{};
+  const uint32_t transformLayer=capture.transformSnapshots?capture.transformSnapshots-1:0;
+  for(uint32_t i=0;i<8;++i)tcr[i]=capture.nativeTransform.layer_cr[transformLayer<3?transformLayer:2][i];
+  tcr[24]=capture.nativeTransform.ofx;tcr[25]=capture.nativeTransform.ofy;tcr[26]=capture.nativeTransform.h;
+  capture.pending = project_rtps(gte_read_data(0),gte_read_data(1),tcr);
   capture.hasPending = true;
   if (pc == 0x80024A14u) {
     capture.warmup = true;
@@ -721,6 +911,27 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
   c->pcObserver.disarm();
   const bool otGreen = compare_numeric_ot(guest, false);
   guest.overlap = spyro::paired_actor::analyze_overlap_depth(guest.faces.faces);
+  if (guest.transformBuilt) {
+    std::array<uint32_t,27> base{},badCr{},badH{};
+    uint32_t vertexIndex=0;
+    base[24]=guest.nativeTransform.ofx;base[25]=guest.nativeTransform.ofy;base[26]=guest.nativeTransform.h;
+    badCr=base;badH=base;badCr[0]^=0x1000u;badH[26]^=1u;
+    for(const Vec3i& v:guest.vertices){
+      uint32_t layer=vertexIndex>=guest.desc[0].a.count?1:0;
+      if(vertexIndex>=guest.desc[0].a.count+guest.desc[1].a.count)layer=2;
+      for(uint32_t i=0;i<8;++i)base[i]=guest.nativeTransform.layer_cr[layer][i];
+      base[24]=guest.nativeTransform.ofx;base[25]=guest.nativeTransform.ofy;base[26]=guest.nativeTransform.h;
+      // Flip one full 1.3.12 basis unit. A one-LSB perturbation can legitimately quantize to the
+      // same SXY for all vertices and is not a discriminating negative.
+      badCr=base;badH=base;badCr[0]^=0x1000u;badH[26]^=1u;
+      const uint32_t d0=(uint16_t)v.y|((uint32_t)(uint16_t)v.z<<16),d1=(uint16_t)v.x;
+      const auto p=project_rtps(d0,d1,base),q=project_rtps(d0,d1,badCr),h=project_rtps(d0,d1,badH);
+      ++guest.transformNegativeInputs;
+      guest.transformNegativeCr0Diff+=(p.x!=q.x||p.y!=q.y||p.depth!=q.depth);
+      guest.transformNegativeHDiff+=(p.x!=h.x||p.y!=h.y||p.depth!=h.depth);
+      ++vertexIndex;
+    }
+  }
   for (const auto& face : guest.faces.faces)
     if (face.packet_attr[1] & 0x02000000u) ++guest.ditherBit9;
   GuestXyzCapture corrupt = guest;
@@ -779,13 +990,46 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
       guest.projectedMismatches) {
     lucent::error("pairedpose",
                   "actual guest projection: compared={}/{} pending={} mismatches={} "
-                  "first={} guest=({},{},{}) native=({},{},{})",
+                  "first={} guest=({},{},{}) native=({},{},{}) transform built={} layers={}/3 "
+                  "regs={}/33 mismatches={} first_pc=0x{:08X} first_cr={} guest_cr=0x{:08X} native_cr=0x{:08X}",
                   guest.projectedCompared, expectedVertices, guest.hasPending,
                   guest.projectedMismatches, guest.firstProjected,
                   guest.firstGuestProjected.x, guest.firstGuestProjected.y,
                   guest.firstGuestProjected.depth, guest.firstNativeProjected.x,
-                  guest.firstNativeProjected.y, guest.firstNativeProjected.depth);
+                  guest.firstNativeProjected.y, guest.firstNativeProjected.depth,
+                  guest.transformBuilt,guest.transformSnapshots,guest.transformCompared,
+                  guest.transformMismatches,guest.firstTransformPc,guest.firstTransformReg,
+                  guest.firstTransformGuest,guest.firstTransformNative);
+    const auto& l2=guest.nativeTransform.layer_cr[2];
+    lucent::error("pairedpose","projection fail transform detail blend={} guest_last_tr={:08X},{:08X},{:08X} native_l2_tr={:08X},{:08X},{:08X}",
+      c->mem_r8(0x80078A7Cu),gte_read_ctrl(5),gte_read_ctrl(6),gte_read_ctrl(7),l2[5],l2[6],l2[7]);
     return false;
+  }
+  lucent::info("pairedpose",
+               "transform snapshot oracle: built={} layers={}/3 regs={}/33 mismatches={} first_pc=0x{:08X} "
+               "first_cr={} guest=0x{:08X} native=0x{:08X} negative_inputs={} perturb_cr0_diff={} perturb_h_diff={}",
+               guest.transformBuilt,guest.transformSnapshots,guest.transformCompared,
+               guest.transformMismatches,guest.firstTransformPc,guest.firstTransformReg,
+               guest.firstTransformGuest,guest.firstTransformNative,guest.transformNegativeInputs,
+               guest.transformNegativeCr0Diff,guest.transformNegativeHDiff);
+  const bool transformGreen=guest.transformBuilt&&guest.transformSnapshots==3&&
+    guest.transformCompared==33&&!guest.transformMismatches&&
+    guest.rootInputsCompared==6&&!guest.rootInputMismatches&&
+    guest.projectedCompared==expectedVertices&&!guest.projectedMismatches&&
+    guest.transformNegativeInputs==expectedVertices&&guest.transformNegativeCr0Diff&&
+    guest.transformNegativeHDiff;
+  if(cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE")){
+    lucent::info("pairedpose","transform-only gate: layers={}/3 regs={}/33 roots={}/6 vertices={}/{} "
+      "mismatches={} perturb_cr0={}/{} perturb_h={}/{} => {}",
+      guest.transformSnapshots,guest.transformCompared,guest.rootInputsCompared,
+      guest.projectedCompared,expectedVertices,
+      guest.transformMismatches+guest.projectedMismatches,guest.transformNegativeCr0Diff,
+      guest.transformNegativeInputs,guest.transformNegativeHDiff,guest.transformNegativeInputs,
+      transformGreen?"PASS":"FAIL");
+    if(!transformGreen){const auto& l2=guest.nativeTransform.layer_cr[2];
+      lucent::error("pairedpose","transform fail detail blend={} layer2 guest_tr={:08X},{:08X},{:08X} native_tr={:08X},{:08X},{:08X}",
+        c->mem_r8(0x80078A7Cu),gte_read_ctrl(5),gte_read_ctrl(6),gte_read_ctrl(7),l2[5],l2[6],l2[7]);}
+    return transformGreen;
   }
   lucent::info("pairedpose",
                "normal-face discriminator: decoded={} naive_accepted={} gt3={} gt4={} "
@@ -861,7 +1105,11 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
       a.source_ordinal,a.fragment_ordinal,a.ot_bin,a.quad?4:3,a.vertex[0].x,a.vertex[0].y,a.vertex[0].view_z,a.vertex[1].x,a.vertex[1].y,a.vertex[1].view_z,a.vertex[2].x,a.vertex[2].y,a.vertex[2].view_z,a.vertex[3].x,a.vertex[3].y,a.vertex[3].view_z,
       b.source_ordinal,b.fragment_ordinal,b.ot_bin,b.quad?4:3,b.vertex[0].x,b.vertex[0].y,b.vertex[0].view_z,b.vertex[1].x,b.vertex[1].y,b.vertex[1].view_z,b.vertex[2].x,b.vertex[2].y,b.vertex[2].view_z,b.vertex[3].x,b.vertex[3].y,b.vertex[3].view_z);
   }
-  if (!otGreen || !corruptRejected || !topologyDiscriminator || !guest.corruptGlobalRejected ||
+  if (!guest.transformBuilt || guest.transformSnapshots!=3 || guest.transformCompared!=33 ||
+      guest.transformMismatches || guest.rootInputsCompared!=6 || guest.rootInputMismatches ||
+      guest.transformNegativeInputs!=expectedVertices ||
+      !guest.transformNegativeCr0Diff || !guest.transformNegativeHDiff ||
+      !otGreen || !corruptRejected || !topologyDiscriminator || !guest.corruptGlobalRejected ||
       guest.pcSeen != 2 || guest.pcMatched != 2 ||
       guest.preSnapshots != 1 || guest.postSnapshots != 1 || guest.traversedPackets != guest.guestPackets.size() ||
       guest.binsScanned != kLocalOtBins || guest.postWithoutPre || guest.duplicatePackets ||
@@ -878,6 +1126,10 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
 }
 
 } // namespace
+
+bool spyro_paired_actor_build_transform(Core* c, SpyroPairedActorTransform& out) {
+  return build_transform(c,out);
+}
 
 bool spyro_paired_actor_decode_pose(Core* c) {
   std::array<LayerDesc,kLayers> desc;
@@ -941,6 +1193,9 @@ int spyro_paired_actor_selftest() {
   const Vec3i borrowed = rtps_input({11, -135, 128});
   ok &= expect(borrowed.x == 11 && borrowed.y == -135 && borrowed.z == 127,
                "RTPS DR0 addition carries negative Y into Z");
+  const auto rootBorrowed = packed_root_input({-206, 4, -194});
+  ok &= expect(rootBorrowed[0] == -4 && rootBorrowed[1] == 193 && rootBorrowed[2] == -206,
+               "root RTPS packed add borrows negative low half into high half");
   // Layer zero's descriptor direction is fixed by 0x80023B94: the byte
   // stream starts after the short stream's payload prefix.
   constexpr uint32_t payload = 0x001E6608u, packedW8 = 0x05400000u;

@@ -109,7 +109,8 @@ void SpyroRenderer::drawFrame() {
   if (mC->rsub.mode.psxRender()) {
     const bool pairedOracle = sc.stage == kStageFrontEnd &&
       mC->mem_r32(0x80078D7Cu) == 2u &&
-      cfg_str("PSXPORT_PAIREDPOSE_ORACLE") != nullptr;
+      (cfg_str("PSXPORT_PAIREDPOSE_ORACLE") != nullptr ||
+       cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE") != nullptr);
     if (pairedOracle) spyro_paired_actor_oracle_arm(mC);
     referenceOtWalk();
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) abort();

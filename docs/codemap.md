@@ -221,4 +221,11 @@ Named `xy` and
 scratch/depth/colour spans; the positive subset fired 1,888 times. This proves reached packet payload,
 not acceptance: outcode/NCLIP/two-sided/skip rejection semantics, FT4, numeric local bins and global
 OT splice remain unjoined. Semi/raw command bits were both zero in this corpus; raw behavior is not
-modeled. Native submission is therefore prohibited.
+modeled. A separate `PSXPORT_ACTOR_CHAIN_ORACLE=ot` pass now derives each numeric local bin from the
+same immutable source depths/controls, snapshots all 288 `[head/newest,tail/oldest]` slots at the
+qualified pre-global `0x8002074C` checkpoint, and walks oldest-to-newest FIFO links before mutation.
+Across 32 calls it scanned 18,432 slots and joined 3,021/3,021 packets with exact bin and FIFO order:
+1,091 first inserts into empty bins plus 1,930 appends to nonempty bins, with zero cycles, duplicates
+or out-of-range links (`scratch/logs/actorchain_ot_local_final.log`). Bin and link-order corruptions
+fail the same comparator. The later global splice is still unmodeled, so native submission remains
+prohibited.

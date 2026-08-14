@@ -116,6 +116,79 @@ template<class Read> static PayloadCompare compare_payloads(const std::vector<Ch
   return out;
 }
 
+struct OtEntry {uint32_t packet=0,bin=0;};
+struct OtCensus {
+  EpochState epoch{};SourceSnapshot source{};bool haveSource=false;
+  uint32_t candidates=0,emitted=0,pre=0,post=0,finals=0,binsScanned=0,nonempty=0,nodes=0,
+    badSource=0,badEpoch=0,badBin=0,cycles=0,duplicates=0,outOfRange=0,emptyAppend=0,nonemptyAppend=0;
+  std::vector<OtEntry> expected,actual;
+};
+static uint32_t expected_bin(const SourceSnapshot& s,Family f,bool second){
+  const bool quad=f==Family::G4||f==Family::GT4;
+  uint32_t d=0;
+  if(quad)d=s.depth[0]-s.depthOrigin+s.depth[1]+s.depth[2]+s.depth[3];
+  else {const unsigned a=second?3u:0u;d=s.depth[a]+(s.depth[a]>>1)-s.depthOrigin+s.depth[1]+(s.depth[1]>>1)+s.depth[2];}
+  const uint32_t bias=(uint32_t)((int32_t)s.words[1]>>28)<<1;
+  uint32_t q;
+  if(quad)q=sar(d+(bias<<(s.shift&31u)),s.shift);else q=sar(d,s.shift)+bias;
+  return s.localOt+(q<<3);
+}
+static bool compare_ot(const std::vector<OtEntry>& a,const std::vector<OtEntry>& b,uint32_t& first,const char*& field){
+  if(a.size()!=b.size()){first=(uint32_t)std::min(a.size(),b.size());field="count";return false;}
+  for(size_t i=0;i<a.size();++i){if(a[i].bin!=b[i].bin){first=(uint32_t)i;field="bin";return false;}
+    if(a[i].packet!=b[i].packet){first=(uint32_t)i;field="fifo";return false;}}
+  first=0;field="none";return true;
+}
+template<class Read> static void snapshot_ot_read(OtCensus& o,Read read){
+  if(!o.haveSource)return;
+  const uint32_t base=o.source.localOt,startNonempty=o.nonempty;std::vector<uint32_t> seen;
+  for(uint32_t bin=0;bin<288u;++bin){++o.binsScanned;const uint32_t newest=read(base+bin*8u),oldest=read(base+bin*8u+4u);
+    if(!newest&&!oldest)continue;++o.nonempty;if(!newest||!oldest){++o.outOfRange;continue;}
+    uint32_t p=oldest;bool reached=false;
+    for(uint32_t guard=0;guard<o.expected.size()+1u;++guard){
+      if(p<0x80000000u||p>=0x80200000u){++o.outOfRange;break;}
+      if(std::find(seen.begin(),seen.end(),p)!=seen.end()){++o.duplicates;break;}seen.push_back(p);
+      o.actual.push_back({p,bin});++o.nodes;if(p==newest){reached=true;break;}
+      const uint32_t next=0x80000000u|(read(p)&0x00FFFFFFu);if(next==p){++o.cycles;break;}p=next;
+    }
+    if(!reached)++o.cycles;
+  }
+  if(o.nonempty!=startNonempty)for(const auto& e:o.expected){unsigned prior=0;for(const auto& q:o.expected){if(&q==&e)break;if(q.bin==e.bin)++prior;}
+      if(prior)++o.nonemptyAppend;else ++o.emptyAppend;}
+}
+static void snapshot_ot(Core* c,OtCensus& o){snapshot_ot_read(o,[&](uint32_t p){return c->mem_r32(p);});}
+static void actor_ot_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
+  auto& o=*static_cast<OtCensus*>(user);
+  if(pc==0x8001FFF8u){epoch_clear(o.epoch);o.haveSource=false;++o.candidates;SourceSnapshot s{};
+    const uint32_t record=c->lo,source=c->r[30];
+    if(!capture_source([&](uint32_t p){return c->mem_r32(p);},record,source,source+4u,c->r[1],c->r[29],c->r[22],c->r[23],s)){++o.badSource;return;}
+    s.depthBase=c->r[28];s.colorBase=c->r[25];s.fog=c->r[18];s.pool=c->r[24];s.localOt=c->r[19];uint32_t bad=0;
+    if(!capture_tables(c,s,bad)){++o.badSource;return;}o.source=s;o.haveSource=true;epoch_open(o.epoch,source,record);return;}
+  if(pc==0x8002074Cu){++o.pre;snapshot_ot(c,o);return;}if(pc==0x80020860u){++o.post;return;}if(pc==0x800208ACu){++o.finals;return;}
+  Family f=Family::Unsupported;if(pc==0x800201A8u)f=Family::G4;else if(pc==0x8002023Cu)f=Family::GT4;
+  else if(pc==0x80020430u)f=Family::G3;else if(pc==0x8002051Cu)f=Family::GT3;else return;
+  ++o.emitted;if(!o.haveSource){++o.badEpoch;return;}const bool quad=(int32_t)o.source.words[0]<0;
+  uint32_t cursor=o.epoch.source+((f==Family::G4||f==Family::G3)?(quad?12u:8u):(quad?24u:20u));
+  if(!epoch_family(o.epoch,c->r[30],c->lo,cursor)){++o.badEpoch;return;}
+  const bool second=(f==Family::G3||f==Family::GT3)&&quad&&(int32_t)c->r[17]>0;
+  const uint32_t addr=expected_bin(o.source,f,second);if(addr<o.source.localOt||((addr-o.source.localOt)&7u)||
+      (addr-o.source.localOt)/8u>=288u){++o.badBin;return;}
+  o.expected.push_back({c->r[24],(addr-o.source.localOt)/8u});
+}
+
+static void actor_chain_ot_oracle(Core* c){
+  if(gpu_vk_wide_engine(c)){lucent::error("actorchainoracle","REFUSED: OT diagnostic conflicts with widescreen 0x8001F798 hook");abort();}
+  static constexpr uint32_t targets[]={0x8001FFF8u,0x800201A8u,0x8002023Cu,0x80020430u,0x8002051Cu,0x8002074Cu,0x80020860u,0x800208ACu};
+  OtCensus o{};if(!c->pcObserver.arm(targets,std::size(targets),actor_ot_checkpoint,&o))abort();gen_func_8001F798(c);
+  const uint64_t seen=c->pcObserver.seen(),matched=c->pcObserver.matched();c->pcObserver.disarm();
+  std::stable_sort(o.expected.begin(),o.expected.end(),[](const OtEntry& a,const OtEntry& b){return a.bin<b.bin;});uint32_t first=0;const char* field="none";
+  const uint64_t expectedMatched=(uint64_t)o.candidates+o.emitted+o.pre+o.post+o.finals;
+  const bool ordered=compare_ot(o.expected,o.actual,first,field);const bool positive=o.candidates>0&&o.emitted>0&&matched==expectedMatched&&o.pre>0&&o.pre==o.post&&o.finals==1&&
+    o.binsScanned==288u*o.pre&&o.nonempty>0&&o.emptyAppend>0&&o.nonemptyAppend>0&&o.expected.size()==o.emitted&&o.nodes==o.emitted&&
+    o.badSource==0&&o.badEpoch==0&&o.badBin==0&&o.cycles==0&&o.duplicates==0&&o.outOfRange==0&&ordered;
+  lucent::info("actorchainoracle","pass=ot checkpoints={}/{} candidates={} emitted={} expected={} actual={} bins_scanned={} nonempty={} append[empty={} nonempty={}] pre/post/final={}/{}/{} bad_source={} bad_epoch={} bad_bin={} cycles={} duplicates={} out_of_range={} ordered={} first={} field={} result={}",seen,matched,o.candidates,o.emitted,o.expected.size(),o.actual.size(),o.binsScanned,o.nonempty,o.emptyAppend,o.nonemptyAppend,o.pre,o.post,o.finals,o.badSource,o.badEpoch,o.badBin,o.cycles,o.duplicates,o.outOfRange,ordered,first,field,positive?"PASS":"FAIL");
+}
+
 void actor_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
   auto& o=*static_cast<CheckpointCensus*>(user);
   if(pc==0x8002031Cu){
@@ -238,16 +311,16 @@ void actor_chain_oracle(Core* c){
 void spyro_register_actor_chain_oracle(){
   const char* mode=cfg_str("PSXPORT_ACTOR_CHAIN_ORACLE");
   if(!mode||!*mode)return;
-  if(std::string_view(mode)!="payload"){
-    lucent::error("actorchainoracle","REFUSED: PSXPORT_ACTOR_CHAIN_ORACLE={} is not implemented; bounded source census requires payload",mode);
+  if(std::string_view(mode)!="payload"&&std::string_view(mode)!="ot"){
+    lucent::error("actorchainoracle","REFUSED: PSXPORT_ACTOR_CHAIN_ORACLE={} requires payload or ot",mode);
     abort();
   }
   if(const char* identity=cfg_str("PSXPORT_NDIFF_IDENTITY");identity&&*identity){
     lucent::error("actorchainoracle","REFUSED: PSXPORT_NDIFF_IDENTITY can overwrite the 0x8001F798 diagnostic override");abort();}
   if(const char* trace=cfg_str("PSXPORT_FNTRACE");trace&&(std::string_view(trace).find("1F798")!=std::string_view::npos||std::string_view(trace).find("1f798")!=std::string_view::npos)){
     lucent::error("actorchainoracle","REFUSED: PSXPORT_FNTRACE targets the same 0x8001F798 override slot");abort();}
-  lucent::info("actorchainoracle","armed pass=payload-source-census 0x8001F798; payload/bin/splice acceptance remains unimplemented");
-  psxport_recomp()->shard_set_override(0x8001F798u,actor_chain_oracle);
+  lucent::info("actorchainoracle","armed pass={} 0x8001F798; global splice remains unimplemented",mode);
+  psxport_recomp()->shard_set_override(0x8001F798u,std::string_view(mode)=="ot"?actor_chain_ot_oracle:actor_chain_oracle);
 }
 
 int spyro_actor_chain_oracle_selftest(){
@@ -295,6 +368,28 @@ int spyro_actor_chain_oracle_selftest(){
   const auto payloadBadColor=compare_payloads({pe},base,base+28u,payloadRead);
   ok=ok&&payloadGood.compared==1&&payloadGood.mismatches==0&&payloadBadXy.mismatches==1&&
     std::string_view(payloadBadXy.first)=="xy"&&payloadBadColor.mismatches==1&&std::string_view(payloadBadColor.first)=="command_color";
-  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] payload_good={} corrupt_xy={} corrupt_command_color={}",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1);
+  std::vector<OtEntry> otExpected{{0x80001000u,3},{0x80001020u,3},{0x80001040u,7}},otActual=otExpected;
+  uint32_t otFirst=0;const char* otField="none";const bool otGood=compare_ot(otExpected,otActual,otFirst,otField);
+  otActual[2].bin=8;const bool otBadBin=!compare_ot(otExpected,otActual,otFirst,otField)&&std::string_view(otField)=="bin";
+  otActual=otExpected;std::swap(otActual[0].packet,otActual[1].packet);
+  const bool otBadLink=!compare_ot(otExpected,otActual,otFirst,otField)&&std::string_view(otField)=="fifo";
+  constexpr uint32_t ob=0x80010000u,p1=0x80020000u,p2=0x80020020u,p3=0x80020040u;
+  const std::vector<OtEntry> fixtureExpected{{p1,1},{p2,2},{p3,2}};
+  using Cell=std::pair<uint32_t,uint32_t>;auto runOt=[&](std::vector<Cell> mem){OtCensus x{};x.haveSource=true;x.source.localOt=ob;x.expected=fixtureExpected;
+    snapshot_ot_read(x,[&](uint32_t p){for(const auto& c:mem)if(c.first==p)return c.second;return 0u;});return x;};
+  const std::vector<Cell> validMem{{ob+8,p1},{ob+12,p1},{ob+16,p3},{ob+20,p2},{p2,p3&0x00FFFFFFu}};
+  const auto walkGood=runOt(validMem);const bool walkPositive=walkGood.binsScanned==288&&walkGood.actual.size()==3&&
+    walkGood.emptyAppend==2&&walkGood.nonemptyAppend==1&&walkGood.cycles==0&&walkGood.duplicates==0&&walkGood.outOfRange==0&&
+    compare_ot(fixtureExpected,walkGood.actual,otFirst,otField);
+  auto orderMem=validMem;orderMem[2].second=p2;orderMem[3].second=p3;orderMem[4]={p3,p2&0x00FFFFFFu};
+  const auto walkOrder=runOt(orderMem);const bool walkBadOrder=!compare_ot(fixtureExpected,walkOrder.actual,otFirst,otField)&&std::string_view(otField)=="fifo";
+  auto cycleMem=validMem;cycleMem[4].second=p2&0x00FFFFFFu;const auto walkCycle=runOt(cycleMem);const bool walkHasCycle=walkCycle.cycles>0;
+  auto duplicateMem=validMem;duplicateMem.push_back({ob+24,p1});duplicateMem.push_back({ob+28,p1});
+  const auto walkDuplicate=runOt(duplicateMem);const bool walkHasDuplicate=walkDuplicate.duplicates>0;
+  auto rangeMem=validMem;rangeMem.push_back({ob+24,0x80200000u});rangeMem.push_back({ob+28,0x80200000u});
+  const auto walkRange=runOt(rangeMem);const bool walkOutOfRange=walkRange.outOfRange>0;
+  auto oneSideMem=validMem;oneSideMem.push_back({ob+24,p1});const auto walkOneSide=runOt(oneSideMem);const bool walkOneSided=walkOneSide.outOfRange>0;
+  ok=ok&&otGood&&otBadBin&&otBadLink&&walkPositive&&walkBadOrder&&walkHasCycle&&walkHasDuplicate&&walkOutOfRange&&walkOneSided;
+  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] payload_good={} corrupt_xy={} corrupt_command_color={} ot_walk[positive={} bins={} empty={} append={} corrupt_bin={} corrupt_link={} cycle={} duplicate={} out_of_range={} one_sided={}]",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1,walkPositive,walkGood.binsScanned,walkGood.emptyAppend,walkGood.nonemptyAppend,otBadBin,walkBadOrder,walkHasCycle,walkHasDuplicate,walkOutOfRange,walkOneSided);
   return ok?0:1;
 }

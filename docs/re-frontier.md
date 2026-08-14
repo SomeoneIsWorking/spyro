@@ -147,8 +147,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   quad-second triangle origins, with named XY and colour corruptions rejected by the same comparator.
   Explicit epoch lifecycle negatives reject missing/duplicate subset classifiers, changed source or
   record, and stale family reuse. Semi/raw were unreached and raw behavior remains unmodeled.
-  This remains in-progress: rejection/visibility semantics, the unreached FT4 arm, and numeric local
-  plus global OT comparisons are required before any native producer.
+  A separate pre-global pass now proves numeric local-bin insertion and per-bin FIFO order for all
+  3,021 reached packets over all 18,432 scanned slots, including both empty-bin insertion and
+  nonempty append, with bin/link corruption negatives and zero cycles/duplicates/out-of-range links.
+  This remains in-progress: rejection/visibility semantics, the unreached FT4 arm, and the global OT
+  splice are required before any native producer.
 
 
 ## harness

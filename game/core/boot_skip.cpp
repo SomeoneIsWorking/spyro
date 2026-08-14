@@ -4,9 +4,11 @@
 int spyro_boot_skip_selftest() {
   int checks = 0;
   bool ok = true;
-  auto expect = [&](bool pass, const char* what) {
+  auto expect = [&](bool pass, const char *what) {
     ++checks;
-    if (!pass) lucent::error("selftest", "FAIL(bootskip): {}", what);
+    if (!pass) {
+      lucent::error("selftest", "FAIL(bootskip): {}", what);
+    }
     ok &= pass;
   };
   BootSkipState s;
@@ -22,6 +24,8 @@ int spyro_boot_skip_selftest() {
   expect(boot_skip_sample(s, false) == BootSkipAction::Baseline, "released entry is baseline");
   expect(boot_skip_sample(s, true) == BootSkipAction::AdvancePresentation,
          "released baseline then press advances");
-  if (ok) lucent::info("selftest", "PASS(bootskip): {} checks", checks);
+  if (ok) {
+    lucent::info("selftest", "PASS(bootskip): {} checks", checks);
+  }
   return ok ? 0 : 1;
 }

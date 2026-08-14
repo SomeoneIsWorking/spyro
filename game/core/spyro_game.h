@@ -9,12 +9,12 @@ struct GameHooks;
 class Game;
 class Core;
 
-const GameHooks* spyro_game_hooks();     // game/core/game_hooks.cpp — the (mostly null) Phase-0 vtable
-void spyro_install_game_config();        // game/core/game_config.cpp — installs GameConfig + hooks
-void spyro_install_recomp();             // game/core/recomp_register.cpp — installs the generated substrate
+const GameHooks *spyro_game_hooks(); // game/core/game_hooks.cpp — the (mostly null) Phase-0 vtable
+void spyro_install_game_config();    // game/core/game_config.cpp — installs GameConfig + hooks
+void spyro_install_recomp(); // game/core/recomp_register.cpp — installs the generated substrate
 
 // game/core/vsync.cpp — installs the vblank timebase (the libetc wait helper).
-void spyro_register_vsync(Game* g);
+void spyro_register_vsync(Game *g);
 
 // game/core/cd_queue.cpp — observes (and will own) the CD request queue service routine.
 void spyro_register_cd_queue();
@@ -35,7 +35,8 @@ void spyro_register_native_leaves();
 // 3-word vector add/sub and the libgte angle-table interpolator (native_vec.cpp).
 void spyro_register_native_vec();
 
-// Geometry leaves that use the GTE (native_gte.cpp) — scalar logic native, COP2 via the platform model.
+// Geometry leaves that use the GTE (native_gte.cpp) — scalar logic native, COP2 via the platform
+// model.
 void spyro_register_native_gte();
 
 // native_angle.cpp — the engine's 8-bit/12-bit angle helpers and its calibrated spin loop.
@@ -47,26 +48,28 @@ void spyro_register_native_util();
 // body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();
 int spyro_native_terrain_selftest();
-bool spyro_terrain_submit(Core*, int32_t selector, uint32_t matrix1, uint32_t matrix2);
+bool spyro_terrain_submit(Core *, int32_t selector, uint32_t matrix1, uint32_t matrix2);
 void spyro_register_actor_chain_oracle();
 int spyro_actor_chain_oracle_selftest();
 
 // native_render.cpp — MEASUREMENT, installs nothing unless PSXPORT_NDIFF_IDENTITY=<addr,…>: can the
-// per-call differential validate a geometry renderer at all? (re-frontier render.own-geometry-family)
+// per-call differential validate a geometry renderer at all? (re-frontier
+// render.own-geometry-family)
 void spyro_register_native_render();
 // Emits the run-end denominator for native_render.cpp's optional sprite-queue input census.
 void spyro_sprite_queue_census_finish();
 
-// wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and running
-// the five contributing renderers interpreted (11 sites). Inert at 4:3.
+// wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and
+// running the five contributing renderers interpreted (11 sites). Inert at 4:3.
 void spyro_register_wide_clip();
 
 // frame_loop.cpp — the PORT's own per-frame loop, a readable port of the guest's main() 0x80012204.
-// Off unless PSXPORT_SPYRO_FRAME_LOOP=1, in which case bootInit runs THIS loop instead of dispatching
-// the guest's main. It is the seam every native-graphics step needs: a per-LOGIC-FRAME point in port
-// code above the guest's renderers. See the file header for why the framework's native_step_frame
-// cannot serve that role here. The loop does not decide where the PICTURE comes from — it calls the
-// render seam (game/render/render.h, `SpyroRenderer::drawFrame`), which picks the reference OT walk
-// or the native producers from the framework's per-Core RenderMode (`PSXPORT_RENDER_PSX=1`).
+// Off unless PSXPORT_SPYRO_FRAME_LOOP=1, in which case bootInit runs THIS loop instead of
+// dispatching the guest's main. It is the seam every native-graphics step needs: a per-LOGIC-FRAME
+// point in port code above the guest's renderers. See the file header for why the framework's
+// native_step_frame cannot serve that role here. The loop does not decide where the PICTURE comes
+// from — it calls the render seam (game/render/render.h, `SpyroRenderer::drawFrame`), which picks
+// the reference OT walk or the native producers from the framework's per-Core RenderMode
+// (`PSXPORT_RENDER_PSX=1`).
 bool spyro_frame_loop_enabled();
-[[noreturn]] void spyro_frame_loop_run(Core* c);
+[[noreturn]] void spyro_frame_loop_run(Core *c);

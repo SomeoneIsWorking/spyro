@@ -14,54 +14,58 @@ struct ProjectedVertex {
   int16_t x = 0;
   int16_t y = 0;
   uint16_t depth = 0;
-  float view_z = 0;                   // fractional RTPS row-2 MAC / 4096, clamped to H/2; native D32
-  float raw_view_z = 0;               // same fractional row-2 MAC before near clamp; temporal input
-  float raw_view_x = 0;               // row-0 MAC / 4096 before signed IR saturation
-  float raw_view_y = 0;               // row-1 MAC / 4096 before signed IR saturation
-  float screen_x = 0;                 // production float projection before GPU draw offset
+  float view_z = 0;     // fractional RTPS row-2 MAC / 4096, clamped to H/2; native D32
+  float raw_view_z = 0; // same fractional row-2 MAC before near clamp; temporal input
+  float raw_view_x = 0; // row-0 MAC / 4096 before signed IR saturation
+  float raw_view_y = 0; // row-1 MAC / 4096 before signed IR saturation
+  float screen_x = 0;   // production float projection before GPU draw offset
   float screen_y = 0;
-  int16_t view_x = 0;                 // saturated GTE IR1/IR2/IR3; stable pure-projection inputs
+  int16_t view_x = 0; // saturated GTE IR1/IR2/IR3; stable pure-projection inputs
   int16_t view_y = 0;
   int16_t view_ir_z = 0;
 };
 
-
 // Pure, projection-free decode of 0x80023AC4's normal primitive stream. Offsets remain byte offsets
-// into the function's projected-vertex and material tables; the eventual producer owns mapping them.
+// into the function's projected-vertex and material tables; the eventual producer owns mapping
+// them.
 struct Primitive {
   uint32_t source_ordinal = 0;
   bool quad = false;
-  bool two_sided = false;               // word 0 bit 0; bypasses normal-path NCLIP rejection
+  bool two_sided = false; // word 0 bit 0; bypasses normal-path NCLIP rejection
   bool semi_transparent = false;
-  int8_t ot_adjust = 0;                 // signed high nibble of word 1
+  int8_t ot_adjust = 0; // signed high nibble of word 1
   uint16_t projected_offset[4]{};
   uint16_t material_offset[4]{};
-  uint32_t packet_attr[4]{};            // compact UV/CLUT/TPAGE words, still uninterpreted
+  uint32_t packet_attr[4]{}; // compact UV/CLUT/TPAGE words, still uninterpreted
 };
 
 struct DecodeResult {
   std::vector<Primitive> primitives;
   std::string error;
-  explicit operator bool() const { return error.empty(); }
+  explicit operator bool() const {
+    return error.empty();
+  }
 };
 
-// words[0] is the byte span beginning after that header; records begin at words[1]. Triangles occupy five
-// words and sign-bit quads occupy six. The decoder refuses truncation/trailing bytes rather than
-// silently returning a plausible prefix.
+// words[0] is the byte span beginning after that header; records begin at words[1]. Triangles
+// occupy five words and sign-bit quads occupy six. The decoder refuses truncation/trailing bytes
+// rather than silently returning a plausible prefix.
 DecodeResult decode_normal_stream(std::span<const uint32_t> words);
 
 struct MaterialTables {
   std::span<const uint32_t> base;
-  uint32_t override_control = 0;        // nonzero high byte selects the separate alternate parser
+  uint32_t override_control = 0; // nonzero high byte selects the separate alternate parser
 };
 
 struct ResolvedMaterial {
-  uint32_t rgb[4]{};                    // low 24 bits, in primitive vertex order
-  uint8_t command = 0;                  // GT3/GT4, with semi-transparency bit
+  uint32_t rgb[4]{};   // low 24 bits, in primitive vertex order
+  uint8_t command = 0; // GT3/GT4, with semi-transparency bit
 };
 
-bool resolve_material(const Primitive& primitive, const MaterialTables& tables,
-                      ResolvedMaterial& out, std::string& error);
+bool resolve_material(const Primitive &primitive,
+                      const MaterialTables &tables,
+                      ResolvedMaterial &out,
+                      std::string &error);
 
 struct OrderedPrimitive {
   Primitive primitive;
@@ -70,14 +74,14 @@ struct OrderedPrimitive {
 
 struct ResolvedFace {
   uint32_t source_ordinal = 0;
-  uint32_t fragment_ordinal = 0;        // zero for normal unsplit/full faces; split key is explicit
+  uint32_t fragment_ordinal = 0; // zero for normal unsplit/full faces; split key is explicit
   bool quad = false;
   ProjectedVertex vertex[4]{};
   ResolvedMaterial material{};
   uint32_t packet_attr[4]{};
   uint32_t ot_raw = 0;
   uint32_t ot_bin = 0;
-  double continuous_ot_key = 0;        // temporal midpoint only; exact endpoints use integer ot_bin
+  double continuous_ot_key = 0; // temporal midpoint only; exact endpoints use integer ot_bin
 };
 
 struct OverlapDepthStats {
@@ -102,8 +106,10 @@ struct FaceCompareResult {
   uint32_t expected = 0;
   uint32_t actual = 0;
   uint32_t mismatch_index = 0;
-  std::string first_field;              // empty only when every ordered face matches
-  explicit operator bool() const { return first_field.empty(); }
+  std::string first_field; // empty only when every ordered face matches
+  explicit operator bool() const {
+    return first_field.empty();
+  }
 };
 
 struct FaceCompareOptions {
@@ -123,32 +129,42 @@ struct ResolveResult {
   uint32_t triangles = 0;
   uint32_t quads = 0;
   std::string error;
-  explicit operator bool() const { return error.empty(); }
+  explicit operator bool() const {
+    return error.empty();
+  }
 };
 
 // Resolve the normal stream against the producer-owned projected table. Primitive projected offsets
 // are guest byte offsets into its four-byte SXY/SZ slots, hence offset/4 selects ProjectedVertex.
-// Rejected raw<=0 OT candidates are counted but omitted. Output is guest drain order: descending bin,
-// stable source order within a bin, with source_ordinal retained as the oracle join key.
+// Rejected raw<=0 OT candidates are counted but omitted. Output is guest drain order: descending
+// bin, stable source order within a bin, with source_ordinal retained as the oracle join key.
 ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
                                    std::span<const ProjectedVertex> projected,
-                                   const MaterialTables& materials,
-                                   uint32_t depth_origin, uint8_t shift);
+                                   const MaterialTables &materials,
+                                   uint32_t depth_origin,
+                                   uint8_t shift);
 
 // Temporal-only continuous extension of the same normal-path contract. Visibility uses float
 // screen coordinates before SXY quantization; quad sign/split rules, material resolution, OT math
 // and stable high-to-low drain remain identical. Real endpoints must use resolve_normal_faces().
 ResolveResult resolve_normal_faces_continuous(std::span<const Primitive> primitives,
                                               std::span<const ProjectedVertex> projected,
-                                              const MaterialTables& materials,
-                                              uint32_t depth_origin, uint8_t shift);
+                                              const MaterialTables &materials,
+                                              uint32_t depth_origin,
+                                              uint8_t shift);
 
-// Exact 0x80025348/0x800255F0 normal-path bin expression. Returns false for the guest's raw<=0 gate.
-bool compute_ot_bin(const Primitive& primitive, const uint32_t vertex_depth[4],
-                    uint32_t depth_origin, uint8_t shift, uint32_t& raw, uint32_t& bin);
+// Exact 0x80025348/0x800255F0 normal-path bin expression. Returns false for the guest's raw<=0
+// gate.
+bool compute_ot_bin(const Primitive &primitive,
+                    const uint32_t vertex_depth[4],
+                    uint32_t depth_origin,
+                    uint8_t shift,
+                    uint32_t &raw,
+                    uint32_t &bin);
 
-// The guest accumulates FIFO chains per bin, then drains bins high-to-low. Stable sort expresses the
-// same contract without exposing packet pointers: descending bins, source order preserved in a bin.
+// The guest accumulates FIFO chains per bin, then drains bins high-to-low. Stable sort expresses
+// the same contract without exposing packet pointers: descending bins, source order preserved in a
+// bin.
 std::vector<OrderedPrimitive> stable_descending_bins(std::span<const OrderedPrimitive> input);
 
-}  // namespace spyro::paired_actor
+} // namespace spyro::paired_actor

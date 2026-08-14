@@ -15,6 +15,13 @@ option(PSXPORT_BUILD_PORT "Build the Spyro native port binary (spyro_port)" ON)
 include(${PSXPORT_DIR}/cmake/psxport.cmake)
 
 include(CTest)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+add_custom_target(format-check
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --check
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  COMMENT "Checking first-party C++ formatting")
+
 if(BUILD_TESTING)
   add_executable(test_paired_actor_decode
     ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_decode.cpp
@@ -22,6 +29,12 @@ if(BUILD_TESTING)
   target_include_directories(test_paired_actor_decode PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
   target_compile_features(test_paired_actor_decode PRIVATE cxx_std_20)
   add_test(NAME paired_actor_decode COMMAND test_paired_actor_decode)
+  add_test(
+    NAME format_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --check)
+  add_test(
+    NAME format_tool_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --selftest)
 endif()
 
 if(NOT PSXPORT_BUILD_PORT)

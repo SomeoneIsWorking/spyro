@@ -5,127 +5,147 @@
 // Spyro's `GameHooks::drawOTag` stays NULL — that hook's only call site is the framework's
 // `native_step_frame`, which is unreachable in this port (C158) — so the frame loop calls this
 // directly instead. Filling the hook would look like wiring and connect to nothing.
-#include "render.h"
+#include "cfg.h" // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
 #include "core.h"
-#include "game.h"         // Game::rq — the render queue the native producers emit into
-#include "cfg.h"          // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
-#include "guest_call.h"   // rc0 — run a guest function to its `jr ra`
-#include "frame_env.h"    // nativeFrameBegin/End — the frame the native producers draw into
+#include "frame_env.h" // nativeFrameBegin/End — the frame the native producers draw into
 #include "fx_paired_actor.h"
+#include "game.h"       // Game::rq — the render queue the native producers emit into
+#include "guest_call.h" // rc0 — run a guest function to its `jr ra`
+#include "render.h"
 #include "spyro_game.h"
 #include <lucent/log.h>
-#include <stdlib.h>       // abort
+#include <stdlib.h> // abort
 
-void spyro_fps60_commit_field_delivered(Core* c);
+void spyro_fps60_commit_field_delivered(Core *c);
 
-// WHAT THE NATIVE LEG MEANS IN THIS PORT — one log line, no configuration. The render path itself is
-// the framework's (installed in dc_boot_init); this only says what choosing `native` implies HERE.
-void SpyroRenderer::installModeFromConfig(Core* c) {
-  // NOTHING TO PARSE HERE ANY MORE. This used to re-read PSXPORT_RENDER_PSX itself, and its own comment
-  // named the reason as a framework wart — "config parsing that belongs at Core setup lives inside one
-  // particular boot spine". That is fixed upstream: the framework installs the render path in
-  // `dc_boot_init` (psxport runtime/recomp/render_path.cpp + native_boot.cpp), a chokepoint THIS port
-  // DOES go through — so the path is already correct here, including on a run that never enables this
-  // frame loop. What is left is the one thing the framework cannot know.
-  // What the NATIVE path means in THIS port specifically — which the framework cannot know. Stated
+// WHAT THE NATIVE LEG MEANS IN THIS PORT — one log line, no configuration. The render path itself
+// is the framework's (installed in dc_boot_init); this only says what choosing `native` implies
+// HERE.
+void SpyroRenderer::installModeFromConfig(Core *c) {
+  // NOTHING TO PARSE HERE ANY MORE. This used to re-read PSXPORT_RENDER_PSX itself, and its own
+  // comment named the reason as a framework wart — "config parsing that belongs at Core setup lives
+  // inside one particular boot spine". That is fixed upstream: the framework installs the render
+  // path in `dc_boot_init` (psxport runtime/recomp/render_path.cpp + native_boot.cpp), a chokepoint
+  // THIS port DOES go through — so the path is already correct here, including on a run that never
+  // enables this frame loop. What is left is the one thing the framework cannot know. What the
+  // NATIVE path means in THIS port specifically — which the framework cannot know. Stated
   // precisely, because the coarse version ("it aborts on anything not native") is not what the code
-  // does: it aborts per STAGE (no producer registered) and when the stage-13 producer declines a menu
-  // mode. Guest-drawn parts of a stage that DOES have a producer do not abort — stage 13's 3D backdrop
-  // is guest-drawn and only warns, once, via titleMenuBacklogReport.
-  if (!c->rsub.mode.psxRender())
-    lucent::info("render", "native path: ONE producer (stage {} front-end sprites, C167). Aborts on a stage with "
-                           "no producer; guest-drawn parts WITHIN a producer's stage only warn. "
-                           "PSXPORT_RENDER_PATH=gte for the reference picture (guest driver 0x8001ED5C).",
-                 (int)kStageFrontEnd);
+  // does: it aborts per STAGE (no producer registered) and when the stage-13 producer declines a
+  // menu mode. Guest-drawn parts of a stage that DOES have a producer do not abort — stage 13's 3D
+  // backdrop is guest-drawn and only warns, once, via titleMenuBacklogReport.
+  if (!c->rsub.mode.psxRender()) {
+    lucent::info(
+        "render",
+        "native path: ONE producer (stage {} front-end sprites, C167). Aborts on a stage with "
+        "no producer; guest-drawn parts WITHIN a producer's stage only warn. "
+        "PSXPORT_RENDER_PATH=gte for the reference picture (guest driver 0x8001ED5C).",
+        (int)kStageFrontEnd);
+  }
 }
 
 // THE REFERENCE PATH — permanent, not scaffolding. It is the byte-exact PSX picture: the only thing
 // to compare a native producer against, and the way to DRIVE INTO a scene whose producer is not
 // built yet. Nothing about it changes as producers land.
 //
-// The OT walk is inside it rather than beside it: the guest's driver ends in its own DrawOTag, which
-// reaches the GPU through DMA2, and the framework walks the ordering table there
+// The OT walk is inside it rather than beside it: the guest's driver ends in its own DrawOTag,
+// which reaches the GPU through DMA2, and the framework walks the ordering table there
 // (gpu_native.cpp `GpuState::gpu_dma2_linked_list`).
 //
-// NO rq.flush() HERE, deliberately, and this is where this port's shape differs from Tomba!2's. That
-// DMA2 walk ALREADY flushes at its end (gpu_native.cpp, "FLUSH. The walk above ENUMERATES the guest's
-// prims and QUEUES them"), so a flush on this line would re-emit an already-consumed queue — the
-// queue only resets on the first push AFTER a flush, so flushing twice submits every prim twice.
-// Measured on this build, `PSXPORT_DEBUG=rqflush,pace`, 15 s headless boot: 7936 flushes of which
-// 5527 (69.6%) are flagged `reemit=1`, and `rq_unconsumed=0` over 3990 vblanks — i.e. the per-vblank
-// flush in vsync.cpp was never once the queue's FIRST consumer, so every one of those re-emits is a
-// duplicate submission. That is a real defect and it predates this seam (docs/issues/0053); the fix
-// belongs in vsync.cpp, not in a second copy of the same mistake here.
+// NO rq.flush() HERE, deliberately, and this is where this port's shape differs from Tomba!2's.
+// That DMA2 walk ALREADY flushes at its end (gpu_native.cpp, "FLUSH. The walk above ENUMERATES the
+// guest's prims and QUEUES them"), so a flush on this line would re-emit an already-consumed queue
+// — the queue only resets on the first push AFTER a flush, so flushing twice submits every prim
+// twice. Measured on this build, `PSXPORT_DEBUG=rqflush,pace`, 15 s headless boot: 7936 flushes of
+// which 5527 (69.6%) are flagged `reemit=1`, and `rq_unconsumed=0` over 3990 vblanks — i.e. the
+// per-vblank flush in vsync.cpp was never once the queue's FIRST consumer, so every one of those
+// re-emits is a duplicate submission. That is a real defect and it predates this seam
+// (docs/issues/0053); the fix belongs in vsync.cpp, not in a second copy of the same mistake here.
 void SpyroRenderer::referenceOtWalk() const {
   rc0(mC, kFrameRenderDrv);
 }
 
 // THE NATIVE PICTURE. One branch per stage that has a producer; every other stage ends in the abort
-// below, and that abort is a DELIVERABLE rather than a gap being papered over. A branch that quietly
-// dispatched the guest's renderer, or drew something plausible, would let a half-ported scene read as
-// finished — and the reason this project keeps re-deriving render bugs is that a plausible picture is
-// indistinguishable from a correct one. Stopping with the scene identity printed turns the porting
-// backlog into a crash sequence in dependency order.
+// below, and that abort is a DELIVERABLE rather than a gap being papered over. A branch that
+// quietly dispatched the guest's renderer, or drew something plausible, would let a half-ported
+// scene read as finished — and the reason this project keeps re-deriving render bugs is that a
+// plausible picture is indistinguishable from a correct one. Stopping with the scene identity
+// printed turns the porting backlog into a crash sequence in dependency order.
 //
 // STAGE 13 IS THE ONE STAGE WITH A PRODUCER. Its front-end sprite layer is native
 // (game/render/fx_title_menu.cpp); its 3D backdrop is not, and `titleMenuBacklogReport` names the
 // five guest calls that would have drawn it, once per run, at warn level. The producer itself still
 // returns false — and this still aborts — for the menu modes it does not implement, so the seam's
 // discipline holds one level finer than the stage.
-void SpyroRenderer::renderScene(const Scene& sc) const {
-  if (sc.stage != kStageFrontEnd)
+void SpyroRenderer::renderScene(const Scene &sc) const {
+  if (sc.stage != kStageFrontEnd) {
     abortUnimplemented(sc, "no producer is registered for this stage");
+  }
   static bool reported = false;
-  if (!reported) { reported = true; titleMenuBacklogReport(); }
+  if (!reported) {
+    reported = true;
+    titleMenuBacklogReport();
+  }
   const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
   const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
   const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
   if (mC->mem_r32(0x80078D78u) == 3u) {
-    if (!stage13Mode3Render())
+    if (!stage13Mode3Render()) {
       abortUnimplemented(sc, "mode 3 also armed paired-actor renderer 0x80023AC4");
+    }
   } else if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1)) {
     abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
   }
   // 0x8004EBA8 is the common post-mode tail and final WORLD producer, with these exact arguments.
   // The direct leg builds an immutable recipe and never calls or suppresses the guest packet body.
-  if (!spyro_terrain_submit(mC,-1,0x80076DE4u,0x80076DD0u))
-    abortUnimplemented(sc,"terrain producer 0x8004EBA8 refused its atomic recipe");
+  if (!spyro_terrain_submit(mC, -1, 0x80076DE4u, 0x80076DD0u)) {
+    abortUnimplemented(sc, "terrain producer 0x8004EBA8 refused its atomic recipe");
+  }
 }
 
-[[noreturn]] void SpyroRenderer::abortUnimplemented(const Scene& sc, const char* why) const {
-  lucent::error("render", "NATIVE RENDER NOT IMPLEMENTED — stage selector = {} ({})", sc.stage, why);
+[[noreturn]] void SpyroRenderer::abortUnimplemented(const Scene &sc, const char *why) const {
+  lucent::error(
+      "render", "NATIVE RENDER NOT IMPLEMENTED — stage selector = {} ({})", sc.stage, why);
   reportBacklog(sc);
-  lucent::error("render", "  no fallback is installed on purpose: a native branch that drew "
-                          "something plausible would make this gap invisible. Port the scene above, "
-                          "or run with PSXPORT_RENDER_PSX=1 for the reference path.");
+  lucent::error("render",
+                "  no fallback is installed on purpose: a native branch that drew "
+                "something plausible would make this gap invisible. Port the scene above, "
+                "or run with PSXPORT_RENDER_PSX=1 for the reference path.");
   abort();
 }
 
 // ONE frame's picture.
 void SpyroRenderer::drawFrame() {
   const Scene sc = classifyScene();
-  auto& paired=spyro_paired_actor_state(mC);
-  const bool pairedState=mC->mem_r32(0x80078D7Cu)==2u;
-  spyro_paired_actor_frame_begin(paired,pairedState,mC->rsub.mode.psxRender(),mC->game->fps60.active());
-  mC->game->fps60.mTier1EligibleCur=false;
-  // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the denominator
-  // is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It is how "which
-  // scenes does a real run actually reach" gets answered with data rather than from the stage table,
-  // and it works on the reference leg precisely because that leg is how you drive INTO a scene whose
-  // producer does not exist yet.
-  lucent::debug("scene", "stage={} leg={} arm={}", sc.stage,
+  auto &paired = spyro_paired_actor_state(mC);
+  const bool pairedState = mC->mem_r32(0x80078D7Cu) == 2u;
+  spyro_paired_actor_frame_begin(
+      paired, pairedState, mC->rsub.mode.psxRender(), mC->game->fps60.active());
+  mC->game->fps60.mTier1EligibleCur = false;
+  // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the
+  // denominator is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It
+  // is how "which scenes does a real run actually reach" gets answered with data rather than from
+  // the stage table, and it works on the reference leg precisely because that leg is how you drive
+  // INTO a scene whose producer does not exist yet.
+  lucent::debug("scene",
+                "stage={} leg={} arm={}",
+                sc.stage,
                 mC->rsub.mode.psxRender() ? "psx_render" : "native",
                 sc.arm ? sc.arm->what : "(outside 0..15 — the guest draws nothing)");
   if (mC->rsub.mode.psxRender()) {
-    const bool pairedOracle = sc.stage == kStageFrontEnd &&
-      mC->mem_r32(0x80078D7Cu) == 2u &&
-      (cfg_str("PSXPORT_PAIREDPOSE_ORACLE") != nullptr ||
-       cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE") != nullptr ||
-       cfg_str("PSXPORT_PAIRED_FLOAT_XY_ORACLE") != nullptr);
-    if (pairedOracle) spyro_paired_actor_oracle_arm(mC);
+    const bool pairedOracle = sc.stage == kStageFrontEnd && mC->mem_r32(0x80078D7Cu) == 2u &&
+                              (cfg_str("PSXPORT_PAIREDPOSE_ORACLE") != nullptr ||
+                               cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE") != nullptr ||
+                               cfg_str("PSXPORT_PAIRED_FLOAT_XY_ORACLE") != nullptr);
+    if (pairedOracle) {
+      spyro_paired_actor_oracle_arm(mC);
+    }
     referenceOtWalk();
-    if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) abort();
-    if (!spyro_paired_actor_frame_finish(paired, true, false)) abort();
+    if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) {
+      abort();
+    }
+    if (!spyro_paired_actor_frame_finish(paired, true, false)) {
+      abort();
+    }
     return;
   }
   // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
@@ -135,18 +155,30 @@ void SpyroRenderer::drawFrame() {
   mEnv = nativeFrameBegin(mC);
   renderScene(sc);
   const bool expectPaired = sc.stage == kStageFrontEnd && mC->mem_r32(0x80078D7Cu) == 2u;
-  if (!spyro_paired_actor_frame_finish(paired, false, expectPaired)) abort();
-  bool pairedWorld=false,foreignWorld=false;
-  for(int i=0;i<mC->game->rq.n;++i){const RqItem& it=mC->game->rq.items[i];
-    const bool tier1Owned=(it.layer==RQ_BACKGROUND&&it.dbg_node==kBackdropDbgNode)||(it.layer==RQ_WORLD&&it.has_xyf);
-    if(!tier1Owned)continue;if(it.layer==RQ_WORLD&&it.has_xyf&&it.painter_object==0x80023AC4u)pairedWorld=true;else foreignWorld=true;}
-  mC->game->fps60.mTier1EligibleCur=paired.endpoints_compatible&&pairedWorld&&!foreignWorld&&
-    spyro_paired_actor_fps60_eligible(paired);
-  // THE ONE PLACE NATIVE PRIMS REACH THE RENDERER. Producers push into the render queue as they draw;
-  // nothing is on screen until the queue is emitted, and this is that emit. Unreachable while every
-  // scene aborts above — which is exactly why it is written now, next to the branch that will reach
-  // it, rather than remembered later when the first producer renders nothing and the day goes into
-  // finding out why.
+  if (!spyro_paired_actor_frame_finish(paired, false, expectPaired)) {
+    abort();
+  }
+  bool pairedWorld = false, foreignWorld = false;
+  for (int i = 0; i < mC->game->rq.n; ++i) {
+    const RqItem &it = mC->game->rq.items[i];
+    const bool tier1Owned = (it.layer == RQ_BACKGROUND && it.dbg_node == kBackdropDbgNode) ||
+                            (it.layer == RQ_WORLD && it.has_xyf);
+    if (!tier1Owned) {
+      continue;
+    }
+    if (it.layer == RQ_WORLD && it.has_xyf && it.painter_object == 0x80023AC4u) {
+      pairedWorld = true;
+    } else {
+      foreignWorld = true;
+    }
+  }
+  mC->game->fps60.mTier1EligibleCur = paired.endpoints_compatible && pairedWorld && !foreignWorld &&
+                                      spyro_paired_actor_fps60_eligible(paired);
+  // THE ONE PLACE NATIVE PRIMS REACH THE RENDERER. Producers push into the render queue as they
+  // draw; nothing is on screen until the queue is emitted, and this is that emit. Unreachable while
+  // every scene aborts above — which is exactly why it is written now, next to the branch that will
+  // reach it, rather than remembered later when the first producer renders nothing and the day goes
+  // into finding out why.
   mC->game->rq.flush(mC);
   // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see
   // frame_env.cpp for why that displays the PREVIOUS iteration's buffer and why that is correct.
@@ -155,7 +187,7 @@ void SpyroRenderer::drawFrame() {
   // DISPENV; the FPS60 path selects the reciprocal env's DISPENV, which names the page just drawn.
   // Those delegated fields deliberately do not present or sleep; frame_commit owns exactly two
   // presents and two subframe paces on that current page.
-  if(mC->game->fps60.active()) {
+  if (mC->game->fps60.active()) {
     // nativeFrameEnd advanced two guest fields. Spyro's ordinary paceQuota is one because that path
     // sleeps once per field; this synthesized commit owns the complete two-field logic interval.
     mC->game->fps60.frame_commit(mC, 2);

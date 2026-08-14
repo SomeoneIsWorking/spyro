@@ -40,6 +40,15 @@ if [ -z "$DISC" ] && [ -f .env ]; then
   DISC="$(sed -n 's/^[[:space:]]*PSXPORT_SPYRO_DISC[[:space:]]*=[[:space:]]*//p' .env | head -1)"
 fi
 [ -n "$DISC" ] && [ -f "$DISC" ] || { echo "gate: no disc image (set PSXPORT_SPYRO_DISC or .env)"; exit 2; }
+
+# Formatting is a source gate, not cleanup performed after review. Refuse before spending time on a
+# build or live run when first-party C++ has drifted from the checked-in style.
+if ! python3 tools/format.py --check > "$OUT/format.log" 2>&1; then
+  echo "gate: FORMAT FAILED — run tools/format.py --fix"
+  sed -n '1,12p' "$OUT/format.log" | sed -n 's/^/    /p'
+  exit 2
+fi
+
 # BUILD FIRST, and refuse to run on a stale binary. Twice in one session an upstream psxport rebase
 # grew GameConfig, this port's initializer broke, and the gate happily ran the PREVIOUS binary and
 # reported its numbers — once into a commit message. A gate that measures a build that does not exist

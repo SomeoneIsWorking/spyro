@@ -12,10 +12,15 @@ struct BootSkipState {
   uint32_t advances = 0;
 };
 
-inline void boot_skip_begin(BootSkipState& s) { s = {}; s.active = true; }
+inline void boot_skip_begin(BootSkipState &s) {
+  s = {};
+  s.active = true;
+}
 
-inline BootSkipAction boot_skip_sample(BootSkipState& s, bool startDown) {
-  if (!s.active) return BootSkipAction::None;
+inline BootSkipAction boot_skip_sample(BootSkipState &s, bool startDown) {
+  if (!s.active) {
+    return BootSkipAction::None;
+  }
   ++s.fields;
   if (!s.sampled) {
     s.sampled = true;
@@ -24,7 +29,9 @@ inline BootSkipAction boot_skip_sample(BootSkipState& s, bool startDown) {
   }
   const bool edge = startDown && !s.previousStartDown;
   s.previousStartDown = startDown;
-  if (!edge) return BootSkipAction::None;
+  if (!edge) {
+    return BootSkipAction::None;
+  }
   ++s.edges;
   ++s.advances;
   return BootSkipAction::AdvancePresentation;

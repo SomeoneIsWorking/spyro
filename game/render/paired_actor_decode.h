@@ -15,6 +15,9 @@ struct ProjectedVertex {
   int16_t y = 0;
   uint16_t depth = 0;
   float view_z = 0;                   // fractional RTPS row-2 MAC / 4096, clamped to H/2; native D32
+  float raw_view_z = 0;               // same fractional row-2 MAC before near clamp; temporal input
+  float raw_view_x = 0;               // row-0 MAC / 4096 before signed IR saturation
+  float raw_view_y = 0;               // row-1 MAC / 4096 before signed IR saturation
   float screen_x = 0;                 // production float projection before GPU draw offset
   float screen_y = 0;
   int16_t view_x = 0;                 // saturated GTE IR1/IR2/IR3; stable pure-projection inputs
@@ -74,6 +77,7 @@ struct ResolvedFace {
   uint32_t packet_attr[4]{};
   uint32_t ot_raw = 0;
   uint32_t ot_bin = 0;
+  double continuous_ot_key = 0;        // temporal midpoint only; exact endpoints use integer ot_bin
 };
 
 struct OverlapDepthStats {
@@ -130,6 +134,14 @@ ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
                                    std::span<const ProjectedVertex> projected,
                                    const MaterialTables& materials,
                                    uint32_t depth_origin, uint8_t shift);
+
+// Temporal-only continuous extension of the same normal-path contract. Visibility uses float
+// screen coordinates before SXY quantization; quad sign/split rules, material resolution, OT math
+// and stable high-to-low drain remain identical. Real endpoints must use resolve_normal_faces().
+ResolveResult resolve_normal_faces_continuous(std::span<const Primitive> primitives,
+                                              std::span<const ProjectedVertex> projected,
+                                              const MaterialTables& materials,
+                                              uint32_t depth_origin, uint8_t shift);
 
 // Exact 0x80025348/0x800255F0 normal-path bin expression. Returns false for the guest's raw<=0 gate.
 bool compute_ot_bin(const Primitive& primitive, const uint32_t vertex_depth[4],

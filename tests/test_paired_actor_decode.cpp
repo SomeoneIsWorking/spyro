@@ -1,6 +1,7 @@
 #include "paired_actor_decode.h"
 
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -98,6 +99,7 @@ int main() {
   projected[0x250 / 4] = {40, 50, 20};
   projected[0x350 / 4] = {50, 40, 30};
   projected[0x1A0 / 4] = {50, 50, 40};
+  for(auto& p:projected){p.raw_view_z=(float)p.depth;p.view_z=(float)p.depth;}
   const ResolveResult faces = resolve_normal_faces(decoded.primitives, projected,
       {base, 0}, 4u, 1u);
   require(faces && faces.candidates == 2 && faces.triangles == 1 && faces.quads == 1,
@@ -127,39 +129,82 @@ int main() {
   require(two_sided_faces && two_sided_faces.faces.size() == 1,
           "word-0 two-sided bit did not bypass the NCLIP gate");
 
+  // Temporal midpoint visibility is evaluated before integer SXY quantization. This case has a
+  // genuine positive subpixel area while all three integer endpoints collapse to (0,0): the exact
+  // endpoint resolver must reject it and the continuous extension must retain it.
+  auto subpixel_projected=projected;
+  subpixel_projected[0x120/4]={0,0,100};subpixel_projected[0x240/4]={0,0,80};
+  subpixel_projected[0x360/4]={0,0,60};
+  for(auto& p:subpixel_projected)if(p.depth){p.raw_view_z=(float)p.depth;p.view_z=(float)p.depth;}
+  subpixel_projected[0x120/4].screen_x=0.10f;subpixel_projected[0x120/4].screen_y=0.10f;
+  subpixel_projected[0x240/4].screen_x=0.90f;subpixel_projected[0x240/4].screen_y=0.10f;
+  subpixel_projected[0x360/4].screen_x=0.10f;subpixel_projected[0x360/4].screen_y=0.90f;
+  const auto quantized_subpixel=resolve_normal_faces(tri_only,subpixel_projected,{base,0},4u,1u);
+  const auto continuous_subpixel=resolve_normal_faces_continuous(tri_only,subpixel_projected,{base,0},4u,1u);
+  require(quantized_subpixel&&quantized_subpixel.faces.empty()&&continuous_subpixel&&
+          continuous_subpixel.faces.size()==1,
+          "continuous normal resolver did not discriminate subpixel area from quantized NCLIP");
+  require(std::fabs(continuous_subpixel.faces[0].continuous_ot_key-149.0)<1.0e-9,
+          "continuous OT key did not use raw 0..65535 depth independently of projection near clamp");
+
   // Positive first and second NCLIPs take the guest's d-for-a diagonal substitution.
   auto split_projected = projected;
   split_projected[0x150 / 4] = {0, 0, 10};
   split_projected[0x250 / 4] = {10, 0, 20};
   split_projected[0x350 / 4] = {0, 10, 30};
   split_projected[0x1A0 / 4] = {-10, -10, 40};
+  for(auto& p:split_projected)if(p.depth){p.raw_view_z=(float)p.depth;p.view_z=(float)p.depth;}
   const std::array<Primitive, 1> quad_only{quad};
   const ResolveResult split = resolve_normal_faces(quad_only, split_projected,
       {base, 0}, 0u, 1u);
+  for(auto& p:split_projected){p.screen_x=(float)p.x;p.screen_y=(float)p.y;}
+  const ResolveResult continuous_split=resolve_normal_faces_continuous(quad_only,split_projected,
+      {base,0},0u,1u);
   require(split && split.faces.size() == 1 && split.faces[0].vertex[0].x == -10 &&
           !split.faces[0].quad && split.triangles == 1 && split.quads == 0 &&
           split.faces[0].material.command == 0x34 &&
           split.faces[0].material.rgb[0] == split.faces[0].material.rgb[3] &&
           (split.faces[0].packet_attr[0] & 0xFFFFu) == (quad.packet_attr[2] >> 16),
           "quad positive/positive NCLIP diagonal substitution differs from the guest");
+  require(continuous_split&&continuous_split.faces.size()==1&&!continuous_split.faces[0].quad&&
+          continuous_split.faces[0].vertex[0].x==-10,
+          "continuous quad resolver changed the guest diagonal sign/split table");
   // A<0,B<=0 emits the other GT3 diagonal without substituting vertex zero.
   auto first_split_projected = projected;
   first_split_projected[0x150 / 4] = {0, 0, 10};
   first_split_projected[0x250 / 4] = {0, 10, 20};
   first_split_projected[0x350 / 4] = {10, 0, 30};
   first_split_projected[0x1A0 / 4] = {-10, -10, 40};
+  for(auto& p:first_split_projected)if(p.depth){p.raw_view_z=(float)p.depth;p.view_z=(float)p.depth;}
   const ResolveResult first_split = resolve_normal_faces(quad_only, first_split_projected,
       {base, 0}, 0u, 1u);
+  for(auto& p:first_split_projected){p.screen_x=(float)p.x;p.screen_y=(float)p.y;}
+  const auto continuous_first_split=resolve_normal_faces_continuous(quad_only,first_split_projected,
+      {base,0},0u,1u);
   require(first_split && first_split.faces.size() == 1 && !first_split.faces[0].quad &&
           first_split.faces[0].vertex[0].x == 0 && first_split.faces[0].material.command == 0x34,
           "quad negative/nonpositive NCLIP did not emit its first GT3 diagonal");
+  require(continuous_first_split&&continuous_first_split.faces.size()==1&&
+          !continuous_first_split.faces[0].quad,
+          "continuous quad resolver changed the negative/nonpositive split cell");
   // A>=0,B<=0 is the sole rejected quad sign pair; accept-all and one-NCLIP implementations fail.
   auto rejected_quad_projected = split_projected;
   rejected_quad_projected[0x1A0 / 4] = {20, 20, 40};
   const ResolveResult rejected_quad = resolve_normal_faces(quad_only, rejected_quad_projected,
       {base, 0}, 0u, 1u);
+  for(auto& p:rejected_quad_projected){p.screen_x=(float)p.x;p.screen_y=(float)p.y;}
+  const auto continuous_rejected=resolve_normal_faces_continuous(quad_only,rejected_quad_projected,
+      {base,0},0u,1u);
   require(rejected_quad && rejected_quad.faces.empty(),
           "quad nonnegative/nonpositive NCLIP sign pair was not rejected");
+  require(continuous_rejected&&continuous_rejected.faces.empty(),
+          "continuous quad resolver changed the sole rejected sign cell");
+  Primitive two_sided_quad=quad;two_sided_quad.two_sided=true;
+  const std::array<Primitive,1> two_sided_quad_only{two_sided_quad};
+  const auto continuous_two_sided=resolve_normal_faces_continuous(two_sided_quad_only,
+      rejected_quad_projected,{base,0},0u,1u);
+  require(continuous_two_sided&&continuous_two_sided.faces.size()==1&&continuous_two_sided.faces[0].quad,
+          "continuous two-sided quad did not bypass both sign gates");
 
   // Runtime-oracle comparator is ordered, content-complete, and negative-first.
   const FaceCompareResult identical = compare_ordered_faces(faces.faces, faces.faces);

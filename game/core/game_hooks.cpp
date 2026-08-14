@@ -26,6 +26,9 @@
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
 extern "C" void rec_dispatch(Core* c, uint32_t addr);
 
+static void* spyro_ctx_create(Core*){return new SpyroPairedActorFrameState();}
+static void spyro_ctx_destroy(void* p){delete static_cast<SpyroPairedActorFrameState*>(p);}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // bootInit — what the game does between crt0 and its frame loop.
 //
@@ -169,8 +172,12 @@ static int spyro_selftestGame(const char* which, const char*) {
 // made that old defect visible. Unlisted hooks are value-initialised to null, so this is also the
 // exact inventory of framework callbacks Spyro has actually stood up.
 static const GameHooks g_spyro_hooks = {
+  .ctxCreate          = spyro_ctx_create,
+  .ctxDestroy         = spyro_ctx_destroy,
   .bootInit           = spyro_bootInit,
   .registerOverrides  = spyro_registerOverrides,
+  .fps60WorldPass     = spyro_paired_actor_fps60_world_pass,
+  .fps60TemporalRotate= spyro_paired_actor_fps60_rotate,
   .selftestGame       = spyro_selftestGame,
   .fps60ReadSceneCam  = spyro_fps60ReadSceneCam,
 };

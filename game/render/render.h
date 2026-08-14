@@ -100,5 +100,4 @@ private:
   // The DRAWENV this frame is being drawn with, set by drawFrame()'s call to nativeFrameBegin() on
   // the native leg only. 0 on the reference leg, where the guest's own driver owns the env.
   uint32_t mEnv = 0;
-  mutable SpyroPairedActorFrameState mPaired{};
 };

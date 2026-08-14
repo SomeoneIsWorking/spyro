@@ -453,7 +453,7 @@ bool SpyroRenderer::stage13Mode3Render() const {
   append_pending_actors(c);
   const bool complete_queue = emit_screen_queue(c);
 
-  const bool complete_paired = state != 2u || spyro_paired_actor_submit(c, mPaired);
+  const bool complete_paired = state != 2u || spyro_paired_actor_submit(c, spyro_paired_actor_state(c));
 
   return complete_queue && complete_paired;
 }

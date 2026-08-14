@@ -51,6 +51,12 @@ struct SpyroPairedActorFrameState {
   bool endpoints_compatible = false;
   bool was_state2 = false;
   uint64_t stage2_epoch = 0;
+  bool was_fps60_active = false;
+  uint64_t temporal_calls = 0;
+  uint64_t temporal_midpoint_calls = 0;
+  uint64_t temporal_endpoint_calls = 0;
+  uint64_t temporal_emitted = 0;
+  uint64_t temporal_no_output = 0;
 };
 
 bool spyro_paired_actor_build_transform(Core* c, SpyroPairedActorTransform& out);
@@ -62,7 +68,11 @@ enum class SpyroPairedRebuildResult : uint8_t { Refused, NoOutput, Emitted };
 SpyroPairedRebuildResult spyro_paired_actor_rebuild_endpoint(Core* c, RenderQueue& target,
                                                               const SpyroPairedFrame& frame);
 void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState& state,
-                                    bool state2,bool reference_leg);
+                                    bool state2,bool reference_leg,bool fps60_active);
+SpyroPairedActorFrameState& spyro_paired_actor_state(Core* c);
+void spyro_paired_actor_fps60_rotate(Core* c);
+void spyro_paired_actor_fps60_world_pass(Core* c,float t);
+bool spyro_paired_actor_fps60_eligible(const SpyroPairedActorFrameState& state);
 bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState& state,
                                      bool reference_leg, bool expect_group);
 

@@ -68,6 +68,13 @@ int32_t nclip(const ProjectedVertex& a, const ProjectedVertex& b, const Projecte
   return (int32_t)(ax * by + bx * cy + cx * ay - ax * cy - bx * ay - cx * by);
 }
 
+double nclip_continuous(const ProjectedVertex& a, const ProjectedVertex& b,
+                        const ProjectedVertex& c) {
+  return (double)a.screen_x*b.screen_y+(double)b.screen_x*c.screen_y+
+         (double)c.screen_x*a.screen_y-(double)a.screen_x*c.screen_y-
+         (double)b.screen_x*a.screen_y-(double)c.screen_x*b.screen_y;
+}
+
 }  // namespace
 
 DecodeResult decode_normal_stream(std::span<const uint32_t> words) {
@@ -238,10 +245,9 @@ FaceCompareResult compare_ordered_faces(std::span<const ResolvedFace> expected,
   return out;
 }
 
-ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
-                                   std::span<const ProjectedVertex> projected,
-                                   const MaterialTables& materials,
-                                   uint32_t depth_origin, uint8_t shift) {
+static ResolveResult resolve_normal_faces_impl(std::span<const Primitive> primitives,
+    std::span<const ProjectedVertex> projected,const MaterialTables& materials,
+    uint32_t depth_origin,uint8_t shift,bool continuous) {
   ResolveResult result;
   result.candidates = (uint32_t)primitives.size();
   for (const Primitive& primitive : primitives) {
@@ -271,11 +277,13 @@ ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
     const bool two_sided = primitive.two_sided;
     Primitive emitted = primitive;
     if (!two_sided) {
-      const int32_t first = nclip(face.vertex[0], face.vertex[1], face.vertex[2]);
+      const double first = continuous?nclip_continuous(face.vertex[0],face.vertex[1],face.vertex[2]):
+                                      (double)nclip(face.vertex[0],face.vertex[1],face.vertex[2]);
       if (!primitive.quad) {
         if (first <= 0) continue;
       } else {
-        const int32_t second = nclip(face.vertex[3], face.vertex[1], face.vertex[2]);
+        const double second = continuous?nclip_continuous(face.vertex[3],face.vertex[1],face.vertex[2]):
+                                         (double)nclip(face.vertex[3],face.vertex[1],face.vertex[2]);
         if (first >= 0 && second <= 0) continue;
         if (second <= 0 || first >= 0) {
           emitted.quad = false;
@@ -292,17 +300,37 @@ ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
         }
       }
     }
-    if (!compute_ot_bin(emitted, depth, depth_origin, shift,
-                        face.ot_raw, face.ot_bin))
-      continue;
+    if(continuous){
+      double z[4]{};for(int i=0;i<count;++i)z[i]=std::clamp((double)face.vertex[i].raw_view_z,0.0,65535.0);
+      const double weighted=emitted.quad?z[0]+z[1]+z[2]+z[3]:z[0]*1.5+z[1]*1.5+z[2];
+      const double scale=std::ldexp(1.0,shift&31u);
+      const double raw=weighted-(double)depth_origin*4.0+(double)emitted.ot_adjust*4.0*scale;
+      if(!std::isfinite(raw)||raw<=0.0)continue;
+      face.continuous_ot_key=raw/scale;
+      face.ot_raw=(uint32_t)std::clamp(raw,0.0,(double)UINT32_MAX);
+      face.ot_bin=(uint32_t)std::clamp(face.continuous_ot_key,0.0,(double)UINT32_MAX);
+    }else if (!compute_ot_bin(emitted, depth, depth_origin, shift,
+                              face.ot_raw, face.ot_bin)) continue;
     face.quad ? ++result.quads : ++result.triangles;
     result.faces.push_back(face);
   }
-  std::stable_sort(result.faces.begin(), result.faces.end(),
-                   [](const ResolvedFace& a, const ResolvedFace& b) {
-                     return a.ot_bin > b.ot_bin;
-                   });
+  std::stable_sort(result.faces.begin(),result.faces.end(),[continuous](const ResolvedFace& a,const ResolvedFace& b){
+    return continuous?a.continuous_ot_key>b.continuous_ot_key:a.ot_bin>b.ot_bin;});
   return result;
+}
+
+ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
+                                   std::span<const ProjectedVertex> projected,
+                                   const MaterialTables& materials,
+                                   uint32_t depth_origin,uint8_t shift) {
+  return resolve_normal_faces_impl(primitives,projected,materials,depth_origin,shift,false);
+}
+
+ResolveResult resolve_normal_faces_continuous(std::span<const Primitive> primitives,
+                                              std::span<const ProjectedVertex> projected,
+                                              const MaterialTables& materials,
+                                              uint32_t depth_origin,uint8_t shift) {
+  return resolve_normal_faces_impl(primitives,projected,materials,depth_origin,shift,true);
 }
 
 }  // namespace spyro::paired_actor

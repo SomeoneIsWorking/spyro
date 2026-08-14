@@ -8,5 +8,10 @@ class Core;
 // now being drawn with — hand it back to nativeFrameEnd.
 uint32_t nativeFrameBegin(Core* c);
 
-// Set the display start from that env's DISPENV — the guest's own PutDispEnv(env + 0x5C).
-void nativeFrameEnd(Core* c, uint32_t env);
+// Pure buffer policy: normal preserves the guest's previous-buffer DISPENV; an FPS60 commit selects
+// the reciprocal DISPENV whose start names the just-drawn current buffer. Returns zero for an
+// unknown environment so diagnostics cannot silently certify a guessed address.
+uint32_t nativeFrameDisplayEnv(uint32_t drawEnv, bool fps60CommitPending);
+
+// Spend the guest fields, then select the display start dictated by nativeFrameDisplayEnv().
+void nativeFrameEnd(Core* c, uint32_t env, bool fps60CommitPending = false);

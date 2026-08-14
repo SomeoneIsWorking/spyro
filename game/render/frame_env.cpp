@@ -51,6 +51,7 @@
 #include "frame_env.h"
 #include "core.h"
 #include <lucent/log.h>
+#include <cstdlib>
 
 // `core.h` declares `void gpu_gp1(uint32_t)` — a declaration with NO definition anywhere in the
 // framework (the real symbol is `gpu_gp1(Core*, uint32_t)`, gpu_native.cpp:2182). Calling the
@@ -98,10 +99,16 @@ constexpr int      kMaxFieldsPerFrame = 8;           // this port's bound; the g
 
 }  // namespace
 
+uint32_t nativeFrameDisplayEnv(uint32_t drawEnv, bool fps60CommitPending) {
+  if (drawEnv != kEnvA && drawEnv != kEnvB) return 0;
+  if (!fps60CommitPending) return drawEnv;
+  return drawEnv == kEnvA ? kEnvB : kEnvA;
+}
+
 // game/core/vsync.cpp — the port's ONE definition of "a display field happened": flush, pad, the
 // guest's vblank callback, present. Declared here rather than in a header because vsync.cpp is the
 // only other file that uses it, and a two-caller extern is clearer than a header nobody else reads.
-bool spyro_deliver_field(Core* c, const char* site);
+bool spyro_deliver_field(Core* c, const char* site, bool fps60CommitPending);
 extern "C" void rec_dispatch(Core* c, uint32_t addr);
 
 // A typed lens over one of the game's DRAWENVs, so the GP0 words below read as what they are.
@@ -224,9 +231,9 @@ uint32_t nativeFrameBegin(Core* c) {
 // on the PREVIOUS iteration, which is the whole point of a double buffer. The guest's own tail does
 // exactly this — PutDispEnv(activeEnv + 0x5C) — and porting it any other way would be inventing a
 // different frame policy while claiming to reproduce this one.
-void nativeFrameEnd(Core* c, uint32_t env) {
+void nativeFrameEnd(Core* c, uint32_t env, bool fps60CommitPending) {
   // The >= 2-field throttle, on the game's own stamps.
-  spyro_deliver_field(c, "nativeframe");
+  spyro_deliver_field(c, "nativeframe", fps60CommitPending);
   int32_t now = (int32_t)c->mem_r32(kVblankCounter);
   c->mem_w32(kStampThisFrame, (uint32_t)now);
   int fields = 1;
@@ -239,15 +246,26 @@ void nativeFrameEnd(Core* c, uint32_t env) {
                    fields, now, (int32_t)c->mem_r32(kStampLastFrame), kStampLastFrame);
       break;
     }
-    spyro_deliver_field(c, "nativeframe");
+    spyro_deliver_field(c, "nativeframe", fps60CommitPending);
     now = (int32_t)c->mem_r32(kVblankCounter);
     c->mem_w32(kStampThisFrame, (uint32_t)now);
     fields++;
   }
   c->mem_w32(kStampLastFrame, (uint32_t)now);
 
-  const DrawEnvLens de(c, env);
-  gpu_gp1(c, 0x05000000u | (uint32_t)((de.dispY() & 0x3FF) << 10) | (uint32_t)(de.dispX() & 0x3FF));
-  lucent::debug("frameenv", "end   env=0x{:08X} display start=({},{}) fields={}",
-                env, de.dispX(), de.dispY(), fields);
+  const uint32_t selectedEnv=nativeFrameDisplayEnv(env,fps60CommitPending);
+  if(!selectedEnv){lucent::error("frameenv","FATAL: unknown draw env 0x{:08X}",env);abort();}
+  const DrawEnvLens draw(c,env),selected(c,selectedEnv);
+  gpu_gp1(c, 0x05000000u | (uint32_t)((selected.dispY() & 0x3FF) << 10) |
+                            (uint32_t)(selected.dispX() & 0x3FF));
+  static uint64_t selectedFrames=0,wrongHalf=0;++selectedFrames;
+  const bool wrong=fps60CommitPending&&
+    (selected.dispX()!=draw.ofsX()||selected.dispY()!=draw.ofsY());
+  wrongHalf+=wrong;
+  lucent::debug("frameenv", "end env=0x{:08X} draw clip=({},{},{},{}) ofs=({},{}) guest_disp=({},{}) "
+                            "selected_env=0x{:08X} selected_disp=({},{}) fps60={} fields={} "
+                            "wrong_half={}/{}",
+                env,draw.clipX(),draw.clipY(),draw.clipW(),draw.clipH(),draw.ofsX(),draw.ofsY(),
+                draw.dispX(),draw.dispY(),selectedEnv,selected.dispX(),selected.dispY(),
+                fps60CommitPending?1:0,fields,wrongHalf,selectedFrames);
 }

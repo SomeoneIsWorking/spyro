@@ -15,6 +15,8 @@
 #include <lucent/log.h>
 #include <stdlib.h>       // abort
 
+void spyro_fps60_commit_field_delivered(Core* c);
+
 // WHAT THE NATIVE LEG MEANS IN THIS PORT — one log line, no configuration. The render path itself is
 // the framework's (installed in dc_boot_init); this only says what choosing `native` implies HERE.
 void SpyroRenderer::installModeFromConfig(Core* c) {
@@ -98,8 +100,10 @@ void SpyroRenderer::renderScene(const Scene& sc) const {
 // ONE frame's picture.
 void SpyroRenderer::drawFrame() {
   const Scene sc = classifyScene();
+  auto& paired=spyro_paired_actor_state(mC);
   const bool pairedState=mC->mem_r32(0x80078D7Cu)==2u;
-  spyro_paired_actor_frame_begin(mPaired,pairedState,mC->rsub.mode.psxRender());
+  spyro_paired_actor_frame_begin(paired,pairedState,mC->rsub.mode.psxRender(),mC->game->fps60.active());
+  mC->game->fps60.mTier1EligibleCur=false;
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the denominator
   // is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It is how "which
   // scenes does a real run actually reach" gets answered with data rather than from the stage table,
@@ -117,7 +121,7 @@ void SpyroRenderer::drawFrame() {
     if (pairedOracle) spyro_paired_actor_oracle_arm(mC);
     referenceOtWalk();
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) abort();
-    if (!spyro_paired_actor_frame_finish(mPaired, true, false)) abort();
+    if (!spyro_paired_actor_frame_finish(paired, true, false)) abort();
     return;
   }
   // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
@@ -127,7 +131,13 @@ void SpyroRenderer::drawFrame() {
   mEnv = nativeFrameBegin(mC);
   renderScene(sc);
   const bool expectPaired = sc.stage == kStageFrontEnd && mC->mem_r32(0x80078D7Cu) == 2u;
-  if (!spyro_paired_actor_frame_finish(mPaired, false, expectPaired)) abort();
+  if (!spyro_paired_actor_frame_finish(paired, false, expectPaired)) abort();
+  bool pairedWorld=false,foreignWorld=false;
+  for(int i=0;i<mC->game->rq.n;++i){const RqItem& it=mC->game->rq.items[i];
+    const bool tier1Owned=(it.layer==RQ_BACKGROUND&&it.dbg_node==kBackdropDbgNode)||(it.layer==RQ_WORLD&&it.has_xyf);
+    if(!tier1Owned)continue;if(it.layer==RQ_WORLD&&it.has_xyf&&it.painter_object==0x80023AC4u)pairedWorld=true;else foreignWorld=true;}
+  mC->game->fps60.mTier1EligibleCur=paired.endpoints_compatible&&pairedWorld&&!foreignWorld&&
+    spyro_paired_actor_fps60_eligible(paired);
   // THE ONE PLACE NATIVE PRIMS REACH THE RENDERER. Producers push into the render queue as they draw;
   // nothing is on screen until the queue is emitted, and this is that emit. Unreachable while every
   // scene aborts above — which is exactly why it is written now, next to the branch that will reach
@@ -136,5 +146,13 @@ void SpyroRenderer::drawFrame() {
   mC->game->rq.flush(mC);
   // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see
   // frame_env.cpp for why that displays the PREVIOUS iteration's buffer and why that is correct.
-  nativeFrameEnd(mC, mEnv);
+  nativeFrameEnd(mC, mEnv, mC->game->fps60.active());
+  // nativeFrameEnd advances both guest fields. The ordinary path retains the guest's previous-page
+  // DISPENV; the FPS60 path selects the reciprocal env's DISPENV, which names the page just drawn.
+  // Those delegated fields deliberately do not present or sleep; frame_commit owns exactly two
+  // presents and two subframe paces on that current page.
+  if(mC->game->fps60.active()) {
+    mC->game->fps60.frame_commit(mC);
+    spyro_fps60_commit_field_delivered(mC);
+  }
 }

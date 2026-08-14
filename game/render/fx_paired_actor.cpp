@@ -1392,7 +1392,11 @@ static SpyroPairedRebuildResult emit_interpolated(Core* c,RenderQueue& rq,
 
 static bool submit_native(Core* c,SpyroPairedActorFrameState& state) {
   if(++state.invocations!=1) return refuse_shipping(state,"second invocation in one drawn frame");
-  if((c->mem_r32(0x80078A80u)>>24)!=0)
+  const uint32_t parserControl=c->mem_r32(0x80078A80u);
+  ++state.parser_scanned;((parserControl>>24)!=0?state.parser_alternate:state.parser_normal)++;
+  lucent::debug("pairedactor","parser reachability: scanned={} normal={} alternate={} control=0x{:08X}",
+                state.parser_scanned,state.parser_normal,state.parser_alternate,parserControl);
+  if((parserControl>>24)!=0)
     return refuse_shipping(state,"alternate/status-plane parser is active");
 
   std::array<LayerDesc,kLayers> desc{};

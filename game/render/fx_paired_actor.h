@@ -57,6 +57,9 @@ struct SpyroPairedActorFrameState {
   uint64_t temporal_endpoint_calls = 0;
   uint64_t temporal_emitted = 0;
   uint64_t temporal_no_output = 0;
+  uint64_t parser_scanned = 0;
+  uint64_t parser_normal = 0;
+  uint64_t parser_alternate = 0;
 };
 
 bool spyro_paired_actor_build_transform(Core* c, SpyroPairedActorTransform& out);

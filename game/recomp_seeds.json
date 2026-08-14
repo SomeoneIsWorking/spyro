@@ -17,7 +17,7 @@
 // explanation is unreviewable a year from now.
 //
 // JSON with `//` line comments. Addresses are hex strings. Schema (all keys optional):
-//   main, main_reentry, overlay_bases, overlay_base_patterns, overlay_seeds
+//   main, main_reentry, diagnostic_pcs, overlay_bases, overlay_base_patterns, overlay_seeds
 // See external/psxport/docs/porting-a-new-psx-game.md.
 {
   // No fn-pointer-only targets observed yet.
@@ -38,6 +38,14 @@
   // Seeding a guessed entry here would split a real function at an arbitrary offset and silently
   // corrupt the recomp — the exact failure this file exists to prevent. Left EMPTY deliberately.
   "main_reentry": [],
+
+  // Ordinary-instruction checkpoints for the paired-actor local-OT oracle. These PCs also occur
+  // in an overlapping generated body, so owner qualification is required to observe the actual
+  // indirect continuation at 0x80024054 exactly once.
+  "diagnostic_pcs": [
+    {"owner": "0x80024054", "pc": "0x800257A0"},
+    {"owner": "0x80024054", "pc": "0x800258B0"}
+  ],
 
   // ── overlays ──────────────────────────────────────────────────────────────────────────────────
   // Spyro's overlays are NOT separate disc files. They are byte ranges inside WAD.WAD streamed into

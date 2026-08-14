@@ -95,6 +95,13 @@ struct GuestXyzCapture {
   uint32_t faceKeyMismatches = 0;
   uint32_t firstFaceKeyMismatch = UINT32_MAX;
   spyro::paired_actor::FaceCompareResult packetContentCompare;
+  struct OtRecord { uint32_t address = 0, bin = 0; };
+  std::vector<OtRecord> otRecords;
+  uint32_t pcSeen = 0, pcMatched = 0, preSnapshots = 0, postSnapshots = 0;
+  uint32_t binsScanned = 0, postWithoutPre = 0;
+  uint32_t nonemptyBins = 0, traversedPackets = 0, unmappedPackets = 0;
+  uint32_t duplicatePackets = 0, cycles = 0, badTails = 0, unclearedWords = 0;
+  uint32_t otCompared = 0, otMismatches = 0, firstOtMismatch = UINT32_MAX;
 };
 
 static GuestXyzCapture sGuest;
@@ -419,6 +426,104 @@ static void compare_packet_content(Core* c, GuestXyzCapture& capture) {
       native, guest, {.depth = false, .ot_bin = false});
 }
 
+constexpr uint32_t kLocalOt = 0x8006FCF4u;
+constexpr uint32_t kLocalOtBins = 288u;
+
+static void snapshot_local_ot(Core* c, GuestXyzCapture& capture) {
+  finish_packet_candidate(c, capture, c->r[24]);
+  std::vector<uint32_t> seen;
+  for (int bin = (int)kLocalOtBins - 1; bin >= 0; --bin) {
+    ++capture.binsScanned;
+    const uint32_t tail = c->mem_r32(kLocalOt + (uint32_t)bin * 8u);
+    const uint32_t head = c->mem_r32(kLocalOt + (uint32_t)bin * 8u + 4u);
+    if (!head && !tail) continue;
+    ++capture.nonemptyBins;
+    if (!head || !tail) { ++capture.badTails; continue; }
+    uint32_t at = head;
+    for (uint32_t steps = 0; steps <= capture.guestPackets.size(); ++steps) {
+      if (std::find(seen.begin(), seen.end(), at) != seen.end()) {
+        ++capture.duplicatePackets; ++capture.cycles; break;
+      }
+      seen.push_back(at);
+      capture.otRecords.push_back({at, (uint32_t)bin});
+      ++capture.traversedPackets;
+      if (at == tail) break;
+      const uint32_t next = c->mem_r32(at) & 0x00FFFFFFu;
+      if (!next) { ++capture.badTails; break; }
+      at = 0x80000000u | next;
+      if (steps == capture.guestPackets.size()) ++capture.cycles;
+    }
+  }
+  ++capture.preSnapshots;
+}
+
+static void validate_local_ot_cleared(Core* c, GuestXyzCapture& capture) {
+  if (capture.preSnapshots == 0) ++capture.postWithoutPre;
+  for (uint32_t i = 0; i < kLocalOtBins * 2u; ++i)
+    if (c->mem_r32(kLocalOt + i * 4u) != 0) ++capture.unclearedWords;
+  ++capture.postSnapshots;
+}
+
+struct SyntheticLink { uint32_t address, next; };
+static bool validate_synthetic_ot(bool corruptTail, bool corruptLink) {
+  // Bin 9 drains before bin 3; bin 3 contains two FIFO-linked packets. A pre-existing global
+  // packet is intentionally absent from the local bins and must not affect this local traversal.
+  const SyntheticLink links[] = {{0x80001000u, 0}, {0x80002000u, 0x00003000u},
+                                 {0x80003000u, 0}, {0x80004000u, 0}};
+  const uint32_t heads[] = {0x80001000u, 0x80002000u};
+  const uint32_t tails[] = {0x80001000u, corruptTail ? 0x80004000u : 0x80003000u};
+  const uint32_t expected[] = {0x80001000u, 0x80002000u, 0x80003000u};
+  std::vector<uint32_t> actual;
+  for (int chain = 0; chain < 2; ++chain) {
+    uint32_t at = heads[chain];
+    for (uint32_t steps = 0; steps < 4; ++steps) {
+      actual.push_back(at);
+      if (at == tails[chain]) break;
+      auto link = std::find_if(std::begin(links), std::end(links),
+                               [&](const auto& value) { return value.address == at; });
+      if (link == std::end(links)) return false;
+      uint32_t next = link->next;
+      if (corruptLink && at == 0x80002000u) next = 0;
+      if (!next) return false;
+      at = 0x80000000u | next;
+    }
+    if (actual.back() != tails[chain]) return false;
+  }
+  return actual.size() == std::size(expected) &&
+         std::equal(actual.begin(), actual.end(), std::begin(expected));
+}
+
+static void capture_ot_checkpoint(Core* c, uint64_t, uint32_t pc, void* user) {
+  auto& capture = *static_cast<GuestXyzCapture*>(user);
+  if (pc == 0x800257A0u) snapshot_local_ot(c, capture);
+  else if (pc == 0x800258B0u) validate_local_ot_cleared(c, capture);
+}
+
+static bool compare_numeric_ot(GuestXyzCapture& capture, bool corrupt) {
+  std::vector<spyro::paired_actor::ResolvedFace> native = capture.faces.faces;
+  std::stable_sort(native.begin(), native.end(), [](const auto& a, const auto& b) {
+    return a.ot_bin > b.ot_bin;
+  });
+  const size_t common = std::min(native.size(), capture.otRecords.size());
+  for (size_t i = 0; i < common; ++i) {
+    auto packet = std::find_if(capture.guestPackets.begin(), capture.guestPackets.end(),
+      [&](const auto& value) { return value.address == capture.otRecords[i].address; });
+    if (packet == capture.guestPackets.end()) { ++capture.unmappedPackets; continue; }
+    ++capture.otCompared;
+    uint32_t expectedBin = native[i].ot_bin;
+    if (corrupt && i == 0) ++expectedBin;
+    if (packet->sourceOrdinal != native[i].source_ordinal ||
+        packet->fragment != native[i].fragment_ordinal ||
+        capture.otRecords[i].bin != expectedBin) {
+      if (capture.firstOtMismatch == UINT32_MAX) capture.firstOtMismatch = (uint32_t)i;
+      ++capture.otMismatches;
+    }
+  }
+  capture.otMismatches += (uint32_t)(native.size() + capture.otRecords.size() - 2u * common);
+  return capture.otCompared == native.size() && capture.otMismatches == 0 &&
+         capture.unmappedPackets == 0;
+}
+
 static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
                               uint32_t insn, void* user) {
   auto& capture = *static_cast<GuestXyzCapture*>(user);
@@ -521,6 +626,17 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
   finish_packet_candidate(c, guest, c->r[24]);
   compare_face_keys(guest);
   compare_packet_content(c, guest);
+  guest.pcSeen = (uint32_t)c->pcObserver.seen();
+  guest.pcMatched = (uint32_t)c->pcObserver.matched();
+  c->pcObserver.disarm();
+  const bool otGreen = compare_numeric_ot(guest, false);
+  GuestXyzCapture corrupt = guest;
+  corrupt.otCompared = corrupt.otMismatches = corrupt.unmappedPackets = 0;
+  corrupt.firstOtMismatch = UINT32_MAX;
+  const bool corruptRejected = !compare_numeric_ot(corrupt, true) &&
+                               corrupt.otMismatches != 0 && corrupt.firstOtMismatch == 0;
+  const bool topologyDiscriminator = validate_synthetic_ot(false, false) &&
+      !validate_synthetic_ot(true, false) && !validate_synthetic_ot(false, true);
   const uint64_t armed = gte_preop_observer_disarm(c);
   if (guest.targeted == 0 && !guest.decoded) {
     lucent::debug("pairedpose",
@@ -608,6 +724,23 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                guest.packetContentCompare.actual, guest.packetContentCompare.mismatch_index,
                guest.packetContentCompare.first_field);
   lucent::info("pairedpose",
+               "numeric OT oracle: pc_seen={} pc_matched={} pre={}/1 post={}/1 bins_scanned={}/288 "
+               "nonempty_bins={} post_without_pre={} "
+               "packets={}/{} compared={}/{} mismatches={} first={} unmapped={} duplicates={} "
+               "cycles={} bad_tails={} uncleared_words={} corrupt_discriminator={}",
+               guest.pcSeen, guest.pcMatched, guest.preSnapshots, guest.postSnapshots,
+               guest.binsScanned, guest.nonemptyBins, guest.postWithoutPre,
+               guest.traversedPackets, guest.guestPackets.size(),
+               guest.otCompared, guest.faces.faces.size(), guest.otMismatches,
+               guest.firstOtMismatch, guest.unmappedPackets, guest.duplicatePackets,
+               guest.cycles, guest.badTails, guest.unclearedWords,
+               corruptRejected && topologyDiscriminator ? "REJECTED" : "FAILED_TO_REJECT");
+  if (!otGreen || !corruptRejected || !topologyDiscriminator || guest.pcSeen != 2 || guest.pcMatched != 2 ||
+      guest.preSnapshots != 1 || guest.postSnapshots != 1 || guest.traversedPackets != guest.guestPackets.size() ||
+      guest.binsScanned != kLocalOtBins || guest.postWithoutPre || guest.duplicatePackets ||
+      guest.cycles || guest.badTails || guest.unclearedWords)
+    return false;
+  lucent::info("pairedpose",
                "actual guest XYZ+projection: armed_ops={} all_rtps={} target_rtps={}/{} "
                "xyz={}/{} projected={}/{} mismatches=0",
                armed, guest.allRtps, guest.targeted, expectedRtps, compared,
@@ -638,6 +771,9 @@ bool spyro_paired_actor_decode_pose(Core* c) {
 
 void spyro_paired_actor_oracle_arm(Core* c) {
   sGuest = {};
+  static constexpr uint32_t targets[] = {0x800257A0u, 0x800258B0u};
+  if (!c->pcObserver.arm(targets, std::size(targets), capture_ot_checkpoint, &sGuest))
+    abort();
   gte_op_observer_arm(c, capture_guest_xyz, capture_guest_projection, &sGuest);
 }
 
@@ -681,6 +817,10 @@ int spyro_paired_actor_selftest() {
   constexpr uint32_t payload = 0x001E6608u, packedW8 = 0x05400000u;
   ok &= expect(payload + (packedW8 >> 20) == 0x001E665Cu,
                "layer-zero byte stream follows short stream payload");
+  ok &= expect(validate_synthetic_ot(false, false),
+               "local OT drains high bin then same-bin FIFO and ignores pre-existing global packet");
+  ok &= expect(!validate_synthetic_ot(true, false), "local OT rejects corrupt tail");
+  ok &= expect(!validate_synthetic_ot(false, true), "local OT rejects corrupt link");
   if (ok) lucent::info("selftest", "PASS(pairedpose): {} checks", checks);
   return ok ? 0 : 1;
 }

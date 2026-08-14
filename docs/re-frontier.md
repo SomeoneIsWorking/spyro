@@ -178,9 +178,12 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   oracle for any GTE op, but shipping presentation must not replay GTE work. The pure RTPS endpoint
   dependency is now owned once in psxport `native_projection` and consumed by the
   existing paired actor; it retains exact integer output and raw pre-saturation view coordinates, but
-  explicitly is not a temporal recipe. The remaining dependency is caller-specific transform,
-  packed-stream/INTPL and DPCS ownership vendor-differentially checked against the oracle, or a semantic
-  capture at the real producer boundary; the eight-PC output oracle budget is otherwise sufficient.
+  explicitly is not a temporal recipe. Game-local `actor_model_codec` now also owns the reached
+  full-word/s16 stream progression plus semantic INTPL pose and PositiveBlend DPCS color operations;
+  the paired actor delegates both equivalent INTPL uses to that same helper. The remaining dependency
+  is the caller-specific record/model deep copy, transform/setup and projection-loop join;
+  Plain/NegativeBlend, optional expansion and other uncovered branches remain explicit refusals. No
+  ActorRecipe or native 1F798 submission exists; the eight-PC output oracle budget is otherwise sufficient.
 
 
 ## harness

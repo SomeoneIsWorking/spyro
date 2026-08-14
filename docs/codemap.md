@@ -284,3 +284,14 @@ separate UNR/wrap/projection implementations. Its isolated-vendor differential c
 saturation, sf/lm probe compatibility, and a forced mismatch. This does **not** add an actor recipe or
 authorize temporal interpolation of projected output; 1F798 still needs its caller-specific transform,
 packed-stream/INTPL and DPCS ownership before a native prefix builder exists.
+Phase 2 now owns the reached model-content semantics in `game/render/actor_model_codec.{h,cpp}`:
+the selector-driven state machine advances its independent full-u32 and s16 cursors, while semantic
+INTPL pose blending and semantic sf=1/lm=0 DPCS color blending are pure explicit-input functions with
+no Core, guest address, scratch, opcode, or ambient GTE.
+The paired actor's two former INTPL-equivalent implementations delegate to the same `blendPose` path;
+its distinct packed stream format remains separate. A hermetic isolated-vendor differential covers
+1,024 random plus saturation-edge pose/color cases and same-comparator MAC/RGB corruptions. Stream
+coverage is not an oracle differential: hand-derived fixed vectors cover both cursor directions,
+shift masking/wrap and branch errors, while a changed packed delta is an input-sensitivity negative.
+This still does not own the 1F798 record/descriptor/model recipe, transform setup, optional expansion,
+projection loop, or Plain/NegativeBlend arms, and it does not submit faces.

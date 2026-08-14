@@ -4,6 +4,7 @@
 // three layer transforms, fixed-point projection, face/material acceptance and authored-order
 // PainterObject submission.  The alternate/status-plane arm remains a loud refusal.
 #include "fx_paired_actor.h"
+#include "actor_model_codec.h"
 #include "cfg.h"
 #include "core.h"
 #include "frame_env.h"
@@ -341,25 +342,22 @@ static bool build_transform(Core *c, SpyroPairedActorTransform &out) {
   out.root_words[1] = a1;
   out.root_words[2] = b0;
   out.root_words[3] = b1;
-  auto root = [&](uint32_t a, uint32_t b) {
+  auto unpack_root = [](uint32_t a) {
     std::array<int32_t, 3> av = {
         (int32_t)a >> 21, (int32_t)(a << 11) >> 21, (int32_t)(a << 22) >> 21};
-    if (!blend) {
-      return av;
-    }
-    const std::array<int32_t, 3> bv = {
-        (int32_t)b >> 21, (int32_t)(b << 11) >> 21, (int32_t)(b << 22) >> 21};
-    for (int i = 0; i < 3; ++i) {
-      // Exact vendor INTPL sequence; the guest consumes MAC1..3 (DR25..27), not IR1..3.
-      const int64_t first =
-          wrap44((int64_t)(int32_t)bv[i] * 4096 - (int32_t)((uint32_t)av[i] << 12));
-      const int32_t diff = clampi((int32_t)(first >> 12), -32768, 32767);
-      const int64_t second = wrap44((int64_t)av[i] * 4096 + (int32_t)(blend * 256u) * diff);
-      av[i] = (int32_t)(second >> 12);
-    }
     return av;
   };
-  const std::array<std::array<int32_t, 3>, 2> roots = {root(a0, b0), root(a1, b1)};
+  std::array<std::array<int32_t, 3>, 2> roots = {unpack_root(a0), unpack_root(a1)};
+  if (blend) {
+    const std::array<std::array<int32_t, 3>, 2> alternate = {unpack_root(b0), unpack_root(b1)};
+    for (unsigned i = 0; i < roots.size(); ++i) {
+      const spyro::actor_model_codec::BlendResult result =
+          spyro::actor_model_codec::blendPose({roots[i][0], roots[i][1], roots[i][2]},
+                                              {alternate[i][0], alternate[i][1], alternate[i][2]},
+                                              (int16_t)((uint16_t)blend * 256u));
+      roots[i] = result.mac;
+    }
+  }
   for (uint32_t layer = 1; layer < 3; ++layer) {
     const auto &rv = roots[layer - 1];
     // 0x80024074..2409C packs X/Y with `(-y) + ((-z) << 16)`, not two independent
@@ -475,13 +473,9 @@ static Vec3i add(Vec3i a, Vec3i b) {
 }
 
 static Vec3i blend16(Vec3i a, Vec3i b, uint8_t blend) {
-  // Guest loads IR0=blend*0x100 then executes INTPL (0x4A980011):
-  // A + ((B-A)*IR0 >> 12), i.e. A + ((B-A)*blend >> 4).
-  auto one = [blend](int32_t av, int32_t bv) {
-    const int64_t delta = (int64_t)bv - (int64_t)av;
-    return wrap_add32(av, (int32_t)((delta * blend) >> 4));
-  };
-  return {one(a.x, b.x), one(a.y, b.y), one(a.z, b.z)};
+  const spyro::actor_model_codec::BlendResult result = spyro::actor_model_codec::blendPose(
+      {a.x, a.y, a.z}, {b.x, b.y, b.z}, (int16_t)((uint16_t)blend * 256u));
+  return {result.mac[0], result.mac[1], result.mac[2]};
 }
 
 static Vec3i rtps_input(Vec3i v) {
@@ -605,8 +599,8 @@ static bool decode_pose(Core *c,
     }
     pose.layers[layer].vertices.resize(a.size());
     for (size_t i = 0; i < a.size(); ++i) {
-      pose.layers[layer].vertices[i] =
-          rtps_input(desc[layer].hasB ? blend16(a[i], b[i], desc[layer].blend) : a[i]);
+      const Vec3i resolved = desc[layer].hasB ? blend16(a[i], b[i], desc[layer].blend) : a[i];
+      pose.layers[layer].vertices[i] = rtps_input(resolved);
     }
     decoded[layer] = (uint32_t)a.size();
   }
@@ -2500,8 +2494,8 @@ int spyro_paired_actor_selftest() {
   const auto fractional = project_rtps(0, 0, identity);
   ok &= expect(fractional.screen_x > 256.0f && fractional.screen_x < 257.0f && fractional.x == 256,
                "float projection retains subpixel endpoint discarded by integer SXY");
-  ok &= expect(blend16({0, 0, 0}, {16, -16, 32}, 8).x == 8, "half-frame positive blend");
-  const Vec3i half = blend16({0, 0, 0}, {16, -16, 32}, 8);
+  Vec3i half = blend16({0, 0, 0}, {16, -16, 32}, 8);
+  ok &= expect(half.x == 8, "half-frame positive blend");
   ok &= expect(half.y == -8 && half.z == 16, "half-frame signed blend");
   ok &= expect(blend16({7, -9, 11}, {99, 99, 99}, 0).x == 7, "zero blend preserves A");
   ok &= expect(keyframe_ptr(0xFFEF354Au) == 0x001E6A94u, "live frame-word pointer expansion");

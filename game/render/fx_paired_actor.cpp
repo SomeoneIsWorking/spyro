@@ -11,13 +11,17 @@
 #include "paired_actor_decode.h"
 #include "producer_scope.h"
 #include "proj_params.h"
+#include "proj_vtx.h"
 #include "render_queue.h"
 #include <lucent/log.h>
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <vector>
+
+void proj_native_xform(int vx,int vy,int vz,ProjVtx* out);
 
 namespace {
 
@@ -64,9 +68,17 @@ struct GuestXyzCapture {
   bool warmup = true;
   std::vector<spyro::paired_actor::ProjectedVertex> projected;
   spyro::paired_actor::ProjectedVertex pending{};
+  ProjVtx pendingFramework{};
   bool hasPending = false;
   uint32_t projectedCompared = 0;
   uint32_t projectedMismatches = 0;
+  uint32_t floatCompared = 0;
+  uint32_t floatMismatches = 0;
+  uint32_t floatSubpixelDiff = 0;
+  uint32_t frameworkFloatCompared = 0;
+  uint32_t frameworkFloatMismatches = 0;
+  const char* firstFrameworkFloatField = nullptr;
+  float floatMaxError = 0;
   spyro::paired_actor::ProjectedVertex firstGuestProjected{};
   spyro::paired_actor::ProjectedVertex firstNativeProjected{};
   uint32_t firstProjected = 0;
@@ -364,8 +376,19 @@ static spyro::paired_actor::ProjectedVertex project_rtps(
       (int64_t)ir[0] * ratio) >> 16), -1024, 1023);
   const int32_t sy = clampi((int32_t)(((int64_t)(int32_t)cr[25] +
       (int64_t)ir[1] * ratio) >> 16), -1024, 1023);
-  return {(int16_t)sx, (int16_t)sy, sz, (float)zUnshifted / 4096.0f};
+  const float rawViewZ=(float)zUnshifted/4096.0f;
+  const float h=(float)(uint16_t)cr[26];
+  const float pz=std::max(h*0.5f,rawViewZ);
+  const float scale=pz>0.0f?h/pz:0.0f;
+  const float fx=std::clamp((float)(int32_t)cr[24]/65536.0f+(float)ir[0]*scale,
+                            -1024.0f,1023.0f);
+  const float fy=std::clamp((float)(int32_t)cr[25]/65536.0f+(float)ir[1]*scale,
+                            -1024.0f,1023.0f);
+  return {(int16_t)sx, (int16_t)sy, sz, pz, fx, fy,
+          (int16_t)ir[0],(int16_t)ir[1],(int16_t)ir[2]};
 }
+
+static int round_screen(float v) { return (int)(v<0.0f?v-0.5f:v+0.5f); }
 
 static int32_t sar32(uint32_t v, unsigned shift) {
   return (int32_t)v >> shift;
@@ -898,6 +921,8 @@ static void capture_guest_xyz(Core* c, uint64_t, uint32_t pc,
   for(uint32_t i=0;i<8;++i)tcr[i]=capture.nativeTransform.layer_cr[transformLayer<3?transformLayer:2][i];
   tcr[24]=capture.nativeTransform.ofx;tcr[25]=capture.nativeTransform.ofy;tcr[26]=capture.nativeTransform.h;
   capture.pending = project_rtps(gte_read_data(0),gte_read_data(1),tcr);
+  proj_native_xform((int16_t)gte_read_data(0),(int16_t)(gte_read_data(0)>>16),
+                    (int16_t)gte_read_data(1),&capture.pendingFramework);
   capture.hasPending = true;
   if (pc == 0x80024A14u) {
     capture.warmup = true;
@@ -932,6 +957,28 @@ static void capture_guest_projection(Core*, uint64_t, uint32_t pc,
     }
     ++capture.projectedMismatches;
   }
+  ++capture.floatCompared;
+  const int fdx=std::abs(round_screen(n.screen_x)-g.x);
+  const int fdy=std::abs(round_screen(n.screen_y)-g.y);
+  capture.floatMaxError=std::max(capture.floatMaxError,(float)std::max(fdx,fdy));
+  capture.floatMismatches+=(fdx>1||fdy>1);
+  // Negative discriminator: forcing the float endpoint back to the exact guest integer SXY must
+  // lose information on the live corpus while leaving the guest SXY comparison itself unchanged.
+  capture.floatSubpixelDiff+=(std::fabs(n.screen_x-(float)g.x)>1.0e-4f ||
+                              std::fabs(n.screen_y-(float)g.y)>1.0e-4f);
+  ++capture.frameworkFloatCompared;
+  const ProjVtx& f=capture.pendingFramework;
+  auto mismatch=[&](bool bad,const char* field){
+    if(!bad)return;
+    if(!capture.frameworkFloatMismatches)capture.firstFrameworkFloatField=field;
+    ++capture.frameworkFloatMismatches;
+  };
+  mismatch(n.view_x!=f.ir1,"ir1"); mismatch(n.view_y!=f.ir2,"ir2");
+  mismatch(n.view_ir_z!=f.ir3,"ir3"); mismatch(n.depth!=f.sz,"sz");
+  mismatch(n.x!=f.sx,"sx"); mismatch(n.y!=f.sy,"sy");
+  mismatch(std::fabs(n.screen_x-f.px)>1.0e-5f,"px");
+  mismatch(std::fabs(n.screen_y-f.py)>1.0e-5f,"py");
+  mismatch(std::fabs(n.view_z-f.pz)>1.0e-5f,"pz");
   capture.hasPending = false;
 }
 
@@ -1045,12 +1092,32 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                guest.transformMismatches,guest.firstTransformPc,guest.firstTransformReg,
                guest.firstTransformGuest,guest.firstTransformNative,guest.transformNegativeInputs,
                guest.transformNegativeCr0Diff,guest.transformNegativeHDiff);
+  lucent::info("pairedpose",
+               "float SXY oracle: framework_vertices={}/{} framework_field_mismatches={} first_field={} "
+               "guest_rounded_le1={}/{} guest_mismatches={} max_error={:.3f} integer_forced_negative_diff={}/{}",
+               guest.frameworkFloatCompared,expectedVertices,guest.frameworkFloatMismatches,
+               guest.firstFrameworkFloatField?guest.firstFrameworkFloatField:"none",
+               guest.floatCompared-guest.floatMismatches,guest.floatCompared,
+               guest.floatMismatches,
+               guest.floatMaxError,guest.floatSubpixelDiff,guest.floatCompared);
   const bool transformGreen=guest.transformBuilt&&guest.transformSnapshots==3&&
     guest.transformCompared==36&&!guest.transformMismatches&&
     guest.rootInputsCompared==6&&!guest.rootInputMismatches&&
     guest.projectedCompared==expectedVertices&&!guest.projectedMismatches&&
     guest.transformNegativeInputs==expectedVertices&&guest.transformNegativeCr0Diff&&
     guest.transformNegativeHDiff;
+  const bool floatGreen=guest.frameworkFloatCompared==expectedVertices&&
+    !guest.frameworkFloatMismatches&&guest.floatCompared==expectedVertices&&
+    !guest.floatMismatches&&guest.floatSubpixelDiff>0;
+  if(cfg_str("PSXPORT_PAIRED_FLOAT_XY_ORACLE")){
+    lucent::info("pairedpose","float-only gate: framework_vertices={}/{} field_mismatches={} first_field={} "
+      "guest_rounded_le1={}/{} max_error={:.3f} integer_forced_negative={}/{} => {}",
+      guest.frameworkFloatCompared,expectedVertices,guest.frameworkFloatMismatches,
+      guest.firstFrameworkFloatField?guest.firstFrameworkFloatField:"none",
+      guest.floatCompared-guest.floatMismatches,expectedVertices,guest.floatMaxError,guest.floatSubpixelDiff,
+      guest.floatCompared,floatGreen?"PASS":"FAIL");
+    return floatGreen;
+  }
   if(cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE")){
     lucent::info("pairedpose","transform-only gate: layers={}/3 regs={}/36 roots={}/6 vertices={}/{} "
       "mismatches={} perturb_cr0={}/{} perturb_h={}/{} => {}",
@@ -1278,17 +1345,20 @@ static bool submit_native(Core* c,SpyroPairedActorFrameState& state) {
    ProducerScope producer(&c->rsub.producerScope,0x80023AC4u,"pairedactor:normal");
    RenderQueue::PainterObjectScope painter(rq,0x80023AC4u);
    for(const auto& face:faces.faces){
-    int xs[4]{},ys[4]{},us[4]{},vs[4]{};unsigned char rs[4]{},gs[4]{},bs[4]{};float depth[4]{};
+    int xs[4]{},ys[4]{},us[4]{},vs[4]{};float xsf[4]{},ysf[4]{};
+    unsigned char rs[4]{},gs[4]{},bs[4]{};float depth[4]{};
     const uint16_t clut=(uint16_t)(face.packet_attr[0]>>16);
     const uint16_t tpage=(uint16_t)(face.packet_attr[1]>>16);
     const uint32_t nv=face.quad?4u:3u;
     for(uint32_t v=0;v<nv;++v){
       xs[v]=face.vertex[v].x+offX;ys[v]=face.vertex[v].y+offY;
+      xsf[v]=face.vertex[v].screen_x+(float)offX;
+      ysf[v]=face.vertex[v].screen_y+(float)offY;
       us[v]=face.packet_attr[v]&0xFFu;vs[v]=(face.packet_attr[v]>>8)&0xFFu;
       const uint32_t rgb=face.material.rgb[v];rs[v]=rgb;gs[v]=rgb>>8;bs[v]=rgb>>16;
       depth[v]=proj_pz_to_ord(face.vertex[v].view_z);
     }
-     rq.emitOrQueue(c,1,RQ_WORLD,RQ_OM_DEPTH,(int)nv,0,0,xs,ys,nullptr,nullptr,us,vs,
+     rq.emitOrQueue(c,1,RQ_WORLD,RQ_OM_DEPTH,(int)nv,0,0,xs,ys,xsf,ysf,us,vs,
       rs,gs,bs,depth,(tpage>>7)&3u,(tpage&0x0Fu)*64,((tpage>>4)&1u)*256,
       (clut&0x3Fu)*16,(clut>>6)&0x1FFu,twMx,twMy,twOx,twOy,daX0,daY0,daX1,daY1,
       (tpage>>5)&3u,nullptr,-1,0.0f);
@@ -1391,6 +1461,14 @@ int spyro_paired_actor_selftest() {
   const auto near = project_rtps(1, 0, identity);
   ok &= expect(near.x == 257 && near.y == 120 && near.depth == 170,
                "near-plane saturated UNR projection");
+  ok &= expect(std::fabs(center.screen_x-256.0f)<1.0e-6f &&
+               std::fabs(center.screen_y-120.0f)<1.0e-6f,
+               "float projection preserves optical center");
+  identity[7] = 1000; identity[5] = 1;
+  const auto fractional = project_rtps(0, 0, identity);
+  ok &= expect(fractional.screen_x>256.0f && fractional.screen_x<257.0f &&
+               fractional.x==256,
+               "float projection retains subpixel endpoint discarded by integer SXY");
   ok &= expect(blend16({0,0,0}, {16,-16,32}, 8).x == 8,
                "half-frame positive blend");
   const Vec3i half = blend16({0,0,0}, {16,-16,32}, 8);

@@ -14,7 +14,12 @@ struct ProjectedVertex {
   int16_t x = 0;
   int16_t y = 0;
   uint16_t depth = 0;
-  float view_z = 0;                   // unsaturated RTPS row-2 MAC / 4096; native D32 input
+  float view_z = 0;                   // fractional RTPS row-2 MAC / 4096, clamped to H/2; native D32
+  float screen_x = 0;                 // production float projection before GPU draw offset
+  float screen_y = 0;
+  int16_t view_x = 0;                 // saturated GTE IR1/IR2/IR3; stable pure-projection inputs
+  int16_t view_y = 0;
+  int16_t view_ir_z = 0;
 };
 
 

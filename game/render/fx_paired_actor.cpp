@@ -9,6 +9,7 @@
 #include "frame_env.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "native_projection.h"
 #include "paired_actor_decode.h"
 #include "producer_scope.h"
 #include "proj_params.h"
@@ -16,7 +17,6 @@
 #include "render_queue.h"
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <lucent/log.h>
@@ -141,41 +141,6 @@ struct GuestXyzCapture {
 };
 
 static GuestXyzCapture sGuest;
-
-struct DivTable {
-  uint8_t value[0x101];
-};
-static constexpr DivTable make_div_table() {
-  DivTable d{};
-  for (uint32_t v = 0x8000; v < 0x10000; v += 0x80) {
-    uint32_t x = 512;
-    for (int i = 1; i < 5; ++i) {
-      x = (x * (1024 * 512 - ((v >> 7) * x))) >> 18;
-    }
-    d.value[(v >> 7) & 0xff] = (uint8_t)(((x + 1) >> 1) - 0x101);
-  }
-  d.value[0x100] = d.value[0xff];
-  return d;
-}
-static constexpr DivTable kDivTable = make_div_table();
-
-static int32_t reciprocal(uint16_t divisor) {
-  int32_t x = 0x101 + kDivTable.value[((divisor & 0x7fff) + 0x40) >> 7];
-  int32_t t = (((int32_t)divisor * -x) + 0x80) >> 8;
-  return ((x * (131072 + t)) + 0x80) >> 8;
-}
-
-static uint32_t divide_unr(uint16_t h, uint16_t z) {
-  if ((uint32_t)z * 2 <= h) {
-    return 0x1ffff;
-  }
-  unsigned shift = std::countl_zero(z);
-  uint32_t dividend = (uint32_t)h << shift;
-  uint32_t divisor = (uint32_t)z << shift;
-  uint32_t r =
-      (uint32_t)(((uint64_t)dividend * reciprocal((uint16_t)(divisor | 0x8000)) + 32768) >> 16);
-  return r > 0x1ffff ? 0x1ffff : r;
-}
 
 static int64_t wrap44(int64_t v) {
   return (int64_t)((uint64_t)v << 20) >> 20;
@@ -442,51 +407,28 @@ static bool build_transform(Core *c, SpyroPairedActorTransform &out) {
 
 static spyro::paired_actor::ProjectedVertex
 project_rtps(uint32_t d0, uint32_t d1, const std::array<uint32_t, 27> &cr) {
-  const int32_t v[3] = {(int16_t)d0, (int16_t)(d0 >> 16), (int16_t)d1};
+  using namespace psxport::native_projection;
   const uint32_t c0 = cr[0], c1 = cr[1], c2 = cr[2], c3 = cr[3], c4 = cr[4];
-  const int32_t m[3][3] = {{(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
-                           {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
-                           {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}};
-  int32_t ir[3]{};
-  float rawView[3]{};
-  int64_t zUnshifted = 0;
-  for (int row = 0; row < 3; ++row) {
-    int64_t a = (int64_t)(int32_t)cr[5 + row] << 12;
-    for (int col = 0; col < 3; ++col) {
-      a = wrap44(a + (int64_t)m[row][col] * v[col]);
-    }
-    if (row == 2) {
-      zUnshifted = a;
-    }
-    rawView[row] = (float)a / 4096.0f;
-    ir[row] = clampi((int32_t)(a >> 12), -32768, 32767);
-  }
-  const uint16_t sz = (uint16_t)clampi((int32_t)(zUnshifted >> 12), 0, 65535);
-  const uint32_t ratio = divide_unr((uint16_t)cr[26], sz);
-  const int32_t sx =
-      clampi((int32_t)(((int64_t)(int32_t)cr[24] + (int64_t)ir[0] * ratio) >> 16), -1024, 1023);
-  const int32_t sy =
-      clampi((int32_t)(((int64_t)(int32_t)cr[25] + (int64_t)ir[1] * ratio) >> 16), -1024, 1023);
-  const float rawViewZ = (float)zUnshifted / 4096.0f;
-  const float h = (float)(uint16_t)cr[26];
-  const float pz = std::max(h * 0.5f, rawViewZ);
-  const float scale = pz > 0.0f ? h / pz : 0.0f;
-  const float fx =
-      std::clamp((float)(int32_t)cr[24] / 65536.0f + (float)ir[0] * scale, -1024.0f, 1023.0f);
-  const float fy =
-      std::clamp((float)(int32_t)cr[25] / 65536.0f + (float)ir[1] * scale, -1024.0f, 1023.0f);
-  return {(int16_t)sx,
-          (int16_t)sy,
-          sz,
-          pz,
-          rawViewZ,
-          rawView[0],
-          rawView[1],
-          fx,
-          fy,
-          (int16_t)ir[0],
-          (int16_t)ir[1],
-          (int16_t)ir[2]};
+  FixedAffine affine{};
+  affine.m = {{{(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
+               {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
+               {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}}};
+  affine.t = {{(int32_t)cr[5], (int32_t)cr[6], (int32_t)cr[7]}};
+  const NativeProjectedVertex p = project(affine,
+                                          {(int32_t)cr[24], (int32_t)cr[25], (uint16_t)cr[26]},
+                                          {(int16_t)d0, (int16_t)(d0 >> 16), (int16_t)d1});
+  return {p.sx,
+          p.sy,
+          p.sz,
+          p.pz,
+          p.raw_view[2],
+          p.raw_view[0],
+          p.raw_view[1],
+          p.px,
+          p.py,
+          (int16_t)p.ir[0],
+          (int16_t)p.ir[1],
+          (int16_t)p.ir[2]};
 }
 
 static int round_screen(float v) {

@@ -172,6 +172,15 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   The combined 500-present run produced 32/32 PASS with 64 setups, 6,240 vertices, every selector
   site nonzero, both full-word and s16 choices, and 64/64 color classifications with zero mismatch
   (45 direct-high, 19 positive-blend). Plain and negative-fog remained zero and unowned.
+  Production implementation stops at the reached PositiveBlend color path: it uses DPCS
+  (`0x4A780010`, not NCDS), paired vertices use INTPL, and the optional `0x8001F940` source/color
+  expansion remains unowned. Framework `15d6de6f` now supplies a thread-local explicit-state vendor
+  oracle for any GTE op, but shipping presentation must not replay GTE work. The pure RTPS endpoint
+  dependency is now owned once in psxport `native_projection` and consumed by the
+  existing paired actor; it retains exact integer output and raw pre-saturation view coordinates, but
+  explicitly is not a temporal recipe. The remaining dependency is caller-specific transform,
+  packed-stream/INTPL and DPCS ownership vendor-differentially checked against the oracle, or a semantic
+  capture at the real producer boundary; the eight-PC output oracle budget is otherwise sufficient.
 
 
 ## harness

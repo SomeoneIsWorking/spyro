@@ -268,3 +268,19 @@ full-word and 7,408 s16 decisions. The same invocations classified 64/64 color o
 mismatch: 45 direct-high and 19 positive-blend. Plain and negative-fog were zero and remain unowned
 corpus gaps. Far reject, terminator and outcode are omitted by the eight-PC budget and explicitly
 remain unmeasured.
+The next production-owned prefix builder is blocked on a pure shipping-math dependency, not on the
+observer budget. Reached `PositiveBlend` builds its color table with GTE DPCS (`0x4A780010`, low
+function `0x10`); paired vertices use INTPL (`0x4A980011`). Framework commit `15d6de6f` provides a
+thread-local explicit-state vendor executor and differentially gates INTPL, DPCS and NCDS, but that
+executor is an oracle/discovery seam: presentation must not re-drive GTE work. The optional
+`0x8001F940` expansion also mutates referenced model/color words and remains refused. A shipping
+recipe therefore still needs either owned pure fixed-point transform/INTPL/RTPS/DPCS math gated
+against the isolated oracle, or a semantic input capture made during the real producer. Store-output
+observation itself fits within eight qualified PCs.
+Phase 1 of that dependency is now shared and producer-owned: psxport `native_projection` is a pure
+typed fixed-affine/RTPS endpoint function with exact IR/SZ/SXY and retained pre-saturation raw view
+coordinates. `fx_paired_actor.cpp` delegates to it, so Spyro and the framework probe no longer carry
+separate UNR/wrap/projection implementations. Its isolated-vendor differential covers randomized,
+saturation, sf/lm probe compatibility, and a forced mismatch. This does **not** add an actor recipe or
+authorize temporal interpolation of projected output; 1F798 still needs its caller-specific transform,
+packed-stream/INTPL and DPCS ownership before a native prefix builder exists.

@@ -217,10 +217,19 @@ G4=945, GT4=548, G3=1,208 and GT3=320, including 884 direct triangles, 266 quad-
 378 quad-second fallbacks (`scratch/logs/actorchain_payload_epoch_final.log`). Explicit epoch state
 rejects B-without-A, duplicate B, changed source/record, family-after-failed-A and stale-family reuse.
 Named `xy` and
-`command_color` mutations fail through the same comparator. All 6,528 candidates had valid source,
-scratch/depth/colour spans; the positive subset fired 1,888 times. This proves reached packet payload,
-not acceptance: outcode/NCLIP/two-sided/skip rejection semantics and FT4 remain unjoined. Semi/raw command bits were both zero in this corpus; raw behavior is not
-modeled. A separate `PSXPORT_ACTOR_CHAIN_ORACLE=ot` pass now derives each numeric local bin from the
+`command_color` mutations fail through the same comparator. The evaluator now independently derives
+each candidate's cursor, outcode test, direct-triangle skip/NCLIP/two-sided acceptance, exact quad
+NCLIP/fallback table, family, depth rejection and packet size from the immutable pre-write capture;
+the observed side is only the next-A/final packet-cursor delta plus the completed pool packet. The
+corrected 500-present run evaluated all 6,464 candidates across 32 calls: 3,021 emitted and 3,443
+rejected, with exact family/origin/cursor on every candidate and zero evaluator, cursor, pool or
+payload mismatches (`scratch/logs/actorchain_acceptance_green.log`). Reached rejection denominators
+were NCLIP=1,908 and zero-area=1,535, with 480 two-sided candidates evaluated; outcode, skip,
+final-depth, FT4, semi and raw were all zero in
+this corpus. Outcode/skip/depth have hermetic shipping-path coverage but no live certification;
+FT4 remains an explicit unsupported refusal, not a modeled formula.
+The positive-subset checkpoint fired 1,888 times, including 64 terminator-path events which are not
+candidate epochs. Raw behavior remains unmodeled. A separate `PSXPORT_ACTOR_CHAIN_ORACLE=ot` pass now derives each numeric local bin from the
 same immutable source depths/controls, snapshots all 288 `[head/newest,tail/oldest]` slots at the
 qualified pre-global `0x8002074C` checkpoint, and walks oldest-to-newest FIFO links before mutation.
 Across 32 calls it scanned 18,432 slots and joined 3,021/3,021 packets with exact bin and FIFO order:
@@ -236,5 +245,5 @@ earlier 32-call formula/corpus run is retained in `scratch/logs/actorchain_globa
 same-bin chains, a preexisting global chain, empty global adoption, base bounce, no-local, local
 clears, a corrupted predicted word, an untouched global tail corruption and an untouched local-word
 corruption. Thus the reached empty-global splice is proven, while live
-preexisting-global, bounce, and multiple populated records remain corpus gaps. Rejection/visibility
-and FT4 still prohibit native submission.
+preexisting-global, bounce, and multiple populated records remain corpus gaps. Unreached FT4/raw
+and the live-negative outcode/skip/depth arms still prohibit native submission.

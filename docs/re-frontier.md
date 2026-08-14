@@ -141,12 +141,16 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   0x8001F798. A 32-call live checkpoint census joins all 3,021 observed packet-family sites to the
   immutable 0x38-byte record cursor and independently parses the five-family-capable packet span;
   the reached corpus contains G4/GT4/G3/GT3 and no FT4/semi/raw; only durable record index 0 emitted.
-  The source oracle now correctly treats A as 6,528 candidate epochs and B as a 1,888-event positive
-  subset of the same epochs. Immutable source/scratch/depth/colour inputs independently reproduced
+  The source oracle now correctly treats A as candidate epochs and B as a positive subset of the
+  same epochs (while separately classifying B's terminator-path firings). Immutable source/scratch/depth/colour inputs independently reproduced
   every final-pool payload: 3,021/3,021 exact, spanning all reached families and direct/quad-first/
   quad-second triangle origins, with named XY and colour corruptions rejected by the same comparator.
   Explicit epoch lifecycle negatives reject missing/duplicate subset classifiers, changed source or
-  record, and stale family reuse. Semi/raw were unreached and raw behavior remains unmodeled.
+  record, and stale family reuse. An independent acceptance evaluator now matched all 6,464 reached
+  candidates across 32 calls: 3,021 emitted, 3,443 rejected, exact family/origin/source cursor and
+  zero pool/payload mismatch. The live branch census reached 1,908 NCLIP rejects and 1,535 zero-area
+  rejects; outcode/skip/depth/FT4/semi/raw were zero. Outcode/skip/depth have hermetic coverage only;
+  FT4 is explicitly refused and raw behavior remains unmodeled.
   A separate pre-global pass now proves numeric local-bin insertion and per-bin FIFO order for all
   3,021 reached packets over all 18,432 scanned slots, including both empty-bin insertion and
   nonempty append, with bin/link corruption negatives and zero cycles/duplicates/out-of-range links.
@@ -156,8 +160,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   Live calls reached one
   populated plus one no-local record and empty global slots only; hermetic shipping fixtures cover
   preexisting-global append, two groups, base bounce, and corrupt/no-local cases. Multiple populated
-  records and live preexisting-global/bounce remain corpus gaps. Rejection/visibility semantics and
-  the unreached FT4 arm are still required before any native producer.
+  records and live preexisting-global/bounce remain corpus gaps. Live evidence for outcode, skip,
+  final-depth and the unreached FT4/raw arms is still required before any native producer.
 
 
 ## harness

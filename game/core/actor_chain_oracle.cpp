@@ -26,6 +26,7 @@ struct SourceSnapshot {
   uint32_t record=0,source=0,r1=0,aux=0,scratch=0,depthOrigin=0,shift=0;
   uint32_t depthBase=0,colorBase=0,fog=0,pool=0,localOt=0;
   std::array<uint32_t,10> words{};
+  std::array<uint32_t,4> status{};
   std::array<uint32_t,4> xy{},depth{},color{};
 };
 static bool durable_record(uint32_t p){return p>=kRecordBase&&p<kRecordBase+kDurableRecords*kRecordSize&&((p-kRecordBase)%kRecordSize)==0;}
@@ -59,9 +60,9 @@ static bool epoch_family(EpochState& e,uint32_t cursor,uint32_t record,uint32_t 
   const bool ok=e.active&&!e.familySeen&&e.record==record&&cursor==expectedCursor;e.familySeen=true;e.active=false;return ok;
 }
 struct CheckpointCensus {
-  uint32_t insertions=0,g4=0,gt4=0,g3=0,gt3=0,ft4=0,recordJoins=0,
+  uint32_t familyArms=0,insertions=0,g4=0,gt4=0,g3=0,gt3=0,ft4=0,recordJoins=0,
     badRecord=0,badPacket=0,postSplice=0,finals=0,firstRecord=0,minRecord=0xFFFFFFFFu,maxRecord=0,
-    sourceA=0,sourceB=0,badSource=0,badSourceRecord=0,badClassifier=0,badTables=0,
+    sourceA=0,sourceB=0,badSource=0,badSourceRecord=0,badClassifier=0,badSubset=0,badFamily=0,badTables=0,
     payloadCompared=0,payloadMismatch=0,directTri=0,quadFirst=0,quadSecond=0,unsupportedPayload=0;
   uint32_t firstBadTable=0;
   EpochState epoch{};
@@ -69,7 +70,18 @@ struct CheckpointCensus {
   std::vector<PacketKey> entries;
   struct Expected { uint32_t packet=0;Family family=Family::Unsupported;std::vector<uint32_t> words; };
   std::vector<Expected> expected;
+  Expected pendingExpected{};PacketKey pendingEntry{};bool pendingFamily=false;
+  enum class Outcome:uint8_t { Reject,G4,GT4,G3,GT3,Unsupported };
+  enum class Origin:uint8_t { None,Direct,QuadFirst,QuadSecond,FullQuad };
+  struct Prediction {bool valid=false;Outcome outcome=Outcome::Reject;Origin origin=Origin::None;uint32_t next=0;const char* reason="none";};
+  Prediction prediction{};bool observed=false;Outcome observedOutcome=Outcome::Reject;Origin observedOrigin=Origin::None;
+  uint32_t evaluated=0,predictedReject=0,predictedEmit=0,predictedUnsupported=0,outcodeReject=0,nclipReject=0,
+    zeroReject=0,skipReject=0,depthReject=0,evalDirect=0,evalQuadFirst=0,evalQuadSecond=0,evalFullQuad=0,
+    evalTwoSided=0,evalMismatch=0,cursorMismatch=0,terminators=0,terminatorSubsets=0,poolMismatch=0;
 };
+
+static uint32_t cmd_family_size(uint8_t cmd){switch(cmd&0xFCu){case 0x38:return 36u;case 0x3C:return 52u;
+  case 0x30:return 28u;case 0x34:return 40u;case 0x2C:return 40u;default:return 0u;}}
 
 static uint32_t sar(uint32_t v,uint32_t n){return (uint32_t)((int32_t)v>>(n&31u));}
 static bool capture_tables(Core* c,SourceSnapshot& s,uint32_t& badAddr){
@@ -80,9 +92,68 @@ static bool capture_tables(Core* c,SourceSnapshot& s,uint32_t& badAddr){
   for(unsigned i=0;i<count;++i){const uint32_t xp=s.scratch+vo[i],zp=s.depthBase+vo[i],cp=s.colorBase+co[i];
     if(!scratch_word(xp)){badAddr=xp;return false;}if(!guest_word(zp)){badAddr=zp;return false;}
     if(!ram_word_span(cp,4u)){badAddr=cp;return false;}}
-  for(unsigned i=0;i<count;++i){uint32_t xy=c->mem_r32(s.scratch+vo[i]);s.xy[i]=(int32_t(s.shift)<0)?sar(xy,5):xy;
+  for(unsigned i=0;i<count;++i){uint32_t xy=c->mem_r32(s.scratch+vo[i]);s.status[i]=xy;s.xy[i]=(int32_t(s.shift)<0)?sar(xy,5):xy;
     s.depth[i]=c->mem_r32(s.depthBase+vo[i]);s.color[i]=c->mem_r32(s.colorBase+co[i]);}
   s.color[0]&=0x00FFFFFFu;return true;
+}
+static int32_t nclip3(uint32_t a,uint32_t b,uint32_t c){
+  const int32_t x0=(int16_t)a,y0=(int16_t)(a>>16),x1=(int16_t)b,y1=(int16_t)(b>>16),x2=(int16_t)c,y2=(int16_t)(c>>16);
+  return (int32_t)((int64_t)x0*y1+(int64_t)x1*y2+(int64_t)x2*y0-(int64_t)x0*y2-(int64_t)x1*y0-(int64_t)x2*y1);
+}
+enum class QuadChoice:uint8_t { Reject,First,Second,Full };
+static QuadChoice quad_choice(int32_t n0,int32_t n1,bool twoSided){
+  if(twoSided&&n0>0)n0=-n0;if(twoSided&&n1<0)n1=-n1;
+  if(n0>=0)return n1>0?QuadChoice::Second:QuadChoice::Reject;
+  return n1>0?QuadChoice::Full:QuadChoice::First;
+}
+static CheckpointCensus::Prediction evaluate_candidate(const SourceSnapshot& s){
+  using O=CheckpointCensus::Outcome;using R=CheckpointCensus::Origin;CheckpointCensus::Prediction p{true,O::Reject,R::None,0,"none"};
+  const uint32_t w=s.words[0],control=w,material=s.words[1],stride=(control&2u)?20u:8u;const bool quad=(int32_t)w<0;
+  if(quad&&control&4u){p.outcome=O::Unsupported;p.next=s.source+20u;p.reason="ft4";return p;}
+  const unsigned count=quad?4u:3u;if((int32_t)s.shift<0){uint32_t all=~0u;for(unsigned i=0;i<count;++i)all&=s.status[i];
+    if(all&31u){p.next=s.source+(quad?((control&2u)?24u:12u):stride);p.reason="outcode";return p;}}
+  p.next=s.source+(quad?((control&2u)?24u:12u):stride);
+  if(control&8u){p.reason="skip";return p;}
+  int32_t n0=nclip3(s.xy[0],s.xy[1],s.xy[2]);bool second=false,full=false;
+  if(!quad){
+    if((control&1u)?n0==0:n0<=0){p.reason=n0==0?"zero":"nclip";return p;}p.origin=R::Direct;
+  }else {const int32_t n1=nclip3(s.xy[1],s.xy[2],s.xy[3]);
+    switch(quad_choice(n0,n1,(control&1u)!=0)){case QuadChoice::Reject:p.reason=(n0==0||n1==0)?"zero":"nclip";return p;
+      case QuadChoice::First:p.origin=R::QuadFirst;break;case QuadChoice::Second:second=true;p.origin=R::QuadSecond;break;
+      case QuadChoice::Full:full=true;p.origin=R::FullQuad;break;}}
+  uint32_t d;if(full)d=s.depth[0]-s.depthOrigin+s.depth[1]+s.depth[2]+s.depth[3];
+  else {const unsigned a=second?3u:0u;d=s.depth[a]+(s.depth[a]>>1)-s.depthOrigin+s.depth[1]+(s.depth[1]>>1)+s.depth[2];}
+  if((int32_t)d<0){p.reason="depth";return p;}const uint32_t bias=(uint32_t)((int32_t)material>>28)<<1;
+  uint32_t q;if(full)q=sar(d+(bias<<(s.shift&31u)),s.shift);else q=sar(d,s.shift)+bias;if((int32_t)q<0){p.reason="depth";return p;}
+  if(full)p.outcome=(control&2u)?O::GT4:O::G4;else p.outcome=(control&2u)?O::GT3:O::G3;return p;
+}
+static void finish_prediction(CheckpointCensus& o,Core* c){
+  if(!o.prediction.valid)return;++o.evaluated;const bool emit=o.prediction.outcome!=CheckpointCensus::Outcome::Reject&&o.prediction.outcome!=CheckpointCensus::Outcome::Unsupported;
+  if(o.prediction.outcome==CheckpointCensus::Outcome::Unsupported)++o.predictedUnsupported;else if(emit)++o.predictedEmit;else ++o.predictedReject;
+  if(o.sources.back().words[0]&1u)++o.evalTwoSided;
+  if(o.prediction.origin==CheckpointCensus::Origin::Direct)++o.evalDirect;
+  else if(o.prediction.origin==CheckpointCensus::Origin::QuadFirst)++o.evalQuadFirst;
+  else if(o.prediction.origin==CheckpointCensus::Origin::QuadSecond)++o.evalQuadSecond;
+  else if(o.prediction.origin==CheckpointCensus::Origin::FullQuad)++o.evalFullQuad;
+  if(std::string_view(o.prediction.reason)=="outcode")++o.outcodeReject;else if(std::string_view(o.prediction.reason)=="nclip")++o.nclipReject;
+  else if(std::string_view(o.prediction.reason)=="zero")++o.zeroReject;else if(std::string_view(o.prediction.reason)=="skip")++o.skipReject;
+  else if(std::string_view(o.prediction.reason)=="depth")++o.depthReject;
+  if(o.prediction.next!=c->r[30])++o.cursorMismatch;
+  auto observed=CheckpointCensus::Outcome::Reject;const uint32_t start=o.sources.back().pool,after=c->r[24];
+  if(after!=start){const uint8_t cmd=(uint8_t)(c->mem_r32(start+4u)>>24);switch(cmd&0xFCu){case 0x38:observed=CheckpointCensus::Outcome::G4;break;
+      case 0x3C:observed=CheckpointCensus::Outcome::GT4;break;case 0x30:observed=CheckpointCensus::Outcome::G3;break;
+      case 0x34:observed=CheckpointCensus::Outcome::GT3;break;case 0x2C:observed=CheckpointCensus::Outcome::Unsupported;break;default:++o.poolMismatch;}
+    const uint32_t bytes=cmd_family_size(cmd);if(!bytes||after!=start+bytes)++o.poolMismatch;
+    ++o.insertions;
+    if(observed==CheckpointCensus::Outcome::G4)++o.g4;else if(observed==CheckpointCensus::Outcome::GT4)++o.gt4;
+    else if(observed==CheckpointCensus::Outcome::G3)++o.g3;else if(observed==CheckpointCensus::Outcome::GT3)++o.gt3;
+    else if(observed==CheckpointCensus::Outcome::Unsupported)++o.ft4;
+    if(!o.pendingFamily){++o.badClassifier;++o.unsupportedPayload;}
+    else {o.pendingEntry.packet=start;o.entries.push_back(o.pendingEntry);o.pendingExpected.packet=start;
+      o.expected.push_back(std::move(o.pendingExpected));++o.recordJoins;}
+  }
+  if(observed!=o.prediction.outcome||(emit&&o.observedOrigin!=o.prediction.origin))++o.evalMismatch;
+  o.prediction={};o.observed=false;o.pendingFamily=false;o.pendingExpected={};o.pendingEntry={};
 }
 
 static std::vector<uint32_t> expected_payload(const SourceSnapshot& s,Family f,bool quadSecond){
@@ -224,42 +295,54 @@ static void actor_chain_ot_oracle(Core* c){
 void actor_checkpoint(Core* c,uint64_t,uint32_t pc,void* user){
   auto& o=*static_cast<CheckpointCensus*>(user);
   if(pc==0x8002031Cu){
-    ++o.sourceB;if(!epoch_subset(o.epoch,c->r[30],c->lo))++o.badClassifier;return;
+    ++o.sourceB;if(c->r[30]==c->r[31]){++o.terminatorSubsets;return;}
+    if(!epoch_subset(o.epoch,c->r[30],c->lo)){++o.badClassifier;++o.badSubset;}return;
   }
   if(pc==0x8001FFF8u){
+    finish_prediction(o,c);
     epoch_clear(o.epoch);
+    if(c->r[30]==c->r[31]){++o.terminators;return;}
     SourceSnapshot s{};const uint32_t record=c->lo,source=c->r[30],auxAddr=c->r[30]+4u;
     if(!capture_source([&](uint32_t p){return c->mem_r32(p);},record,source,auxAddr,
         c->r[1],c->r[29],c->r[22],c->r[23],s)){
       ++o.badSource;if(!durable_record(record))++o.badSourceRecord;
     }else{s.depthBase=c->r[28];s.colorBase=c->r[25];s.fog=c->r[18];s.pool=c->r[24];s.localOt=c->r[19];
       uint32_t badAddr=0;if(!capture_tables(c,s,badAddr)){++o.badSource;++o.badTables;if(!o.firstBadTable)o.firstBadTable=badAddr;}
-      else{o.sources.push_back(s);epoch_open(o.epoch,source,record);}}
+      else{o.sources.push_back(s);epoch_open(o.epoch,source,record);o.prediction=evaluate_candidate(s);}}
     ++o.sourceA;return;
   }
-  if(pc==0x80020860u){++o.postSplice;return;}if(pc==0x800208ACu){++o.finals;return;}
+  if(pc==0x80020860u){++o.postSplice;return;}if(pc==0x800208ACu){finish_prediction(o,c);++o.finals;return;}
   Family family=Family::Unsupported;
-  if(pc==0x800201A8u){family=Family::G4;++o.g4;}else if(pc==0x8002023Cu){family=Family::GT4;++o.gt4;}
-  else if(pc==0x80020430u){family=Family::G3;++o.g3;}else if(pc==0x8002051Cu){family=Family::GT3;++o.gt3;}
-  else if(pc==0x8002066Cu){family=Family::FT4;++o.ft4;}else return;
-  ++o.insertions;
+  if(pc==0x800201A8u)family=Family::G4;else if(pc==0x8002023Cu)family=Family::GT4;
+  else if(pc==0x80020430u)family=Family::G3;else if(pc==0x8002051Cu)family=Family::GT3;
+  else if(pc==0x8002066Cu)family=Family::FT4;else return;
+  ++o.familyArms;
   // 1F798 saves the 0x38 record cursor in LO before reusing r28 as the material/scratch base.
   const uint32_t record=c->lo,packet=c->r[24],pool=c->mem_r32(kPoolPtr);
   if(!o.firstRecord)o.firstRecord=record;o.minRecord=std::min(o.minRecord,record);o.maxRecord=std::max(o.maxRecord,record);
-  if(record>=kRecordBase&&record<kRecordBase+kDurableRecords*kRecordSize&&((record-kRecordBase)%kRecordSize)==0)++o.recordJoins;
-  else ++o.badRecord;
-  if(packet<pool||packet>=0x80200000u)++o.badPacket;
-  o.entries.push_back({packet,record,family});
+  if(!durable_record(record))++o.badRecord;
   if(o.sources.empty()){++o.unsupportedPayload;return;}
+  if(packet!=o.sources.back().pool||packet<pool||packet>=0x80200000u)++o.badPacket;
+  o.observed=true;
+  if(family==Family::G4)o.observedOutcome=CheckpointCensus::Outcome::G4;
+  else if(family==Family::GT4)o.observedOutcome=CheckpointCensus::Outcome::GT4;
+  else if(family==Family::G3)o.observedOutcome=CheckpointCensus::Outcome::G3;
+  else if(family==Family::GT3)o.observedOutcome=CheckpointCensus::Outcome::GT3;
+  else {o.observedOutcome=CheckpointCensus::Outcome::Unsupported;o.observedOrigin=CheckpointCensus::Origin::None;
+    o.pendingFamily=true;o.pendingEntry={packet,record,family};o.pendingExpected={packet,family,{}};return;}
   const bool quad=(int32_t)o.sources.back().words[0]<0;
   uint32_t expectedCursor=o.epoch.source;
   if(family==Family::G4||family==Family::G3)expectedCursor+=quad?12u:8u;
   else if(family==Family::GT4||family==Family::GT3)expectedCursor+=quad?24u:20u;
-  if(!epoch_family(o.epoch,c->r[30],record,expectedCursor)){++o.badClassifier;++o.unsupportedPayload;return;}
+  if(!epoch_family(o.epoch,c->r[30],record,expectedCursor)){++o.badClassifier;++o.badFamily;++o.unsupportedPayload;return;}
   const bool second=(family==Family::G3||family==Family::GT3)&&quad&&(int32_t)c->r[17]>0;
-  if(family==Family::G3||family==Family::GT3){if(!quad)++o.directTri;else if(second)++o.quadSecond;else ++o.quadFirst;}
+  if(family==Family::G4||family==Family::GT4)o.observedOrigin=CheckpointCensus::Origin::FullQuad;
+  else if(!quad){++o.directTri;o.observedOrigin=CheckpointCensus::Origin::Direct;}
+  else if(second){++o.quadSecond;o.observedOrigin=CheckpointCensus::Origin::QuadSecond;}
+  else {++o.quadFirst;o.observedOrigin=CheckpointCensus::Origin::QuadFirst;}
   auto words=expected_payload(o.sources.back(),family,second);
-  if(words.empty())++o.unsupportedPayload;else o.expected.push_back({packet,family,std::move(words)});
+  if(words.empty())++o.unsupportedPayload;else {o.pendingFamily=true;o.pendingEntry={packet,record,family};
+    o.pendingExpected={packet,family,std::move(words)};}
 }
 
 static Family command_family(uint8_t cmd){switch(cmd&0xFCu){case 0x38:return Family::G4;
@@ -269,6 +352,14 @@ static bool compare_ordered(const std::vector<PacketKey>& expected,const std::ve
   if(expected.size()!=actual.size())return false;
   for(size_t i=0;i<expected.size();++i)if(expected[i].packet!=actual[i].packet||expected[i].family!=actual[i].family)return false;
   return true;
+}
+static const char* payload_result(uint32_t candidates,bool corePositive,bool corruptionApplicable,bool corruptionRejected){
+  if(candidates==0)return "NO_CORPUS";
+  return corePositive&&(!corruptionApplicable||corruptionRejected)?"PASS":"FAIL";
+}
+static bool payload_accounting(uint32_t candidates,uint32_t evaluated,uint32_t emitted,uint32_t rejected,
+    uint32_t unsupported,uint32_t packets){
+  return candidates>0&&evaluated==candidates&&emitted+rejected+unsupported==candidates&&emitted==packets;
 }
 
 template<class Read> bool parse_packets(uint32_t begin,uint32_t end,Read read,PacketCensus& out){
@@ -316,24 +407,28 @@ void actor_chain_oracle(Core* c){
   if(!ordered)orderedFirst="address_or_family";
   const bool families=checkpoints.g4==census.g4&&checkpoints.gt4==census.gt4&&checkpoints.g3==census.g3&&
     checkpoints.gt3==census.gt3&&checkpoints.ft4==census.ft4&&census.f3==0&&census.ft3==0&&census.f4==0&&census.other==0;
-  const uint64_t expectedMatched=(uint64_t)checkpoints.sourceA+checkpoints.sourceB+checkpoints.insertions+checkpoints.finals;
+  const uint64_t expectedMatched=(uint64_t)checkpoints.sourceA+checkpoints.terminators+checkpoints.sourceB+
+    checkpoints.familyArms+checkpoints.finals;
   const bool positive=terminated&&parsed&&ordered&&families&&
     checkpoints.insertions==census.packets&&checkpoints.insertions==checkpoints.recordJoins&&checkpoints.badRecord==0&&checkpoints.badPacket==0&&
-    checkpoints.sourceA>0&&checkpoints.sourceB>0&&!checkpoints.sources.empty()&&checkpoints.badSource==0&&checkpoints.badClassifier==0&&
+    checkpoints.sourceA>0&&!checkpoints.sources.empty()&&checkpoints.badSource==0&&checkpoints.badClassifier==0&&
     checkpoints.badSourceRecord==0&&checkpoints.badTables==0&&checkpoints.finals==1&&matched==expectedMatched&&
-    checkpoints.unsupportedPayload==0&&payload.compared==census.packets&&payload.mismatches==0;
-  bool negative=false;
+    checkpoints.unsupportedPayload==0&&payload.compared==census.packets&&payload.mismatches==0&&
+    payload_accounting(checkpoints.sourceA,checkpoints.evaluated,checkpoints.predictedEmit,checkpoints.predictedReject,
+      checkpoints.predictedUnsupported,census.packets)&&checkpoints.evalMismatch==0&&checkpoints.cursorMismatch==0;
+  const bool corruptionApplicable=after>before;bool negative=false;
   if(after>before){PacketCensus corrupt{};negative=!parse_packets(before,after,[&](uint32_t p){
       uint32_t v=c->mem_r32(p);if(p==before+4u)v=(v&0x00FFFFFFu)|0x7C000000u;return v;},corrupt)&&
       corrupt.first==std::string_view("command");}
-  const char* result=!terminated?"NO_TERMINATOR":after==before?"NO_PACKETS":positive&&negative?"PASS":"FAIL";
-  lucent::info("actorchainoracle","pass=payload records={}/{} terminated={} checkpoints={}/{} candidates={} positive_subset={} emitted={} candidate_minus_packets={} bad_source={} bad_source_record={} bad_classifier={} bad_tables={} first_bad_table={:08X} joins={} ordered={} ordered_first={} payload={}/{} payload_mismatch={} payload_first={} payload_witness[p={:08X} i={} exp={:08X} act={:08X}] unsupported_payload={} origin[direct={} quad_first={} quad_second={}] bad_record={} record_range={:08X}..{:08X} first_record={:08X} bad_packet={} families[G4={} GT4={} G3={} GT3={} FT4={}] final={} packets={} bytes={} F3={} G3={} FT3={} GT3={} F4={} G4={} FT4={} GT4={} semi={} raw={} other={} corrupt_rejected={} first={} result={}",
-    records.size(),kDurableRecords,terminated,seen,matched,checkpoints.sourceA,checkpoints.sourceB,checkpoints.insertions,
-    (int64_t)checkpoints.sourceA-(int64_t)checkpoints.insertions,checkpoints.badSource,checkpoints.badSourceRecord,checkpoints.badClassifier,checkpoints.badTables,checkpoints.firstBadTable,checkpoints.recordJoins,ordered,orderedFirst,
+  const char* result=!terminated?"NO_TERMINATOR":payload_result(checkpoints.sourceA,positive,corruptionApplicable,negative);
+  lucent::info("actorchainoracle","pass=payload records={}/{} terminated={} checkpoints={}/{} candidates={} terminator_heads={} positive_subset={} terminator_subset={} emitted={} candidate_minus_packets={} eval[evaluated={} emit={} reject={} unsupported={} mismatch={} cursor_mismatch={} outcode={} nclip={} zero={} skip={} depth={} two_sided={} origins[direct={} quad_first={} quad_second={} full_quad={}]] bad_source={} bad_source_record={} bad_classifier={} [subset={} family={}] bad_tables={} first_bad_table={:08X} joins={} ordered={} ordered_first={} payload={}/{} payload_mismatch={} payload_first={} payload_witness[p={:08X} i={} exp={:08X} act={:08X}] unsupported_payload={} origin[direct={} quad_first={} quad_second={}] bad_record={} record_range={:08X}..{:08X} first_record={:08X} bad_packet={} families[G4={} GT4={} G3={} GT3={} FT4={}] final={} packets={} bytes={} F3={} G3={} FT3={} GT3={} F4={} G4={} FT4={} GT4={} semi={} raw={} other={} corruption[applicable={} rejected={}] first={} result={}",
+    records.size(),kDurableRecords,terminated,seen,matched,checkpoints.sourceA,checkpoints.terminators,checkpoints.sourceB,checkpoints.terminatorSubsets,checkpoints.insertions,
+    (int64_t)checkpoints.sourceA-(int64_t)checkpoints.insertions,checkpoints.evaluated,checkpoints.predictedEmit,checkpoints.predictedReject,checkpoints.predictedUnsupported,checkpoints.evalMismatch,checkpoints.cursorMismatch,checkpoints.outcodeReject,checkpoints.nclipReject,checkpoints.zeroReject,checkpoints.skipReject,checkpoints.depthReject,checkpoints.evalTwoSided,checkpoints.evalDirect,checkpoints.evalQuadFirst,checkpoints.evalQuadSecond,checkpoints.evalFullQuad,
+    checkpoints.badSource,checkpoints.badSourceRecord,checkpoints.badClassifier,checkpoints.badSubset,checkpoints.badFamily,checkpoints.badTables,checkpoints.firstBadTable,checkpoints.recordJoins,ordered,orderedFirst,
     payload.compared,census.packets,payload.mismatches,payload.first,payload.packet,payload.index,payload.expected,payload.actual,checkpoints.unsupportedPayload,checkpoints.directTri,checkpoints.quadFirst,checkpoints.quadSecond,
     checkpoints.badRecord,checkpoints.minRecord,checkpoints.maxRecord,checkpoints.firstRecord,checkpoints.badPacket,checkpoints.g4,checkpoints.gt4,checkpoints.g3,checkpoints.gt3,checkpoints.ft4,
     checkpoints.finals,census.packets,census.bytes,census.f3,census.g3,census.ft3,census.gt3,
-    census.f4,census.g4,census.ft4,census.gt4,census.semi,census.raw,census.other,negative,census.first,result);
+    census.f4,census.g4,census.ft4,census.gt4,census.semi,census.raw,census.other,corruptionApplicable,negative,census.first,result);
   // Groundwork is deliberately observation-only: a failed join is the diagnostic result, not a
   // reason to crash an otherwise valid generated render.  Promotion to an acceptance oracle will
   // make a nonempty mismatch fatal only after source/payload/bin joins are independently green.
@@ -392,6 +487,36 @@ int spyro_actor_chain_oracle_selftest(){
   const bool staleFamily=!epoch_family(ep,0x80001008u,kRecordBase,0x80001008u);
   ok=ok&&bWithoutA&&bOnce&&duplicateB&&changedSource&&changedRecord&&familyAfterFailedA&&
     wrongFamilyCursor&&wrongFamilyRecord&&familyOnce&&staleFamily;
+  auto xy=[](int16_t x,int16_t y){return uint32_t(uint16_t(x))|(uint32_t(uint16_t(y))<<16);};
+  auto candidate=[&](uint32_t w0,uint32_t control){SourceSnapshot s{};s.source=0x80001000u;s.words[0]=w0|control;
+    s.xy={xy(0,0),xy(1,0),xy(0,1),xy(1,1)};s.depth={100,100,100,100};return s;};
+  auto directPositive=evaluate_candidate(candidate(0,0));
+  auto directNegativeInput=candidate(0,0);std::swap(directNegativeInput.xy[1],directNegativeInput.xy[2]);
+  const auto directNegative=evaluate_candidate(directNegativeInput);
+  auto directTwoSidedInput=directNegativeInput;directTwoSidedInput.words[0]|=1u;const auto directTwoSided=evaluate_candidate(directTwoSidedInput);
+  auto directZeroInput=candidate(0,0);directZeroInput.xy[2]=xy(2,0);const auto directZero=evaluate_candidate(directZeroInput);
+  const auto directSkip=evaluate_candidate(candidate(0,8u));const auto directTexturedSkip=evaluate_candidate(candidate(0,10u));
+  const auto quadSkip=evaluate_candidate(candidate(0x80000000u,8u));const auto quadTexturedSkip=evaluate_candidate(candidate(0x80000000u,10u));
+  auto outcodeInput=candidate(0,0);outcodeInput.shift=~0u;outcodeInput.status={1,1,1};const auto outcode=evaluate_candidate(outcodeInput);
+  auto depthInput=candidate(0,0);depthInput.depthOrigin=1000;const auto depthReject=evaluate_candidate(depthInput);
+  auto ft4Input=candidate(0x80000000u,4u);const auto ft4Reject=evaluate_candidate(ft4Input);
+  using EO=CheckpointCensus::Outcome;using ER=CheckpointCensus::Origin;
+  const bool evaluatorBranches=directPositive.outcome==EO::G3&&directPositive.origin==ER::Direct&&directPositive.next==0x80001008u&&
+    directNegative.outcome==EO::Reject&&directTwoSided.outcome==EO::G3&&directZero.outcome==EO::Reject&&
+    std::string_view(directSkip.reason)=="skip"&&directSkip.next==0x80001008u&&directTexturedSkip.next==0x80001014u&&
+    std::string_view(quadSkip.reason)=="skip"&&quadSkip.next==0x8000100Cu&&quadTexturedSkip.next==0x80001018u&&
+    std::string_view(outcode.reason)=="outcode"&&
+    std::string_view(depthReject.reason)=="depth"&&ft4Reject.outcome==EO::Unsupported&&ft4Reject.next==0x80001014u;
+  const bool quadTable=quad_choice(-1,1,false)==QuadChoice::Full&&quad_choice(-1,-1,false)==QuadChoice::First&&
+    quad_choice(1,1,false)==QuadChoice::Second&&quad_choice(1,-1,false)==QuadChoice::Reject&&
+    quad_choice(1,-1,true)==QuadChoice::Full&&quad_choice(-1,1,true)==QuadChoice::Full&&
+    quad_choice(0,1,false)==QuadChoice::Second&&quad_choice(0,0,false)==QuadChoice::Reject;
+  const bool allRejectAccounting=payload_accounting(4,4,0,4,0,0)&&
+    std::string_view(payload_result(4,true,false,false))=="PASS";
+  const bool noCorpusResult=std::string_view(payload_result(0,true,false,false))=="NO_CORPUS";
+  const bool corruptionSemantics=std::string_view(payload_result(4,true,true,true))=="PASS"&&
+    std::string_view(payload_result(4,true,true,false))=="FAIL";
+  ok=ok&&evaluatorBranches&&quadTable&&allRejectAccounting&&noCorpusResult&&corruptionSemantics;
   CheckpointCensus::Expected pe{base,Family::G3,{0x06000000u,0x30112233u,0x00020001u,0x00445566u,0x00040003u,0x00778899u,0x00060005u}};
   std::vector<uint32_t> actual=pe.words;actual[0]|=0x00123456u;
   auto payloadRead=[&](uint32_t p){return actual[(p-base)/4u];};
@@ -441,6 +566,6 @@ int spyro_actor_chain_oracle_selftest(){
   OtCensus noLocalCount{};std::vector<OtCensus::Word> noLocalExpected;
   const bool noLocal=simulate_global(spliceRead,lmax,lmin,0,0,gb,noLocalExpected,noLocalCount)&&noLocalCount.noLocal==1&&noLocalExpected.empty();
   ok=ok&&otGood&&otBadBin&&otBadLink&&walkPositive&&walkBadOrder&&walkHasCycle&&walkHasDuplicate&&walkOutOfRange&&walkOneSided&&splicePositive&&spliceCorrupt&&corruptGlobalTail&&corruptUntouchedLocal&&noLocal;
-  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] payload_good={} corrupt_xy={} corrupt_command_color={} ot_walk[positive={} bins={} empty={} append={} corrupt_bin={} corrupt_link={} cycle={} duplicate={} out_of_range={} one_sided={}] global[positive={} groups={} preexisting={} empty={} bounce={} patches={} clears={} corrupt={} corrupt_untouched_global_tail={} corrupt_untouched_local={} no_local={}]",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1,walkPositive,walkGood.binsScanned,walkGood.emptyAppend,walkGood.nonemptyAppend,otBadBin,walkBadOrder,walkHasCycle,walkHasDuplicate,walkOutOfRange,walkOneSided,splicePositive,spliceCount.groups,spliceCount.globalPreexisting,spliceCount.globalEmpty,spliceCount.baseBounce,spliceCount.tagPatches,spliceCount.localClears,spliceCorrupt,corruptGlobalTail,corruptUntouchedLocal,noLocal);
+  lucent::info("selftest","{}(actorchainrecipe): packets={} bytes={} G4={} GT4={} G3={} GT3={} FT4={} semi={} raw={} corrupt_address=1 corrupt_family=1 corrupt_command={} source_valid_reads=11 source_invalid_cases=4 source_invalid_reads=0 epoch_negatives[b_without_a={} duplicate_b={} changed_source={} changed_record={} family_after_failed={} wrong_cursor={} wrong_family_record={} stale_family={}] evaluator[branches={} quad_table={} all_reject={} no_corpus={} corruption_semantics={}] payload_good={} corrupt_xy={} corrupt_command_color={} ot_walk[positive={} bins={} empty={} append={} corrupt_bin={} corrupt_link={} cycle={} duplicate={} out_of_range={} one_sided={}] global[positive={} groups={} preexisting={} empty={} bounce={} patches={} clears={} corrupt={} corrupt_untouched_global_tail={} corrupt_untouched_local={} no_local={}]",ok?"PASS":"FAIL",good.packets,good.bytes,good.g4,good.gt4,good.g3,good.gt3,good.ft4,good.semi,good.raw,bad.other==1u,bWithoutA,duplicateB,changedSource,changedRecord,familyAfterFailedA,wrongFamilyCursor,wrongFamilyRecord,staleFamily,evaluatorBranches,quadTable,allRejectAccounting,noCorpusResult,corruptionSemantics,payloadGood.mismatches==0,payloadBadXy.mismatches==1,payloadBadColor.mismatches==1,walkPositive,walkGood.binsScanned,walkGood.emptyAppend,walkGood.nonemptyAppend,otBadBin,walkBadOrder,walkHasCycle,walkHasDuplicate,walkOutOfRange,walkOneSided,splicePositive,spliceCount.groups,spliceCount.globalPreexisting,spliceCount.globalEmpty,spliceCount.baseBounce,spliceCount.tagPatches,spliceCount.localClears,spliceCorrupt,corruptGlobalTail,corruptUntouchedLocal,noLocal);
   return ok?0:1;
 }

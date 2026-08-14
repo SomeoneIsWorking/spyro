@@ -1,4 +1,5 @@
 // spyro_game.h — declarations for the Spyro game-side seam installers.
+#include <cstdint>
 //
 // The framework never includes this; it is purely how our own TUs (game_config.cpp, game_hooks.cpp,
 // recomp_register.cpp, main.cpp) reach each other.
@@ -47,6 +48,8 @@ void spyro_register_native_util();
 void spyro_register_native_terrain();
 int spyro_native_terrain_selftest();
 bool spyro_terrain_submit(Core*, int32_t selector, uint32_t matrix1, uint32_t matrix2);
+void spyro_register_actor_chain_oracle();
+int spyro_actor_chain_oracle_selftest();
 
 // native_render.cpp — MEASUREMENT, installs nothing unless PSXPORT_NDIFF_IDENTITY=<addr,…>: can the
 // per-call differential validate a geometry renderer at all? (re-frontier render.own-geometry-family)

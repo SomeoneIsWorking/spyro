@@ -196,3 +196,17 @@ Measured, not assumed (`PSXPORT_PROF=1` + `tools/prof_hot.py`, I022):
 - `GameConfig::guestMemset_gen` expects a game-specific fast-path body.
 
 None of these block Spyro; they are recorded so nobody mistakes them for something Spyro must fill in.
+### Actor-chain oracle groundwork (`0x800521C0` → `0x8001F158` → `0x8001F798`)
+
+`game/core/actor_chain_oracle.cpp` is an explicit diagnostic-only wrapper keyed on the final packet
+producer `0x8001F798`; it submits no native faces. Static/generated-code mapping establishes the
+chain as one ownership unit: `0x800521C0` partitions actors, `0x8001F158` writes terminated 0x38-byte
+records at `0x800712F4`, and `0x8001F798` emits G4/GT4/G3/GT3/FT4 families. Qualified checkpoints
+join every emitted packet-family site back to the saved record cursor in LO and independently parse
+the final pool span. A 500-present 4:3 guest-render corpus observed 32 calls and 3,021 packets, all
+with nonzero G4/GT4/G3/GT3, zero FT4/semi/raw, exact ordered address+family joins and zero bad
+record/pool joins (`scratch/logs/actorchain_oracle_reviewfix_final.log`). Only durable record index 0
+emitted packets in this corpus; indices 0..52 are valid sources and index 53 is the terminator, never
+a source. This is groundwork, not acceptance: payload
+XY/RGB/UV, outcode/NCLIP/two-sided/compressed/fog branches, numeric local bins and global OT splice
+remain unjoined, so native submission is prohibited.

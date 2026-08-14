@@ -1,9 +1,60 @@
 #include "paired_actor_decode.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace spyro::paired_actor {
+
+static float vertex_ord(float z) {
+  constexpr float nearz=170.5f, farz=65535.f;
+  if(z<nearz)z=nearz;
+  const float ord=(1.f/z-1.f/farz)/(1.f/nearz-1.f/farz);
+  return std::clamp(ord,0.f,1.f);
+}
+static bool face_z_at(const ResolvedFace& f, float x, float y, float& z) {
+  const int nv = f.quad ? 4 : 3;
+  for (int t = 0; t < (nv == 4 ? 2 : 1); ++t) {
+    const int a=t,b=t+1,c=t+2;
+    const float x0=f.vertex[a].x,y0=f.vertex[a].y,x1=f.vertex[b].x,y1=f.vertex[b].y;
+    const float x2=f.vertex[c].x,y2=f.vertex[c].y;
+    const float den=(y1-y2)*(x0-x2)+(x2-x1)*(y0-y2);
+    if (den == 0) continue;
+    const float l0=((y1-y2)*(x-x2)+(x2-x1)*(y-y2))/den;
+    const float l1=((y2-y0)*(x-x2)+(x0-x2)*(y-y2))/den, l2=1-l0-l1;
+    auto edge=[](float ax,float ay,float bx,float by,float px,float py){return (px-ax)*(by-ay)-(py-ay)*(bx-ax);};
+    const float area=edge(x0,y0,x1,y1,x2,y2), sign=area<0?-1.f:1.f;
+    auto inside=[&](float ax,float ay,float bx,float by){float e=sign*edge(ax,ay,bx,by,x,y);float dx=sign*(bx-ax),dy=sign*(by-ay);return e>0 || (e==0 && (dy<0 || (dy==0 && dx>0)));};
+    if(!inside(x0,y0,x1,y1)||!inside(x1,y1,x2,y2)||!inside(x2,y2,x0,y0))continue;
+    z=l0*vertex_ord(f.vertex[a].view_z)+l1*vertex_ord(f.vertex[b].view_z)+
+      l2*vertex_ord(f.vertex[c].view_z); return true;
+  }
+  return false;
+}
+
+OverlapDepthStats analyze_overlap_depth(std::span<const ResolvedFace> faces) {
+  OverlapDepthStats s;
+  for (size_t i=0;i<faces.size();++i) for(size_t j=i+1;j<faces.size();++j) {
+    ++s.pairs; const auto&A=faces[i]; const auto&B=faces[j];
+    A.quad ? (B.quad ? ++s.quad_quad : ++s.tri_quad) : (B.quad ? ++s.tri_quad : ++s.tri_tri);
+    const bool as=A.material.command&2, bs=B.material.command&2;
+    as&&bs ? ++s.semi_semi : (as||bs ? ++s.opaque_semi : ++s.opaque_opaque);
+    int ax0=A.vertex[0].x,ax1=ax0,ay0=A.vertex[0].y,ay1=ay0;
+    int bx0=B.vertex[0].x,bx1=bx0,by0=B.vertex[0].y,by1=by0;
+    for(int k=1;k<(A.quad?4:3);++k){ax0=std::min(ax0,(int)A.vertex[k].x);ax1=std::max(ax1,(int)A.vertex[k].x);ay0=std::min(ay0,(int)A.vertex[k].y);ay1=std::max(ay1,(int)A.vertex[k].y);}
+    for(int k=1;k<(B.quad?4:3);++k){bx0=std::min(bx0,(int)B.vertex[k].x);bx1=std::max(bx1,(int)B.vertex[k].x);by0=std::min(by0,(int)B.vertex[k].y);by1=std::max(by1,(int)B.vertex[k].y);}
+    const float x0=std::max(ax0,bx0),x1=std::min(ax1,bx1),y0=std::max(ay0,by0),y1=std::min(ay1,by1);
+    if(x0>=x1||y0>=y1){++s.disjoint;continue;} ++s.bbox_overlap;
+    bool sampled=false, inv=false, tie=false; int invx=0,invy=0; float invNear=0,invFar=0,maxGap=0;
+    for(int yy=(int)std::floor(y0);yy<(int)std::ceil(y1);++yy)for(int xx=(int)std::floor(x0);xx<(int)std::ceil(x1);++xx){float za,zb;if(!face_z_at(A,xx+.5f,yy+.5f,za)||!face_z_at(B,xx+.5f,yy+.5f,zb))continue;sampled=true;++s.covered_pixels;if(za==zb)tie=true;else {const bool aNear=A.ot_bin<B.ot_bin;const float nearOrd=aNear?za:zb,farOrd=aNear?zb:za;if(farOrd>nearOrd){inv=true;const float gap=farOrd-nearOrd;if(gap>maxGap){maxGap=gap;invx=xx;invy=yy;invNear=nearOrd;invFar=farOrd;}}}}
+    if(!sampled){++s.disjoint;continue;} ++s.sampled_overlap;
+    if(as||bs) continue;
+    ++s.opaque_comparable;
+    if(inv){++s.inverted;const uint32_t delta=A.ot_bin>B.ot_bin?A.ot_bin-B.ot_bin:B.ot_bin-A.ot_bin;if(delta)s.inverted_diff_bin++;else s.inverted_same_bin++;s.max_inverted_bin_delta=std::max(s.max_inverted_bin_delta,delta);s.max_required_bias=std::max(s.max_required_bias,maxGap);if(s.first_inverted_a==UINT32_MAX){s.first_inverted_a=i;s.first_inverted_b=j;s.first_x=invx;s.first_y=invy;s.first_game_near_ord=invNear;s.first_game_far_ord=invFar;}}
+    else if(tie)++s.ties; else ++s.stable;
+  }
+  return s;
+}
 namespace {
 
 uint16_t narrow_offset(uint32_t value) { return (uint16_t)value; }

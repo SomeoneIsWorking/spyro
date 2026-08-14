@@ -14,7 +14,9 @@ struct ProjectedVertex {
   int16_t x = 0;
   int16_t y = 0;
   uint16_t depth = 0;
+  float view_z = 0;                   // unsaturated RTPS row-2 MAC / 4096; native D32 input
 };
+
 
 // Pure, projection-free decode of 0x80023AC4's normal primitive stream. Offsets remain byte offsets
 // into the function's projected-vertex and material tables; the eventual producer owns mapping them.
@@ -68,6 +70,23 @@ struct ResolvedFace {
   uint32_t ot_raw = 0;
   uint32_t ot_bin = 0;
 };
+
+struct OverlapDepthStats {
+  uint64_t pairs = 0, bbox_overlap = 0, sampled_overlap = 0;
+  uint64_t stable = 0, inverted = 0, ties = 0, disjoint = 0;
+  uint64_t opaque_comparable = 0, covered_pixels = 0;
+  uint64_t tri_tri = 0, tri_quad = 0, quad_quad = 0;
+  uint64_t opaque_opaque = 0, opaque_semi = 0, semi_semi = 0;
+  uint64_t inverted_same_bin = 0, inverted_diff_bin = 0;
+  uint32_t first_inverted_a = UINT32_MAX, first_inverted_b = UINT32_MAX;
+  uint32_t max_inverted_bin_delta = 0;
+  int32_t first_x = 0, first_y = 0;
+  float first_game_near_ord = 0, first_game_far_ord = 0, max_required_bias = 0;
+};
+
+// Pairwise interior overlap discriminator using the renderer's fixed quad split
+// (0,1,2)+(1,2,3). Smaller OT bin is game-nearer; smaller positive view_z is D32-nearer.
+OverlapDepthStats analyze_overlap_depth(std::span<const ResolvedFace> faces);
 
 struct FaceCompareResult {
   uint32_t compared = 0;

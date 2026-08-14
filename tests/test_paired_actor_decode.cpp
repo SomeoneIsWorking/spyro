@@ -200,5 +200,29 @@ int main() {
       {base, 0}, 0, 1);
   require(!rejected && rejected.faces.empty(),
           "out-of-range projected offset returned a plausible partial face list");
+
+  auto overlap_face = [](int x, uint32_t bin, float z, bool quad, bool semi) {
+    ResolvedFace f{}; f.quad=quad; f.ot_bin=bin; f.material.command=(quad?0x3c:0x34)|(semi?2:0);
+    f.vertex[0]={int16_t(x),0,100,z}; f.vertex[1]={int16_t(x+20),0,100,z};
+    f.vertex[2]={int16_t(x),20,100,z}; f.vertex[3]={int16_t(x+20),20,100,z}; return f;
+  };
+  std::array<ResolvedFace,2> depth_pair{overlap_face(0,10,300,false,false),overlap_face(0,20,500,false,false)};
+  auto os=analyze_overlap_depth(depth_pair);
+  require(os.sampled_overlap==1 && os.stable==1 && os.inverted==0,"stable overlapping depth pair misclassified");
+  depth_pair[1]=overlap_face(0,20,200,false,false); os=analyze_overlap_depth(depth_pair);
+  require(os.inverted==1 && os.opaque_comparable==1,"opaque inverted overlapping pair not detected");
+  depth_pair[1]=overlap_face(0,20,200,false,true); os=analyze_overlap_depth(depth_pair);
+  require(os.inverted==0 && os.sampled_overlap==1 && os.opaque_semi==1,
+          "semi pair incorrectly entered opaque inversion gate");
+  depth_pair[1]=overlap_face(40,20,50,false,false); os=analyze_overlap_depth(depth_pair);
+  require(os.sampled_overlap==0 && os.disjoint==1,"disjoint pair reported overlap");
+  depth_pair={overlap_face(0,10,100,true,false),overlap_face(0,10,100,true,false)};
+  os=analyze_overlap_depth(depth_pair);
+  require(os.sampled_overlap==1 && os.ties==1 && os.quad_quad==1 && os.opaque_opaque==1,
+          "quad equal-depth tie/matrix classification failed");
+  depth_pair={overlap_face(0,10,300.125f,false,false),overlap_face(0,20,300.875f,false,false)};
+  os=analyze_overlap_depth(depth_pair);
+  require(depth_pair[0].vertex[0].depth==depth_pair[1].vertex[0].depth && os.stable==1,
+          "fractional view-Z discriminator collapsed equal saturated SZ values");
   return 0;
 }

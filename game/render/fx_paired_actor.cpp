@@ -107,6 +107,8 @@ struct GuestXyzCapture {
   uint32_t globalSlots = 0, globalWordsCompared = 0, globalMismatches = 0;
   uint32_t firstGlobalAddress = 0, globalSimulationErrors = 0;
   bool corruptGlobalRejected = false;
+  spyro::paired_actor::OverlapDepthStats overlap;
+  uint32_t ditherBit9 = 0;
 };
 
 static GuestXyzCapture sGuest;
@@ -172,7 +174,7 @@ static spyro::paired_actor::ProjectedVertex project_rtps(
       (int64_t)ir[0] * ratio) >> 16), -1024, 1023);
   const int32_t sy = clampi((int32_t)(((int64_t)(int32_t)cr[25] +
       (int64_t)ir[1] * ratio) >> 16), -1024, 1023);
-  return {(int16_t)sx, (int16_t)sy, sz};
+  return {(int16_t)sx, (int16_t)sy, sz, (float)zUnshifted / 4096.0f};
 }
 
 static spyro::paired_actor::ProjectedVertex project_live_rtps() {
@@ -718,6 +720,9 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
   guest.pcMatched = (uint32_t)c->pcObserver.matched();
   c->pcObserver.disarm();
   const bool otGreen = compare_numeric_ot(guest, false);
+  guest.overlap = spyro::paired_actor::analyze_overlap_depth(guest.faces.faces);
+  for (const auto& face : guest.faces.faces)
+    if (face.packet_attr[1] & 0x02000000u) ++guest.ditherBit9;
   GuestXyzCapture corrupt = guest;
   corrupt.otCompared = corrupt.otMismatches = corrupt.unmappedPackets = 0;
   corrupt.firstOtMismatch = UINT32_MAX;
@@ -828,12 +833,41 @@ static bool compare_actual_guest(Core* c, GuestXyzCapture& guest) {
                guest.globalSimulationErrors,
                corruptRejected && topologyDiscriminator && guest.corruptGlobalRejected
                  ? "REJECTED" : "FAILED_TO_REJECT");
+  lucent::info("pairedpose",
+               "overlap depth: faces={} pairs={} bbox={} overlap={} opaque_comparable={} pixels={} "
+               "stable={} inverted={} ties={} "
+               "disjoint={} tri_tri={} tri_quad={} quad_quad={} opaque_opaque={} opaque_semi={} "
+               "semi_semi={} tpage_bit9={}/{} inv_same={} inv_diff={} max_bin_delta={} "
+               "max_required_bias={:.9f} first_inverted={}:{} pixel=({},{}), ord_near={:.9f} "
+               "ord_far={:.9f} proposed_sort_key={}",
+               guest.faces.faces.size(), guest.overlap.pairs, guest.overlap.bbox_overlap,
+               guest.overlap.sampled_overlap, guest.overlap.opaque_comparable,
+               guest.overlap.covered_pixels, guest.overlap.stable, guest.overlap.inverted,
+               guest.overlap.ties, guest.overlap.disjoint, guest.overlap.tri_tri,
+               guest.overlap.tri_quad, guest.overlap.quad_quad, guest.overlap.opaque_opaque,
+               guest.overlap.opaque_semi, guest.overlap.semi_semi,
+               guest.ditherBit9, guest.faces.faces.size(),
+               guest.overlap.inverted_same_bin, guest.overlap.inverted_diff_bin,
+               guest.overlap.max_inverted_bin_delta, guest.overlap.max_required_bias,
+               guest.overlap.first_inverted_a, guest.overlap.first_inverted_b,
+               guest.overlap.first_x, guest.overlap.first_y,
+               guest.overlap.first_game_near_ord, guest.overlap.first_game_far_ord,
+               guest.overlap.inverted == 0 && guest.overlap.opaque_comparable > 0 ? -1 : 0);
+  if (guest.overlap.first_inverted_a < guest.faces.faces.size() &&
+      guest.overlap.first_inverted_b < guest.faces.faces.size()) {
+    const auto& a=guest.faces.faces[guest.overlap.first_inverted_a];
+    const auto& b=guest.faces.faces[guest.overlap.first_inverted_b];
+    lucent::info("pairedpose", "overlap witness A src={} frag={} bin={} nv={} xy/z=[({},{},{:.3f}) ({},{},{:.3f}) ({},{},{:.3f}) ({},{},{:.3f})] B src={} frag={} bin={} nv={} xy/z=[({},{},{:.3f}) ({},{},{:.3f}) ({},{},{:.3f}) ({},{},{:.3f})]",
+      a.source_ordinal,a.fragment_ordinal,a.ot_bin,a.quad?4:3,a.vertex[0].x,a.vertex[0].y,a.vertex[0].view_z,a.vertex[1].x,a.vertex[1].y,a.vertex[1].view_z,a.vertex[2].x,a.vertex[2].y,a.vertex[2].view_z,a.vertex[3].x,a.vertex[3].y,a.vertex[3].view_z,
+      b.source_ordinal,b.fragment_ordinal,b.ot_bin,b.quad?4:3,b.vertex[0].x,b.vertex[0].y,b.vertex[0].view_z,b.vertex[1].x,b.vertex[1].y,b.vertex[1].view_z,b.vertex[2].x,b.vertex[2].y,b.vertex[2].view_z,b.vertex[3].x,b.vertex[3].y,b.vertex[3].view_z);
+  }
   if (!otGreen || !corruptRejected || !topologyDiscriminator || !guest.corruptGlobalRejected ||
       guest.pcSeen != 2 || guest.pcMatched != 2 ||
       guest.preSnapshots != 1 || guest.postSnapshots != 1 || guest.traversedPackets != guest.guestPackets.size() ||
       guest.binsScanned != kLocalOtBins || guest.postWithoutPre || guest.duplicatePackets ||
       guest.cycles || guest.badTails || guest.unclearedWords || guest.globalSimulationErrors ||
-      !guest.globalSlots || !guest.globalWordsCompared || guest.globalMismatches)
+      !guest.globalSlots || !guest.globalWordsCompared || guest.globalMismatches ||
+      !guest.overlap.opaque_comparable || guest.overlap.inverted)
     return false;
   lucent::info("pairedpose",
                "actual guest XYZ+projection: armed_ops={} all_rtps={} target_rtps={}/{} "

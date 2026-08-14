@@ -27,6 +27,7 @@ struct PrefixBuildCapture {
     spyro::actor_prefix::Input input;
     spyro::actor_prefix::Output expected;
     uint32_t descriptor = 0, command = 0, colorBase = 0;
+    bool colorSeen = false;
   };
   std::vector<Record> records;
   uint32_t activeRecord = 0;
@@ -36,9 +37,11 @@ struct PrefixBuildCapture {
   uint32_t firstExpected = 0, firstActual = 0, firstIndex = 0;
   uint32_t irMismatch = 0, sxyMismatch = 0, szMismatch = 0;
   uint32_t finalCheckpoint = 0, pointerMismatch = 0;
+  uint32_t scratchWordsCompared = 0, scratchWordMismatch = 0;
   uint32_t highRecords = 0, highColorsCaptured = 0;
   uint32_t positiveRecords = 0, positiveColorsCompared = 0, colorMismatch = 0;
   uint32_t primitiveWordsCaptured = 0;
+  uint32_t clipModeRecords = 0, clipModeVertices = 0;
   const char *first = "none";
 };
 
@@ -1355,15 +1358,14 @@ static void prefix_build_post(Core *, uint64_t, uint32_t pc, uint32_t, void *use
   }
 }
 
-static void prefix_build_final(Core *c, uint64_t, uint32_t, void *user) {
+static void prefix_build_color(Core *c, uint64_t, uint32_t, void *user) {
   auto &capture = *static_cast<PrefixBuildCapture *>(user);
-  ++capture.finalCheckpoint;
   if (capture.activeRecord >= capture.records.size()) {
     ++capture.pointerMismatch;
     prefix_build_first(capture, "extra_record");
     return;
   }
-  const auto &record = capture.records[capture.activeRecord];
+  auto &record = capture.records[capture.activeRecord];
   if (c->lo != record.descriptor || c->r[30] != record.command || c->r[25] != record.colorBase) {
     ++capture.pointerMismatch;
     prefix_build_first(capture, "final_pointer");
@@ -1377,7 +1379,41 @@ static void prefix_build_final(Core *c, uint64_t, uint32_t, void *user) {
       }
     }
   }
+  record.colorSeen = true;
+}
+
+static void prefix_build_record_end(Core *c, uint64_t, uint32_t, void *user) {
+  auto &capture = *static_cast<PrefixBuildCapture *>(user);
+  ++capture.finalCheckpoint;
+  if (capture.activeRecord >= capture.records.size()) {
+    ++capture.pointerMismatch;
+    prefix_build_first(capture, "extra_record_end");
+    return;
+  }
+  const auto &record = capture.records[capture.activeRecord];
+  for (uint32_t i = 0; i < record.expected.vertices.size(); ++i) {
+    ++capture.scratchWordsCompared;
+    const uint32_t actual = c->mem_r32(0x1F800000u + i * 4u);
+    if (actual != record.expected.vertices[i].scratchWord) {
+      ++capture.scratchWordMismatch;
+      prefix_build_first(
+          capture, "scratch_word", i, record.expected.vertices[i].scratchWord, actual);
+    }
+  }
+  const bool shouldSeeColor = record.expected.status == spyro::actor_prefix::Status::Ok;
+  if (record.colorSeen != shouldSeeColor) {
+    ++capture.pointerMismatch;
+    prefix_build_first(capture, "color_lifecycle");
+  }
   ++capture.activeRecord;
+}
+
+static void prefix_build_checkpoint(Core *c, uint64_t cycle, uint32_t pc, void *user) {
+  if (pc == 0x8001FF64u) {
+    prefix_build_color(c, cycle, pc, user);
+  } else if (pc == 0x80020860u) {
+    prefix_build_record_end(c, cycle, pc, user);
+  }
 }
 
 static void actor_chain_prefix_build_oracle(Core *c) {
@@ -1406,14 +1442,19 @@ static void actor_chain_prefix_build_oracle(Core *c) {
     capture.records.push_back(std::move(record));
   }
   captured = captured && terminated && !capture.records.empty();
-  bool supported = captured;
+  std::vector<spyro::actor_prefix::Output> outputs;
+  outputs.reserve(capture.records.size());
   std::array<uint32_t, 9> statusCounts{};
-  uint32_t expectedVertices = 0, expectedPositiveColors = 0;
+  uint32_t expectedVertices = 0, expectedPositiveColors = 0, expectedVisibleRecords = 0;
   for (const auto &record : capture.records) {
+    outputs.push_back(record.expected);
     ++statusCounts[(uint32_t)record.expected.status];
-    supported &= record.expected.status == spyro::actor_prefix::Status::Ok;
     expectedVertices += (uint32_t)record.expected.vertices.size();
-    capture.primitiveWordsCaptured += (uint32_t)record.expected.primitiveWords.size();
+    if ((int32_t)record.input.header < 0) {
+      ++capture.clipModeRecords;
+      capture.clipModeVertices += (uint32_t)record.expected.vertices.size();
+    }
+    capture.primitiveWordsCaptured += (uint32_t)record.input.primitiveWords.size();
     if (record.input.colorArm == spyro::actor_prefix::ColorArm::PositiveBlend) {
       ++capture.positiveRecords;
       expectedPositiveColors += (uint32_t)record.expected.colors.size();
@@ -1421,10 +1462,13 @@ static void actor_chain_prefix_build_oracle(Core *c) {
       ++capture.highRecords;
       capture.highColorsCaptured += (uint32_t)record.input.primaryColors.size();
     }
+    expectedVisibleRecords += record.expected.status == spyro::actor_prefix::Status::Ok;
   }
-  static constexpr uint32_t target = 0x8001FF64u;
+  const auto boundary = spyro::actor_prefix::classifyCall(outputs);
+  const bool supported = captured && boundary.status == spyro::actor_prefix::CallStatus::Owned;
+  static constexpr uint32_t targets[] = {0x8001FF64u, 0x80020860u};
   if (supported) {
-    if (!c->pcObserver.arm(&target, 1, prefix_build_final, &capture)) {
+    if (!c->pcObserver.arm(targets, std::size(targets), prefix_build_checkpoint, &capture)) {
       abort();
     }
     gte_op_observer_arm(c, prefix_build_pre, prefix_build_post, &capture);
@@ -1439,15 +1483,23 @@ static void actor_chain_prefix_build_oracle(Core *c) {
                     capture.irMismatch == 0 && capture.sxyMismatch == 0 &&
                     capture.szMismatch == 0 && capture.finalCheckpoint == capture.records.size() &&
                     capture.pointerMismatch == 0 && capture.colorMismatch == 0 &&
+                    capture.scratchWordMismatch == 0 &&
+                    capture.scratchWordsCompared == expectedVertices &&
                     capture.positiveColorsCompared == expectedPositiveColors &&
-                    pcMatched == capture.records.size();
+                    capture.activeRecord == capture.records.size() &&
+                    pcMatched == capture.records.size() + expectedVisibleRecords;
   lucent::info("actorchainprefixbuild",
                "captured={} supported={} records={} vertices[expected={} pre={} post={}] "
                "gte_seen={} controls={} "
                "mismatch[input={} control={} raw_view={} ir={} sxy={} sz={} pointer={} "
-               "positive_color={}] control_regs[0..7={},{},{},{},{},{},{},{} 13..15={},{},{}] "
-               "final={}/{} pc_seen={} status[ok={} optional_expansion={} transform_blend={} "
-               "clip_status={} count_zero={} stream={} plain={} negative={} color_count={}] "
+               "positive_color={} scratch_word={}] "
+               "control_regs[0..7={},{},{},{},{},{},{},{} 13..15={},{},{}] "
+               "final={}/{} pc_seen={} pc_matched={}/{} "
+               "boundary[visible={} rejected={} unsupported={}] "
+               "clip_mode[records={} vertices={}] "
+               "status[ok={} optional_expansion={} transform_blend={} count_zero={} stream={} "
+               "plain={} negative={} color_count={} visibility_rejected={}] "
+               "scratch_words={}/{} "
                "colors[high_records={} high_captured={} positive_records={} "
                "positive_compared={}/{}] primitive_words_captured={} "
                "first={}#{}[exp={:08X} act={:08X}] result={}",
@@ -1467,6 +1519,7 @@ static void actor_chain_prefix_build_oracle(Core *c) {
                capture.szMismatch,
                capture.pointerMismatch,
                capture.colorMismatch,
+               capture.scratchWordMismatch,
                capture.controlMismatchByReg[0],
                capture.controlMismatchByReg[1],
                capture.controlMismatchByReg[2],
@@ -1481,6 +1534,13 @@ static void actor_chain_prefix_build_oracle(Core *c) {
                capture.finalCheckpoint,
                capture.records.size(),
                pcSeen,
+               pcMatched,
+               capture.records.size() + expectedVisibleRecords,
+               boundary.visibleRecords,
+               boundary.rejectedRecords,
+               boundary.unsupportedRecords,
+               capture.clipModeRecords,
+               capture.clipModeVertices,
                statusCounts[0],
                statusCounts[1],
                statusCounts[2],
@@ -1490,6 +1550,8 @@ static void actor_chain_prefix_build_oracle(Core *c) {
                statusCounts[6],
                statusCounts[7],
                statusCounts[8],
+               capture.scratchWordsCompared,
+               expectedVertices,
                capture.highRecords,
                capture.highColorsCaptured,
                capture.positiveRecords,

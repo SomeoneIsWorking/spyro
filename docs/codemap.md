@@ -299,17 +299,22 @@ projection loop, or Plain/NegativeBlend arms, and it does not submit faces.
 Phase 3 now owns the reached prefix endpoint. `game/render/actor_prefix_builder.{h,cpp}` is a pure
 immutable-input seam over `actor_model_codec` and psxport `native_projection`; it owns reached
 transform setup, model decode, endpoint projection and High/PositiveBlend color selection,
-and explicitly refuses optional expansion, transform blend, status output, count zero and uncovered
+and explicitly refuses optional expansion, transform blend, count zero and uncovered
 color arms. `PSXPORT_ACTOR_CHAIN_ORACLE=prefix-build` deep-copies every durable record before the
 generated body and compares RTPS inputs, CR0..7/13..15 and MAC/IR/SXY/SZ. PositiveBlend scratch
 colors are independently compared; High colors alias their source and primitive words are immutable
 capture denominators only, not construction evidence. The live discriminator corrected three real
 transcription errors: CR4's packed
 CR30 high half, header translation bias bits 16..23, and the distinction between descriptor byte5
-transform shift and `(byte6+1)` vertex-delta shift. The repaired 500-present run produced ten
-supported `PASS` calls, 22 explicit `ClipStatus` refusals and zero `FAIL`/`NO_CORPUS`. Supported calls
-compared 195/195 RTPS inputs/post-ops and 2,145 controls each; across them 19 PositiveBlend records
-compared 1,094 scratch colors, while one High record captured six aliased colors. All ten captured 702
-primitive words without comparing them back to their unchanged source
-(`scratch/logs/actorchain_prefix_scoped.log`). This proves only the reached transform/projection and
-PositiveBlend scratch output; no native producer or claim is enabled.
+transform shift and `(byte6+1)` vertex-delta shift. The negative-header status arm is part of the
+same builder rather than a blanket refusal. It
+reproduces each `(SXY << 5) | outcode` scratch word and the record-wide common-status AND; a nonzero
+common result is a valid zero-output `VisibilityRejected` record. `classifyCall` is the single pure
+atomic boundary: an empty call is `NoCorpus`, any uncovered record refuses the whole call, and only
+all-`Ok`/`VisibilityRejected` records are owned. The fresh 500-present status corpus has 31/31
+PASS calls: each joined two records, 195 RTPS inputs/post-ops, 2,145 controls and 195 scratch words.
+Twenty-one calls exercised one negative-header record (157 vertices) apiece, but all common statuses
+were zero, so the live corpus reached 21 clip-mode records and zero visibility rejections. Across all
+calls, 19 PositiveBlend records independently compared 1,094 scratch colors; 43 High records/2,316
+colors and 702 primitive words per call remain capture-only evidence
+(`scratch/logs/actorchain_prefix_status.log`).

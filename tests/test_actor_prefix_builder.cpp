@@ -68,6 +68,12 @@ void testHighAndCorruptions() {
   const CompareResult colorDiff = compareOutputs(expected, colorCorrupt);
   require(colorDiff.mismatches != 0 && std::string_view(colorDiff.firstField) == "color",
           "color output corruption was not named by comparator");
+
+  Output scratchCorrupt = expected;
+  scratchCorrupt.vertices[0].scratchWord ^= 1u;
+  const CompareResult scratchDiff = compareOutputs(expected, scratchCorrupt);
+  require(scratchDiff.mismatches != 0 && std::string_view(scratchDiff.firstField) == "scratch_word",
+          "scratch output corruption was not named by comparator");
 }
 
 void testPositiveBlendAndRefusals() {
@@ -91,11 +97,38 @@ void testPositiveBlendAndRefusals() {
           "uncovered transform blend was silently accepted");
   input.header &= ~1u;
   input.header |= 0x80000000u;
-  require(build(input).status == Status::ClipStatus,
-          "uncovered status output was silently accepted");
+  const Output statusVisible = build(input);
+  require(statusVisible.status == Status::Ok && statusVisible.commonStatus == 0 &&
+              statusVisible.vertices[0].scratchWord == 0x0F001400u,
+          "visible status output was not encoded exactly");
+  Input rejectedInput = input;
+  rejectedInput.projection.ofx = -2000 * 65536;
+  const Output statusRejected = build(rejectedInput);
+  require(statusRejected.status == Status::VisibilityRejected && statusRejected.commonStatus != 0 &&
+              statusRejected.colors.empty(),
+          "common status rejection was not preserved");
+  Output rejectedCorrupt = statusRejected;
+  rejectedCorrupt.commonStatus ^= 1u;
+  require(std::string_view(compareOutputs(statusRejected, rejectedCorrupt).firstField) ==
+              "common_status",
+          "status corruption was not named by comparator");
+
+  const std::array ownedRecords{blended, statusRejected};
+  const CallBoundary owned = classifyCall(ownedRecords);
+  require(owned.status == CallStatus::Owned && owned.records == 2 && owned.visibleRecords == 1 &&
+              owned.rejectedRecords == 1 && owned.unsupportedRecords == 0,
+          "mixed visible/rejected call was not atomically owned");
+  require(classifyCall(std::span<const Output>{}).status == CallStatus::NoCorpus,
+          "empty call did not refuse as no corpus");
   input.header &= ~0x80000000u;
   input.colorArm = ColorArm::Plain;
-  require(build(input).status == Status::PlainColor, "Plain arm was silently accepted");
+  const Output plain = build(input);
+  require(plain.status == Status::PlainColor, "Plain arm was silently accepted");
+  const std::array unsupportedRecords{blended, plain};
+  const CallBoundary unsupported = classifyCall(unsupportedRecords);
+  require(unsupported.status == CallStatus::Unsupported && unsupported.records == 2 &&
+              unsupported.visibleRecords == 1 && unsupported.unsupportedRecords == 1,
+          "unsupported record did not refuse the whole call");
   input.colorArm = ColorArm::NegativeBlend;
   require(build(input).status == Status::NegativeBlend, "NegativeBlend arm was silently accepted");
 }

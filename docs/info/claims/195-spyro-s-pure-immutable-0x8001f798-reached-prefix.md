@@ -9,12 +9,21 @@ depends: game/render/actor_prefix_builder.cpp#build, game/core/actor_chain_oracl
 
 ## Claim
 
-Spyro's pure immutable 0x8001F798 reached-prefix builder reproduces the supported transform and projection endpoints and PositiveBlend scratch colors without consuming guest scratch or GTE state
+Spyro's pure immutable 0x8001F798 reached-prefix builder reproduces the supported transform,
+projection and negative-header status endpoints plus PositiveBlend scratch colors without consuming
+guest scratch or GTE state
 
 ## Evidence
 
-scratch/logs/actorchain_prefix_scoped.log: 10 PASS, 22 classified ClipStatus REFUSED, 0 FAIL/NO_CORPUS; each PASS 195/195 RTPS inputs/post-ops and 2145 controls exact; 1094/1094 PositiveBlend scratch colors exact. High colors and primitive words are capture-only denominators, not independent output proof.
+`scratch/logs/actorchain_prefix_status.log`: 31 PASS, 0 REFUSED/FAIL/NO_CORPUS; every call compared
+195/195 RTPS inputs/post-ops, 2,145 controls and 195 scratch words. Twenty-one negative-header records
+(3,297 vertices) reached the status arm with exact packed words and zero common-status rejections.
+PositiveBlend compared 1,094/1,094 scratch colors. High colors and primitive words are capture-only
+denominators, not independent output proof. The same pure `classifyCall` seam is exercised by
+hermetic Owned/NoCorpus/Unsupported cases before any future queue mutation.
 
 ## What would falsify it
 
-a fresh supported prefix-build call mismatches any RTPS input, control, MAC/IR/SXY/SZ, or PositiveBlend scratch color; or the builder gains a Core, guest-scratch, ambient-GTE, or opcode dependency
+a fresh supported prefix-build call mismatches any RTPS input, control, MAC/IR/SXY/SZ, packed status
+scratch word or PositiveBlend scratch color; the boundary accepts an uncovered record; or the builder
+gains a Core, guest-scratch, ambient-GTE, or opcode dependency

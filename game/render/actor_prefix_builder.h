@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace spyro::actor_prefix {
@@ -42,12 +43,12 @@ enum class Status : uint8_t {
   Ok,
   OptionalExpansion,
   TransformBlend,
-  ClipStatus,
   CountZero,
   Stream,
   PlainColor,
   NegativeBlend,
   ColorCount,
+  VisibilityRejected,
 };
 
 struct Vertex {
@@ -56,6 +57,7 @@ struct Vertex {
   actor_model_codec::Vec3i resolved;
   psxport::native_projection::ModelVertex projectionInput;
   psxport::native_projection::NativeProjectedVertex projected;
+  uint32_t scratchWord = 0;
 };
 
 struct Output {
@@ -64,6 +66,17 @@ struct Output {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> colors;
   std::vector<uint32_t> primitiveWords;
+  uint32_t commonStatus = 0;
+};
+
+enum class CallStatus : uint8_t { NoCorpus, Owned, Unsupported };
+
+struct CallBoundary {
+  CallStatus status = CallStatus::NoCorpus;
+  uint32_t records = 0;
+  uint32_t visibleRecords = 0;
+  uint32_t rejectedRecords = 0;
+  uint32_t unsupportedRecords = 0;
 };
 
 struct CompareResult {
@@ -76,8 +89,14 @@ struct CompareResult {
 
 // Pure reached-prefix builder. Input is an immutable semantic deep copy: no
 // Core, guest addresses, scratch products, GTE state, or opcodes. Optional
-// expansion, clip/status and unreached color arms are explicit refusals.
+// expansion and unreached color arms are explicit refusals; negative-header
+// status output is represented exactly, including whole-record rejection.
 Output build(const Input &input);
+
+// Pure call-level preflight. A future owner must obtain Owned before mutating
+// RenderQueue or guest packet state; VisibilityRejected is a fully evaluated
+// zero-output record, while every other non-Ok status refuses the whole call.
+CallBoundary classifyCall(std::span<const Output> records);
 
 // Hermetic exact-output comparator for builder tests. The live diagnostic
 // compares independently observed guest state at qualified checkpoints.

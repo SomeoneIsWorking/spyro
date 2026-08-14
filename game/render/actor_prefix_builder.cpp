@@ -53,6 +53,28 @@ std::array<int32_t, 3> farColor(uint32_t rgb) {
       (int32_t)((rgb << 4) & 4080u), (int32_t)((rgb >> 4) & 4080u), (int32_t)((rgb >> 12) & 4080u)};
 }
 
+uint32_t packedSxy(const psxport::native_projection::NativeProjectedVertex &projected) {
+  return (uint16_t)projected.sx | ((uint32_t)(uint16_t)projected.sy << 16);
+}
+
+uint32_t clipStatusWord(uint32_t sxy) {
+  uint32_t flags = 0;
+  if ((int32_t)(sxy - 0x00010000u) <= 0) {
+    flags |= 1u;
+  }
+  if ((int32_t)(sxy - 0x01000000u) >= 0) {
+    flags |= 2u;
+  }
+  const uint32_t vertical = sxy << 16;
+  if ((int32_t)vertical <= 0) {
+    flags |= 4u;
+  }
+  if ((int32_t)(vertical - 0x02000000u) >= 0) {
+    flags |= 8u;
+  }
+  return (sxy << 5) | flags;
+}
+
 } // namespace
 
 Output build(const Input &input) {
@@ -63,10 +85,6 @@ Output build(const Input &input) {
   }
   if (input.vertexCount == 0) {
     out.status = Status::CountZero;
-    return out;
-  }
-  if ((int32_t)input.header < 0) {
-    out.status = Status::ClipStatus;
     return out;
   }
   if ((input.header & 0xffu) != 0) {
@@ -98,6 +116,7 @@ Output build(const Input &input) {
 
   const uint16_t vertexScale = (uint16_t)((input.header & 0xff00u) >> 2);
   const bool paired = vertexScale != 0;
+  const bool clipMode = (int32_t)input.header < 0;
   const auto primary = decode(input.primary, input.vertexCount, input.streamShift);
   if (primary.status != actor_model_codec::StreamStatus::Ok) {
     out.status = Status::Stream;
@@ -112,6 +131,7 @@ Output build(const Input &input) {
     }
   }
   out.vertices.reserve(input.vertexCount);
+  uint32_t commonStatus = 0xffffffffu;
   for (uint32_t i = 0; i < input.vertexCount; ++i) {
     const auto a = primary.vertices[i];
     const auto b = paired ? alternate.vertices[i] : actor_model_codec::Vec3i{};
@@ -121,11 +141,16 @@ Output build(const Input &input) {
       resolved = {blend.mac[0], blend.mac[1], blend.mac[2]};
     }
     const auto packed = projectionInput(resolved);
-    out.vertices.push_back({a,
-                            b,
-                            resolved,
-                            packed,
-                            psxport::native_projection::project(affine, input.projection, packed)});
+    const auto projected = psxport::native_projection::project(affine, input.projection, packed);
+    const uint32_t sxy = packedSxy(projected);
+    const uint32_t scratchWord = clipMode ? clipStatusWord(sxy) : sxy;
+    commonStatus &= scratchWord;
+    out.vertices.push_back({a, b, resolved, packed, projected, scratchWord});
+  }
+  out.commonStatus = clipMode ? commonStatus & 31u : 0u;
+  if (out.commonStatus != 0) {
+    out.status = Status::VisibilityRejected;
+    return out;
   }
 
   if (input.colorArm == ColorArm::High) {
@@ -147,6 +172,25 @@ Output build(const Input &input) {
   out.primitiveWords = input.primitiveWords;
   out.status = Status::Ok;
   return out;
+}
+
+CallBoundary classifyCall(std::span<const Output> records) {
+  CallBoundary result{};
+  result.records = (uint32_t)records.size();
+  if (records.empty()) {
+    return result;
+  }
+  for (const Output &record : records) {
+    if (record.status == Status::Ok) {
+      ++result.visibleRecords;
+    } else if (record.status == Status::VisibilityRejected) {
+      ++result.rejectedRecords;
+    } else {
+      ++result.unsupportedRecords;
+    }
+  }
+  result.status = result.unsupportedRecords == 0 ? CallStatus::Owned : CallStatus::Unsupported;
+  return result;
 }
 
 CompareResult compareOutputs(const Output &expected, const Output &actual) {
@@ -184,7 +228,9 @@ CompareResult compareOutputs(const Output &expected, const Output &actual) {
     mismatch(a.projected.ir != b.projected.ir, "ir");
     mismatch(a.projected.sx != b.projected.sx || a.projected.sy != b.projected.sy, "sxy");
     mismatch(a.projected.sz != b.projected.sz, "sz");
+    mismatch(a.scratchWord != b.scratchWord, "scratch_word");
   }
+  mismatch(expected.commonStatus != actual.commonStatus, "common_status");
   mismatch(expected.colors.size() != actual.colors.size(), "color_count");
   result.colors = (uint32_t)std::min(expected.colors.size(), actual.colors.size());
   for (size_t i = 0; i < result.colors; ++i) {

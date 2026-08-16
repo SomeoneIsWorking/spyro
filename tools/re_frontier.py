@@ -109,7 +109,13 @@ class Entry:
         out.append(f"- status: {self.status}")
         out.append(f"- deps: {', '.join(self.deps)}")
         for f in ("evidence", "where", "gap", "notes"):
-            out.append(f"- {f}: {getattr(self, f)}")
+            val = getattr(self, f)
+            lines = val.split("\n")
+            out.append(f"- {f}: {lines[0]}")
+            # Continuation lines are stored verbatim (leading whitespace included) so a
+            # multi-line gap/notes value round-trips: the first line carries the `- field:`
+            # prefix, the rest are written back exactly as they were parsed.
+            out.extend(lines[1:])
         return "\n".join(out)
 
 
@@ -121,12 +127,15 @@ def load():
     order = []
     area = "misc"
     cur = None
+    cur_field = None
     with open(ROADMAP, encoding="utf-8") as fh:
         for line in fh:
             line = line.rstrip("\n")
             m = re.match(r"^## +(.+)$", line)
             if m and not line.startswith("### "):
                 area = m.group(1).strip()
+                cur = None
+                cur_field = None
                 continue
             m = re.match(r"^### +(\S+) +— +(.+)$", line)
             if not m:
@@ -135,14 +144,36 @@ def load():
                 cur = Entry(m.group(1).strip(), m.group(2).strip(), area)
                 entries[cur.id] = cur
                 order.append(cur.id)
+                cur_field = None
+                continue
+            if cur is None:
+                continue
+            # A blank line ends the current entry's field block.
+            if not line.strip():
+                cur_field = None
                 continue
             m = re.match(r"^- +(\w+): ?(.*)$", line)
-            if m and cur:
+            if m:
                 key, val = m.group(1), m.group(2).strip()
                 if key == "deps":
                     cur.deps = [d.strip() for d in val.split(",") if d.strip()]
+                    cur_field = None
                 elif key in ("status", "evidence", "where", "gap", "notes"):
                     setattr(cur, key, val)
+                    cur_field = key
+                else:
+                    # An unrecognized `- bullet:` line inside an entry (e.g. the multi-line
+                    # gap/notes bullets `- PROGRESS ...`, `- NEXT, ...`) is a continuation of
+                    # the current field's value, not a field and not something to drop. DROPPING
+                    # IT IS DATA LOSS: a `set`/`add` round-trip silently erased 68 lines of the
+                    # frame.own-render-driver gap+notes until this was fixed.
+                    if cur_field:
+                        setattr(cur, cur_field, getattr(cur, cur_field) + "\n" + line)
+                continue
+            # Any other non-blank line inside an entry is an indented continuation of the
+            # current field's multi-line value.
+            if cur_field:
+                setattr(cur, cur_field, getattr(cur, cur_field) + "\n" + line)
     return entries, order
 
 
@@ -420,9 +451,63 @@ def cmd_set(entries, order, args):
     return 0
 
 
+def run_selftest() -> int:
+    """Prove a `set`/`add` round-trip preserves multi-line gap/notes values.
+
+    The bug this guards: load() dropped every continuation line of a multi-line
+    field (anything that was not a `- field:` head), so one `set` silently erased
+    68 lines of frame.own-render-driver gap+notes — `- PROGRESS …` bullets, `- NEXT,`
+    bullets, and indented continuations — with no error. Feed a fixture whose
+    multi-line gap/notes MUST survive a load→save→load, so a reversion reads as a
+    FAILURE rather than a silent truncated file.
+    """
+    import tempfile
+    fixture = (
+        "## render\n\n"
+        "### t.step — a step\n"
+        "- status: re-partial\n"
+        "- deps: \n"
+        "- evidence: C1\n"
+        "- where: \n"
+        "- gap: head line\n"
+        "- PROGRESS 2026-08-06: bullet line\n"
+        "  * (1) indented continuation\n"
+        "- NEXT, in the abort's own order: trailing\n"
+        "- notes: note head\n"
+        "  note continuation one\n"
+        "  note continuation two\n"
+    )
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False)
+    tmp.write(fixture)
+    tmp.close()
+    global ROADMAP
+    old = ROADMAP
+    ROADMAP = tmp.name
+    try:
+        entries, order = load()
+        save(entries, order)
+        entries, order = load()
+        e = entries["t.step"]
+        gap_ok = e.gap == ("head line\n- PROGRESS 2026-08-06: bullet line\n"
+                           "  * (1) indented continuation\n"
+                           "- NEXT, in the abort's own order: trailing")
+        notes_ok = e.notes == "note head\n  note continuation one\n  note continuation two"
+    finally:
+        ROADMAP = old
+        os.unlink(tmp.name)
+    if not gap_ok or not notes_ok:
+        print("[re-frontier] selftest FAILED: multi-line gap/notes were not preserved "
+              f"(gap_ok={gap_ok}, notes_ok={notes_ok}) — a `set`/`add` would lose data",
+              file=sys.stderr)
+        return 1
+    print("[re-frontier] selftest OK: multi-line gap/notes round-trip preserved")
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(description="Spyro RE-frontier progress tracker")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    p.add_argument("--selftest", action="store_true")
+    sub = p.add_subparsers(dest="cmd")
 
     sp = sub.add_parser("list"); sp.add_argument("--area"); sp.add_argument("--status")
     sp = sub.add_parser("show"); sp.add_argument("id")
@@ -442,6 +527,11 @@ def main():
     sp.add_argument("assignments", nargs="+")
 
     args = p.parse_args()
+    if args.selftest:
+        sys.exit(run_selftest())
+    if not args.cmd:
+        p.print_help()
+        sys.exit(2)
     entries, order = load()
     fn = {
         "list": cmd_list, "show": cmd_show, "next": cmd_next, "hacks": cmd_hacks,

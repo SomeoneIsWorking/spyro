@@ -3,6 +3,7 @@ id: C147
 kind: claim
 status: holds
 created: 2026-07-30
+updated: 2026-08-16
 tags: render,widescreen,ownership
 ---
 
@@ -12,7 +13,7 @@ MUTE MAP, corrected and now agreeing with the decomp's names on every entry: 0x8
 
 ## Evidence
 
-Five captures of frame 46501 with PSXPORT_MUTE_FN, each preceded by deleting scratch/screenshots/f46501.png so a failed run cannot silently reuse the previous image: recheck_800258F0.png, recheck_80020F34.png, recheck_8001F798.png against mute_none.png. Independently corroborated by open-spyro's symbol names (external/open-spyro/config/spyro.main.ld), which were NOT used to derive the map — they were what prompted the re-check by disagreeing with it.
+Five captures of frame 46501 with PSXPORT_MUTE_FN, each preceded by deleting scratch/screenshots/f46501.png so a failed run cannot silently reuse the previous image: recheck_800258F0.png, recheck_80020F34.png, recheck_8001F798.png against mute_none.png. Independently corroborated by open-spyro's symbol names (external/open-spyro/config/spyro.main.ld), which were NOT used to derive the map — they were what prompted the re-check by disagreeing with it. 2026-08-16: now ALSO corroborated by the vendored decomp (external/spyro-1/src): func_800258F0 is the world renderer (environment.c:44 calls it with the occlusion group; draw.c:2571 with -1), func_80020F34 is the specular-moby renderer (draw.c:611), func_8004EBA8 the world/terrain mesh list (draw.c:2573 with the camera matrices). This is what surfaced that docs/re-frontier.md still named 0x80020F34 "the ground" — fixed.
 
 ## What would falsify it
 

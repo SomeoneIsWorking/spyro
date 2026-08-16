@@ -6,6 +6,11 @@
     "inferred. Each name is DERIVED FROM ITS WAD OFFSET (OV_<hex>) so it never shifts when a",
     "new overlay is discovered — an index-based name would silently re-point existing seeds.",
     "Re-run overlay_scan.py after a run that gets further; the set is merged, never replaced.",
+    "reference_name, where present, is a BYTE-VERIFIED label: the SHA-256 of this slice of the",
+    "retail WAD.WAD matches a named overlay in external/spyro-1/sha256sum.txt (a matching",
+    "decomp, so the bytes are identical). The stable key is still OV_<hex> — reference_name is",
+    "for humans only. Measured 2026-08-16: 6 of 12 runtime overlays map; the decomp's 37th",
+    "overlay (credits.ovl) is not a sector-aligned WAD entry.",
     "entry_seeds are DERIVED, not observed: main installs each overlay's per-frame entry into",
     "[0x80075734] (43 stores, 36 distinct addresses), and an entry is claimed by an overlay only",
     "if it is prologue-shaped (addiu sp,sp,-N) in THAT overlay's own bytes. All overlays share one",
@@ -18,54 +23,65 @@
       "name": "OV_0",
       "wad_offset": "0x0",
       "length": 2048,
+      "reference_name": null,
       "entry_seeds": []
     },
     {
       "name": "OV_5B800",
       "wad_offset": "0x5B800",
       "length": 14336,
+      "reference_name": "titlescreen_code",
       "entry_seeds": []
     },
     {
       "name": "OV_5F000",
       "wad_offset": "0x5F000",
       "length": 2048,
+      "reference_name": null,
       "entry_seeds": []
     },
     {
       "name": "OV_18F000",
       "wad_offset": "0x18F000",
       "length": 2048,
+      "reference_name": null,
       "entry_seeds": []
     },
     {
       "name": "OV_18F800",
       "wad_offset": "0x18F800",
       "length": 524288,
+      "reference_name": null,
       "entry_seeds": []
     },
     {
       "name": "OV_20F800",
       "wad_offset": "0x20F800",
       "length": 491520,
+      "reference_name": null,
       "entry_seeds": []
     },
     {
       "name": "OV_287800",
       "wad_offset": "0x287800",
       "length": 75776,
+      "reference_name": null,
       "entry_seeds": []
     },
     {
       "name": "OV_7F2800",
       "wad_offset": "0x7F2800",
       "length": 57344,
-      "entry_seeds": []
+      "reference_name": "level_0_artisans_home_code",
+      "entry_seeds": [
+        "0x8007D9C8"
+      ]
     },
     {
       "name": "OV_B83800",
       "wad_offset": "0xB83800",
       "length": 65536,
+      "reference_name": "level_1_artisans_stone_hill_code",
       "entry_seeds": [
         "0x8007AF50",
         "0x8007DA78"
@@ -75,6 +91,7 @@
       "name": "OV_237D000",
       "wad_offset": "0x237D000",
       "length": 51200,
+      "reference_name": "level_10_peace_keepers_doctor_shemp_code",
       "entry_seeds": [
         "0x8007AEB8"
       ]
@@ -83,6 +100,7 @@
       "name": "OV_2F5B000",
       "wad_offset": "0x2F5B000",
       "length": 65536,
+      "reference_name": "level_15_magic_crafters_wizard_peak_code",
       "entry_seeds": [
         "0x8007B7A8"
       ]
@@ -91,6 +109,7 @@
       "name": "OV_502F800",
       "wad_offset": "0x502F800",
       "length": 40960,
+      "reference_name": "level_29_dream_weavers_icy_flight_code",
       "entry_seeds": [
         "0x8007CFB4"
       ]

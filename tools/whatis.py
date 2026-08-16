@@ -75,7 +75,8 @@ def load_overlays():
     for e in d["overlays"]:
         path = os.path.join(REPO, OVL_DIR, e["name"] + ".BIN")
         data = open(path, "rb").read() if os.path.exists(path) else b""
-        out.append((e["name"], arena, data, e.get("entry_seeds", [])))
+        out.append((e["name"], arena, data, e.get("entry_seeds", []),
+                    e.get("reference_name")))
     return arena, out
 
 
@@ -184,11 +185,12 @@ def main():
     in_main = exe.load <= addr < exe.text_end
     if in_main:
         print(f"  MAIN text [0x{exe.load:08X},0x{exe.text_end:08X})  — resident, always mapped")
-    owners = [(n, d) for (n, _b, d, _e) in overlays if arena <= addr < arena + len(d)]
+    owners = [(n, d, r) for (n, _b, d, _e, r) in overlays if arena <= addr < arena + len(d)]
     if owners:
         print(f"  inside the overlay arena at 0x{arena:08X} — {len(owners)} overlay(s) span it:")
-        for n, d in owners:
-            print(f"      {n:12s} [0x{arena:08X},0x{arena + len(d):08X})")
+        for n, d, r in owners:
+            label = f"  [{r}]" if r else ""
+            print(f"      {n:12s} [0x{arena:08X},0x{arena + len(d):08X}){label}")
         print(f"  {C['warn']}ALL overlays load at the SAME base, so spanning it means nothing on its own."
               f"{C['off']}\n      Which one is RESIDENT is a runtime fact — see the RAM section below.")
     if not in_main and not owners:
@@ -225,7 +227,7 @@ def main():
               f"   prologue={'YES' if is_prologue(addr, resident_word) else 'no'}")
         # Which overlay's image matches what is actually in RAM at the arena?
         matches = []
-        for n, _b, d, _e in overlays:
+        for n, _b, d, _e, r in overlays:
             if not d:
                 continue
             same = sum(1 for i in range(0, min(len(d), 0x400), 4)
@@ -245,14 +247,15 @@ def main():
     # ---- what each candidate IMAGE says, and whether they agree ---------------------------------
     if owners:
         head("PER-IMAGE VIEW (disagreement here is the finding)")
-        for n, d in owners:
+        for n, d, r in owners:
             w = word_at(d, addr - arena)
             mark = ""
             if resident_word is not None:
                 mark = (C['ok'] + "  == resident" + C['off']) if w == resident_word \
                        else (C['bad'] + "  != RESIDENT — reading this image would mislead" + C['off'])
+            label = f"  [{r}]" if r else ""
             print(f"  {n:12s} 0x{w:08X}  {decode(addr, w).op:6s} "
-                  f"prologue={'YES' if is_prologue(addr, w) else 'no '}{mark}")
+                  f"prologue={'YES' if is_prologue(addr, w) else 'no '}{mark}{label}")
 
     # ---- is it recompiled ----------------------------------------------------------------------
     head("RECOMPILED?")
@@ -269,7 +272,7 @@ def main():
     if addr in tbl:
         print(f"  {C['ok']}yes{C['off']} — main installs this into [0x80075734] "
               f"(one of {len(tbl)} distinct entries)")
-        claim = [n for (n, _b, _d, e) in overlays if ("0x%08X" % addr) in e]
+        claim = [n for (n, _b, _d, e, _r) in overlays if ("0x%08X" % addr) in e]
         print(f"      claimed by: {', '.join(claim) if claim else C['warn'] + 'NO overlay — not prologue-shaped in any image' + C['off']}")
     else:
         print(f"  no — not one of the {len(tbl)} addresses main installs as an overlay entry")

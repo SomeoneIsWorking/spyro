@@ -30,6 +30,10 @@ namespace {
 constexpr uint32_t kActorTable = 0x80076378u;
 constexpr uint32_t kAnimState = 0x80078A70u;
 constexpr uint32_t kDeltaTable = 0x8006D614u;
+// The guest address this producer transcribes (r_pete — Spyro's model) — the key its producer-DB
+// row is charged to. A MEASURED constant, compared by code against the guest image by
+// tools/verify_producers.py.
+constexpr uint32_t kProducerKey = 0x80023AC4u;
 constexpr int kLayers = 3;
 
 struct Vec3i {
@@ -1766,8 +1770,8 @@ static SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
   if (faces.size() > (size_t)(RQ_MAX - queued) || rq.mPainterScopeDepth || rq.mPainterInvalidId) {
     return SpyroPairedRebuildResult::Refused;
   }
-  ProducerScope producer(&c->rsub.producerScope, 0x80023AC4u, "pairedactor:normal");
-  RenderQueue::PainterObjectScope painter(rq, 0x80023AC4u);
+  ProducerScope producer(&c->rsub.producerScope, kProducerKey, "pairedactor:normal");
+  RenderQueue::PainterObjectScope painter(rq, kProducerKey);
   for (const auto &face : faces) {
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xsf[4]{}, ysf[4]{};
@@ -1944,8 +1948,8 @@ static SpyroPairedRebuildResult emit_interpolated(
       return SpyroPairedRebuildResult::Refused;
     }
   }
-  ProducerScope producer(&c->rsub.producerScope, 0x80023AC4u, "pairedactor:normal");
-  RenderQueue::PainterObjectScope painter(rq, 0x80023AC4u);
+  ProducerScope producer(&c->rsub.producerScope, kProducerKey, "pairedactor:normal");
+  RenderQueue::PainterObjectScope painter(rq, kProducerKey);
   for (const auto &face : faces) {
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xsf[4]{}, ysf[4]{}, depth[4]{};

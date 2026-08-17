@@ -43,19 +43,26 @@ JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null |
 #
 # ANNOUNCED either way, and that is the point: a binary built from in-progress framework work must
 # never be mistaken for one built from the pin. Same discipline as the render-path stamp.
+# external/psxport is NOT a git submodule any more (2026-08-16): it is a symlink to the workspace's
+# shared framework clone when there is one — so a framework edit is live in every port at once, which
+# is the point — or a private clone at psxport.pin otherwise. Establish whichever applies before we
+# look at it. tools/psxport_sync.py explains the two submodule incidents that motivated the change.
+python3 tools/psxport_sync.py --auto || die "could not resolve external/psxport"
 PSXPORT_DIR="${PSXPORT_DIR:-external/psxport}"
 [ -f "$PSXPORT_DIR/cmake/psxport.cmake" ] || die "PSXPORT_DIR=$PSXPORT_DIR is not a psxport checkout"
 if [ "$PSXPORT_DIR" = "external/psxport" ]; then
-  say "framework: external/psxport (pinned submodule $(git -C external/psxport rev-parse --short HEAD 2>/dev/null || echo '?'))"
+  say "framework: external/psxport -> $(readlink -f external/psxport 2>/dev/null || echo '?') @ $(git -C external/psxport rev-parse --short HEAD 2>/dev/null || echo '?')$(
+        [ -n "$(git -C external/psxport status --porcelain 2>/dev/null)" ] && echo ' +dirty')"
 else
   say "framework: *** $PSXPORT_DIR *** (DEV CLONE $(git -C "$PSXPORT_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')$(
         [ -n "$(git -C "$PSXPORT_DIR" status --porcelain 2>/dev/null)" ] && echo ' +dirty')) — NOT the recorded pin"
 fi
 
-# ---- 0b. sync git submodules (external/psxport + its nested beetle-psx backend) ------------------
-# A plain `git pull` does NOT update submodules, so after a pull the framework/beetle sources can be
-# stale and the link fails with undefined GTE_/MDEC_/SPU_ symbols. Sync here so `git pull && ./run.sh`
-# is self-sufficient.
+# ---- 0b. sync git submodules (this repo's own: external/open-spyro, external/spyro-1) --------
+# A plain `git pull` does NOT update submodules, so after a pull the decomp references can be
+# stale. Sync them here so `git pull && ./run.sh` is self-sufficient. The framework's own nested
+# vendors (external/psxport/vendor/beetle-psx, /vendor/lucent) are the SHARED clone's concern now —
+# external/psxport is a symlink to it, so this repo's sync must not walk into it.
 #
 # ONE implementation, shared by all three ports: external/psxport/scripts/sync-submodules.sh. The
 # copy that used to live here guarded only `external/psxport` for uncommitted work and then updated
@@ -63,21 +70,14 @@ fi
 # said which shas it moved — so a sync that reverted a deliberately checked-out commit looked
 # exactly like a no-op. See that script's header for what that cost.
 #
-# Bootstrap: the script lives INSIDE the submodule, so on a fresh clone (or against a gitlink older
-# than the script itself) it does not exist yet — init first, then call it.
+# Bootstrap: the script lives INSIDE the framework, so on a fresh clone it does not exist until
+# external/psxport has been resolved (psxport_sync.py --auto above) — which is the prerequisite.
 if command -v git >/dev/null && [ -f .gitmodules ]; then
-  if [ ! -f external/psxport/scripts/sync-submodules.sh ]; then
-    say "initializing git submodules…"
-    # beetle-psx registers a nested `deps/lightning/gnulib` with no URL in .gitmodules, so a fully
-    # recursive init reports a failure for that one path. It is unused (we need libchdr), so don't
-    # let it abort the run — the psxport + beetle-psx checkouts themselves are what matter.
-    git submodule update --init --recursive || say "WARNING: some nested submodules did not init (expected for beetle-psx/deps/lightning/gnulib)"
-  fi
   if [ -f external/psxport/scripts/sync-submodules.sh ]; then
     bash external/psxport/scripts/sync-submodules.sh || die "submodule sync failed"
   else
-    say "WARNING: external/psxport/scripts/sync-submodules.sh is absent even after init —"
-    say "         submodules were NOT synced and may not match this repo's recorded gitlinks."
+    say "WARNING: external/psxport/scripts/sync-submodules.sh is absent — this repo's own "
+    say "         submodules (external/open-spyro, external/spyro-1) were NOT synced."
   fi
 fi
 

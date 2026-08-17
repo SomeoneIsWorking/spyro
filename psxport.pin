@@ -1,0 +1,7 @@
+# psxport framework pin — the commit this game was built and VERIFIED against.
+# Managed by tools/psxport_sync.py (--bump to record the framework you are building
+# against now). This is provenance and the fresh-clone fallback; locally the build runs
+# off the shared framework clone via the external/psxport symlink. Ports are deliberately
+# not all on framework HEAD — see the module docstring for why.
+url = https://github.com/SomeoneIsWorking/psxport.git
+commit = f464d2d2b31a0d6f76a4d820a5adcf0e37156d57

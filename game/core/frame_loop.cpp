@@ -61,10 +61,14 @@
 // driver) or native (the default, which today aborts on the first frame naming the scene it cannot
 // draw — by design; see render.h).
 //
-// DEFAULT OFF. `PSXPORT_SPYRO_FRAME_LOOP=1` arms the loop. It is opt-in for the same reason
-// `PSXPORT_NATIVE_TERRAIN` is: with the native render leg selected the port aborts on its first
-// drawn frame, which would make every other measurement in this repo impossible to take.
-#include "cfg.h" // cfg_on — the loop switch is a feature flag, not a diagnostic
+// THE PORT OWNS THE LOOP, UNCONDITIONALLY. This file used to be bring-up behind
+// `PSXPORT_SPYRO_FRAME_LOOP=1`, and the reason given was that the native render leg aborts on its
+// first drawn frame — which is still true, but it is a reason to make the loop THE path, not to
+// gate it: a port that cannot reach a drawn frame without an env flag is a port whose observable
+// behavior is env-gated, which the framework forbids. The reference leg (`PSXPORT_RENDER_PSX=1`)
+// still selects the guest's own renderer, so a run that wants the byte-exact picture asks for it
+// the same way it always did; the loop no longer cares which leg.
+#include "cfg.h" // cfg_on — the render-leg switch is a feature flag; the loop itself is not
 #include "core.h"
 #include "game.h"
 #include "guest_call.h" // rc0 — run a guest function to its `jr ra`
@@ -232,10 +236,6 @@ private:
 }
 
 } // namespace
-
-bool spyro_frame_loop_enabled() {
-  return cfg_on("PSXPORT_SPYRO_FRAME_LOOP") != 0;
-}
 
 [[noreturn]] void spyro_frame_loop_run(Core *c) {
   SpyroRenderer::installModeFromConfig(c); // which leg of the render seam this run uses

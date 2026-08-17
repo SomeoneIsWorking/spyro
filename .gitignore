@@ -17,6 +17,10 @@ external/psxport/scratch/
 psxport_settings.ini
 *.log
 
+# The framework. Not tracked: either a symlink to the workspace shared clone (local) or a
+# private clone at psxport.pin (fresh machine). Managed by tools/psxport_sync.py.
+/external/psxport
+
 # Python bytecode — never committed. Compiled .pyc embed ABSOLUTE SOURCE PATHS, i.e. a machine-path
 # leak that a TEXT-only audit cannot see, because they are binary.
 __pycache__/

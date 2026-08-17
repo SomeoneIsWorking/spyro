@@ -90,7 +90,11 @@ constexpr uint32_t kPoolLimit = 0x80075780u;    // pool end (a 1024-byte margin 
 constexpr uint32_t kPoolOverflow = 0x800758B0u; // set to 1 when the pool ran out
 constexpr uint32_t kOtBase = 0x80075820u;       // ordering table, linked at +16376 / +16380
 constexpr uint32_t kSaveArea = 0x80077DD8u;     // the fixed register-save block (no stack frame)
-constexpr uint32_t kScratchpad = 0x1F800000u;   // the per-object vertex cache lives here
+// The guest address this producer transcribes — the key its producer-DB row is charged to. It is a
+// MEASURED constant, compared by code against the guest image by tools/verify_producers.py (a
+// transposed digit would charge the row to the wrong guest function).
+constexpr uint32_t kProducerKey = 0x8004EBA8u;
+constexpr uint32_t kScratchpad = 0x1F800000u; // the per-object vertex cache lives here
 
 // ── The clip bounds, as the guest hard-codes them. THESE ARE THE REASON THIS FILE EXISTS.
 // Each is compared against the PACKED screen word (sy in the high half, sx in the low half), which
@@ -1121,8 +1125,8 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
   if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
     return false;
   }
-  ProducerScope producer(&c->rsub.producerScope, 0x8004EBA8u, "terrain:F3G3");
-  RenderQueue::PainterObjectScope painter(rq, 0x8004EBA8u);
+  ProducerScope producer(&c->rsub.producerScope, kProducerKey, "terrain:F3G3");
+  RenderQueue::PainterObjectScope painter(rq, kProducerKey);
   for (const auto &f : recipe.faces) {
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xf[4]{}, yf[4]{}, depth[4]{};

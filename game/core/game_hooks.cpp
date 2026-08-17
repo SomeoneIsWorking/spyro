@@ -36,28 +36,22 @@ static void spyro_ctx_destroy(void *p) {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // bootInit — what the game does between crt0 and its frame loop.
 //
-// For Tomba!2 this is a native transcription of the boot prologue. For Spyro it is simply: enter
-// the recompiled main() and let the guest run itself. crt0_setup() has already established the
-// guest state main() expects (.bss cleared, sp/fp/gp set, heap globals written, libc init
-// dispatched), so dispatching gameMain resumes the real program exactly where its crt0 tail-called
-// it.
+// For Tomba!2 this is a native transcription of the boot prologue. For Spyro it is: run the PORT'S
+// OWN frame loop (frame_loop.cpp), a readable port of the guest's main() 0x80012204. The guest's
+// main() never returns (its epilogue has no inbound branch), so there is no way to "let the guest
+// run itself and then take over" — either the port owns the loop or the guest does. The port owns
+// it: a guest-owned loop is what left the port unable to reach a drawn frame at all in a short run,
+// and a behavior that required `PSXPORT_SPYRO_FRAME_LOOP=1` to appear at all was a behavior gated
+// behind env, which the framework forbids ("make the new path THE path").
 //
-// CONSEQUENCE, stated plainly: Spyro's main() contains the game's OWN frame loop, so this call does
-// not return — the framework's native_step_frame loop never runs, and per-frame hooks are never
-// reached. That is correct for Phase 0 ("everything dispatched to the substrate") and it is why the
-// per-frame GameConfig group is still 0.
-//
-// PSXPORT_SPYRO_FRAME_LOOP=1 takes that loop over, in GAME code (frame_loop.cpp), which is where it
-// has to live: the framework's native_step_frame is unreachable in this port and is shaped for
-// Tomba!2's per-frame OT model, not Spyro's (C073). Off by default — the loop is bring-up, and the
-// render seam it calls (game/render/) aborts by design on its native leg, which is the default leg
-// (`PSXPORT_RENDER_PSX=1` selects the reference one).
+// CONSEQUENCE, stated plainly: the framework's native_step_frame loop never runs, and per-frame
+// hooks are never reached — correct for this port, whose render seam (game/render/) is called from
+// the frame loop instead. The render seam picks its leg from the framework's per-Core RenderMode:
+// native by default (which aborts on a stage with no producer — by design, see render.h), or the
+// reference picture (PSXPORT_RENDER_PSX=1, the guest's own driver).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 static void spyro_bootInit(Core *c) {
-  if (spyro_frame_loop_enabled()) {
-    spyro_frame_loop_run(c); // does not return
-  }
-  rec_dispatch(c, c->cfg->gameMain);
+  spyro_frame_loop_run(c); // does not return
 }
 
 // registerOverrides — install this game's native override clusters into the process-global

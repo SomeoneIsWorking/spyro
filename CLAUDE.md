@@ -138,25 +138,27 @@ Everything transient goes in the git-ignored `scratch/`, kept split by kind (`sc
 per-user quota on this machine, and logs/dumps fill it in a run or two, breaking all writes with
 "Disk quota exceeded". Diagnose that symptom with `quota -s`, not `df`.
 
-## Where the framework source comes from — NEVER edit `external/psxport`
+## Where the framework source comes from — `external/psxport` is the shared tree
 
-`external/psxport` is a **read-only pinned consumer**. Framework edits happen in the workspace's
-framework DEV CLONE (`$PSX/psxport`, i.e. `../psxport` from here) and nowhere else — `run.sh` re-syncs
-this submodule to the RECORDED gitlink on every run, so an edit made here is liable to be silently
-reverted mid-gate, and the build or measurement that follows describes a different framework than you
-think.
+`external/psxport` is **not a submodule** (2026-08-16): it is a SYMLINK to the workspace's shared
+framework clone (`$PSX/psxport`) when one exists, or a private clone at this repo's `psxport.pin` on a
+fresh machine. `tools/psxport_sync.py --auto` (called by `run.sh`) establishes whichever applies. So a
+framework edit made through either path is the SAME directory, live in every port at once — commit and
+push framework work in `psxport/`, never here. `psxport.pin` records the framework commit this game
+was built and VERIFIED against; `tools/psxport_sync.py --bump` updates it, and the gate's `--check`
+fails when the framework you built against is not the recorded one.
 
-Build this game against in-progress framework work WITHOUT touching the submodule:
+Build this game against in-progress framework work:
 
 ```sh
-PSXPORT_DIR=$PSX/psxport ./run.sh          # or: cmake -S . -B build -DPSXPORT_DIR=$PSX/psxport
+cmake -S . -B build -DPSXPORT_DIR=$PSX/psxport   # or just ./run.sh — it resolves external/psxport itself
 ```
 
-`PSXPORT_DIR` defaults to the submodule, so a bare clone of this repo still builds standalone — keep it
-that way. `run.sh` announces which framework checkout a run was built from and whether it was dirty;
-read that line before trusting any measurement. The full protocol (area claims, how a framework change
-lands, the standing USER rules) is `external/psxport/docs/workspace/PROTOCOL.md`; the workspace map is
-`external/psxport/docs/workspace/WORKSPACE.md`.
+`PSXPORT_DIR` defaults to `external/psxport`, so a bare clone of this repo still builds standalone —
+keep it that way. `run.sh` announces which framework checkout a run was built from and whether it was
+dirty; read that line before trusting any measurement. The full protocol (area claims, how a framework
+change lands, the standing USER rules) is `external/psxport/docs/workspace/PROTOCOL.md`; the workspace
+map is `external/psxport/docs/workspace/WORKSPACE.md`.
 
 ## Never commit
 

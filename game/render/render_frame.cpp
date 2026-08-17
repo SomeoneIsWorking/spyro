@@ -140,6 +140,13 @@ void SpyroRenderer::drawFrame() {
       spyro_paired_actor_oracle_arm(mC);
     }
     referenceOtWalk();
+    // The reference leg's presenter is the guest's OWN driver (inside referenceOtWalk), never
+    // frame_commit — so its flushes' fps60 capture is never drained by presentRotate, and would
+    // accumulate until rq_capture fail-fasts (the overflow abort). The reference leg is a different
+    // renderer by definition (one-renderer.md: "the substrate/ORACLE leg is a different renderer"),
+    // so it discards the capture its own presenter never consumes. Frame_commit is NOT called on
+    // this leg; reset_capture must not run on a path that will also reach the frame fence.
+    mC->game->fps60.reset_capture();
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) {
       abort();
     }
@@ -182,15 +189,20 @@ void SpyroRenderer::drawFrame() {
   mC->game->rq.flush(mC);
   // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see
   // frame_env.cpp for why that displays the PREVIOUS iteration's buffer and why that is correct.
-  nativeFrameEnd(mC, mEnv, mC->game->fps60.active());
-  // nativeFrameEnd advances both guest fields. The ordinary path retains the guest's previous-page
-  // DISPENV; the FPS60 path selects the reciprocal env's DISPENV, which names the page just drawn.
-  // Those delegated fields deliberately do not present or sleep; frame_commit owns exactly two
-  // presents and two subframe paces on that current page.
-  if (mC->game->fps60.active()) {
-    // nativeFrameEnd advanced two guest fields. Spyro's ordinary paceQuota is one because that path
-    // sleeps once per field; this synthesized commit owns the complete two-field logic interval.
-    mC->game->fps60.frame_commit(mC, 2);
-    spyro_fps60_commit_field_delivered(mC);
-  }
+  //
+  // THE NATIVE LEG PRESENTS ONLY THROUGH frame_commit — fps60CommitPending=true defers the present
+  // and pace in deliver_field to it (spyro_deliver_field: !fps60CommitPending gates both). This is
+  // the Tomba2-aligned shape: "frame_commit OWNS presentation in both configs"
+  // (game_tomba2.cpp:130). The OLD code gated frame_commit behind fps60.active() and let
+  // deliver_field present when fps60 was off — which meant the framework's flush CAPTURE
+  // (rq_capture, unconditional since the ONE PATH change) was never drained by presentRotate, so
+  // fps60=0 accumulated every flush and overflow-aborted. That is fixed by making frame_commit the
+  // single fence for both configs.
+  nativeFrameEnd(mC, mEnv, true);
+  // THE PER-LOGIC-FRAME FENCE. flush() CAPTURES into Fps60::mNCur in both configs and frame_commit
+  // (present_vk -> presentRotate -> mNCur = 0) is the ONLY drain. guestFields=1: one whole-field
+  // pace for the ordinary frame; present_vk inserts the extra lerped frame only when fps60 is
+  // active (extraFrame = active() && mHavePrev).
+  mC->game->fps60.frame_commit(mC, 1);
+  spyro_fps60_commit_field_delivered(mC);
 }

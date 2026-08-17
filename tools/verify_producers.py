@@ -116,6 +116,45 @@ PRODUCERS = [
              0x3C1F8007),
         ),
     },
+    {
+        "label": "terrain:F3G3",
+        "src": "game/core/native_terrain.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The world/cyclorama mesh renderer. The shared 0x80077DD8 register-save prefix is identical
+        # across 19 hand-written renderers (0x8004EBA8, 0x8004F4BC, 0x80050240 share it through word
+        # +26), so the fingerprint must extend past the divergence: site 0x8004EBA8's word +27 is the
+        # `lui at,0x8008` only it has there (the others read a vertex word). 28 words: save + the
+        # a1-load/lw walk + the five ctc2 matrix loads + the divergent lui.
+        "entry_sequence": (
+            "0x80077DD8 register-save + lw t3..t7,0..16(a1) + ctc2 matrix + lui at,0x8008 (28 words)",
+            (0x3C018007, 0x24217DD8,
+             0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+             0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+             0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C,
+             0x8CAB0000, 0x8CAC0004, 0x8CAD0008, 0x8CAE000C,
+             0x8CAF0010, 0x48CB0000, 0x48CC0800, 0x48CD1000,
+             0x48CE1800, 0x48CF2000, 0x48C02800, 0x48C03000,
+             0x48C03800, 0x3C018008),
+        ),
+    },
+    {
+        "label": "pairedactor:normal",
+        "src": "game/render/fx_paired_actor.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # Spyro's model renderer (r_pete). The shared 0x80077DD8 register-save prefix is identical
+        # across 19 renderers, but the immediate tail differs: word +14 is `lui ra,0x8008` (the other
+        # save-idiom renderers load from a1 at that offset). 15 words identify exactly one site.
+        "entry_sequence": (
+            "0x80077DD8 register-save + lui ra,0x8008 (15 words)",
+            (0x3C018007, 0x24217DD8,
+             0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+             0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+             0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C,
+             0x3C1F8008),
+        ),
+    },
 ]
 
 
@@ -322,7 +361,7 @@ def check_db(path, want):
 
 
 # ── THE COMPARISON ──────────────────────────────────────────────────────────────────────────────────
-def run_check(src_overrides=None, image_dir=None, db=None, quiet=False):
+def run_check(src_overrides=None, image_dir=None, db=None, quiet=False, db_expect=None):
     src_overrides = src_overrides or {}
     scopes = scan_shipped_scopes()
     known = {p["label"] for p in PRODUCERS}
@@ -356,6 +395,13 @@ def run_check(src_overrides=None, image_dir=None, db=None, quiet=False):
                            f"catches this.")
         want.append((prod["label"], shipped))
     if db:
+        # --db-expect narrows WHICH producers a run must have fired. Default: all of them. A run only
+        # reaches the stages its content sits in — the native leg reaches the title (stage 13), so the
+        # field producers (spriteq, pairedactor) cannot fire there — and demanding an unreachable
+        # producer is a false FAIL, not a regression. The gate passes the labels its run can reach;
+        # the sabotage case (a deleted ProducerScope) is caught because the DELETED label is still in
+        # the expected set and the DB will lack its row.
+        want = [w for w in want if not db_expect or w[0] in db_expect]
         check_db(db, want)
     return want
 
@@ -525,6 +571,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--db", metavar="PATH|latest",
                     help="also require a producer-DB JSONL to carry the row (the shipping path fired)")
+    ap.add_argument("--db-expect", metavar="LABELS",
+                    help="with --db, only require these producer label(s) to have fired "
+                         "(comma-separated). Default: all. Use when a run reaches only some stages — "
+                         "the native leg reaches the title, so field producers cannot fire there and "
+                         "must not be demanded.")
     ap.add_argument("--selftest", action="store_true", help="run both classes and fail if either does")
     a = ap.parse_args()
     if a.selftest:
@@ -539,8 +590,9 @@ def main():
         if rc == 0:
             print("[selftest] PASS — the real files agree AND every mutant is caught")
         return rc
+    db_expect = {x.strip() for x in a.db_expect.split(",") if x.strip()} if a.db_expect else None
     try:
-        run_check(db=a.db)
+        run_check(db=a.db, db_expect=db_expect)
     except Disagree as e:
         print("[verify-producers] DISAGREEMENT:\n  " + str(e))
         return 1

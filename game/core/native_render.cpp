@@ -48,6 +48,7 @@ namespace {
 // capacities are symbols/sizes in Spyro's executable (open-spyro symbols.csv); the record fields
 // and primitive stream layout are reads performed by the body at 0x80022A2C itself.
 constexpr uint32_t kSpriteRenderer = 0x80022A2Cu;
+constexpr uint32_t kWorldRenderer = 0x800258F0u; // RenderWorldChunks — the GROUND and the cliffs
 constexpr uint32_t kSpriteQueue = 0x800720F4u;
 constexpr uint32_t kActorMeshTable = 0x80076378u;
 constexpr uint32_t kRamBegin = 0x80000000u;
@@ -89,6 +90,102 @@ struct SpriteQueueCensus {
   std::array<uint32_t, 65536> screen_mesh_actor_flags{};
   uint32_t distinct_meshes = 0;
 } s_spriteq;
+
+bool ram_range(uint32_t addr, uint32_t bytes); // defined below; the world census uses it
+
+// ── RenderWorldChunks 0x800258F0's INPUT census (the frontier step after C198). ──────────────────
+// The world renderer (the GROUND and the cliffs — the biggest depth contributor, issue 0038) is
+// structurally mapped (C198) but not yet owned. This census measures its actual game-state inputs
+// at every live call: how many environment chunks the list holds, how many the distance/frustum
+// cull keeps, and how many bytes the pool moves per call. It reads the SAME globals the function
+// reads (g_Environment's sector list when a0<0, the occlusion-group table when a0>=0), then
+// redispatches the unchanged guest body. Like the spriteq census, it prints a run-end report with
+// its own denominator, so a run that never reaches the field reports zeros LOUDLY rather than
+// passing silent.
+//
+// g_Environment = 0x800785A8 (from the decomp's `lui at,0x8007; addiu at,0x85A8`):
+//   +0x00 m_SectorPointer — the flat chunk-list base (used when a0<0, i.e. from the render driver)
+//   +0x04 m_SectorCount   — entries in that list
+//   +0x08 m_OcclusionGroups — per-group list table (used when a0>=0)
+//   +0x0C m_OcclusionGroupCount
+struct WorldCensus {
+  bool armed = false;
+  uint64_t calls = 0;
+  uint64_t negative_group = 0; // a0<0: the render-driver call, flat count-based list
+  uint64_t positive_group = 0; // a0>=0: the occlusion-group call, byte-indexed list
+  uint64_t flat_entries = 0;   // total sector-count entries across the flat-list calls
+  uint64_t occ_entries = 0;    // total byte-index entries across the occlusion-group calls
+  uint64_t pool_bytes = 0;
+  uint64_t pool_bytes_zero = 0; // calls that moved nothing
+  uint32_t max_flat = 0, max_occ = 0;
+  uint32_t last_occlusion_group = 0;
+} s_world;
+
+void census_world(Core *c) {
+  s_world.calls++;
+  const uint32_t group = (uint32_t)(int32_t)c->r[4]; // a0 — the occlusion group
+  s_world.last_occlusion_group = group;
+  const uint32_t env = 0x800785A8u;
+  uint32_t count = 0;
+  if ((int32_t)group < 0) {
+    s_world.negative_group++;
+    const uint32_t list_base = c->mem_r32(env + 0x00u);
+    count = c->mem_r32(env + 0x04u); // m_SectorCount — the flat list is length-counted
+    s_world.flat_entries += count;
+    if (count > s_world.max_flat) {
+      s_world.max_flat = count;
+    }
+    lucent::debug("worldcensus",
+                  "call {}: a0={} flat sectors={} at 0x{:08X}",
+                  s_world.calls,
+                  (int32_t)group,
+                  count,
+                  list_base);
+  } else {
+    s_world.positive_group++;
+    const uint32_t table = c->mem_r32(env + 0x08u);
+    const uint32_t list_base =
+        ram_range(table + group * 4u, 4u) ? c->mem_r32(table + group * 4u) : 0u;
+    // The occlusion-group list is a byte-indexed list (0xFF terminator), not a length count.
+    count = 0;
+    uint32_t p = list_base;
+    while (ram_range(p, 1u) && c->mem_r8(p) != 0xFFu && count < 65536u) {
+      p++;
+      count++;
+    }
+    s_world.occ_entries += count;
+    if (count > s_world.max_occ) {
+      s_world.max_occ = count;
+    }
+    lucent::debug("worldcensus",
+                  "call {}: a0={} occlusion-group indices={} at 0x{:08X}",
+                  s_world.calls,
+                  (int32_t)group,
+                  count,
+                  list_base);
+  }
+}
+
+void world_hook(Core *c) {
+  census_world(c);
+  const uint32_t pool_before = c->mem_r32(0x800757B0u);
+  const RecompRegistry *R = psxport_recomp();
+  R->shard_set_override(kWorldRenderer, nullptr);
+  R->main_dispatch(c, kWorldRenderer);
+  R->shard_set_override(kWorldRenderer, world_hook);
+  const uint32_t pool_after = c->mem_r32(0x800757B0u);
+  const uint32_t bytes = pool_after > pool_before ? pool_after - pool_before : 0;
+  s_world.pool_bytes += bytes;
+  if (bytes == 0) {
+    s_world.pool_bytes_zero++;
+  }
+  lucent::debug("worldcensus",
+                "call {} output: pool 0x{:08X} -> 0x{:08X} (+{} bytes)",
+                s_world.calls,
+                pool_before,
+                pool_after,
+                bytes);
+}
 
 bool ram_range(uint32_t addr, uint32_t bytes) {
   // Asset relocation intentionally leaves some pointers in the physical-RAM alias (the renderer
@@ -447,6 +544,19 @@ void spyro_register_native_render() {
                  kSpriteRenderer,
                  kQueueCapacity);
   }
+  // PSXPORT_WORLD_CENSUS=1 — measure RenderWorldChunks 0x800258F0's game-state inputs at every live
+  // call, then run the unchanged guest body. The run-end report (spyro_world_census_finish) prints
+  // calls/chunks/pool-bytes even when the run never reached the field — zero is a loud answer, not
+  // a silent one.
+  if (cfg_str("PSXPORT_WORLD_CENSUS")) {
+    s_world.armed = true;
+    psxport_recomp()->shard_set_override(kWorldRenderer, world_hook);
+    lucent::info("worldcensus",
+                 "ARMED input census at 0x{:08X} (RenderWorldChunks): reading g_Environment's "
+                 "chunk list + pool movement before the unchanged guest renderer. The run-end "
+                 "report prints calls and entries even when both are zero.",
+                 kWorldRenderer);
+  }
   // PSXPORT_MUTE_FN=<hex guest address>[,<hex>...] — replace these bodies with nothing.
   if (const char *m = cfg_str("PSXPORT_MUTE_FN")) {
     for (const char *p = m; *p;) {
@@ -632,4 +742,27 @@ void spyro_sprite_queue_census_finish() {
                  s_spriteq.screen_mesh_primitives[mesh],
                  s_spriteq.screen_mesh_actor_flags[mesh]);
   }
+}
+
+void spyro_world_census_finish() {
+  if (!s_world.armed) {
+    return;
+  }
+  // The denominator is every call, and every counter is printed even when zero — a run that never
+  // reached the field (or never reached the world renderer) reads "calls=0", which is a loud
+  // negative, not an empty pass.
+  lucent::info("worldcensus",
+               "CENSUS: calls={} (a0<0 flat-list={}, a0>=0 occlusion-group={}) "
+               "flat_entries={} (max {}) occ_entries={} (max {}) pool_bytes={} "
+               "pool_bytes_zero_calls={} last_occlusion_group={}",
+               s_world.calls,
+               s_world.negative_group,
+               s_world.positive_group,
+               s_world.flat_entries,
+               s_world.max_flat,
+               s_world.occ_entries,
+               s_world.max_occ,
+               s_world.pool_bytes,
+               s_world.pool_bytes_zero,
+               s_world.last_occlusion_group);
 }

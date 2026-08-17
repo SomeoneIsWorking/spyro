@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-12
 tags: producers,gate
-depends: tools/verify_producers.py, tools/gate.sh, game/render/fx_title_menu.cpp#spriteEmit
+depends: tools/verify_producers.py, tools/gate.py, game/render/fx_title_menu.cpp#spriteEmit
 reconfirmed: 2026-08-12 21:16:05
 verified_at: 2026-08-12 21:16:05
 ---

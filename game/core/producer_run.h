@@ -39,10 +39,10 @@
 //     and allocates through lucent). So the honest statement is the one in `begin`'s log line:
 //
 //         A RUN THAT ENDS BY SIGNAL EMITS NO DB. `timeout -s KILL` (SIGKILL, which no handler can
-//         catch) and Ctrl+C both end the process before any report. That includes `tools/gate.sh`,
-//         which REQUIRES rc=137 — a gate run can never produce a DB, by construction. Cap the run
-//         (`PSXPORT_NATIVE_FRAMES`) or close the window; do not read a missing report as "this game
-//         draws nothing".
+//         catch) and Ctrl+C both end the process before any report. An uncapped gate run is killed
+//         by the wall-clock timeout and can never produce a DB, by construction. Cap the run
+//         (`PSXPORT_NATIVE_FRAMES`, which `tools/gate.py boot` does) or close the window; do not
+//         read a missing report as "this game draws nothing".
 #pragma once
 class Core;
 

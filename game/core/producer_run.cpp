@@ -18,8 +18,8 @@ namespace {
 Core *s_core = nullptr;
 
 // The cap, in PRESENTED frames. 0 == uncapped (the default, and the only value that leaves every
-// existing measurement tool in this repo behaving as it did — tools/gate.sh in particular REQUIRES
-// the run to still be alive at its timeout, so a default cap would break the gate).
+// existing measurement tool in this repo behaving as it did — a run the gate kills at its
+// wall-clock timeout must still be alive then, so a default cap would change that behaviour).
 int s_cap = 0;
 long s_frames = 0;
 
@@ -66,10 +66,10 @@ void spyro_producer_run_begin(Core *c) {
     lucent::warn("producers",
                  "DB lifecycle armed but this run is UNCAPPED, so it will emit a DB ONLY "
                  "if it exits cleanly (window close -> exit(0)). A run killed by signal — "
-                 "any `timeout`-bounded headless run, Ctrl+C, and tools/gate.sh, which "
-                 "requires rc=137 — writes NOTHING, and that silence is NOT evidence that "
-                 "the game draws nothing. Set PSXPORT_NATIVE_FRAMES=<n> to end the run at "
-                 "frame n and get the report.");
+                 "any `timeout`-bounded headless run or Ctrl+C — writes NOTHING, and that "
+                 "silence is NOT evidence that the game draws nothing. Set "
+                 "PSXPORT_NATIVE_FRAMES=<n> to end the run at frame n and get the report "
+                 "(the gate's `boot` run does exactly this).");
   }
 }
 

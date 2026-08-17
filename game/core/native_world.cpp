@@ -169,7 +169,113 @@ void world_native(Core *c) {
     s5 = s4 + v0;
   }
 
-  // ── The per-chunk cull (distance/frustum against the view matrix). Transcribed next. ──
+  // ── The per-chunk cull (distance/frustum against the view matrix). Generated C lines 2305..2398.
+  // The chunk descriptor s1 holds: +0 center (high 16 = X, low 16 = Z), +4 (flags/radius word).
+  // Camera-relative chunk centre loaded into the GTE vertex regs, then MVMVA (0x4A49E012):
+  //   VZ(DR11) = (s1[0]>>16) - s7(camX);  VX(DR9) = t8(camY) - (s1[0]&0xFFFF);  VY(DR10) = t9(camZ) - (s1[4]>>16)
+  //   t1 = s1[4] & 0xE000;  t2 = s1[4] & 0x1FFF
+  v0 = c->mem_r32(s1 + 0u);
+  a0 = c->mem_r32(s1 + 4u);
+  a1 = s1 | 1u;
+  v0 = (v0 >> 16) - s7;                    // VZ
+  v1 = t8 - (c->mem_r32(s1 + 0u) & 0xFFFFu); // VX (re-read s1[0] for the low-16 Z term)
+  t2 = a0 >> 16;
+  t2 = t9 - t2;                            // VY
+  gte_write_data(11, v0);
+  gte_write_data(9, v1);
+  gte_write_data(10, t2);
+  t1 = a0 & 0xE000u;
+  t2 = a0 & 0x1FFFu;
+  gte_op_at(c, kGteMvmva, 0x80025A68u);
+  // MVMVA result: read back MAC3(Z)/MAC1(X)/MAC2(Y) and run the frustum plane tests.
+  t3 = t2 >> 1; t4 = t2 >> 1; t5 = t2 >> 2;
+  t3 = t3 + t5; t5 = t2 >> 4; t4 = t4 + t5; t5 = t2 >> 5; t3 = t3 + t5; // scaled radius terms
+  t0 = gte_read_data(11);      // MAC3 (Z)
+  a2 = gte_read_data(9);       // MAC1 (X)
+  v0 = t0 + t2;
+  t4 = t4 + t5;
+  if ((int32_t)v0 <= 0) goto cull_next;    // L_800259FC (behind camera / rejected)
+  v0 = a2; if ((int32_t)v0 >= 0) goto L_cull_aac;
+  a2 = 0 - a2;
+L_cull_aac:
+  v0 = a2 - t3;
+  v0 = v0 << 2;
+  v1 = t0 + t4; v1 = (v1 << 1) + v1;
+  v0 = v0 - v1;
+  t5 = t2 >> 3;
+  if ((int32_t)v0 >= 0) goto cull_next;    // L_800259FC (off the frustum plane)
+  t5 = t2 - t5;
+  t6 = t2 >> 1;
+  v0 = t2 >> 4;
+  a3 = gte_read_data(10);      // MAC2 (Y)
+  t6 = t6 - v0;
+  v0 = a3; if ((int32_t)v0 >= 0) goto L_cull_ae8;
+  a3 = 0 - a3;
+L_cull_ae8:
+  v0 = a3 - t5;
+  v0 = v0 << 5;
+  v1 = t0 + t6; v1 = (v1 << 4) + v1;
+  v0 = v0 - v1;
+  if ((int32_t)v0 >= 0) goto cull_next;    // L_800259FC
+  v0 = t0 - t2;
+  if ((int32_t)v0 <= 0) goto L_cull_b4c;
+  gp = c->mem_r32(s1 + 24u);
+  v0 = a2 + t3;
+  v0 = v0 << 2;
+  v1 = t0 - t4; v1 = (v1 << 1) + v1;
+  v0 = v0 - v1;
+  if ((int32_t)v0 >= 0) goto L_cull_b4c;
+  v0 = a3 + t5;
+  v0 = v0 << 5;
+  v1 = t0 - t6; v1 = (v1 << 4) + v1;
+  v0 = v0 - v1;
+  if ((int32_t)v0 >= 0) goto L_cull_b4c;
+  a1 = a1 ^ 1u;
+L_cull_b4c:
+  v0 = sp + 0u;
+  c->mem_w8(s5 + 0u, (uint8_t)fp);
+  v1 = t1 & 8192u;
+  if ((int32_t)v1 > 0) goto L_cull_b80;
+  v1 = t1 & 32768u;
+  if ((int32_t)v1 > 0) goto L_cull_b74;
+  v1 = t0 + t2;
+  v1 = v1 + 256u;
+  v1 = s6 - v1;
+  if ((int32_t)v1 >= 0) goto L_cull_b80;
+  goto L_dsafter_b70;
+L_cull_b74:
+  c->mem_w32(s0 + 0u, a1);
+  gte_copy_pz(c, 17, s0 + 0u);
+L_dsafter_b70:
+  s0 = s0 + 4u;
+  v0 = v0 << 16;
+L_cull_b80:
+  v1 = t1 & 16384u;
+  if ((int32_t)v1 > 0) goto L_cull_bac;
+  v1 = t0 - t2;
+  v1 = s6 - v1;
+  if ((int32_t)v1 <= 0) goto L_cull_bac;
+  v1 = v1 + (-256);
+  if ((int32_t)v1 >= 0) goto L_cull_ba4;
+  a1 = a1 + 2u;
+L_cull_ba4:
+  c->mem_w32(t7 + 0u, a1);
+  gte_copy_pz(c, 17, t7 + 0u);
+  t7 = t7 + 4u;
+L_cull_bac:
+  gp = gp | v0;
+  if (gp == sp) goto cull_next;            // L_800259FC
+  v0 = gp << 24;
+  if ((int32_t)v0 < 0) goto cull_animate;  // L_80025D14
+  c->mem_w8(s1 + 24u, (uint8_t)sp);
+  goto cull_animate;
+cull_animate:
+  // The per-chunk animation pass (INTPL/DPCS writing into chunk vertex/colour arrays).
+  // Transcribed next.
+  goto phase2;
+
+cull_next:
+  // L_800259FC — advance to the next chunk in the list (loop back).
   goto phase2;
 phase2:
   (void)0;

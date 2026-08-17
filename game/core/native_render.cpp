@@ -119,6 +119,27 @@ struct WorldCensus {
   uint64_t pool_bytes_zero = 0; // calls that moved nothing
   uint32_t max_flat = 0, max_occ = 0;
   uint32_t last_occlusion_group = 0;
+  // ORACLE (the depth half of 2D/3D discrimination, re-frontier render.own-geometry-family):
+  // RenderWorldChunks' OWN per-call depth signal. The chunk list it projects is at
+  // D_8006FCF4+0x1C00 = 0x800718F4 (null-terminated, filled by the cull phase); each entry is a
+  // chunk pointer whose byte 0x14's low byte is the vertex count. The projected depth (SZ3) for the
+  // LAST chunk processed survives in the scratchpad SZ3 array at 0x1F8002AC (2-byte stride, one per
+  // vertex), written by the projection loop (mfc2 C2_SZ3; sh v1,0(t8); t8+=2). C198's falsifier is
+  // "a live census showing SZ in the emitted packet body" — so the pool packets are walked too, to
+  // prove the depth is NOT in the packets (SZ3 is scratchpad-only).
+  uint64_t chunks = 0;
+  uint64_t vertices = 0;       // sum of chunk vertex counts (last-chunk SZ3 range is a sample)
+  uint64_t depth_calls = 0;    // calls where a real (non-empty) chunk list was found
+  uint32_t sz3_min = 0x7FFFFFFFu, sz3_max = 0, sz3_lastmin = 0x7FFFFFFFu, sz3_lastmax = 0;
+  uint64_t sz3_total = 0, sz3_samples = 0;
+  uint64_t pool_packets = 0, pool_quads = 0, pool_tris = 0, pool_malformed = 0;
+  uint64_t pool_unparsed_bytes = 0;
+  bool sz3_seen = false;
+  // Per-face OT bin histogram, accumulated across every live call (the "per-face OT bins" half of
+  // the oracle). Bins 0..0x7FF = depth>>7; bin 0 is nearest. Captured per call so it reflects the
+  // freshly-linked world faces rather than the run-end (post-DrawOTag) residual.
+  uint64_t ot_bins[0x800] = {};
+  uint64_t ot_walks = 0, ot_bins_used = 0, ot_truncated = 0, ot_badbase = 0;
 } s_world;
 
 void census_world(Core *c) {
@@ -166,6 +187,10 @@ void census_world(Core *c) {
   }
 }
 
+void world_oracle_pool(Core *c, uint32_t begin, uint32_t end);
+void world_oracle_depth(Core *c);
+void world_oracle_ot(Core *c);
+
 void world_hook(Core *c) {
   census_world(c);
   const uint32_t pool_before = c->mem_r32(0x800757B0u);
@@ -179,12 +204,202 @@ void world_hook(Core *c) {
   if (bytes == 0) {
     s_world.pool_bytes_zero++;
   }
+  world_oracle_pool(c, pool_before, pool_after);
+  world_oracle_depth(c);
+  world_oracle_ot(c);
   lucent::debug("worldcensus",
                 "call {} output: pool 0x{:08X} -> 0x{:08X} (+{} bytes)",
                 s_world.calls,
                 pool_before,
                 pool_after,
                 bytes);
+}
+
+// The depth ORACLE for RenderWorldChunks. After the real body runs, read the chunk list it built
+// (0x800718F4, null-terminated) to count chunks + vertices, then sample the LAST chunk's SZ3 depth
+// from the scratchpad array at 0x1F8002AC. The values are positive depths (larger = farther); the
+// range tells us whether this call produced a real spread of 3D depth or a flat 2D-like plane —
+// exactly the signal 2D/3D discrimination needs. See C198: SZ3 is a scratchpad intermediate only.
+void world_oracle_depth(Core *c) {
+  constexpr uint32_t kChunkList = 0x800718F4u; // D_8006FCF4 + 0x1C00
+  constexpr uint32_t kSz3Array = 0x1F8002ACu;  // scratchpad SZ3, 2-byte stride
+  constexpr int kMaxChunks = 256;
+  uint64_t call_chunks = 0, call_vertices = 0;
+  for (int i = 0; i < kMaxChunks; ++i) {
+    const uint32_t chunk = c->mem_r32(kChunkList + (uint32_t)i * 4u);
+    if (!chunk) {
+      break;
+    }
+    if (!ram_range(chunk, 0x18u)) {
+      continue;
+    }
+    call_chunks++;
+    // The projection loop masks the low 2 bits (flag) off the chunk pointer, then reads the vertex
+    // count as the low byte of the word at +0x14 (lw s2,0x14($t9); andi s0,s2,0xFF).
+    const uint32_t vcount = c->mem_r32(chunk + 0x14u) & 0xFFu;
+    call_vertices += vcount;
+  }
+  s_world.chunks += call_chunks;
+  s_world.vertices += call_vertices;
+  if (!call_chunks) {
+    return;
+  }
+  s_world.depth_calls++;
+  // The SZ3 array holds only the LAST chunk's vertices (overwritten per chunk); sample it with the
+  // last chunk's vertex count. The last non-empty chunk's count is what call_vertices includes last.
+  // To bound correctly we re-read the last list entry's count.
+  uint32_t last_count = 0;
+  uint32_t last_chunk = 0;
+  for (int i = 0; i < kMaxChunks; ++i) {
+    const uint32_t chunk = c->mem_r32(kChunkList + (uint32_t)i * 4u);
+    if (!chunk || !ram_range(chunk, 0x18u)) {
+      break;
+    }
+    last_chunk = chunk;
+    last_count = c->mem_r32(chunk + 0x14u) & 0xFFu;
+  }
+  if (!last_chunk || last_count > 256u) {
+    lucent::debug("worldcensus",
+                  "oracle depth: no valid last chunk (last_chunk=0x{:08X} last_count={})",
+                  last_chunk,
+                  last_count);
+    return;
+  }
+  uint32_t lo = 0x7FFFFFFFu, hi = 0;
+  uint64_t sum = 0, n = 0;
+  for (uint32_t i = 0; i < last_count; ++i) {
+    const uint32_t addr = kSz3Array + i * 2u;
+    // NOTE: no ram_range() guard here — the SZ3 array lives in the GTE SCRATCHPAD (0x1F800000,
+    // 1 KB), which is a distinct memory region from guest RAM. Core::mem_r16 handles the alias
+    // (mem.cpp:122); ram_range() would reject it as out of RAM, silently zeroing every sample.
+    const uint16_t v = c->mem_r16(addr);
+    if (i < 4u) {
+      lucent::debug("worldcensus",
+                    "oracle depth sample[{}] at 0x{:08X} = 0x{:04X}",
+                    i,
+                    addr,
+                    v);
+    }
+    if (v == 0u) {
+      continue; // a zero-depth vertex was culled; it is not a real depth sample
+    }
+    if (v < lo) {
+      lo = v;
+    }
+    if (v > hi) {
+      hi = v;
+    }
+    sum += v;
+    n++;
+    s_world.sz3_seen = true;
+  }
+  if (!n) {
+    return;
+  }
+  s_world.sz3_min = std::min(s_world.sz3_min, lo);
+  s_world.sz3_max = std::max(s_world.sz3_max, hi);
+  s_world.sz3_lastmin = lo;
+  s_world.sz3_lastmax = hi;
+  s_world.sz3_total += sum;
+  s_world.sz3_samples += n;
+  lucent::debug("worldcensus",
+                "oracle depth: chunks={} vertices={} last_chunk_sz3 range {}..{} ({} samples)",
+                call_chunks,
+                call_vertices,
+                lo,
+                hi,
+                n);
+}
+
+// Walk the pool packets THIS CALL emitted (pool_before..pool_after). This is the world renderer's
+// own geometry — the exact primitive set it drew. Parsing the GPU linked-list headers also proves
+// (the negative half of the oracle) that NO depth word is carried in the packet body: SZ3 is a
+// scratchpad intermediate only (C198). Strides: gouraud tri 0x1C, quad 0x24, matching the emit loop.
+void world_oracle_pool(Core *c, uint32_t begin, uint32_t end) {
+  if (end < begin) {
+    s_world.pool_malformed++;
+    return;
+  }
+  uint32_t p = begin;
+  uint64_t packets = 0, quads = 0, tris = 0, malformed = 0;
+  while (p < end && packets < 4096u) {
+    if (!ram_range(p, 4u)) {
+      malformed++;
+      break;
+    }
+    const uint32_t tag = c->mem_r32(p);
+    const uint32_t words = tag >> 24;
+    const uint32_t bytes = (words + 1u) * 4u;
+    if (!words || bytes > end - p) {
+      malformed++;
+      break;
+    }
+    // The world renderer's packets are a CUSTOM hand-packed GTE format, NOT standard libgpu
+    // POLY_*: the primitive code is a 0x3C-prefixed GTE code OR'd into the SECOND word (0x4),
+    // not the libgpu byte-7 code. So classify by the high byte of word 1. The 0x3C000000 prefix
+    // (gouraud quad, DPCS colour) is the world renderer's main geometry packet (r_environment.s
+    // 0x80026E64: lui at,0x3C000000; or a3,a3,at).
+    const uint32_t w1 = c->mem_r32(p + 4u);
+    const uint32_t code = w1 >> 24;
+    if (code == 0x3Cu) {
+      quads++;
+    } else {
+      tris++;
+    }
+    packets++;
+    p += bytes;
+  }
+  s_world.pool_packets += packets;
+  s_world.pool_quads += quads;
+  s_world.pool_tris += tris;
+  s_world.pool_malformed += malformed;
+  s_world.pool_unparsed_bytes += end - p;
+}
+
+// Walk the world OT and accumulate a per-bin face histogram — the "per-face OT bins" half of the
+// oracle. g_WorldOT = 0x80075820 holds the OT base; the OT is 0x800 bins x 8 bytes
+// (func_80016784(0x800), buffers.h m_WorldOTStart, memset 0x4000). A face's bin = its average
+// SZ >> 7 (r_environment.s 0x80026DBC srl t2,t2,7), so the bin index IS the quantized depth bucket:
+// bin 0 = nearest, higher = farther. Called per live call so it sees the freshly-linked world faces
+// (not the run-end, post-DrawOTag residual). The OT is frame-cumulative across renderers, so the
+// histogram is the frame's depth distribution dominated by the world renderer; the per-call SZ3
+// range (world_oracle_depth) is the world renderer's isolated depth sample.
+//
+// Chain format (func_80016784 / the emit link at 0x800265A4): each 8-byte bin's word 0 is the head
+// packet address; each packet's low 24 bits of word 0 point to the next packet in the bin
+// (sh fp,0($at); sb fp>>16,2($at)). Reconstruct the next link as 0x80000000 | (word0 & 0xFFFFFF).
+void world_oracle_ot(Core *c) {
+  const uint32_t base = c->mem_r32(0x80075820u); // g_WorldOT
+  if (!ram_range(base, 0x4000u)) {
+    s_world.ot_badbase++;
+    return;
+  }
+  constexpr int kMaxWalk = 100000; // hard cap; a malformed chain must not hang a live call
+  s_world.ot_walks++;
+  for (int b = 0; b < 0x800; ++b) {
+    uint32_t head = c->mem_r32(base + (uint32_t)b * 8u);
+    if (!head) {
+      continue;
+    }
+    if (!ram_range(head, 8u)) {
+      continue;
+    }
+    s_world.ot_bins_used++;
+    uint32_t p = head;
+    int n = 0;
+    while (p && n < kMaxWalk) {
+      if (!ram_range(p, 8u)) {
+        break;
+      }
+      const uint32_t link = c->mem_r32(p) & 0xFFFFFFu;
+      n++;
+      p = link ? (0x80000000u | link) : 0u;
+    }
+    if (n >= kMaxWalk) {
+      s_world.ot_truncated++;
+    }
+    s_world.ot_bins[b] += (uint64_t)n;
+  }
 }
 
 bool ram_range(uint32_t addr, uint32_t bytes) {
@@ -744,7 +959,7 @@ void spyro_sprite_queue_census_finish() {
   }
 }
 
-void spyro_world_census_finish() {
+void spyro_world_census_finish(Core *c) {
   if (!s_world.armed) {
     return;
   }
@@ -765,4 +980,69 @@ void spyro_world_census_finish() {
                s_world.pool_bytes,
                s_world.pool_bytes_zero,
                s_world.last_occlusion_group);
+  // The ORACLE half — depth. Every counter prints even when zero, so a run that never reached the
+  // field reads a loud negative rather than an empty pass.
+  const uint64_t mean = s_world.sz3_samples ? s_world.sz3_total / s_world.sz3_samples : 0;
+  lucent::info("worldcensus",
+               "ORACLE: chunks={} vertices={} depth_calls={} sz3_seen={} "
+               "sz3_range {}..{} (mean {}) pool(packets={} quads={} tris={} malformed={} "
+               "unparsed_bytes={})",
+               s_world.chunks,
+               s_world.vertices,
+               s_world.depth_calls,
+               s_world.sz3_seen,
+               s_world.sz3_seen ? s_world.sz3_min : 0,
+               s_world.sz3_seen ? s_world.sz3_max : 0,
+               mean,
+               s_world.pool_packets,
+               s_world.pool_quads,
+               s_world.pool_tris,
+               s_world.pool_malformed,
+               s_world.pool_unparsed_bytes);
+  // The accumulated per-face OT bin histogram — the "per-face OT bins" half of the oracle. Bins
+  // 0..0x7FF = depth>>7, bin 0 nearest. Report the used-bin span, the faces in a few depth bands,
+  // and a coarse per-region breakdown so the depth distribution is visible without a 2048-line dump.
+  uint64_t ot_total = 0, ot_bins_used = 0, ot_near = 0, ot_far = 0, ot_nearest = 0x7FF,
+          ot_farthest = 0;
+  for (int b = 0; b < 0x800; ++b) {
+    const uint64_t f = s_world.ot_bins[b];
+    if (!f) {
+      continue;
+    }
+    ot_total += f;
+    ot_bins_used++;
+    if (b < (int)ot_nearest) {
+      ot_nearest = b;
+    }
+    if (b > (int)ot_farthest) {
+      ot_farthest = b;
+    }
+    if (b < 16) {
+      ot_near += f;
+    }
+    if (b >= 0x3F0) {
+      ot_far += f;
+    }
+  }
+  lucent::info("worldcensus",
+               "ORACLE-OT: walks={} bins_used={} faces={} nearest_bin={} farthest_bin={} "
+               "near(0..15)={} far(0x3F0..0x7FF)={} badbase={} truncated={}",
+               s_world.ot_walks,
+               ot_bins_used,
+               ot_total,
+               ot_nearest,
+               ot_farthest,
+               ot_near,
+               ot_far,
+               s_world.ot_badbase,
+               s_world.ot_truncated);
+  for (int b = 0; b < 0x800; b += 64) {
+    uint64_t band = 0;
+    for (int j = 0; j < 64; ++j) {
+      band += s_world.ot_bins[b + j];
+    }
+    if (band) {
+      lucent::info("worldcensus", "ORACLE-OT band {:04X}..{:04X}: {} faces", b, b + 63, band);
+    }
+  }
 }

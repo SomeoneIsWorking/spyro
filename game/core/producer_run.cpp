@@ -35,7 +35,7 @@ void finish_once(const char *why) {
   lucent::info(
       "producers", "run ending after {} presented frame(s) ({}) — writing the DB", s_frames, why);
   spyro_sprite_queue_census_finish();
-  spyro_world_census_finish();
+  spyro_world_census_finish(s_core);
   producer_db_finish(s_core);
 }
 

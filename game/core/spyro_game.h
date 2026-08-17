@@ -59,7 +59,7 @@ void spyro_register_native_render();
 // Emits the run-end denominator for native_render.cpp's optional sprite-queue input census.
 void spyro_sprite_queue_census_finish();
 // …and for the RenderWorldChunks 0x800258F0 input census (the frontier step after C198).
-void spyro_world_census_finish();
+void spyro_world_census_finish(Core *c);
 
 // wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and
 // running the five contributing renderers interpreted (11 sites). Inert at 4:3.

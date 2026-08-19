@@ -274,7 +274,8 @@ def _run(cmd: list, env: dict | None = None) -> subprocess.CompletedProcess:
 # Owned bodies that tools/transcribe.py emits from the recompiled substrate. Each is re-derived
 # back to its generated source by the gate; add a row here when a new body is transcribed.
 TRANSCRIBED_BODIES = [
-    ('0x800258F0', 'game/core/world_body.inc'),   # RenderWorldChunks — the world/ground renderer
+    # (guest address, committed body, annotations file or None)
+    ('0x800258F0', 'game/core/world_body.inc', 'game/core/world_annotations.json'),
 ]
 
 
@@ -314,8 +315,11 @@ def run_static_checks(rep: Report, disc: str) -> None:
             if 'BAD' in line:
                 print(f"        {line.strip()}")
 
-    for addr, body in TRANSCRIBED_BODIES:
-        p = _run([sys.executable, 'tools/transcribe.py', 'check', addr, '--body', body])
+    for addr, body, ann in TRANSCRIBED_BODIES:
+        cmd = [sys.executable, 'tools/transcribe.py', 'check', addr, '--body', body]
+        if ann:
+            cmd += ['--ann', ann]
+        p = _run(cmd)
         label = f"{body} == generated {addr}"
         if p.returncode == 0:
             rep.ok(label, p.stdout.strip().splitlines()[-1].split('  ')[-1])

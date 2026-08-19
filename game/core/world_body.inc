@@ -3,7 +3,7 @@
 // folded, offsets signed), so it is byte-exact by construction. `transcribe.py check`
 // re-derives the generated source from this file and fails on any divergence; that check
 // runs in the gate, so this stays exact as the substrate is regenerated.
-// Statements: 5065 generated -> 5015 emitted (50 address pair(s) folded, 0 annotation line(s)).
+// Statements: 5065 generated -> 5017 emitted (50 address pair(s) folded, 2 annotation line(s)).
 at = kSaveArea;
 c->mem_w32(at, s0);
 c->mem_w32((at + 4), s1);
@@ -651,6 +651,8 @@ a0 = a0 + (uint32_t)4;
 L_80026348:;
 t6 = t6 & a0;
 c->mem_w32(sp, a0);
+//@ DEPTH: record this vertex's Z against its scratchpad slot. The recompiler's pz tap missed this arm — see native_world.cpp. a0 is (SXY2 << 5) | clipcode, derived from the same mfc2 whose SZ3 slot 2 already holds (gte_hold_pz at 0x800262E8), and sp is this vertex's 8-byte cache slot, so this is the same record the fall-through arm gets at 0x800262F8.
+/*@hook*/ gte_record_pz(c, sp, 2);
 { int _t = (t7 != s0); sp = sp + (uint32_t)8; if (_t) goto L_800262C0; }
 t6 = t6 & 0xFu;
 { int _t = (t6 != zero);  if (_t) goto L_80026228; }

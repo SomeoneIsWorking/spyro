@@ -4,8 +4,9 @@
 #include "producer_run.h"
 #include "cfg.h" // cfg_int — PSXPORT_NATIVE_FRAMES is a run-shape flag, not a diagnostic
 #include "core.h"
-#include "producer_db.h" // framework: producer_db_begin / producer_db_finish
-#include "spyro_game.h"  // optional sprite-queue census has the same run-end truth boundary
+#include "producer_db.h"  // framework: producer_db_begin / producer_db_finish
+#include "render_stats.h" // framework: render_depth_coverage_report — whole-run depth denominator
+#include "spyro_game.h"   // optional sprite-queue census has the same run-end truth boundary
 #include <cstdio>
 #include <lucent/log.h>
 #include <stdlib.h> // exit, atexit
@@ -37,6 +38,11 @@ void finish_once(const char *why) {
   spyro_sprite_queue_census_finish();
   spyro_world_census_finish(s_core);
   spyro_world_native_finish();
+  // Whole-run depth coverage, with its denominator (framework render_stats.h). This is THE number
+  // the widescreen/60fps discriminator rides on, and the per-frame `ndepth` line could never answer
+  // it — it sampled one frame in sixty and printed the same "0.0%" for "no 3D" and "nothing
+  // counted" (instrument I041, distrusted for exactly that).
+  render_depth_coverage_report(s_core, why);
   producer_db_finish(s_core);
 }
 

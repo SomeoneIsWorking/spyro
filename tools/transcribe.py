@@ -178,14 +178,29 @@ RE_EMIT_IMM = re.compile(r"^(" + "|".join(REGS) + r") = (0x[0-9A-Fa-f]+u << 16|0
 
 
 def emit(units, names, ann):
-    """units -> readable lines, with annotations injected. Returns (lines, injected)."""
+    """units -> readable lines, with annotations injected. Returns (lines, injected).
+
+    Two placements, both keyed to a LABEL, i.e. to a guest address:
+      "note" / "hook" — emitted at the TOP of that label's block.
+      "after"         — [{"stmt": <exact emitted statement>, "emit": [...], "why": ...}], emitted
+                        immediately AFTER that statement, inside that block.
+
+    An "after" rule whose `stmt` does not match EXACTLY ONCE in its block is a hard error. A hook
+    that silently fails to attach is the worst outcome available here: the run then measures the
+    UNMODIFIED body while the annotations file says otherwise, and whatever number comes back reads
+    as a result about the change.
+    """
     out, injected = [], 0
+    hits = {}
+    cur = None
     for u in units:
         key = None
         if u[0] == "line":
             m = re.match(r"^(L_[0-9A-Fa-f_A-Z]+):;", u[1])
             if m:
                 key = m.group(1)
+        if key:
+            cur = key
         if key and key in ann:
             a = ann[key]
             for c in a.get("note", []):
@@ -205,6 +220,28 @@ def emit(units, names, ann):
                 out.append("%s = 0x%08Xu;" % (reg, val))
         else:
             out.append(to_alias(u[1]))
+        # "after" rules for the block we are inside
+        for rule in ann.get(cur, {}).get("after", []) if cur else []:
+            if out[-1] != rule["stmt"]:
+                continue
+            hits[(cur, rule["stmt"])] = hits.get((cur, rule["stmt"]), 0) + 1
+            for c in ([rule["why"]] if rule.get("why") else []):
+                out.append(NOTE + c)
+                injected += 1
+            for h in rule["emit"]:
+                out.append(HOOK + " " + h)
+                injected += 1
+    # Every "after" rule must have fired exactly once. Report ALL the failures, with counts.
+    bad = []
+    for label, a in ann.items():
+        for rule in a.get("after", []):
+            n = hits.get((label, rule["stmt"]), 0)
+            if n != 1:
+                bad.append("  %s / %r matched %d time(s), need exactly 1" % (label, rule["stmt"], n))
+    if bad:
+        sys.exit("transcribe: annotation rules did not attach:\n" + "\n".join(bad) +
+                 "\nREFUSING to emit — a hook that does not attach makes the run measure the "
+                 "unmodified body while this file claims otherwise.")
     return out, injected
 
 
@@ -311,7 +348,35 @@ def cmd_check(args):
     print("[transcribe] check %s vs %s gen_func_%08X: %s"
           % (os.path.relpath(args.body, ROOT), os.path.relpath(shard, ROOT), addr, tag))
     print("[transcribe]   %s" % report)
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    # WITH the annotations file, hold the committed body to EXACT re-emission. The round-trip above
+    # only proves the generated statements are intact — it strips annotation lines before comparing,
+    # so a hook edited, moved or invented by hand in the .inc passes it silently. Since a hook is
+    # what makes the body do something the substrate does not, "the hooks are exactly the ones the
+    # annotations file asks for" is the half that actually needs guarding.
+    if args.ann:
+        units, folded = fold(gen)
+        want, injected = emit(units, names, load_ann(args.ann))
+        want_all = [l for l in want if l.strip()]
+        # compare the annotated body, ignoring only the generated header comment block
+        got_body = [l for l in emitted if l.strip() and not l.startswith("// ")]
+        if got_body != want_all:
+            n = min(len(got_body), len(want_all))
+            first = next((i for i in range(n) if got_body[i] != want_all[i]), n)
+            print("[transcribe] check %s vs %s: FAIL — the committed body is not what emit(%s) "
+                  "produces" % (os.path.relpath(args.body, ROOT), os.path.relpath(args.ann, ROOT),
+                                os.path.relpath(args.ann, ROOT)))
+            print("[transcribe]   first difference at emitted line %d of %d/%d"
+                  % (first + 1, len(got_body), len(want_all)))
+            if first < len(want_all):
+                print("[transcribe]     annotations say: %s" % want_all[first])
+            if first < len(got_body):
+                print("[transcribe]     committed body:  %s" % got_body[first])
+            return 1
+        print("[transcribe]   exact re-emission with %s: %d line(s), %d annotation line(s)"
+              % (os.path.relpath(args.ann, ROOT), len(want_all), injected))
+    return 0
 
 
 # ── Selftest: the check must PASS on a faithful body and FAIL on each way of breaking one ───────
@@ -385,6 +450,7 @@ def main():
     c = sub.add_parser("check", help="the emitted body must invert to the generated source")
     c.add_argument("addr")
     c.add_argument("--body", required=True)
+    c.add_argument("--ann", help="annotations JSON; with it the check is EXACT re-emission")
     args = ap.parse_args()
     if args.selftest:
         return cmd_selftest(args)

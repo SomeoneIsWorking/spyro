@@ -1,0 +1,11 @@
+{
+  "L_80026348": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(sp, a0);",
+        "why": "DEPTH: record this vertex's Z against its scratchpad slot. The recompiler's pz tap missed this arm — see native_world.cpp. a0 is (SXY2 << 5) | clipcode, derived from the same mfc2 whose SZ3 slot 2 already holds (gte_hold_pz at 0x800262E8), and sp is this vertex's 8-byte cache slot, so this is the same record the fall-through arm gets at 0x800262F8.",
+        "emit": ["gte_record_pz(c, sp, 2);"]
+      }
+    ]
+  }
+}

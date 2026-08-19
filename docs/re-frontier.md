@@ -275,12 +275,12 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: Two independent faults on the same screens. Fix the visibility first — a 24bpp fix cannot be verified against a black screen.
 
 ### gpu.native-depth — Native per-vertex depth from the GTE tap
-- status: re-partial
+- status: re-verified
 - deps: 
-- evidence: C128,C126
+- evidence: C125,C126,C143,C145,C146,C198,C201,C203,C204
 - where: external/psxport/tools/recomp/emit.py vertex_pz_stores; runtime/recomp/gte_beetle.cpp gte_hold_pz/gte_record_pz/gte_copy_pz; proj_prim.cpp
 - gap: MECHANISM RE-VERIFIED, COVERAGE IS NOT. Where a primitive's vertices resolve, they resolve exactly: sampled frames reach 210/210 prims with miss=0, and the rendered image is unchanged from before depth was enabled (C126), which is the correct result — the game's own painter order is still right for its own camera, so real depth only changes the picture once the camera moves or widens.
-- notes: Do NOT keep adding tap rules hoping for a threshold effect. The next real gain is render.own-geometry-family.
+- notes: RESOLVED 2026-08-19 (C204, issue 0067): per-primitive depth coverage is 63.60% of 3,483,268 prims, 85.30% of vertex-depth lookups resolved — up from 2.10%/6.41% — with the picture BYTE-IDENTICAL (f6001 md5 b6223ab7) and the gate 13 PASS / 709529 native producer prims unchanged. The blocker was NEVER this game's renderers: ProjPrim keyed entries by guest address alone, which forced entry lifetime down to one buffer flip, because a recycled packet-pool slot would otherwise be served the depth of the vertex that used to occupy it. Guarding each entry by the WORD it was recorded against makes a reused address unable to alias, so retention went to 8 generations (framework 2de90164 + tests/test_proj_prim_stale.cpp, shown RED first). Ruled out on the way, each of which looked like the answer: owning the world renderer (changed coverage by NOTHING), the recompiler pz tap not firing (fires 16.7M times; the one real gap on the clip arm at 0x8002631C is worth +43 prims of 3.48M), and the buffer-to-buffer carry not running (runs 20.5M times, carries 10M). READ THE STALE COUNT WITH THE COVERAGE NUMBER: with the guard compiled out the same run reads 70.53%, and those extra points are prims whose recorded word no longer matches memory — the previous attempt at longer lifetimes bought 6.9%->23% the same way and depth-culled the player character. Measure with I051; I041 stays distrusted. NEXT: the 2D/3D discriminator now has its signal, so widescreen re-centering (C143) and the uncovered-margin strip (issue 0039) are unblocked — but 63.60% was measured on the REFERENCE leg, which computes depth without ordering by it, so an unchanged picture there is not evidence the depths are CORRECT. The native leg must reach the field (issue 0065) for that.
 
 
 ## overlay

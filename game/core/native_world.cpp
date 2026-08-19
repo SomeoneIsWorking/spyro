@@ -64,16 +64,44 @@ namespace {
 //    halves cannot drift: game/core/guest_names.json is the single table both sides read.
 constexpr uint32_t kSaveArea = 0x80077DD8u;    // fixed register-save block (no stack frame)
 constexpr uint32_t kCamera = 0x80076DD0u;      // g_Camera: view matrix +0x14, position +0x28
-constexpr uint32_t kEnvironment = 0x800785A8u; // g_Environment: +0 m_SectorPointer, +4 count,
-                                               // +8 occlusion groups, +0x24 lod distance
+constexpr uint32_t kEnvironment = 0x800785A8u; // g_Environment — the INPUT DATA MODEL, see below
 constexpr uint32_t kWorkList = 0x8006FCF4u;    // +0x1C00 survivor chunk list, +0x2000 area end
-constexpr uint32_t kPoolPtr = 0x800757B0u;     // packet-pool write pointer
-constexpr uint32_t kOtBase = 0x80075820u;      // g_WorldOT (the ordering table base)
+constexpr uint32_t kPoolPtr = 0x800757B0u;     // packet-pool write pointer (the guest's m_PolyBuf)
+constexpr uint32_t kOtBase = 0x80075820u;      // g_WorldOT — the WORLD ordering table, not the HUD one
 constexpr uint32_t kCullScratch = 0x800771C8u; // per-chunk cull scratch, zeroed on entry
+constexpr uint32_t kSkipLowPolyWorld = 0x8007591Cu;      // g_SkipLowPolyWorld — the LOD kill switch
+constexpr uint32_t kEnvironmentAnimations = 0x80078560u; // g_EnvironmentAnimations (0x48 bytes)
+
+// ── g_Environment: WHAT THIS RENDERER READS, and why each offset is EVIDENCE and not a label ─────
+// The field names come from the vendored decomp's `Environment` struct (external/spyro-1/include/
+// environment.h), which is a REFERENCE — so every one of them is checked against what the body
+// above actually does with the offset before it is written down here. Six offsets are used, and
+// each check is reproducible from world_body.inc:
+//
+//   +0x00  m_SectorPointer   — the sector array base. BOTH entry arms load it (world_body.inc:59
+//                              `s2 = c->mem_r32(at)`), then index it differently. That is C199's
+//                              two entry shapes, arriving independently at the same split.
+//   +0x04  m_SectorCount     — the a0<0 arm only: `at = mem_r32(at+4); at <<= 2; s3 = s2 + at`,
+//                              i.e. sectors + count*4 = the END pointer of a LENGTH-COUNTED list.
+//   +0x08  m_OcclusionGroups — the a0>=0 arm only: `v0 = mem_r32(at+8) + (a0<<2)`, then bytes are
+//                              read with mem_r8 and the walk stops on 0xFF. A per-group array of
+//                              pointers to 0xFF-TERMINATED sector-index lists — again C199's shape.
+//   +0x18  m_LQTexturePointer— Phase 2's texture base (world_body.inc:944).
+//   +0x1C  m_HQTexturePointer— Phase 3's texture base (world_body.inc:1878). The LQ/HQ split at two
+//                              different phases is what g_SkipLowPolyWorld selects between.
+//   +0x24  m_LodDistance     — read three times and shifted (>>4 at entry, >>7 in Phase 2).
+//   +0x28  m_CullingDistance — Phase 1's cull radius, >>7. The CALLER sets it: the environment
+//                              layer 0x8002B9CC writes 0x28000 / 0x1C000 / 0x14000 into it and
+//                              picks the occlusion group before making this call.
+//
+// The struct is 0x30 bytes (0x800785A8..0x800785D8), so the three fields this renderer does NOT
+// touch — m_SurfaceData/+0x10, m_SurfaceCount/+0x14, m_TextureCount/+0x20, m_TerrainCollision/+0x2C
+// — are named for completeness and are NOT evidence from this body.
 
 // Silence "unused" for the names the current body happens not to reference by constant yet; they
 // are the map of this renderer's state and are cited by the phase comments above.
-[[maybe_unused]] constexpr uint32_t kUnusedGuard[] = {kOtBase};
+[[maybe_unused]] constexpr uint32_t kUnusedGuard[] = {kOtBase, kSkipLowPolyWorld,
+                                                      kEnvironmentAnimations};
 
 } // namespace
 

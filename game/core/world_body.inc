@@ -176,7 +176,7 @@ gp = gp | v0;
 at = gp << 24;
 { int _t = ((int32_t)at < 0); at = at >> 24; if (_t) goto L_80025D14; }
 c->mem_w8((s1 + 24), (uint8_t)sp);
-v0 = 0x80078560u;
+v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 20));
 at = at << 2;
 at = at + v0;
@@ -262,7 +262,7 @@ L_80025D14:;
 at = gp << 16;
 { int _t = ((int32_t)at < 0); at = at >> 24; if (_t) goto L_80025E5C; }
 c->mem_w8((s1 + 25), (uint8_t)sp);
-v0 = 0x80078560u;
+v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 28));
 at = at << 2;
 at = at + v0;
@@ -343,7 +343,7 @@ L_80025E5C:;
 at = gp << 8;
 { int _t = ((int32_t)at < 0); at = at >> 24; if (_t) goto L_80025FD0; }
 c->mem_w8((s1 + 26), (uint8_t)sp);
-v0 = 0x80078560u;
+v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 36));
 at = at << 2;
 at = at + v0;
@@ -434,7 +434,7 @@ t0 = t0 + t2;
 L_80025FD0:;
 { int _t = ((int32_t)gp < 0); at = gp >> 24; if (_t) goto L_800259FC; }
 c->mem_w8((s1 + 27), (uint8_t)sp);
-v0 = 0x80078560u;
+v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 44));
 at = at << 2;
 at = at + v0;
@@ -560,7 +560,7 @@ gte_write_ctrl(1, t3);
 gte_write_ctrl(2, t4);
 gte_write_ctrl(3, t5);
 gte_write_ctrl(4, t6);
-at = 0x8007591Cu;
+at = kSkipLowPolyWorld;
 at = c->mem_r32(at);
 ra = kWorkList;
 ra = ra + (uint32_t)8192;

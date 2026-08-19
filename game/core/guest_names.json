@@ -5,5 +5,7 @@
   "0x8006FCF4": "kWorkList",
   "0x800757B0": "kPoolPtr",
   "0x80075820": "kOtBase",
-  "0x800771C8": "kCullScratch"
+  "0x800771C8": "kCullScratch",
+  "0x8007591C": "kSkipLowPolyWorld",
+  "0x80078560": "kEnvironmentAnimations"
 }

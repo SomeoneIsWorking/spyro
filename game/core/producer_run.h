@@ -57,4 +57,9 @@ void spyro_producer_run_frame(Core *c);
 // Current PRESENT count for diagnostics that must correlate a producer call with a captured frame.
 // Zero before the first field; unlike a private per-producer counter, this is the same clock used
 // by PSXPORT_PRESENT_SHOT_AT and PSXPORT_NATIVE_FRAMES.
+// End the run cleanly NOW — write the DB and every run-end report, stop the host-turn timer, exit
+// 0. Called by the frame cap and by the REPL's `end` command; see the note at the definition for
+// why a SIGKILLed run is not an acceptable way to stop a measurement.
+void spyro_producer_run_end_now(const char *why);
+
 long spyro_producer_run_present_count();

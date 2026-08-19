@@ -121,12 +121,24 @@ def main():
     env = dict(os.environ, PSXPORT_REPL="1", PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1",
                PSXPORT_NOPACE="1", PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
     pre_mtime = os.path.getmtime(vram) if os.path.exists(vram) else None
-    script = f"run {frame}\nvram {os.path.relpath(vram, REPO)}\nquit\n"
+    # `end`, not `quit`: quit merely DETACHES the REPL and leaves the game running, so the capture
+    # had to be SIGKILLed by `timeout` and the run-end reporters never printed — the log then could
+    # not say which bodies ran, which is the one thing a picture cannot tell you on its own.
+    script = f"run {frame}\nvram {os.path.relpath(vram, REPO)}\nend\n"
     print(f"running to frame {frame} …", file=sys.stderr)
-    subprocess.run(["timeout", "-s", "KILL", str(a.secs),
-                    "./scratch/bin/spyro_port", "scratch/bin/spyro/SCUS_942.28"],
-                   cwd=REPO, env=env, input=script, text=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # KEEP THE RUN'S LOG. It used to go to DEVNULL, which made a capture unable to answer the one
+    # question that decides what the picture is evidence OF: which bodies actually ran. Two pictures
+    # that match prove nothing if the thing under test was never installed — and this port has had
+    # exactly that happen (issue 0066: an override logged as installed, displaced by a later
+    # registration, zero calls, identical screenshots). The log is where the run says so.
+    logdir = os.path.join(REPO, "scratch", "logs")
+    os.makedirs(logdir, exist_ok=True)
+    logpath = os.path.join(logdir, f"shot-f{frame}.log")
+    with open(logpath, "w") as logf:
+        subprocess.run(["timeout", "-s", "KILL", str(a.secs),
+                        "./scratch/bin/spyro_port", "scratch/bin/spyro/SCUS_942.28"],
+                       cwd=REPO, env=env, input=script, text=True,
+                       stdout=logf, stderr=subprocess.STDOUT)
     if not os.path.exists(vram):
         sys.exit(f"no VRAM dump produced — did the run reach frame {frame} within {a.secs}s?")
     if pre_mtime is not None and os.path.getmtime(vram) == pre_mtime:
@@ -160,6 +172,8 @@ def main():
     png = os.path.join(out, f"f{frame}.png")
     write_png(png, fbw, len(crop), ch, crop)
     print(f"{os.path.relpath(png, REPO)}   (buffer at y={y0}; {top} vs {bot} distinct colours)")
+    print(f"    run log: {os.path.relpath(logpath, REPO)}   "
+          f"— read it to see WHICH bodies ran; a picture alone cannot tell you", file=sys.stderr)
     return 0
 
 

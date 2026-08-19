@@ -476,6 +476,14 @@ bool deliver_field(
     if (!quit && budget <= 0) {
       while ((budget = c->game->repl.read(c, c->mem_r32(kVblankCounter))) == 0) {
       }
+      if (budget == -2) {
+        // `end` — END the run, don't detach from it. This is what a headless capture wants: the
+        // run-end reporters (producer DB, census denominators, the native-body call counters) all
+        // print, so the log can say WHICH bodies ran. Under `quit` the harness has to kill the
+        // process and those answers are lost. Does not return.
+        lucent::info("repl", "end — ending the run cleanly (reports will be written)");
+        spyro_producer_run_end_now("REPL end");
+      }
       if (budget < 0) {
         quit = true;
         lucent::info("repl", "quit — running free");

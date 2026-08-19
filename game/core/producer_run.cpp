@@ -36,6 +36,7 @@ void finish_once(const char *why) {
       "producers", "run ending after {} presented frame(s) ({}) — writing the DB", s_frames, why);
   spyro_sprite_queue_census_finish();
   spyro_world_census_finish(s_core);
+  spyro_world_native_finish();
   producer_db_finish(s_core);
 }
 
@@ -99,7 +100,16 @@ void spyro_producer_run_frame(Core *c) {
   if (s_cap <= 0 || s_frames < (long)s_cap) {
     return;
   }
-  finish_once("frame cap reached");
+  spyro_producer_run_end_now("frame cap reached");
+}
+
+// END THE RUN CLEANLY, from wherever asks. The frame cap was the only caller of this shutdown for a
+// while, which meant every OTHER way of stopping the port — the REPL, and so every screenshot
+// capture — died by SIGKILL with the run-end reporters never reached. That is not a tidiness
+// problem: those reporters are where the run says which bodies actually executed, so a capture that
+// cannot reach them produces a picture nobody can attribute. `end` in the REPL now comes here.
+void spyro_producer_run_end_now(const char *why) {
+  finish_once(why);
   // STOP THE HOST-TURN TIMER THREAD BEFORE EXITING, and this is not housekeeping — without it the
   // process ABORTS instead of exiting. MEASURED on the first capped run: the DB was written, then
   // `terminate called without an active exception` and rc=139, with `std::thread::~thread()` on the

@@ -97,6 +97,47 @@ void world_native(Core *c) {
 #include "world_body.inc"
 }
 
+// ── DID THE BODY ACTUALLY RUN? The counter, and why it is unconditional. ───────────────────────
+// This override was installed and logged as installed for a whole session while executing ZERO
+// times, because wide_clip.cpp claims the same single slot and registers later (issue 0066). What
+// made that invisible is that every downstream signal a run produces — a clean exit, a correct
+// picture, an identical screenshot — is exactly what a NON-installed override also produces, since
+// the guest body then draws the same frame. So "the picture is unchanged" is evidence of nothing
+// until the body is known to have run, and a screenshot compare without this counter is a
+// measurement of the guest renderer against itself.
+//
+// Hence a counter that is always on (an increment, not a diagnostic) and a run-end line that prints
+// even when it is ZERO — a silent report here would be indistinguishable from "I never looked".
+namespace {
+long s_world_calls = 0;
+long s_world_flat = 0;
+long s_world_occ = 0;
+} // namespace
+
+void spyro_world_native_finish() {
+  if (!cfg_on("PSXPORT_NATIVE_WORLD")) {
+    lucent::info("worldnative",
+                 "PSXPORT_NATIVE_WORLD was OFF: the guest body drew every world frame in this run. "
+                 "Nothing in this run says anything about the native body.");
+    return;
+  }
+  if (s_world_calls == 0) {
+    lucent::error("worldnative",
+                  "PSXPORT_NATIVE_WORLD=1 but the native world body ran ZERO times. It was "
+                  "registered and then never called — either this run never reached the field, or "
+                  "something registered later took the single override slot at 0x800258F0 (issue "
+                  "0066). Any picture or gate result from this run is about the GUEST body.");
+    return;
+  }
+  lucent::info("worldnative",
+               "the native world body RAN {} time(s) this run: {} flat-list (a0<0) + {} "
+               "occlusion-group (a0>=0). This is what makes a picture from this run evidence "
+               "about the native body rather than about the guest one.",
+               s_world_calls,
+               s_world_flat,
+               s_world_occ);
+}
+
 // The owned override: dispatch the native body, and under ndiff verify it against the recompiled
 // body. Registration is below, behind an explicit flag.
 //
@@ -109,6 +150,12 @@ void world_native(Core *c) {
 // give each its own budget so a flood of one cannot starve the other.
 void world_owned(Core *c) {
   const bool flat = (int32_t)c->r[4] < 0;
+  s_world_calls++;
+  if (flat) {
+    s_world_flat++;
+  } else {
+    s_world_occ++;
+  }
   ndiff_run(
       c, flat ? "world-flat@0x800258F0" : "world-occ@0x800258F0", world_native, gen_func_800258F0);
 }

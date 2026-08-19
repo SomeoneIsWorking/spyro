@@ -91,6 +91,11 @@ static void spyro_registerOverrides(Game *) {
     spyro_register_native_util();
     spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
                                      // renderer under differential verification (issue 0037)
+    spyro_register_native_world();   // BRING-UP, off unless PSXPORT_NATIVE_WORLD=1: the world
+                                     // renderer 0x800258F0 under differential verification.
+                                     // wide_clip claims the same override slot and registers LATER,
+                                     // so it stands down from this address on the same flag — the
+                                     // order below must NOT be what decides the winner.
     spyro_register_wide_clip();      // WIDESCREEN: the guest's own renderers, with the right clip
                                      // bound moved to the wide width (inert at 4:3)
     spyro_register_actor_chain_oracle(); // diagnostic-only, deliberately after wide_clip so an

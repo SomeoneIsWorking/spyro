@@ -128,8 +128,8 @@ struct WorldCensus {
   // "a live census showing SZ in the emitted packet body" — so the pool packets are walked too, to
   // prove the depth is NOT in the packets (SZ3 is scratchpad-only).
   uint64_t chunks = 0;
-  uint64_t vertices = 0;       // sum of chunk vertex counts (last-chunk SZ3 range is a sample)
-  uint64_t depth_calls = 0;    // calls where a real (non-empty) chunk list was found
+  uint64_t vertices = 0;    // sum of chunk vertex counts (last-chunk SZ3 range is a sample)
+  uint64_t depth_calls = 0; // calls where a real (non-empty) chunk list was found
   uint32_t sz3_min = 0x7FFFFFFFu, sz3_max = 0, sz3_lastmin = 0x7FFFFFFFu, sz3_lastmax = 0;
   uint64_t sz3_total = 0, sz3_samples = 0;
   uint64_t pool_packets = 0, pool_quads = 0, pool_tris = 0, pool_malformed = 0;
@@ -246,8 +246,8 @@ void world_oracle_depth(Core *c) {
   }
   s_world.depth_calls++;
   // The SZ3 array holds only the LAST chunk's vertices (overwritten per chunk); sample it with the
-  // last chunk's vertex count. The last non-empty chunk's count is what call_vertices includes last.
-  // To bound correctly we re-read the last list entry's count.
+  // last chunk's vertex count. The last non-empty chunk's count is what call_vertices includes
+  // last. To bound correctly we re-read the last list entry's count.
   uint32_t last_count = 0;
   uint32_t last_chunk = 0;
   for (int i = 0; i < kMaxChunks; ++i) {
@@ -274,11 +274,7 @@ void world_oracle_depth(Core *c) {
     // (mem.cpp:122); ram_range() would reject it as out of RAM, silently zeroing every sample.
     const uint16_t v = c->mem_r16(addr);
     if (i < 4u) {
-      lucent::debug("worldcensus",
-                    "oracle depth sample[{}] at 0x{:08X} = 0x{:04X}",
-                    i,
-                    addr,
-                    v);
+      lucent::debug("worldcensus", "oracle depth sample[{}] at 0x{:08X} = 0x{:04X}", i, addr, v);
     }
     if (v == 0u) {
       continue; // a zero-depth vertex was culled; it is not a real depth sample
@@ -314,7 +310,8 @@ void world_oracle_depth(Core *c) {
 // Walk the pool packets THIS CALL emitted (pool_before..pool_after). This is the world renderer's
 // own geometry — the exact primitive set it drew. Parsing the GPU linked-list headers also proves
 // (the negative half of the oracle) that NO depth word is carried in the packet body: SZ3 is a
-// scratchpad intermediate only (C198). Strides: gouraud tri 0x1C, quad 0x24, matching the emit loop.
+// scratchpad intermediate only (C198). Strides: gouraud tri 0x1C, quad 0x24, matching the emit
+// loop.
 void world_oracle_pool(Core *c, uint32_t begin, uint32_t end) {
   if (end < begin) {
     s_world.pool_malformed++;
@@ -764,13 +761,25 @@ void spyro_register_native_render() {
   // calls/chunks/pool-bytes even when the run never reached the field — zero is a loud answer, not
   // a silent one.
   if (cfg_str("PSXPORT_WORLD_CENSUS")) {
-    s_world.armed = true;
-    psxport_recomp()->shard_set_override(kWorldRenderer, world_hook);
-    lucent::info("worldcensus",
-                 "ARMED input census at 0x{:08X} (RenderWorldChunks): reading g_Environment's "
-                 "chunk list + pool movement before the unchanged guest renderer. The run-end "
-                 "report prints calls and entries even when both are zero.",
-                 kWorldRenderer);
+    // The census and the native world body claim the SAME single override slot for 0x800258F0, and
+    // this registration runs last — so it would win silently, and the census would then measure the
+    // guest body while the log said the native one was installed. Refuse instead of deciding by
+    // registration order.
+    if (cfg_on("PSXPORT_NATIVE_WORLD")) {
+      lucent::error("worldcensus",
+                    "PSXPORT_WORLD_CENSUS=1 and PSXPORT_NATIVE_WORLD=1 both claim the single "
+                    "override slot at 0x{:08X}. NOT arming the census — it would displace the "
+                    "native body and then report on the guest one. Pick one.",
+                    kWorldRenderer);
+    } else {
+      s_world.armed = true;
+      psxport_recomp()->shard_set_override(kWorldRenderer, world_hook);
+      lucent::info("worldcensus",
+                   "ARMED input census at 0x{:08X} (RenderWorldChunks): reading g_Environment's "
+                   "chunk list + pool movement before the unchanged guest renderer. The run-end "
+                   "report prints calls and entries even when both are zero.",
+                   kWorldRenderer);
+    }
   }
   // PSXPORT_MUTE_FN=<hex guest address>[,<hex>...] — replace these bodies with nothing.
   if (const char *m = cfg_str("PSXPORT_MUTE_FN")) {
@@ -1001,9 +1010,10 @@ void spyro_world_census_finish(Core *c) {
                s_world.pool_unparsed_bytes);
   // The accumulated per-face OT bin histogram — the "per-face OT bins" half of the oracle. Bins
   // 0..0x7FF = depth>>7, bin 0 nearest. Report the used-bin span, the faces in a few depth bands,
-  // and a coarse per-region breakdown so the depth distribution is visible without a 2048-line dump.
+  // and a coarse per-region breakdown so the depth distribution is visible without a 2048-line
+  // dump.
   uint64_t ot_total = 0, ot_bins_used = 0, ot_near = 0, ot_far = 0, ot_nearest = 0x7FF,
-          ot_farthest = 0;
+           ot_farthest = 0;
   for (int b = 0; b < 0x800; ++b) {
     const uint64_t f = s_world.ot_bins[b];
     if (!f) {

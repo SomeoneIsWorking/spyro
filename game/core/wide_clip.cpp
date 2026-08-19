@@ -338,7 +338,15 @@ void spyro_register_wide_clip() {
   psxport_recomp()->shard_set_override(kRenderers[1].addr, hook<1>);
   psxport_recomp()->shard_set_override(kRenderers[2].addr, hook<2>);
   psxport_recomp()->shard_set_override(kRenderers[3].addr, hook<3>);
-  psxport_recomp()->shard_set_override(kRenderers[4].addr, hook<4>);
+  // Same arrangement for the world renderer 0x800258F0 (kRenderers[4]). This one MATTERS more than
+  // the terrain case: spyro_register_native_world() runs BEFORE this function, so an unconditional
+  // install here silently displaced it and the native world body never executed — measured, on a
+  // run where the census proves the address was called 3587 times. The registration order was doing
+  // the deciding, which is the exact hazard game_hooks.cpp records for fntrace. Both sides now test
+  // the same flag, so neither can quietly win.
+  if (!cfg_on("PSXPORT_NATIVE_WORLD")) {
+    psxport_recomp()->shard_set_override(kRenderers[4].addr, hook<4>);
+  }
   static_assert(kRendererCount == 5, "add a hook<> instantiation for the new renderer");
   lucent::info("wide",
                "clip-bound widening armed for {} renderers (11 sites). At 4:3 they run their "

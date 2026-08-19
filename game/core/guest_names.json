@@ -1,0 +1,9 @@
+{
+  "0x80077DD8": "kSaveArea",
+  "0x80076DD0": "kCamera",
+  "0x800785A8": "kEnvironment",
+  "0x8006FCF4": "kWorkList",
+  "0x800757B0": "kPoolPtr",
+  "0x80075820": "kOtBase",
+  "0x800771C8": "kCullScratch"
+}

@@ -98,6 +98,7 @@ set(GAME_SRC
   game/core/native_render.cpp
   game/core/wide_clip.cpp
   game/core/native_terrain.cpp
+  game/core/native_world.cpp
   game/core/actor_chain_oracle.cpp
 )
 

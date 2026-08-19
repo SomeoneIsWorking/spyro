@@ -271,6 +271,13 @@ def _run(cmd: list, env: dict | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=REPO)
 
 
+# Owned bodies that tools/transcribe.py emits from the recompiled substrate. Each is re-derived
+# back to its generated source by the gate; add a row here when a new body is transcribed.
+TRANSCRIBED_BODIES = [
+    ('0x800258F0', 'game/core/world_body.inc'),   # RenderWorldChunks — the world/ground renderer
+]
+
+
 def run_static_checks(rep: Report, disc: str) -> None:
     # 1. THE SHIPPED PRODUCER KEYS vs THE GUEST IMAGE THEY WERE MEASURED FROM. A ProducerScope key is
     # a MEASURED CONSTANT that decides which DB row a native draw is charged to; until it was gated,
@@ -286,6 +293,35 @@ def run_static_checks(rep: Report, disc: str) -> None:
         rep.bad("producer keys == measured (+selftest)", "see output")
         for line in p.stdout.splitlines():
             if 'FAIL' in line or 'REFUSED' in line:
+                print(f"        {line.strip()}")
+
+    # 1b. THE GENERATED-TRANSCRIPTION BODIES vs THE SUBSTRATE THEY WERE RENDERED FROM. An owned
+    # body produced by tools/transcribe.py is byte-exact BY CONSTRUCTION, but only for the substrate
+    # it was emitted from: regenerate generated/ and the committed .inc can silently describe an
+    # older recompilation. `transcribe.py check` re-derives the generated source from the committed
+    # body and requires an exact match, so that drift fails here instead of surfacing as a
+    # differential divergence nobody can attribute. --selftest first, so a check that cannot fail
+    # is never mistaken for a check that passed: it feeds the round-trip eight corruptions (dropped
+    # statement, substituted register, conditionalised delay slot, altered offset/mask/constant/GTE
+    # opcode, reordered statements) and requires every one to be caught.
+    p = _run([sys.executable, 'tools/transcribe.py', '--selftest'])
+    if p.returncode == 0:
+        rep.ok("transcribe round-trip selftest",
+               f"{p.stdout.count('[ok]')} case(s), corruptions all caught")
+    else:
+        rep.bad("transcribe round-trip selftest", "see output")
+        for line in p.stdout.splitlines():
+            if 'BAD' in line:
+                print(f"        {line.strip()}")
+
+    for addr, body in TRANSCRIBED_BODIES:
+        p = _run([sys.executable, 'tools/transcribe.py', 'check', addr, '--body', body])
+        label = f"{body} == generated {addr}"
+        if p.returncode == 0:
+            rep.ok(label, p.stdout.strip().splitlines()[-1].split('  ')[-1])
+        else:
+            rep.bad(label, "the committed body no longer inverts to the generated source")
+            for line in p.stdout.splitlines():
                 print(f"        {line.strip()}")
 
     # 2. AND THE SHIPPING PATH MUST ACTUALLY FIRE — a short CAPPED native-leg run (~2s) whose DB must

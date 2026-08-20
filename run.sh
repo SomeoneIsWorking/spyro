@@ -9,10 +9,10 @@
 # drop a *.chd next to this script.
 #
 # Requirements (install once):
-#   Linux:  cmake pkg-config SDL3-devel libzstd-devel zlib-devel python3 + a C/C++ toolchain
+#   Linux:  cmake pkg-config SDL3-devel libzstd-devel zlib-devel python3 clang
 #   macOS:  brew install cmake pkg-config sdl3 zstd zlib python3
 #
-# Env knobs: PSXPORT_NOAUDIO=1 (mute), PSXPORT_NOWINDOW=1 (headless), CC=clang/gcc,
+# Env knobs: PSXPORT_NOAUDIO=1 (mute), PSXPORT_NOWINDOW=1 (headless), CC/CXX=Clang paths,
 #            PSXPORT_FORCE_RECOMP=1 (always re-emit the substrate).
 #            PSXPORT_NOPACE=1 (run as fast as the host can). HEADLESS IS NOT UNPACED: headless
 #            means no window surface and no audio device, nothing else, so a headless run paces
@@ -33,6 +33,11 @@ command -v cmake      >/dev/null || die "cmake not found"
 command -v python3    >/dev/null || die "python3 not found"
 command -v pkg-config >/dev/null || die "pkg-config not found"
 pkg-config --exists sdl3 || die "SDL3 not found (Linux: SDL3-devel/libsdl3-dev; macOS: brew install sdl3)"
+CC="${CC:-clang}"
+CXX="${CXX:-clang++}"
+is_clang() { case "$("$1" --version 2>/dev/null)" in *clang*) return 0;; *) return 1;; esac; }
+is_clang "$CC" || die "CC=$CC is not Clang"
+is_clang "$CXX" || die "CXX=$CXX is not Clang"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 # ---- 0a2. WHICH FRAMEWORK CHECKOUT IS THIS RUN BUILT FROM? --------------------------------------
@@ -95,7 +100,8 @@ say "disc: $DISC"
 # ALWAYS (re)build discdump: CMake is incremental (fast when current), and a STALE binary is a silent
 # trap — it can fail to find a file on the disc and leave the recomp built from missing inputs.
 say "building libchdr + discdump…"
-cmake -S "$PSXPORT_DIR" -B "$PSXPORT_DIR/build" -DCMAKE_BUILD_TYPE=Release >/dev/null \
+cmake -S "$PSXPORT_DIR" -B "$PSXPORT_DIR/build" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" >/dev/null \
   || die "psxport cmake configure failed"
 cmake --build "$PSXPORT_DIR/build" -j "$JOBS" --target discdump >/dev/null || die "discdump build failed"
 DISCDUMP="$PSXPORT_DIR/build/tools/discdump"
@@ -113,7 +119,8 @@ PSXPORT_DISCDUMP="$DISCDUMP" python3 tools/ensure_recomp.py "$DISC" || die "reco
 
 # ---- 4. build the native port -------------------------------------------------------------------
 say "building the native port (CMake -j$JOBS)…"
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPSXPORT_DIR="$(cd "$PSXPORT_DIR" && pwd)" >/dev/null \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPSXPORT_DIR="$(cd "$PSXPORT_DIR" && pwd)" \
+  -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" >/dev/null \
   || die "cmake configure failed"
 cmake --build build -j "$JOBS" --target spyro_port || die "port build failed"
 

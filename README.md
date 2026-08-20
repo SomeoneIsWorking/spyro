@@ -49,7 +49,7 @@ has already been tried.
 
 ## Requirements
 
-- **Linux:** `cmake`, `pkg-config`, SDL3, libzstd, zlib, `python3`, a C/C++ toolchain
+- **Linux:** `cmake`, `pkg-config`, SDL3, libzstd, zlib, `python3`, a Clang C/C++ toolchain
 - **macOS:** `brew install cmake pkg-config sdl3 zstd zlib python3`
 - A Vulkan-capable GPU + drivers
 
@@ -61,8 +61,9 @@ cd SpyroEngine
 ./run.sh /path/to/'Spyro the Dragon (USA).chd'
 ```
 
-`run.sh` does everything end to end: builds the CHD tooling, extracts `SCUS_942.28` from your disc,
-statically recompiles it to C, builds the port, and launches it. Alternatively set
+`run.sh` is the stable entry point; it delegates the build policy to `tools/run.py`, which builds the
+CHD tooling, extracts `SCUS_942.28` from your disc, statically recompiles it to C, builds the port,
+and launches it. Alternatively set
 `PSXPORT_SPYRO_DISC`, copy `.env.example` to `.env`, or drop a `*.chd` in the repo root — the
 resolution order is *CLI arg > env var > `.env` > drop-in*.
 

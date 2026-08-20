@@ -2,11 +2,11 @@
 """ensure_recomp.py — the single, hash-checked recompilation step.
 
 ONE entry point that guarantees the statically-recompiled substrate in generated/ is PRESENT and
-matches a deterministic hash of its INPUTS. run.sh calls only this; all recomp provisioning lives
-here rather than scattered through the shell script.
+matches a deterministic hash of its INPUTS. tools/run.py calls this; all recomp provisioning lives
+here rather than being duplicated in the launcher.
 
 What it does, in order:
-  1. Resolve the disc image (CLI arg > $PSXPORT_SPYRO_DISC > .env > *.chd drop-in — mirrors run.sh).
+  1. Resolve the disc image (CLI arg > $PSXPORT_SPYRO_DISC > .env > *.chd drop-in).
   2. Extract SCUS_942.28 via psxport's `discdump`, plus WAD.WAD, and slice the overlays out of it.
   3. Compute the recomp IDENTITY = emit.py's RECOMP_VERSION + a hash of the INPUTS (the executable +
      the recompiler module sources + OUR SEED FILE). If the stored identity matches, the on-disk

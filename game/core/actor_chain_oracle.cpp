@@ -787,7 +787,7 @@ static bool simulate_global(Read read,
   return true;
 }
 template <class Read>
-static uint32_t compare_global_words(const std::vector<WordWrite> &expected, Read read) {
+static uint32_t compare_global_words(const std::vector<WordWrite> &expected, const Read &read) {
   uint32_t mismatches = 0;
   for (const auto &w : expected) {
     mismatches += read(w.addr) != w.value;
@@ -819,7 +819,7 @@ static bool compare_ot(const std::vector<OtEntry> &a,
   field = "none";
   return true;
 }
-template <class Read> static void snapshot_ot_read(OtCensus &o, Read read) {
+template <class Read> static void snapshot_ot_read(OtCensus &o, const Read &read) {
   if (!o.haveSource) {
     return;
   }

@@ -1,0 +1,17 @@
+---
+Checks: >-
+  -*,
+  bugprone-assert-side-effect,
+  bugprone-infinite-loop,
+  bugprone-misplaced-widening-cast,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-memory-comparison,
+  bugprone-suspicious-missing-comma,
+  bugprone-suspicious-semicolon,
+  bugprone-use-after-move,
+  performance-*,
+  -performance-enum-size
+WarningsAsErrors: '*'
+SystemHeaders: false
+FormatStyle: file
+...

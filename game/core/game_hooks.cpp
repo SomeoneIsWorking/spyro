@@ -204,7 +204,7 @@ static int spyro_selftestGame(const char *which, const char *) {
   return ok ? 0 : 1;
 }
 
-// Bind by name. A positional table silently shifted when psxport inserted devWarpAreaEnter because
+// Bind by name. A positional table silently shifted when psxport inserted a warp hook because
 // the surrounding null callbacks were type-compatible; the first later non-null callback merely
 // made that old defect visible. Unlisted hooks are value-initialised to null, so this is also the
 // exact inventory of framework callbacks Spyro has actually stood up.

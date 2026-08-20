@@ -101,9 +101,13 @@ constexpr uint32_t kStageFnPtr7 = 0x8007567Cu;        // stage 7's function poin
 // method (walk the call graph to a known renderer) gets PARTICLES wrong, because 0x800573C8 is a
 // hand-written assembly renderer that projects and emits inline and therefore calls nothing at all.
 // Measured on SCUS_942.28, 779 function extents:
-//     0x80019698 actor pass      cop2 1244  (0x80023AC4:336 0x80020F34:218 0x80022A2C:165
-//     0x8001F798:125) 0x8002B9CC environment     cop2  276  (all of it in 0x800258F0) 0x80050BD0
-//     cyclorama       cop2  230  (0x80016D2C:59 0x80050240:43 0x8004F4BC:35 0x8004EBA8:24)
+//     0x80019698 actor pass      cop2 1244
+//       (0x80023AC4:336 0x80020F34:218 0x80022A2C:165 0x8001F798:125)
+//
+//     0x8002B9CC environment     cop2  276  (all of it in 0x800258F0)
+//
+//     0x80050BD0 cyclorama       cop2  230
+//       (0x80016D2C:59 0x80050240:43 0x8004F4BC:35 0x8004EBA8:24)
 //     0x800573C8 particles       cop2  166  ALL IN ITS OWN BODY — invisible to a call-graph walk
 //     0x800189F0 tracers         cop2   15  (0x80017B48 world->screen, 0x80017A38 isqrt)
 //     the other five             cop2    0  over 64..459 instructions scanned each

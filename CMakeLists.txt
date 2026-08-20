@@ -31,7 +31,7 @@ project(spyroengine CXX C)
 #
 #   cmake -S . -B build -DPSXPORT_DIR=$HOME/repo/psx/psxport
 #
-# It is a CACHE path, so it survives reconfigures, and `run.sh` passes it through from the
+# It is a CACHE path, so it survives reconfigures, and `tools/run.py` passes it through from the
 # environment. Everything else in this file and in cmake/ derives from it — never re-spell
 # `external/psxport` at a call site, or the two halves of a build can come from different checkouts.
 set(PSXPORT_DIR "${CMAKE_SOURCE_DIR}/external/psxport" CACHE PATH

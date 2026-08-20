@@ -280,6 +280,19 @@ TRANSCRIBED_BODIES = [
 
 
 def run_static_checks(rep: Report, disc: str) -> None:
+    # 0. ONE normal C++ policy target: shared implementation, repo-local policy files and caps.
+    # This covers format, the structure ratchet, the real Clang compile database and clang-tidy.
+    p = _run(["cmake", "--build", "build", "--target", "cpp-policy"])
+    if p.returncode == 0:
+        rep.ok("C++ policy (Clang/format/tidy/structure)",
+               next((line for line in reversed(p.stdout.splitlines())
+                     if "cpp-policy:" in line), "ok"))
+    else:
+        rep.bad("C++ policy (Clang/format/tidy/structure)", "cpp-policy target failed")
+        for line in (p.stdout + p.stderr).splitlines():
+            if "cpp-policy:" in line or "error:" in line:
+                print(f"        {line.strip()}")
+
     # 1. THE SHIPPED PRODUCER KEYS vs THE GUEST IMAGE THEY WERE MEASURED FROM. A ProducerScope key is
     # a MEASURED CONSTANT that decides which DB row a native draw is charged to; until it was gated,
     # a transposed digit shipped a plausible wrong row with every other check green. verify_producers

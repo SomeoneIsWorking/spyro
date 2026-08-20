@@ -22,6 +22,19 @@ add_custom_target(format-check
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   COMMENT "Checking first-party C++ formatting")
 
+set(SPYRO_CPP_POLICY_COMMAND
+  ${Python3_EXECUTABLE} ${PSXPORT_DIR}/tools/check_cpp_style.py
+  --root ${CMAKE_SOURCE_DIR}
+  --compile-commands ${CMAKE_BINARY_DIR}
+  --cap game/core/actor_chain_oracle.cpp=2634
+  --cap game/core/native_terrain.cpp=1347
+  --cap game/render/fx_paired_actor.cpp=2590)
+
+add_custom_target(cpp-policy
+  COMMAND ${SPYRO_CPP_POLICY_COMMAND}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  COMMENT "Checking Clang format, structure caps, and clang-tidy")
+
 if(BUILD_TESTING)
   add_executable(test_paired_actor_decode
     ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_decode.cpp
@@ -59,6 +72,10 @@ if(BUILD_TESTING)
   add_test(
     NAME format_tool_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --selftest)
+  add_test(
+    NAME launcher
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_launcher.py)
+  add_test(NAME cpp_policy COMMAND ${SPYRO_CPP_POLICY_COMMAND})
 endif()
 
 if(NOT PSXPORT_BUILD_PORT)

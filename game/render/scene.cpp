@@ -45,12 +45,17 @@ constexpr StageArm kStageArms[] = {
     {1, 0x8001A050u, "GS_LevelTransition"},
     {2, 0x8001A40Cu, "GS_PauseMenu — shares its handler with arms 3 and 6"},
     {3, 0x8001A40Cu, "GS_InventoryMenu — shares its handler with arms 2 and 6"},
-    {4, 0x8001CA38u, "GS_Respawn — shares its handler with arm 5; reaches EmitStaticActorMeshList "
-                     "0x8004EBA8"},
-    {5, 0x8001CA38u, "GS_GameOver — shares its handler with arm 4; reaches EmitStaticActorMeshList "
-                     "0x8004EBA8"},
+    {4,
+     0x8001CA38u,
+     "GS_Respawn — shares its handler with arm 5; reaches EmitStaticActorMeshList "
+     "0x8004EBA8"},
+    {5,
+     0x8001CA38u,
+     "GS_GameOver — shares its handler with arm 4; reaches EmitStaticActorMeshList "
+     "0x8004EBA8"},
     {6, 0x8001A40Cu, "GS_OldDragon (a prototype leftover) — shares its handler with arms 2 and 3"},
-    {7, 0x00000000u,
+    {7,
+     0x00000000u,
      "GS_FlightResults — INDIRECT: calls (*[0x8007567C])(), so the handler is data, not code, and "
      "the decomp confirms it is an OVERLAY function"},
     {8, 0x8001CFDCu, "GS_Dragon"},
@@ -58,7 +63,8 @@ constexpr StageArm kStageArms[] = {
     {10, 0x8001C694u, "GS_ExitLevel"},
     {11, 0x8001D718u, "GS_Fairy"},
     {12, 0x8001E24Cu, "GS_Balloonist"},
-    {13, 0x00000000u,
+    {13,
+     0x00000000u,
      "GS_TitleScreen — SPLIT on [0x80078D78]==3 -> 0x8001E6B8 (the attract/DEMO mode), else "
      "0x8007CEE4 (the title screen proper; the port's first native producer draws this one)"},
     {14, 0x8001E9C8u, "GS_Cutscene — reaches RenderWorldChunks 0x800258F0"},
@@ -78,7 +84,8 @@ constexpr uint32_t kStageFnPtr7 = 0x8007567Cu;        // stage 7's function poin
 //
 // EVERY ROLE IS NOW RE'd (2026-08-19). Two independent sources agree, and neither was derived from
 // the other:
-//   * THIS repo's transcription of the arm (addresses, order, and the gate each call is wrapped in),
+//   * THIS repo's transcription of the arm (addresses, order, and the gate each call is wrapped
+//   in),
 //     taken from the bytes;
 //   * the vendored decomp's stage-0 arm (external/spyro-1/src/gamestates/draw.c:2716-2747), which
 //     has the same ten calls in the same order under the same conditions.
@@ -94,22 +101,28 @@ constexpr uint32_t kStageFnPtr7 = 0x8007567Cu;        // stage 7's function poin
 // method (walk the call graph to a known renderer) gets PARTICLES wrong, because 0x800573C8 is a
 // hand-written assembly renderer that projects and emits inline and therefore calls nothing at all.
 // Measured on SCUS_942.28, 779 function extents:
-//     0x80019698 actor pass      cop2 1244  (0x80023AC4:336 0x80020F34:218 0x80022A2C:165 0x8001F798:125)
-//     0x8002B9CC environment     cop2  276  (all of it in 0x800258F0)
-//     0x80050BD0 cyclorama       cop2  230  (0x80016D2C:59 0x80050240:43 0x8004F4BC:35 0x8004EBA8:24)
+//     0x80019698 actor pass      cop2 1244  (0x80023AC4:336 0x80020F34:218 0x80022A2C:165
+//     0x8001F798:125) 0x8002B9CC environment     cop2  276  (all of it in 0x800258F0) 0x80050BD0
+//     cyclorama       cop2  230  (0x80016D2C:59 0x80050240:43 0x8004F4BC:35 0x8004EBA8:24)
 //     0x800573C8 particles       cop2  166  ALL IN ITS OWN BODY — invisible to a call-graph walk
 //     0x800189F0 tracers         cop2   15  (0x80017B48 world->screen, 0x80017A38 isqrt)
 //     the other five             cop2    0  over 64..459 instructions scanned each
 // So the field's 3D backlog is FIVE layers, not ten, and two of the five (environment, cyclorama)
 // bottom out in renderers this port already owns byte-exactly.
 constexpr FieldLayer kFieldLayers[] = {
-    {0x800521C0u, 0, false,
+    {0x800521C0u,
+     0,
+     false,
      "moby list build — NOT a renderer: 64 instructions, 0 COP2, queues the level's mobys for the "
      "passes below (decomp: 'Queue render mobys', asm/moby_lists.s)"},
-    {0x80019300u, 0x80075690u, false,
+    {0x80019300u,
+     0x80075690u,
+     false,
      "collectables (gems, lives) — 2D, 0 COP2 over 459 instructions; reaches the AddPrim leaf "
      "0x800168DC. Runs when [0x80075690] (g_IsFlightLevel) == 0"},
-    {0x80018908u, 0x80075714u, true,
+    {0x80018908u,
+     0x80075714u,
+     true,
      "demo-mode text — 2D, 0 COP2 over 274 instructions. Runs when [0x80075714] (g_DemoMode) != 0"},
     {0x80019698u,
      0,
@@ -118,14 +131,20 @@ constexpr FieldLayer kFieldLayers[] = {
      "sparkles. Reaches the moby renderer init/cull 0x8001F158, EmitActorDrawList 0x8001F798, "
      "EmitSecondaryActorPrimitives 0x80020F34, RasterizeSpritePrimQueue 0x80022A2C and the paired "
      "actor 0x80023AC4 — the last two already have native producers"},
-    {0x8002B9CCu, 0, false,
+    {0x8002B9CCu,
+     0,
+     false,
      "environment / world — 3D (cop2 276, ALL of it in RenderWorldChunks 0x800258F0, which this "
      "port owns byte-exactly). Picks the occlusion group and the culling distance, then calls the "
      "world renderer once: the GROUND and the CLIFFS"},
-    {0x80050BD0u, 0, false,
+    {0x80050BD0u,
+     0,
+     false,
      "cyclorama / sky — 3D (cop2 230), bottoms out in EmitStaticActorMeshList 0x8004EBA8, which "
      "this port owns byte-exactly AND already drives as a direct native producer"},
-    {0x800573C8u, 0, false,
+    {0x800573C8u,
+     0,
+     false,
      "particles — 3D (cop2 166), and ALL 166 are in its own 843-instruction body: a hand-written "
      "assembly renderer that calls nothing, so a call-graph walk scores it 0. asm/renderers/"
      "r_particles.s"},
@@ -140,7 +159,9 @@ constexpr FieldLayer kFieldLayers[] = {
      "screen border — 2D, 0 COP2 over 117 instructions. Runs when [0x8007570C] "
      "(g_ScreenBorderEnabled) != 0 OR [0x800756C0] != 0; reported as always-armed here because "
      "this classifier does not evaluate the OR"},
-    {0x800189F0u, 0, false,
+    {0x800189F0u,
+     0,
+     false,
      "tracers — the flame/trail streaks. 3D but SMALL (cop2 15, and those are in the shared "
      "world->screen helper 0x80017B48 and isqrt 0x80017A38, not in a renderer of its own): it "
      "projects each tracer point, then builds flat prims from the screen-space deltas"},

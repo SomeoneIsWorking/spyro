@@ -1,9 +1,10 @@
 ---
 id: C081
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-29
 tags: ownership,native
+falsified_on: 2026-08-20
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ PSXPORT_NDIFF=40: 600 'matches the recompiled body exactly' across 15 sites, zer
 ## What would falsify it
 
 indirect callers are invisible to own_candidates.py, so a low static count is not proof a function is cold — a runtime call-count would falsify the 'exhausted' framing
+
+## FALSIFIED 2026-08-20
+
+Superseded as a current ownership count: source-derived tools/own_candidates.py now reports 21 owned bodies after the first exercised non-leaf wrapper landed; C081's historical 15-body differential result remains evidence for those inputs but is no longer the current project state.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

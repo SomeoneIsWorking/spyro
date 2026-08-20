@@ -89,6 +89,7 @@ static void spyro_registerOverrides(Game *) {
     spyro_register_native_angle();  // OWNED natively: 8-bit/12-bit angle helpers + the calibrated
                                     // spin
     spyro_register_native_util();
+    spyro_register_native_printf();  // OWNED natively: printf's non-leaf vararg wrapper
     spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
                                      // renderer under differential verification (issue 0037)
     spyro_register_native_world();   // BRING-UP, off unless PSXPORT_NATIVE_WORLD=1: the world

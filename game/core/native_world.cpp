@@ -67,8 +67,8 @@ constexpr uint32_t kCamera = 0x80076DD0u;      // g_Camera: view matrix +0x14, p
 constexpr uint32_t kEnvironment = 0x800785A8u; // g_Environment — the INPUT DATA MODEL, see below
 constexpr uint32_t kWorkList = 0x8006FCF4u;    // +0x1C00 survivor chunk list, +0x2000 area end
 constexpr uint32_t kPoolPtr = 0x800757B0u;     // packet-pool write pointer (the guest's m_PolyBuf)
-constexpr uint32_t kOtBase = 0x80075820u;      // g_WorldOT — the WORLD ordering table, not the HUD one
-constexpr uint32_t kCullScratch = 0x800771C8u; // per-chunk cull scratch, zeroed on entry
+constexpr uint32_t kOtBase = 0x80075820u; // g_WorldOT — the WORLD ordering table, not the HUD one
+constexpr uint32_t kCullScratch = 0x800771C8u;           // per-chunk cull scratch, zeroed on entry
 constexpr uint32_t kSkipLowPolyWorld = 0x8007591Cu;      // g_SkipLowPolyWorld — the LOD kill switch
 constexpr uint32_t kEnvironmentAnimations = 0x80078560u; // g_EnvironmentAnimations (0x48 bytes)
 
@@ -100,8 +100,8 @@ constexpr uint32_t kEnvironmentAnimations = 0x80078560u; // g_EnvironmentAnimati
 
 // Silence "unused" for the names the current body happens not to reference by constant yet; they
 // are the map of this renderer's state and are cited by the phase comments above.
-[[maybe_unused]] constexpr uint32_t kUnusedGuard[] = {kOtBase, kSkipLowPolyWorld,
-                                                      kEnvironmentAnimations};
+[[maybe_unused]] constexpr uint32_t kUnusedGuard[] = {
+    kOtBase, kSkipLowPolyWorld, kEnvironmentAnimations};
 
 } // namespace
 

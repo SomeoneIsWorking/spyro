@@ -142,13 +142,14 @@ void SpyroRenderer::drawFrame() {
     referenceOtWalk();
     // The reference leg's guest driver (0x8001ED5C) ends in its own VSync wait, which presents via
     // deliver_field -> gpu_present — but that present reads the VK GEOMETRY BATCH, which flush
-    // no longer fills: since the framework's ONE-PATH change, flush() CAPTURES into Fps60::mNCur and
-    // never runs emitQueue, so the batch stays empty and the guest's present shows nothing
-    // (rebuild_geom=0 forever). frame_commit -> present_vk is the ONLY emitter of the captured queue,
-    // so the reference leg must go through it, exactly as Tomba2 does (game_tomba2.cpp:135 —
+    // no longer fills: since the framework's ONE-PATH change, flush() CAPTURES into Fps60::mNCur
+    // and never runs emitQueue, so the batch stays empty and the guest's present shows nothing
+    // (rebuild_geom=0 forever). frame_commit -> present_vk is the ONLY emitter of the captured
+    // queue, so the reference leg must go through it, exactly as Tomba2 does (game_tomba2.cpp:135 —
     // "frame_commit OWNS presentation in both configs"). The guest's own empty present is harmless;
     // frame_commit's present_vk is the one that actually draws. This also drains the capture, so no
-    // reset_capture is needed (it was a band-aid that discarded the picture instead of emitting it).
+    // reset_capture is needed (it was a band-aid that discarded the picture instead of emitting
+    // it).
     mC->game->fps60.frame_commit(mC, 1);
     spyro_fps60_commit_field_delivered(mC);
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) {

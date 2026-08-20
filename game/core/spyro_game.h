@@ -44,6 +44,10 @@ void spyro_register_native_angle();
 
 // native_util.cpp — strlen, two set-and-return-previous globals, 2D distance, display-list link.
 void spyro_register_native_util();
+
+// native_printf.cpp — PsyQ printf's non-leaf argument-homing wrapper. The formatter remains a
+// separate dispatch target, so the generated wrapper stays available as the per-call oracle.
+void spyro_register_native_printf();
 // native_terrain.cpp — BRING-UP, installs nothing unless PSXPORT_NATIVE_TERRAIN=1: a full native
 // body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();

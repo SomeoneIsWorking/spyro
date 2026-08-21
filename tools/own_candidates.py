@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """own_candidates.py — rank guest functions by how safe and worthwhile they are to OWN natively.
 
-WHY. This port is 20 observation wrappers to 2 native bodies (C075): almost nothing is actually
-reimplemented. Converting that is the work, and the bottleneck is choosing what to convert. Picking by
-eye already went wrong once — 0x8001ED5C was filed as "small, exactly specified" because the first
-dozen instructions are a buffer flip, when the function continues into the whole per-frame stage
-dispatcher. Owning it would have meant owning the frame loop by accident.
+WHY. Native ownership is growing bottom-up, and the bottleneck is choosing the next body without
+guessing. Picking by eye already went wrong once — 0x8001ED5C was filed as "small, exactly specified"
+because the first dozen instructions are a buffer flip, when the function continues into the whole
+per-frame stage dispatcher. Owning it would have meant owning the frame loop by accident.
 
 WHAT MAKES A GOOD TARGET, and why each column is here:
 
   LEAF (no jal/jalr)   A function that calls nothing is self-contained: its entire effect is registers
-                       plus memory, which is exactly what the per-call differential compares. A
-                       non-leaf drags its callees' behaviour into the replacement, so a native body
-                       has to reproduce them too — that is not a first target, it is a project.
+                       plus memory, which is exactly what the per-call differential compares.
+  READY NON-LEAF       A non-leaf is eligible only when it has no indirect call and every direct
+                       callee is already owned, so the port grows bottom-up rather than importing an
+                       unverified child graph.
   SIZE                 Instructions to the `jr ra`. Small enough to transcribe exactly, and the whole
                        point is exactness: the differential compares every GPR, so "roughly right" is
                        a fail.
@@ -22,15 +22,17 @@ WHAT MAKES A GOOD TARGET, and why each column is here:
   MEM                  Distinct guest addresses it loads/stores. High memory traffic means more state
                        to reproduce and more ways to be subtly wrong.
 
-The ranking deliberately favours LEAF + many CALLERS + small SIZE. It is a queue to review, not a
-work order: read the body before transcribing it, and let the differential decide whether you got it
-right — reading is how the $at clobber in the first native function got missed (I019).
+The default ranking deliberately favours LEAF + many CALLERS + small SIZE; `--ready-nonleaf` selects
+the dependency-valid next phase. Either output is a queue to review, not a work order: prove dynamic
+reach, read the body, and let the differential decide whether the implementation matched.
 
 Usage:
   own_candidates.py                 # top 20 leaf candidates by caller count
   own_candidates.py --all --top 40  # include non-leaves, marked
+  own_candidates.py --ready-nonleaf # non-leaves whose direct callees are all already owned
   own_candidates.py --addr 0x8006272C   # explain one function's numbers
 """
+
 import argparse
 import os
 import re
@@ -39,8 +41,8 @@ from collections import Counter
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "external", "psxport", "tools", "recomp"))
-import psexe                                    # noqa: E402
-from decode import decode                       # noqa: E402
+import psexe  # noqa: E402
+from decode import decode  # noqa: E402
 
 EXE = "scratch/bin/spyro/SCUS_942.28"
 JR_RA = 0x03E00008
@@ -75,9 +77,26 @@ def analyse(exe, lo, hi):
             leaf = False
         if i.op == "lui":
             hi_regs[i.rt] = i.imm << 16
-        elif getattr(i, "rs", None) in hi_regs and hasattr(i, "simm") and i.kind in ("load", "store"):
+        elif (
+            getattr(i, "rs", None) in hi_regs
+            and hasattr(i, "simm")
+            and i.kind in ("load", "store")
+        ):
             mem.add((hi_regs[i.rs] + i.simm) & 0xFFFFFFFF)
     return n, leaf, len(mem)
+
+
+def dependencies(exe, lo, hi):
+    """Return direct callees and whether the body contains an unresolved indirect call."""
+    callees = set()
+    has_jalr = False
+    for pc in range(lo, hi, 4):
+        insn = decode(pc, exe.word(pc))
+        if insn.op == "jal":
+            callees.add(insn.target)
+        elif insn.op == "jalr":
+            has_jalr = True
+    return callees, has_jalr
 
 
 def already_owned():
@@ -91,9 +110,26 @@ def already_owned():
     for fn in sorted(os.listdir(d)) if os.path.isdir(d) else []:
         if not fn.endswith(".cpp"):
             continue
-        for m in re.finditer(r"ndiff_run\(c,\s*\"[^\"]*@0x([0-9A-Fa-f]+)\"", open(os.path.join(d, fn)).read()):
+        with open(os.path.join(d, fn), encoding="utf-8") as source:
+            text = source.read()
+        for m in re.finditer(r"ndiff_run\(c,\s*\"[^\"]*@0x([0-9A-Fa-f]+)\"", text):
             owned.add(int(m.group(1), 16))
     return owned
+
+
+def compiled_entries():
+    """MAIN entries the generated dispatcher can actually override.
+
+    The jr-ra boundary scan is intentionally approximate and can split a body at a mid-function
+    return. Such an address may look dependency-ready but FNTRACE and shard_set_override both refuse
+    it. Intersecting with the generated declaration inventory keeps the ownership queue actionable.
+    """
+    path = os.path.join(REPO, "generated", "rec_decls.h")
+    with open(path, encoding="utf-8") as source:
+        text = source.read()
+    return {
+        int(m.group(1), 16) for m in re.finditer(r"\bgen_func_([0-9A-Fa-f]{8})\b", text)
+    }
 
 
 def call_counts(exe):
@@ -109,7 +145,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--all", action="store_true", help="include non-leaf functions")
-    ap.add_argument("--maxsize", type=int, default=60, help="skip functions longer than this")
+    ap.add_argument(
+        "--ready-nonleaf",
+        action="store_true",
+        help="show only non-leaves with no jalr and only already-owned direct callees",
+    )
+    ap.add_argument(
+        "--maxsize", type=int, default=60, help="skip functions longer than this"
+    )
     ap.add_argument("--addr", help="explain one function instead of ranking")
     a = ap.parse_args()
 
@@ -117,19 +160,50 @@ def main():
     calls = call_counts(exe)
     funcs = functions(exe)
     owned = already_owned()
+    entries = compiled_entries()
 
     if a.addr:
         want = int(a.addr, 0)
         for lo, hi in funcs:
             if lo <= want < hi:
                 n, leaf, mem = analyse(exe, lo, hi)
-                print(f"0x{lo:08X}..0x{hi:08X}  size={n} instr  leaf={'yes' if leaf else 'NO'}  "
-                      f"distinct mem addrs={mem}  static callers={calls.get(lo,0)}")
+                callees, has_jalr = dependencies(exe, lo, hi)
+                print(
+                    f"0x{lo:08X}..0x{hi:08X}  size={n} instr  leaf={'yes' if leaf else 'NO'}  "
+                    f"distinct mem addrs={mem}  static callers={calls.get(lo, 0)}"
+                )
                 if not leaf:
-                    print("  NOT A LEAF — it calls other functions, so a native body must reproduce")
-                    print("  their behaviour too. Own those first, or pick something else.")
+                    missing_children = callees - owned
+                    child_list = (
+                        ", ".join(f"0x{x:08X}" for x in sorted(callees)) or "none"
+                    )
+                    print("  direct callees: " + child_list)
+                    print(
+                        f"  owned callees: {len(callees & owned)}/{len(callees)}"
+                        f"  indirect call: {'yes' if has_jalr else 'no'}"
+                    )
+                    if missing_children:
+                        print(
+                            "  not owned: "
+                            + ", ".join(f"0x{x:08X}" for x in sorted(missing_children))
+                        )
+                    elif has_jalr:
+                        print(
+                            "  NOT DEPENDENCY-READY — jalr target cannot be proven owned statically."
+                        )
+                    else:
+                        print(
+                            "  dependency-ready — all direct callees are already owned."
+                        )
+                if lo not in entries:
+                    print(
+                        "  NOT OVERRIDABLE — this approximate jr-ra boundary is not a generated "
+                        "MAIN entry."
+                    )
                 return 0
-        print("no function contains that address (boundaries are jr-ra based; it may be data)")
+        print(
+            "no function contains that address (boundaries are jr-ra based; it may be data)"
+        )
         return 1
 
     rows = []
@@ -137,20 +211,45 @@ def main():
         n, leaf, mem = analyse(exe, lo, hi)
         if n > a.maxsize or n < 3:
             continue
-        if not leaf and not a.all:
+        if not leaf and not (a.all or a.ready_nonleaf):
             continue
-        rows.append((calls.get(lo, 0), -n, lo, n, leaf, mem, lo in owned))
+        callees, has_jalr = dependencies(exe, lo, hi)
+        if a.ready_nonleaf and (
+            lo not in entries
+            or leaf
+            or has_jalr
+            or not callees
+            or not callees.issubset(owned)
+        ):
+            continue
+        rows.append((calls.get(lo, 0), -n, lo, n, leaf, mem, lo in owned, callees))
     rows.sort(reverse=True)
 
     todo = [r for r in rows if not r[6]]
-    print(f"{'addr':<12}{'callers':>8}{'size':>6}{'leaf':>6}{'mem':>5}   "
-          f"(callers is a LOWER BOUND — indirect calls are invisible)")
-    for callers, _, lo, n, leaf, mem, _own in todo[:a.top]:
-        print(f"0x{lo:08X}{callers:>8}{n:>6}{'yes' if leaf else 'NO':>6}{mem:>5}")
-    print(f"\n{len(rows) - len(todo)} already owned (hidden — derived from ndiff_run sites in game/core/)")
-    print(f"{len(todo)} candidate(s) remaining at size<={a.maxsize}"
-          f"{'' if a.all else ' (leaf only; pass --all to include non-leaves)'}.")
-    print("Review the body before transcribing — and let PSXPORT_NDIFF decide whether it matched.")
+    print(
+        f"{'addr':<12}{'callers':>8}{'size':>6}{'leaf':>6}{'mem':>5}   "
+        f"(callers is a LOWER BOUND — indirect calls are invisible)"
+    )
+    for callers, _, lo, n, leaf, mem, _own, callees in todo[: a.top]:
+        children = ""
+        if a.ready_nonleaf:
+            children = "   children=" + ",".join(f"0x{x:08X}" for x in sorted(callees))
+        print(
+            f"0x{lo:08X}{callers:>8}{n:>6}{'yes' if leaf else 'NO':>6}{mem:>5}{children}"
+        )
+    print(
+        f"\n{len(owned)} already owned (all sizes — derived from ndiff_run sites in game/core/)"
+    )
+    if a.ready_nonleaf:
+        qualifier = " (dependency-ready non-leaves only)"
+    elif a.all:
+        qualifier = ""
+    else:
+        qualifier = " (leaf only; pass --all to include non-leaves)"
+    print(f"{len(todo)} candidate(s) remaining at size<={a.maxsize}{qualifier}.")
+    print(
+        "Review the body before transcribing — and let PSXPORT_NDIFF decide whether it matched."
+    )
     return 0
 
 

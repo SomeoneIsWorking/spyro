@@ -29,6 +29,12 @@ Run one mixed FNTRACE batch before implementation, with a known-live child in th
 all-zero trace cannot masquerade as evidence. `scratch/logs/gate-boot-20260821-035503.log` reached
 0x8005BBF4 once at frame 0 from ra=0x8005BA9C and reached positive-control 0x8005BE88 once, while
 0x80017FE4 and 0x800181AC were explicitly NEVER CALLED. The reached 165-instruction InitSpuHardware
-body was then owned bottom-up and matched its retained generated body on the real call (C211). Future
-non-leaf selection remains: dependency filter first, FNTRACE reach second, implementation and NDIFF
-only after both pass.
+body was then owned bottom-up and matched its retained generated body on the real call (C211).
+
+The later ownership pass corrected the run horizon rather than contradicting that result: a
+9,000-field reference-leg FNTRACE (`scratch/logs/gate-boot-20260821-115352.log`) entered gameplay
+and then reached 0x800181AC 1,625 times, first at field 5,397, while still reporting seven other
+ready addresses as NEVER CALLED. The top-ranked body became actionable only with that reach proof;
+it then matched the retained generated body on its first two real calls (C213). Future non-leaf
+selection remains: dependency filter first, a corpus long enough to reach the relevant content
+second, implementation and NDIFF only after both pass.

@@ -5,6 +5,8 @@ status: holds
 created: 2026-08-21
 tags: ownership,ndiff,reach,spu
 depends: game/core/native_spu_hardware_init.cpp#initSpuHardwareNative, game/core/spu_hardware_init.h#spuHardwareNeedsFullReset, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_spu_hardware_init.cpp#main, external/open-spyro/src/c/InitSpuHardware.c#InitSpuHardware
+reconfirmed: 2026-08-21 14:14:17
+verified_at: 2026-08-21 14:14:17
 ---
 
 ## Claim
@@ -20,3 +22,7 @@ The focused `spu_hardware_init` CTest exercises both policy answers: mode zero s
 ## What would falsify it
 
 if a shipping run no longer reaches 0x8005BBF4, its executable bytes or direct-child set changes, either focused policy answer fails, PSXPORT_NDIFF reports a divergence in its compared state, or an SPU write-sequence/state comparison disagrees once that currently blind host-state surface is instrumented
+
+## Re-confirmed 2026-08-21 14:14:17
+
+psxport issue 0010 fixed nested NDIFF's singleton snapshot corruption without changing this game body. After rebuilding with Clang against exact psxport `3418a79b624765614f3f198dc1e89632e1e650f0`, the 9,000-field reference gate (`scratch/logs/gate-boot-20260821-141206.log`) reported `spu-pio@0x8005BE88` calls #1 and #2 and parent `spu-init@0x8005BBF4` call #1 all matching in the same nested comparison, then passed 13/13 checks. The upstream shipping-API discriminator passed 2/2 tests and 8 checks: an equivalent nested pair reports zero divergences, while a mutated child reports exactly two and the equivalent parent remains matched.

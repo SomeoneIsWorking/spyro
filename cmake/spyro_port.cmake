@@ -81,6 +81,11 @@ if(BUILD_TESTING)
   target_include_directories(test_spu_hardware_init PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_spu_hardware_init PRIVATE cxx_std_20)
   add_test(NAME spu_hardware_init COMMAND test_spu_hardware_init)
+  add_executable(test_text_sprites
+    ${CMAKE_SOURCE_DIR}/tests/test_text_sprites.cpp)
+  target_include_directories(test_text_sprites PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_text_sprites PRIVATE cxx_std_20)
+  add_test(NAME text_sprites COMMAND test_text_sprites)
   add_test(
     NAME format_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --check)
@@ -134,6 +139,7 @@ set(GAME_SRC
   game/core/native_actor_mesh_scratch.cpp
   game/core/native_spu_pio_upload.cpp
   game/core/native_spu_hardware_init.cpp
+  game/core/native_text_sprites.cpp
   game/core/native_render.cpp
   game/core/wide_clip.cpp
   game/core/native_terrain.cpp

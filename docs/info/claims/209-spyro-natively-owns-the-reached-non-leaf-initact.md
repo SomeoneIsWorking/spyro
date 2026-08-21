@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-21
 tags: native,ownership,non-leaf
 depends: game/core/native_actor_mesh_scratch.cpp#initActorMeshScratchNative, game/core/actor_mesh_scratch.h#actorMeshScratchLayout, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_actor_mesh_scratch.cpp#main
-reconfirmed: 2026-08-21 03:03:57
-verified_at: 2026-08-21 03:03:57
+reconfirmed: 2026-08-21 03:12:16
+verified_at: 2026-08-21 03:12:16
 ---
 
 ## Claim
@@ -32,3 +32,7 @@ Final framework-2b5ef7b5 evidence: clean CMake --fresh configure selected Clang 
 ## Re-confirmed 2026-08-21 03:03:57
 
 Final exact-tree evidence against psxport 2b5ef7b5522f3b879b69315acd11a037ca7a78bb: clean Clang 22.1.8 build; focused actor_mesh_scratch CTest 1/1 and full CTest 9/9 with cpp-policy 37/37; scratch/logs/gate-boot-20260821-030237.log line 71 reports actor-scratch@0x8005B6F8 call #1 matches the retained recompiled body exactly; ordinary shipping gate scratch/logs/gate-boot-20260821-030254.log passed 14/14 at 3,000 fields, 13 scenes, and 709529 native-producer primitives.
+
+## Re-confirmed 2026-08-21 03:12:16
+
+2026-08-21 landed-tree reconfirmation: exact clean psxport 2b5ef7b5 build passed focused actor_mesh_scratch 1/1 and full CTest 9/9; NDIFF log gate-boot-20260821-030237 line 71 matched call #1 exactly; ordinary gate-boot-20260821-030254 passed 14/14 at 3000 fields.

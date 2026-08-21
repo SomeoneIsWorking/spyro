@@ -56,6 +56,10 @@ void spyro_register_native_actor_mesh_scratch();
 // native_spu_pio_upload.cpp — owns PsyQ WriteSpuRamPio 0x8005BE88. Its spin and printf children
 // are already owned; the retained generated parent is its per-call oracle.
 void spyro_register_native_spu_pio_upload();
+
+// native_spu_hardware_init.cpp — owns PsyQ InitSpuHardware 0x8005BBF4. Its spin, printf, and PIO
+// upload children are already owned; the retained generated parent is its per-call oracle.
+void spyro_register_native_spu_hardware_init();
 // native_terrain.cpp — BRING-UP, installs nothing unless PSXPORT_NATIVE_TERRAIN=1: a full native
 // body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();

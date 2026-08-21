@@ -95,6 +95,8 @@ static void spyro_registerOverrides(Game *) {
                                                 // FillWord child is already native
     spyro_register_native_spu_pio_upload(); // OWNED: reached PsyQ SPU PIO worker; its spin/printf
                                             // children are already native
+    spyro_register_native_spu_hardware_init(); // OWNED: reached PsyQ SPU hardware reset; its
+                                               // spin/printf/PIO children are already native
     spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
                                      // renderer under differential verification (issue 0037)
     spyro_register_native_world();   // BRING-UP, off unless PSXPORT_NATIVE_WORLD=1: the world

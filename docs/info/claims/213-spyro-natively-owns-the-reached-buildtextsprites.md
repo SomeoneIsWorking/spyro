@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-21
 tags: ownership,ndiff,reach,text
 depends: game/core/native_text_sprites.cpp#buildTextSpritesNative, game/core/text_sprites.h#classifyTextGlyph, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_text_sprites.cpp#main, external/spyro-1/src/gamestates/draw.c#func_800181AC
-reconfirmed: 2026-08-21 14:14:17
-verified_at: 2026-08-21 14:14:17
+reconfirmed: 2026-08-21
+verified_at: 2026-08-21 14:17:54
 ---
 
 ## Claim
@@ -24,3 +24,7 @@ if the executable bytes or direct-child set changes, the 9,000-field reference c
 ## Re-confirmed 2026-08-21 14:14:17
 
 Reconfirmed after the final Clang rebuild against exact pushed psxport 3418a79b624765614f3f198dc1e89632e1e650f0: full CTest 13/13; long reference gate scratch/logs/gate-boot-20260821-141206.log matched text-sprites calls 1..8 and the nested SPU parent/child under PSXPORT_NDIFF=8, then passed 13/13; default shipping gate scratch/logs/gate-boot-20260821-141345.log passed 14/14 with 705238 native-producer prims.
+
+## Re-confirmed 2026-08-21
+
+Post-landing BuildTextSprites calls 1-8 match the generated oracle exactly in the 9000-field gate; focused glyph test and full CTest pass 13/13; default gate passes 14/14.

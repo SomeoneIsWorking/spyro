@@ -6,7 +6,7 @@ created: 2026-08-20
 tags: [native, ownership]
 depends: game/core/native_printf.cpp#write_printf_native, game/core/game_hooks.cpp#spyro_registerOverrides
 reconfirmed: 2026-08-21
-verified_at: 2026-08-21 03:44:10
+verified_at: 2026-08-21 14:17:54
 ---
 
 ## Claim
@@ -28,3 +28,7 @@ Reconfirmed against the rebuilt Clang binary and shared psxport 81cb8e05-dirty: 
 ## Re-confirmed 2026-08-21
 
 Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports printf@0x8006279C call #1 exact; the full shipping gate remained 14/14.
+
+## Re-confirmed 2026-08-21
+
+Post-landing 9000-field NDIFF and full CTest 13/13 retained exact PsyQ printf wrapper ownership while composing the new text owner.

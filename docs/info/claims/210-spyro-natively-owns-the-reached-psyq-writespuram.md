@@ -6,7 +6,7 @@ created: 2026-08-21
 tags: native,ownership,non-leaf,spu
 depends: game/core/native_spu_pio_upload.cpp#writeSpuRamPioNative, game/core/spu_pio_upload.h#spuPioBatchBytes, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_spu_pio_upload.cpp#main
 reconfirmed: 2026-08-21
-verified_at: 2026-08-21 03:44:11
+verified_at: 2026-08-21 14:17:54
 ---
 
 ## Claim
@@ -28,3 +28,7 @@ Final exact-tree Clang evidence: focused spu_pio_upload CTest passed 1/1 and ful
 ## Re-confirmed 2026-08-21
 
 Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports spu-pio@0x8005BE88 call #1 exact; focused spu_pio_upload CTest passed.
+
+## Re-confirmed 2026-08-21
+
+Post-landing long NDIFF kept WriteSpuRamPio child calls exact and full CTest passed 13/13.

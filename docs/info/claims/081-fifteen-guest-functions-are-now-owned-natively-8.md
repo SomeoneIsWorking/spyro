@@ -21,6 +21,6 @@ indirect callers are invisible to own_candidates.py, so a low static count is no
 
 ## FALSIFIED 2026-08-20
 
-Superseded as a current ownership count: source-derived tools/own_candidates.py now reports 21 owned bodies after the first exercised non-leaf wrapper landed; C081's historical 15-body differential result remains evidence for those inputs but is no longer the current project state.
+Superseded as a current ownership count: source-derived tools/own_candidates.py now reports 22 owned bodies after the first two exercised non-leaf parents landed; C081's historical 15-body differential result remains evidence for those inputs but is no longer the current project state.
 
 > Anything that cited this claim as proof must be re-checked. Grep the repo for it.

@@ -66,6 +66,11 @@ if(BUILD_TESTING)
   target_compile_features(test_actor_draw_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_actor_draw_recipe PRIVATE psxport)
   add_test(NAME actor_draw_recipe COMMAND test_actor_draw_recipe)
+  add_executable(test_actor_mesh_scratch
+    ${CMAKE_SOURCE_DIR}/tests/test_actor_mesh_scratch.cpp)
+  target_include_directories(test_actor_mesh_scratch PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_actor_mesh_scratch PRIVATE cxx_std_20)
+  add_test(NAME actor_mesh_scratch COMMAND test_actor_mesh_scratch)
   add_test(
     NAME format_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --check)
@@ -113,6 +118,7 @@ set(GAME_SRC
   game/core/native_angle.cpp
   game/core/native_util.cpp
   game/core/native_printf.cpp
+  game/core/native_actor_mesh_scratch.cpp
   game/core/native_render.cpp
   game/core/wide_clip.cpp
   game/core/native_terrain.cpp

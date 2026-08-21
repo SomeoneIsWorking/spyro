@@ -88,8 +88,11 @@ static void spyro_registerOverrides(Game *) {
     spyro_register_native_gte();    // OWNED natively: vector length (GTE SQR + sqrt table)
     spyro_register_native_angle();  // OWNED natively: 8-bit/12-bit angle helpers + the calibrated
                                     // spin
-    spyro_register_native_util();
-    spyro_register_native_printf();  // OWNED natively: printf's non-leaf vararg wrapper
+    spyro_register_native_util();   // OWNED natively: strlen / global swaps / dist2d /
+                                    // display-list link
+    spyro_register_native_printf(); // OWNED natively: printf's non-leaf vararg wrapper
+    spyro_register_native_actor_mesh_scratch(); // OWNED: reached render-scratch initializer; its
+                                                // FillWord child is already native
     spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
                                      // renderer under differential verification (issue 0037)
     spyro_register_native_world();   // BRING-UP, off unless PSXPORT_NATIVE_WORLD=1: the world
@@ -104,8 +107,7 @@ static void spyro_registerOverrides(Game *) {
                                          // generated body
     spyro_register_native_render(); // MEASUREMENT, off unless PSXPORT_NDIFF_IDENTITY=1: can the
                                     // differential validate a renderer at all? (re-frontier
-                                    // render.own-geometry-family)    // OWNED natively: strlen /
-                                    // global swaps / dist2d / display-list link
+                                    // render.own-geometry-family)
     // LAST, deliberately: fntrace claims the same single override slot the registrations above use,
     // so installing it earlier means the next registration silently displaces it and the trace
     // reports "never called" for a function that runs constantly. Going last makes the collision

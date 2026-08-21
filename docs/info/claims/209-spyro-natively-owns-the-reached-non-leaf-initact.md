@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-21
 tags: native,ownership,non-leaf
 depends: game/core/native_actor_mesh_scratch.cpp#initActorMeshScratchNative, game/core/actor_mesh_scratch.h#actorMeshScratchLayout, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_actor_mesh_scratch.cpp#main
-reconfirmed: 2026-08-21 03:12:16
-verified_at: 2026-08-21 03:12:16
+reconfirmed: 2026-08-21
+verified_at: 2026-08-21 03:44:10
 ---
 
 ## Claim
@@ -36,3 +36,7 @@ Final exact-tree evidence against psxport 2b5ef7b5522f3b879b69315acd11a037ca7a78
 ## Re-confirmed 2026-08-21 03:12:16
 
 2026-08-21 landed-tree reconfirmation: exact clean psxport 2b5ef7b5 build passed focused actor_mesh_scratch 1/1 and full CTest 9/9; NDIFF log gate-boot-20260821-030237 line 71 matched call #1 exactly; ordinary gate-boot-20260821-030254 passed 14/14 at 3000 fields.
+
+## Re-confirmed 2026-08-21
+
+Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports actor-scratch@0x8005B6F8 call #1 exact; focused actor_mesh_scratch CTest passed.

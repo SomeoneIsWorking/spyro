@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-20
 tags: [native, ownership]
 depends: game/core/native_printf.cpp#write_printf_native, game/core/game_hooks.cpp#spyro_registerOverrides
-reconfirmed: 2026-08-21 01:11:23
-verified_at: 2026-08-21 01:11:23
+reconfirmed: 2026-08-21
+verified_at: 2026-08-21 03:44:10
 ---
 
 ## Claim
@@ -24,3 +24,7 @@ The executable bytes or generated wrapper change, the override no longer fires o
 ## Re-confirmed 2026-08-21 01:11:23
 
 Reconfirmed against the rebuilt Clang binary and shared psxport 81cb8e05-dirty: scratch/logs/gate-boot-20260821-011226.log line 59 reports '[ndiff] printf@0x8006279C call #1 matches the recompiled body exactly'. The run exited cleanly at its 3,000-field cap. tools/own_candidates.py independently reports the executable extent 0x8006279C..0x800627D8 as 15 instructions/non-leaf with 40 static callers, and tools/xrefs.py enumerates all 40 jal sites.
+
+## Re-confirmed 2026-08-21
+
+Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports printf@0x8006279C call #1 exact; the full shipping gate remained 14/14.

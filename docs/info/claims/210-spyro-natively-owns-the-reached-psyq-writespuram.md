@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-21
 tags: native,ownership,non-leaf,spu
 depends: game/core/native_spu_pio_upload.cpp#writeSpuRamPioNative, game/core/spu_pio_upload.h#spuPioBatchBytes, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_spu_pio_upload.cpp#main
-reconfirmed: 2026-08-21 03:30:41
-verified_at: 2026-08-21 03:30:41
+reconfirmed: 2026-08-21
+verified_at: 2026-08-21 03:44:11
 ---
 
 ## Claim
@@ -24,3 +24,7 @@ The executable or generated body changes, the frame-zero override no longer fire
 ## Re-confirmed 2026-08-21 03:30:41
 
 Final exact-tree Clang evidence: focused spu_pio_upload CTest passed 1/1 and full CTest passed 10/10 including cpp-policy 39/39; scratch/logs/gate-boot-20260821-032916.log line 64 reports spu-pio@0x8005BE88 call #1 matches the retained recompiled body exactly; ordinary shipping gate scratch/logs/gate-boot-20260821-032943.log passed 14/14 at 3,000 fields, 13 scenes, and 704625 native-producer primitives against psxport 2b5ef7b5522f3b879b69315acd11a037ca7a78bb.
+
+## Re-confirmed 2026-08-21
+
+Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports spu-pio@0x8005BE88 call #1 exact; focused spu_pio_upload CTest passed.

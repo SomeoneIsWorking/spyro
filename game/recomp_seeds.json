@@ -19,6 +19,8 @@
 // JSON with `//` line comments. Addresses are hex strings. Schema (all keys optional):
 //   main, main_reentry, diagnostic_pcs, overlay_bases, overlay_base_patterns, overlay_seeds
 // See external/psxport/docs/porting-a-new-psx-game.md.
+// `main_reentry` is itself a resident discovery root and the fallthrough-boundary authority. Put a
+// measured true re-entry there ONLY; duplicating it in `main` is obsolete and creates two owners.
 {
   // No fn-pointer-only targets observed yet.
   "main": [

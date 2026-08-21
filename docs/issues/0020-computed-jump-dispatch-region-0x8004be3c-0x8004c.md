@@ -109,3 +109,12 @@ RESOLVED BY THE GATE'S OWN EVIDENCE. The symptom was '[recomp-MISS] 0x8004C4EC .
 WHY IT WENT AWAY: this address sits inside the hand-written assembly renderer family (0x8004BE4C is one of the fixed-area-register-save entries). Two upstream recompiler fixes landed in that window and both change exactly how such a function's extent and dispatch are modelled: jalr is a CALL and falls through to the following instruction rather than terminating the block (which was dropping whole epilogues), and bal/bgezal are calls too. Function discovery over that region is materially different as a result. I have NOT isolated which fix did it, and am not claiming one.
 
 MECHANICALLY GUARDED, which is what makes closing safe: a recomp-MISS aborts the run and the gate checks the count is zero, so a regression fails loudly rather than hiding. What the gate CANNOT see is a dispatch that resolves to the WRONG function silently — if that is suspected later, the tool for it is fntrace's ABI check, which is what caught the jalr bug.
+
+### Current seed semantics (post-9f1 framework baseline)
+
+The `main` + `main_reentry` prescription in the 2026-07-28 progress section is historical, not
+current instruction. psxport now includes `main_reentry` directly in resident discovery and uses the
+same set as fallthrough-boundary metadata; its emitter test proves an interior PC in `main_reentry`
+alone gets a wrapper, generated body, and dispatcher case. A separately measured true re-entry
+therefore goes in `main_reentry` only. This issue's computed-offset case addresses remain recognizer
+labels and must not be seeded at all. C050 is falsified; issue 0072 records the stale tool output.

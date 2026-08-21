@@ -1,9 +1,10 @@
 ---
 id: C050
 kind: claim
-status: holds
+status: falsified
 created: 2026-07-28
 tags: recomp
+falsified_on: 2026-08-21
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ I first added the six addresses to main_reentry ALONE and nothing changed — no
 ## What would falsify it
 
 The 0x8004C4EC miss returning, or any gate metric dropping below its pre-seed value.
+
+## FALSIFIED 2026-08-21
+
+Framework emitter semantics changed: current emit.py unions main_reentry directly into resident discovery and its positive test emits a wrapper, body, and dispatcher case from main_reentry alone. The old requirement to duplicate an interior PC in both main and main_reentry is historical evidence, not current guidance; duplicating it creates two apparent authorities.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

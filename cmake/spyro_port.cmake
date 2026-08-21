@@ -90,6 +90,9 @@ if(BUILD_TESTING)
   add_test(
     NAME launcher
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_launcher.py)
+  add_test(
+    NAME computed_jumps_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
   add_test(NAME cpp_policy COMMAND ${SPYRO_CPP_POLICY_COMMAND})
 endif()
 

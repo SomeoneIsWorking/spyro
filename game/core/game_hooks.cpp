@@ -1,126 +1,16 @@
-// game_hooks.cpp — the Spyro-specific GameHooks vtable (psxport's game_iface.h seam).
-//
-// GameHooks is how the PSX-generic framework reaches GAME behaviour. Tomba!2 fills most of it with
-// its native reimplementation (Engine::frame, stage bodies, native music, ...). Spyro owns nothing
-// natively yet, so nearly every hook here is deliberately null.
-//
-// THIS IS PHASE 0 OF THE PORTING PLAYBOOK (docs/porting-a-new-psx-game.md): stand the recomp up and
-// run EVERYTHING on the substrate first, then progressively take ownership function by function,
-// each step gated byte-exact against the substrate it replaces. A hook that returned a plausible
-// native result before its function had been reverse-engineered would make a broken port LOOK
-// finished — the exact failure the playbook calls out. Null is the honest state.
-//
-// Core tolerates null hooks (it guards every call site) EXCEPT the two the boot path invokes
-// unconditionally — bootInit and registerOverrides — which are implemented below.
+// Residual compatibility callbacks for framework operations that do not yet have typed runtime
+// methods. Context lifecycle, boot, and override registration belong to SpyroRuntime.
 #include "boot_skip.h"
-#include "cfg.h" // cfg_on — PSXPORT_NO_NATIVE is a feature flag, not a diagnostic
 #include "core.h"
-#include "fntrace.h"
 #include "fx_paired_actor.h"
 #include "game_iface.h"
-#include "hostprof.h"
+#include "legacy_game_interface.h"
 #include "spyro_game.h"
 #include <cstring>
 #include <lucent/log.h>
 
 // rec_dispatch — the substrate's address->recompiled-function router (core.h, extern "C").
 extern "C" void rec_dispatch(Core *c, uint32_t addr);
-
-static void *spyro_ctx_create(Core *) {
-  return new SpyroPairedActorFrameState();
-}
-static void spyro_ctx_destroy(void *p) {
-  delete static_cast<SpyroPairedActorFrameState *>(p);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-// bootInit — what the game does between crt0 and its frame loop.
-//
-// For Tomba!2 this is a native transcription of the boot prologue. For Spyro it is: run the PORT'S
-// OWN frame loop (frame_loop.cpp), a readable port of the guest's main() 0x80012204. The guest's
-// main() never returns (its epilogue has no inbound branch), so there is no way to "let the guest
-// run itself and then take over" — either the port owns the loop or the guest does. The port owns
-// it: a guest-owned loop is what left the port unable to reach a drawn frame at all in a short run,
-// and a behavior that required `PSXPORT_SPYRO_FRAME_LOOP=1` to appear at all was a behavior gated
-// behind env, which the framework forbids ("make the new path THE path").
-//
-// CONSEQUENCE, stated plainly: the framework's native_step_frame loop never runs, and per-frame
-// hooks are never reached — correct for this port, whose render seam (game/render/) is called from
-// the frame loop instead. The render seam picks its leg from the framework's per-Core RenderMode:
-// native by default (which aborts on a stage with no producer — by design, see render.h), or the
-// reference picture (PSXPORT_RENDER_PSX=1, the guest's own driver).
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-static void spyro_bootInit(Core *c) {
-  spyro_frame_loop_run(c); // does not return
-}
-
-// registerOverrides — install this game's native override clusters into the process-global
-// registry.
-//
-// The mix here is the honest picture of how far the port has come. MOST entries are OBSERVERS: they
-// log and then super-call the recompiled body, so the guest code still does the work. The CD and
-// pad ones are platform-level SUPPLY — they provide what the hardware would have and then run the
-// guest body. The native_* clusters are the only real OWNERSHIP: their recompiled bodies never run,
-// and each is verified byte-exact against the body it replaced on every gate run (PSXPORT_NDIFF).
-static void spyro_registerOverrides(Game *) {
-  // Game-function ownership goes here, installed into the process-global override registry. Each
-  // entry either observes its recompiled body via a super-call (the first step of owning it) or
-  // replaces it once the native reimplementation is byte-gated against the substrate.
-  hostprof_init(); // PSXPORT_PROF=1 — host-PC sampling, to pick ownership targets by
-                   // MEASURED time rather than by static caller counts
-  spyro_register_cd_queue();
-  // PSXPORT_NO_NATIVE=1 — install NO natively-owned bodies, so every call runs the recompiled
-  // substrate instead. This is the A/B switch for "is one of our own replacements responsible?",
-  // and it is the only way to ask that on a path the per-call differential cannot reach: NDIFF
-  // verifies the FIRST N calls of each site, so a body that is wrong only after millions of calls
-  // (say, on inputs a later level produces and the title screen never does) is invisible to it.
-  // The platform supply above is deliberately NOT gated — removing it changes what the port can do
-  // at all, which would confound the comparison.
-  if (cfg_on("PSXPORT_NO_NATIVE")) {
-    lucent::warn("native",
-                 "PSXPORT_NO_NATIVE=1 — native bodies NOT installed; the substrate runs "
-                 "everything. Diagnostic only: any behaviour difference from a normal run "
-                 "is attributable to a natively-owned body.");
-  } else {
-    spyro_register_native_rand();   // OWNED natively (not a probe): rand() 0x8006272C
-    spyro_register_native_leaves(); // OWNED natively: hot leaves (copy3 / zero3 / fill)
-    spyro_register_native_vec();    // OWNED natively: vadd / vsub / angle-table lookup
-    spyro_register_native_gte();    // OWNED natively: vector length (GTE SQR + sqrt table)
-    spyro_register_native_angle();  // OWNED natively: 8-bit/12-bit angle helpers + the calibrated
-                                    // spin
-    spyro_register_native_util();   // OWNED natively: strlen / global swaps / dist2d /
-                                    // display-list link
-    spyro_register_native_printf(); // OWNED natively: printf's non-leaf vararg wrapper
-    spyro_register_native_actor_mesh_scratch(); // OWNED: reached render-scratch initializer; its
-                                                // FillWord child is already native
-    spyro_register_native_spu_pio_upload(); // OWNED: reached PsyQ SPU PIO worker; its spin/printf
-                                            // children are already native
-    spyro_register_native_spu_hardware_init(); // OWNED: reached PsyQ SPU hardware reset; its
-                                               // spin/printf/PIO children are already native
-    spyro_register_native_text_sprites();      // OWNED: reached text-sprite builder; its fill/copy
-                                               // children are already native
-    spyro_register_native_terrain(); // BRING-UP, off unless PSXPORT_NATIVE_TERRAIN=1: the terrain
-                                     // renderer under differential verification (issue 0037)
-    spyro_register_native_world();   // BRING-UP, off unless PSXPORT_NATIVE_WORLD=1: the world
-                                     // renderer 0x800258F0 under differential verification.
-                                     // wide_clip claims the same override slot and registers LATER,
-                                     // so it stands down from this address on the same flag — the
-                                     // order below must NOT be what decides the winner.
-    spyro_register_wide_clip();      // WIDESCREEN: the guest's own renderers, with the right clip
-                                     // bound moved to the wide width (inert at 4:3)
-    spyro_register_actor_chain_oracle(); // diagnostic-only, deliberately after wide_clip so an
-                                         // armed packet/record oracle observes the unmodified
-                                         // generated body
-    spyro_register_native_render(); // MEASUREMENT, off unless PSXPORT_NDIFF_IDENTITY=1: can the
-                                    // differential validate a renderer at all? (re-frontier
-                                    // render.own-geometry-family)
-    // LAST, deliberately: fntrace claims the same single override slot the registrations above use,
-    // so installing it earlier means the next registration silently displaces it and the trace
-    // reports "never called" for a function that runs constantly. Going last makes the collision
-    // visible instead — see the hazard note in fntrace.cpp.
-  }
-  fntrace_init(); // PSXPORT_FNTRACE=<addr,...> — "did control REACH this function?"
-}
 
 // Spyro's scene renderer (0x80022A2C) reads these globals before walking any objects: five packed
 // GTE rotation words at 0x80076DD0 and the camera's world position at 0x80076DF8. It subtracts the
@@ -216,17 +106,17 @@ static int spyro_selftestGame(const char *which, const char *) {
 // the surrounding null callbacks were type-compatible; the first later non-null callback merely
 // made that old defect visible. Unlisted hooks are value-initialised to null, so this is also the
 // exact inventory of framework callbacks Spyro has actually stood up.
-static const GameHooks g_spyro_hooks = {
-    .ctxCreate = spyro_ctx_create,
-    .ctxDestroy = spyro_ctx_destroy,
-    .bootInit = spyro_bootInit,
-    .registerOverrides = spyro_registerOverrides,
+static const GameHooks g_spyro_compatibility_hooks = {
     .fps60WorldPass = spyro_paired_actor_fps60_world_pass,
     .fps60TemporalRotate = spyro_paired_actor_fps60_rotate,
     .selftestGame = spyro_selftestGame,
     .fps60ReadSceneCam = spyro_fps60ReadSceneCam,
 };
 
-const GameHooks *spyro_game_hooks() {
-  return &g_spyro_hooks;
+namespace spyro::legacy {
+
+const GameHooks &compatibilityHooks() {
+  return g_spyro_compatibility_hooks;
 }
+
+} // namespace spyro::legacy

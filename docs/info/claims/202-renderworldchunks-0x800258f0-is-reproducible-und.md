@@ -16,4 +16,4 @@ scratch/logs/ndiff_world2.log: 'IDENTITY@0x800258F0 call #1..#20 matches the rec
 
 ## What would falsify it
 
-a 0x800258F0 identity call reporting DIVERGES (RAM/scratchpad/GPR/COP2/FLAGS/hi-lo) under the rewind, or a divergence once the world renderer reaches a variant path (e.g. the special-surface phase 3 0x8002A51C) not exercised by these 20 calls
+a 0x800258F0 identity call reporting DIVERGES (RAM/scratchpad/GPR/COP2/FLAGS/hi-lo) under the rewind, or a divergence once the world renderer reaches a variant path (for example adaptive GT3/GT4 replacement at 0x8002A0A0..0x8002A6B0, corrected by C215) not exercised by these 20 calls

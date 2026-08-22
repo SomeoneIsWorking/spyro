@@ -373,7 +373,8 @@ def run_static_checks(rep: Report, disc: str) -> None:
                 f"capped native-leg run rc={rc}, wrote {m.group(1) if m else 'NO JSONL'} — see {log}")
     else:
         p2 = _run([sys.executable, 'tools/verify_producers.py', '--db', m.group(1),
-                   '--db-expect', 'titlefx:spriteEmit,terrain:F3G3'])
+                   '--db-expect',
+                   'titlefx:spriteEmit,terrain:F3G3,actor:opaque,world:static'])
         if p2.returncode == 0:
             rep.ok("producer scope fired in a run",
                    re.sub(r'\s+', ' ', p2.stdout.replace('  RAN ', ''))[:70])

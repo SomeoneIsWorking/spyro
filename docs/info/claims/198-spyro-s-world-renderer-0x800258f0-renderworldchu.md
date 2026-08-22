@@ -1,9 +1,10 @@
 ---
 id: C198
 kind: claim
-status: holds
+status: falsified
 created: 2026-08-16
 tags: render,widescreen,re,ownership
+falsified_on: 2026-08-22
 ---
 
 ## Claim
@@ -17,3 +18,9 @@ Read the vendored decomp's asm/renderers/r_environment.s (func_800258F0, SHA-1 o
 ## What would falsify it
 
 a live census of 0x800258F0's emitted packets showing an SZ word in the packet body, or a mute of 0x800258F0 removing content other than ground/cliffs (C147), or a chunk being emitted with its vertices read from anything other than 11/11/10-bit packed deltas
+
+## FALSIFIED 2026-08-22
+
+The final D_8006D5E4/D_8006D5C8 tables at 0x8002A0A0..0x8002A6B0 are adaptive GT3/GT4 child descriptor tables that recursively replace oversized near packets in their OT slots; they do not read g_Environment.m_SurfaceData and do not emit a water/lava special-surface list. The rest of the structural map remains useful but the end-to-end three-phase claim is factually wrong.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: native,ownership,non-leaf,spu
-depends: game/core/native_spu_pio_upload.cpp#writeSpuRamPioNative, game/core/spu_pio_upload.h#spuPioBatchBytes, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_spu_pio_upload.cpp#main
+depends: game/core/native_spu_pio_upload.cpp#writeSpuRamPioNative, game/core/spu_pio_upload.h#spuPioBatchBytes, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_spu_pio_upload.cpp#main
 reconfirmed: 2026-08-21
 verified_at: 2026-08-21 14:17:54
 ---

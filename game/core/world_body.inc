@@ -3,7 +3,7 @@
 // folded, offsets signed), so it is byte-exact by construction. `transcribe.py check`
 // re-derives the generated source from this file and fails on any divergence; that check
 // runs in the gate, so this stays exact as the substrate is regenerated.
-// Statements: 5227 generated -> 5179 emitted (50 address pair(s) folded, 2 annotation line(s)).
+// Statements: 5227 generated -> 5207 emitted (50 address pair(s) folded, 30 annotation line(s)).
 at = kSaveArea;
 c->mem_w32(at, s0);
 c->mem_w32((at + 4), s1);
@@ -810,6 +810,7 @@ a1 = zero | 57600u;
 c->mem_w16((fp + 6), (uint16_t)a1);
 a1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);
 { int _t = (a1 == zero); a3 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80026574; }
 c->mem_w16(a1, (uint16_t)fp);
 c->mem_w8((a1 + 2), (uint8_t)a3);
@@ -838,6 +839,7 @@ c->mem_w32((fp + 32), a0);
 gte_copy_pz(c, 4, (fp + 32));
 at = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);
 { int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_800265C4; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
@@ -927,6 +929,7 @@ a1 = zero | 57600u;
 c->mem_w16((fp + 6), (uint16_t)a1);
 a1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);
 { int _t = (a1 == zero); a3 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80026728; }
 c->mem_w16(a1, (uint16_t)fp);
 c->mem_w8((a1 + 2), (uint8_t)a3);
@@ -951,6 +954,7 @@ c->mem_w32((fp + 24), v1);
 gte_copy_pz(c, 3, (fp + 24));
 at = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);
 { int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 12u); if (_t) goto L_80026770; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
@@ -1067,6 +1071,7 @@ s6 = s6 << 1;
 s6 = s6 >> 1; rec_guest_instruction_ticks(c, 3u); goto L_80026B48;
 L_80026930:;
 if (c->pending_work) rec_irq_poll(c);
+/*@hook*/ spyro::world_scene_capture::noteCoarseHighProjection(c, t9, s7);
 gte_op_at(c, 0x4A180001u, 0x80026930u);
 v0 = at >> 19;
 v1 = at >> 8;
@@ -1236,6 +1241,7 @@ a1 = c->mem_r32(a1);
 a2 = c->mem_r32(a2);
 a3 = c->mem_r32(a3);
 t0 = c->mem_r32(t0);
+/*@hook*/ spyro::world_scene_capture::noteHighFace(c, s1 - 16, a1, a2, a3, t0, s6);
 t1 = a1 & a2;
 t1 = t1 & a3;
 t1 = t1 & t0;
@@ -1564,6 +1570,7 @@ c->mem_w32(fp, a1);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);
 { int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 16u); if (_t) goto L_800270EC; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
@@ -1603,6 +1610,7 @@ c->mem_w32(fp, at);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);
 { int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 21u); if (_t) goto L_8002715C; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
@@ -1911,6 +1919,7 @@ c->mem_w32(fp, a1);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);
 { int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002761C; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
@@ -1942,6 +1951,7 @@ c->mem_w32(fp, at);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);
 { int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_8002767C; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
@@ -2399,6 +2409,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::MediumTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_80027D70; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -2517,6 +2528,7 @@ t0 = t0 << 3;
 t0 = t0 + gp;
 v1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::MediumCore, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 12u); if (_t) goto L_80027F1C; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -2833,6 +2845,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::MediumTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_800283D0; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -2944,6 +2957,7 @@ a0 = a0 << 3;
 a0 = a0 + gp;
 v0 = c->mem_r32(a0);
 c->mem_w32(a0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, a0, spyro::world_scene_capture::Phase::MediumCore, s3);
 { int _t = (v0 == zero); v1 = fp >> 16; rec_guest_instruction_ticks(c, 20u); if (_t) goto L_80028570; }
 c->mem_w16(v0, (uint16_t)fp);
 c->mem_w8((v0 + 2), (uint8_t)v1);
@@ -3628,6 +3642,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_80028FE8; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -3703,6 +3718,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_800290EC; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -3779,6 +3795,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_800291F8; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -3936,6 +3953,7 @@ t0 = t0 << 3;
 t0 = t0 + gp;
 v1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::NearCore, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80029494; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -3961,6 +3979,7 @@ t0 = t0 << 3;
 t0 = t0 + gp;
 v1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::NearCore, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80029494; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -4432,6 +4451,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_80029C0C; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -4507,6 +4527,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_80029D08; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -4583,6 +4604,7 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);
 { int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_80029E0C; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
@@ -4717,6 +4739,7 @@ a0 = a0 << 3;
 a0 = a0 + gp;
 v0 = c->mem_r32(a0);
 c->mem_w32(a0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, a0, spyro::world_scene_capture::Phase::NearCore, s3);
 { int _t = (v0 == zero); v1 = fp >> 16; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_8002A040; }
 c->mem_w16(v0, (uint16_t)fp);
 c->mem_w8((v0 + 2), (uint8_t)v1);
@@ -4742,6 +4765,7 @@ a0 = a0 << 3;
 a0 = a0 + gp;
 v0 = c->mem_r32(a0);
 c->mem_w32(a0, fp);
+/*@hook*/ spyro::world_scene_capture::noteLink(c, fp, a0, spyro::world_scene_capture::Phase::NearCore, s3);
 { int _t = (v0 == zero); v1 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_8002A040; }
 c->mem_w16(v0, (uint16_t)fp);
 c->mem_w8((v0 + 2), (uint8_t)v1);
@@ -5146,10 +5170,12 @@ c->mem_w32(fp, at);
 at = fp >> 16;
 c->mem_w16(t3, (uint16_t)fp);
 c->mem_w8((t3 + 2), (uint8_t)at);
+/*@hook*/ spyro::world_scene_capture::noteAdaptiveChild(c, fp, gp);
 t3 = fp + (uint32_t)0;
 fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 10u); goto L_8002A51C;
 L_8002A668:;
 c->mem_w32(sp, fp);
+/*@hook*/ spyro::world_scene_capture::noteAdaptiveDeferred(c, fp, gp);
 sp = sp + (uint32_t)4; rec_guest_instruction_ticks(c, 3u); goto L_8002A63C;
 L_8002A674:;
 { int _t = (t4 == zero); at = t4 >> 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A688; }
@@ -5164,8 +5190,10 @@ if (c->pending_work) rec_irq_poll(c);
 v0 = c->mem_r32(at);
 at = at + (uint32_t)8;
 { int _t = (v0 != gp);  rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002A698; }
+/*@hook*/ spyro::world_scene_capture::noteAdaptiveReplacement(c, gp, t3, at - 8);
 c->mem_w32((at - 8), t3); rec_guest_instruction_ticks(c, 2u); goto L_8002A0B0;
 L_8002A6B0:;
+/*@hook*/ spyro::world_scene_capture::finishGuest(c, fp);
 at = kPoolPtr;
 c->mem_w32(at, fp);
 at = kSaveArea;

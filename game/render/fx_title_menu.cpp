@@ -165,20 +165,6 @@ constexpr int32_t kBannerXLeft = 0x6C;     // 108
 constexpr int32_t kBannerXRight = 0xFF;    // 255 — the mirrored copy
 constexpr uint32_t kAnimBannerFrom = 0x10; // mode 0 page 4 switches from slide-out to banner here
 
-// The three world-render layers stage 13 shares with the FIELD arm, still un-produced. Carried as
-// data so the per-frame report cannot drift from a comment.
-struct MissingLayer {
-  uint32_t fn;
-  const char *what;
-};
-constexpr MissingLayer kUnportedWorldLayers[] = {
-    {0x800521C0u, "(role not RE'd) — also FIELD layer [0]"},
-    {0x8001F158u, "(role not RE'd)"},
-    {0x8001F798u, "EmitActorDrawList — the actor pass"},
-    {0x800258F0u, "RenderWorldChunks — the ground and the cliffs"},
-    {0x8004EBA8u, "EmitStaticActorMeshList — sky + distant terrain"},
-};
-
 // ── A typed lens over one sprite record ──────────────────────────────────────────────────────────
 struct SpriteRec {
   uint32_t tpage, clut;
@@ -445,33 +431,16 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
     }
   }
 
-  // ONE LINE PER FRAME, carrying its own denominators: the state that chose the arm, the arm, how
-  // many sprites went out, and how much of this scene is still missing. `emitted=0` under a named
-  // arm is a real answer (the drop-in arm draws nothing while the gate is shut) and must not read
-  // the same as "no arm".
+  // ONE LINE PER FRAME, carrying its own denominators: the state that chose the arm, the arm, and
+  // how many sprites went out. `emitted=0` under a named arm is a real answer (the drop-in arm
+  // draws nothing while the gate is shut) and must not read the same as "no arm".
   lucent::debug("titlefx",
-                "mode={} page={} anim={} gate={} arm=[{}] emitted={} | world layers "
-                "un-produced: {}",
+                "mode={} page={} anim={} gate={} arm=[{}] emitted={}",
                 st.mode,
                 st.page,
                 st.anim,
                 st.gateOpen ? "open" : "shut",
                 armName(arm),
-                emitted,
-                (unsigned)(sizeof kUnportedWorldLayers / sizeof kUnportedWorldLayers[0]));
+                emitted);
   return true;
-}
-
-// titleMenuBacklogReport — what stage 13 still owes, printed ONCE per run rather than per frame.
-// It exists so a partially-produced scene cannot read as a finished one: the picture is missing its
-// 3D backdrop and this says exactly which five guest calls would have drawn it.
-void SpyroRenderer::titleMenuBacklogReport() const {
-  lucent::warn("render",
-               "stage 13 native leg is PARTIAL: the front-end sprite layer (guest "
-               "0x8007CD38) is produced natively; its 3D backdrop is NOT. The {} guest "
-               "calls below are the next producers, in the guest's own order:",
-               (unsigned)(sizeof kUnportedWorldLayers / sizeof kUnportedWorldLayers[0]));
-  for (const MissingLayer &L : kUnportedWorldLayers) {
-    lucent::warn("render", "    0x{:08X}  {}", L.fn, L.what);
-  }
 }

@@ -1,7 +1,7 @@
 // game/core/main.cpp — the Spyro port's process entry point.
 //
-// main() is game-side: it installs the game seam (GameConfig + GameHooks + RecompRegistry), brings
-// up the framework's PSX hardware backends, loads the executable, and boots it. After the installs
+// main() is game-side: it installs the derived runtime and generated substrate, brings up the
+// framework's PSX hardware backends, loads the executable, and boots it. After the installs
 // it touches only framework symbols.
 #include "cfg.h" // cfg_str — PSXPORT_SELFTEST is a feature flag, not a diagnostic
 #include "core.h"
@@ -10,10 +10,10 @@
 #include "platform_hle.h"
 #include "producer_run.h" // the graphics-producer DB's lifecycle — this port owns it (issue #58)
 #include "spyro_game.h"
+#include "spyro_runtime.h"
 #include <lucent/log.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdlib.h> // setenv — bridging our disc env var to the framework's generic one
 #include <string.h>
 
 extern "C" {
@@ -32,20 +32,11 @@ static const char *kDefaultExe = "scratch/bin/spyro/SCUS_942.28";
 static const char *kDiscExePath = "SCUS_942.28"; // its path on the disc (root directory)
 
 int main(int argc, char **argv) {
-  // Install the seam BEFORE the first Core exists: Core's ctor snapshots psxport_game_config() and
-  // psxport_game_hooks() into c->cfg / c->hooks, and the substrate reads c->cfg->field for every
-  // guest-address literal.
-  // The framework resolves the disc image itself (disc.c resolve_disc_path) and looks for the
-  // REFERENCE CONSUMER's variable name plus a generic PSXPORT_DISC fallback — it cannot know ours.
-  // Without this bridge every disc_read_sector fails and reads silently return no data, which
-  // presents as the game loading nothing rather than as a configuration error.
-  if (const char *d = getenv("PSXPORT_SPYRO_DISC")) {
-    if (*d) {
-      setenv("PSXPORT_DISC", d, 0);
-    }
-  }
-
-  spyro_install_game_config();
+  // Core snapshots the installed runtime during construction, so this process-lifetime instance
+  // must be installed before Game. The legacy facts/callbacks it exposes are bounded framework
+  // compatibility; lifecycle, boot, and override behavior dispatch virtually through this type.
+  static spyro::SpyroRuntime runtime;
+  psxport_install_game(runtime);
   spyro_install_recomp();
 
   const char *path = argc > 1 ? argv[1] : kDefaultExe;
@@ -65,6 +56,11 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
+
+  // Framework GPU self-tests run before the executable/disc path and exit from
+  // GpuVkState::tritest. Without this call the documented knobs are silently
+  // ignored and a supposed renderer self-test boots the game instead.
+  game->gpu_vk.tritest(); // PSXPORT_GPU_SELFTEST=1; optional painter extension
 
   watchdog_init(); // PSXPORT_WATCHDOG=<sec>: abort + backtrace if a frame stalls
 
@@ -116,9 +112,7 @@ int main(int argc, char **argv) {
   c->r[5] = 0; // a0/a1 as the BIOS would leave them (minimal)
 
   // Boot: bind the per-core hardware, register overrides (none yet), run crt0, then enter the
-  // guest's main() via the bootInit hook. In Phase 0 the guest owns its own frame loop, so this
-  // does not return until the game exits — see game/core/game_hooks.cpp for why that is the correct
-  // Phase-0 behaviour and what has to be RE'd before the native frame loop can take over.
+  // port's non-returning frame loop through SpyroRuntime::bootInit.
   dc_boot_init(c);
 
   lucent::info("boot", "guest main() returned");

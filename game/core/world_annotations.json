@@ -1,4 +1,228 @@
 {
+  "L_DSAFTER_800264D0": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);"]
+      }
+    ]
+  },
+  "L_8002657C": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);"]
+      }
+    ]
+  },
+  "L_DSAFTER_8002669C": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);"]
+      }
+    ]
+  },
+  "L_80026730": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::LowDirect);"]
+      }
+    ]
+  },
+  "L_8002709C": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);"]
+      }
+    ]
+  },
+  "L_80026930": {
+    "after": [
+      {
+        "stmt": "if (c->pending_work) rec_irq_poll(c);",
+        "emit": ["spyro::world_scene_capture::noteCoarseHighProjection(c, t9, s7);"]
+      }
+    ]
+  },
+  "L_80026B74": {
+    "after": [
+      {
+        "stmt": "t0 = c->mem_r32(t0);",
+        "emit": ["spyro::world_scene_capture::noteHighFace(c, s1 - 16, a1, a2, a3, t0, s6);"]
+      }
+    ]
+  },
+  "L_800270F8": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);"]
+      }
+    ]
+  },
+  "L_800275F4": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);"]
+      }
+    ]
+  },
+  "L_80027628": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::HighDirect, s1 - 16);"]
+      }
+    ]
+  },
+  "L_80027C60": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::MediumTransition, s3);"]
+      }
+    ]
+  },
+  "L_80027EDC": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::MediumCore, s3);"]
+      }
+    ]
+  },
+  "L_800282C8": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::MediumTransition, s3);"]
+      }
+    ]
+  },
+  "L_DSAFTER_80028508": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(a0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, a0, spyro::world_scene_capture::Phase::MediumCore, s3);"]
+      }
+    ]
+  },
+  "L_80028ED8": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);"]
+      }
+    ]
+  },
+  "L_80028FF0": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);"]
+      }
+    ]
+  },
+  "L_800290F4": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);"]
+      }
+    ]
+  },
+  "L_DSAFTER_80029354": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::NearCore, s3);"]
+      }
+    ]
+  },
+  "L_800294A0": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t0, spyro::world_scene_capture::Phase::NearCore, s3);"]
+      }
+    ]
+  },
+  "L_80029B04": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);"]
+      }
+    ]
+  },
+  "L_80029C14": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);"]
+      }
+    ]
+  },
+  "L_80029D10": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(t3, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, t3, spyro::world_scene_capture::Phase::NearTransition, s3);"]
+      }
+    ]
+  },
+  "L_DSAFTER_80029F5C": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(a0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, a0, spyro::world_scene_capture::Phase::NearCore, s3);"]
+      }
+    ]
+  },
+  "L_8002A04C": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(a0, fp);",
+        "emit": ["spyro::world_scene_capture::noteLink(c, fp, a0, spyro::world_scene_capture::Phase::NearCore, s3);"]
+      }
+    ]
+  },
+  "L_DSAFTER_8002A638": {
+    "after": [
+      {
+        "stmt": "c->mem_w8((t3 + 2), (uint8_t)at);",
+        "emit": ["spyro::world_scene_capture::noteAdaptiveChild(c, fp, gp);"]
+      }
+    ]
+  },
+  "L_8002A668": {
+    "after": [
+      {
+        "stmt": "c->mem_w32(sp, fp);",
+        "emit": ["spyro::world_scene_capture::noteAdaptiveDeferred(c, fp, gp);"]
+      }
+    ]
+  },
+  "L_8002A698": {
+    "after": [
+      {
+        "stmt": "{ int _t = (v0 != gp);  rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002A698; }",
+        "emit": ["spyro::world_scene_capture::noteAdaptiveReplacement(c, gp, t3, at - 8);"]
+      }
+    ]
+  },
+  "L_8002A6B0": {
+    "after": [
+      {
+        "stmt": "L_8002A6B0:;",
+        "emit": ["spyro::world_scene_capture::finishGuest(c, fp);"]
+      }
+    ]
+  },
   "L_80026348": {
     "after": [
       {

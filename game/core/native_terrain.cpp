@@ -40,12 +40,14 @@
 #include "core.h"
 #include "game.h"
 #include "native_diff.h"
+#include "painter_submission_preflight.h"
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "proj_vtx.h"
 #include "rec_decls.h"
 #include "recomp_iface.h"
 #include "render_queue.h"
+#include "scene_painter_order.h"
 #include "spyro_game.h"
 #include "wide_clip_plan.h"
 #include <array>
@@ -1062,7 +1064,6 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
     return false;
   }
   RenderQueue &rq = c->game->rq;
-  const int queued = rq.consumed ? 0 : rq.n;
   if (recipe.faces.empty()) {
     lucent::debug("terraindirect",
                   "owned valid-empty objects={} candidates={} rejects={}",
@@ -1071,41 +1072,9 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
                   recipe.rejects);
     return true;
   }
-  if (recipe.faces.size() > (size_t)(RQ_MAX - queued) ||
-      recipe.faces.size() > PainterObjectLimits{}.max_faces || rq.mPainterScopeDepth ||
-      rq.mPainterInvalidId) {
-    return false;
-  }
-  std::array<uint32_t, 256> ids{};
-  size_t idn = 0, painterFaces = 0;
-  for (int i = 0; i < queued; ++i) {
-    if (rq.items[i].painter_object) {
-      const uint32_t id = rq.items[i].painter_object;
-      const RqItem &existing = rq.items[i];
-      ++painterFaces;
-      if (existing.semi || existing.layer != RQ_WORLD || existing.order_mode != RQ_OM_DEPTH ||
-          existing.mode < 0 || existing.mode > 3) {
-        return false;
-      }
-      if (id == 0x8004EBA8u) {
-        return false;
-      }
-      bool found = false;
-      for (size_t k = 0; k < idn; ++k) {
-        found |= ids[k] == id;
-      }
-      if (!found) {
-        if (idn == ids.size()) {
-          return false;
-        }
-        ids[idn++] = id;
-      }
-    }
-  }
-  if (idn >= PainterObjectLimits{}.max_objects) {
-    return false;
-  }
-  if (painterFaces + recipe.faces.size() > PainterObjectLimits{}.max_faces) {
+  const auto plan = spyro::painter_submission::preflight(
+      rq, kProducerKey, recipe.faces.size(), spyro::scene_painter_order::kStage13Domain);
+  if (!plan.ready) {
     return false;
   }
   const uint32_t baseSeq = rq.consumed ? 0u : rq.seq;
@@ -1113,7 +1082,7 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
     return false;
   }
   const uint32_t finalSeq = baseSeq + (uint32_t)recipe.faces.size() - 1u;
-  if ((queued || idn) && !gpu_vk_order_bias_distinguishes(finalSeq)) {
+  if ((plan.queued || plan.existingObjects) && !gpu_vk_order_bias_distinguishes(finalSeq)) {
     return false;
   }
   const GpuState gpu = c->game->gpu; // immutable per-call draw state before queue mutation
@@ -1126,7 +1095,8 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
   if (gpu_vk_wide_engine(c)) {
     da_x1 = std::max(da_x1, gpu_vk_wide_engine_w(c) - 1);
   }
-  for (const auto &f : recipe.faces) {
+  for (size_t faceIndex = 0; faceIndex < recipe.faces.size(); ++faceIndex) {
+    const auto &f = recipe.faces[faceIndex];
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xf[4]{}, yf[4]{}, depth[4]{};
     unsigned char rs[4]{}, gs[4]{}, bs[4]{};
@@ -1175,7 +1145,8 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
                    -1,
                    0.0f,
                    f.gouraud ? 1 : 0,
-                   gpu.s_tp_dither ? 1 : 0);
+                   gpu.s_tp_dither ? 1 : 0,
+                   spyro::scene_painter_order::cyclorama((uint32_t)faceIndex));
   }
   uint32_t grouped = 0;
   for (int i = 0; i < rq.n; ++i) {
@@ -1198,7 +1169,7 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
                 recipe.faces.size(),
                 recipe.vertices,
                 gpu.s_tp_dither,
-                idn);
+                plan.existingObjects);
   return true;
 }
 

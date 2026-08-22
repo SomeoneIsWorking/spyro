@@ -1,6 +1,7 @@
 // Observation-only groundwork for the 0x800521C0 -> 0x8001F158 -> 0x8001F798 actor chain.
 #include "actor_draw_recipe.h"
 #include "actor_prefix_builder.h"
+#include "actor_recipe_capture.h"
 #include "cfg.h"
 #include "core.h"
 #include "rec_decls.h"
@@ -17,19 +18,16 @@
 
 int gpu_vk_wide_engine(Core *);
 namespace {
-constexpr uint32_t kRecordBase = 0x800712F4u; // 0x8006FCF4 + 5632
-constexpr uint32_t kRecordSize = 56u;
-constexpr uint32_t kDurableRecords = 53u;  // source indices 0..52 only
-constexpr uint32_t kTerminatorIndex = 53u; // exact terminator observed at 0x80071E8C
+using spyro::actor_recipe_capture::capture_records;
+using spyro::actor_recipe_capture::compose_records;
+using spyro::actor_recipe_capture::copy_primitive_words;
+constexpr uint32_t kRecordBase = spyro::actor_recipe_capture::kRecordBase;
+constexpr uint32_t kRecordSize = spyro::actor_recipe_capture::kRecordSize;
+constexpr uint32_t kDurableRecords = spyro::actor_recipe_capture::kDurableRecords;
 constexpr uint32_t kPoolPtr = 0x800757B0u;
 
 struct PrefixBuildCapture {
-  struct Record {
-    spyro::actor_prefix::Input input;
-    spyro::actor_prefix::Output expected;
-    uint32_t descriptor = 0, command = 0, colorBase = 0, fog = 0;
-    bool colorSeen = false;
-  };
+  using Record = spyro::actor_recipe_capture::Record;
   std::vector<Record> records;
   uint32_t activeRecord = 0;
   uint32_t verticesPre = 0, verticesPost = 0, controlsCompared = 0;
@@ -45,34 +43,6 @@ struct PrefixBuildCapture {
   uint32_t clipModeRecords = 0, clipModeVertices = 0;
   const char *first = "none";
 };
-
-static bool physical_span(uint32_t p, uint32_t bytes) {
-  const uint32_t physical = p & 0x1fffffffu;
-  return (p & 3u) == 0u && bytes >= 4u && bytes <= 0x200000u && physical <= 0x200000u - bytes;
-}
-
-static uint32_t kseg(uint32_t p) {
-  return 0x80000000u | (p & 0x1fffffu);
-}
-
-template <class Read>
-static bool
-copy_primitive_words(Read read, uint32_t command, std::vector<uint32_t> &words, uint32_t &bytes) {
-  words.clear();
-  bytes = 0;
-  if (!physical_span(command, 4u)) {
-    return false;
-  }
-  bytes = read(kseg(command));
-  if ((bytes & 3u) != 0u || bytes > 0x1ffffcu || !physical_span(command, bytes + 4u)) {
-    return false;
-  }
-  words.reserve(bytes / 4u);
-  for (uint32_t offset = 4; offset < bytes + 4u; offset += 4u) {
-    words.push_back(read(kseg(command + offset)));
-  }
-  return true;
-}
 
 struct WordWrite {
   uint32_t addr = 0, value = 0;
@@ -1077,158 +1047,6 @@ static void actor_chain_prefix_oracle(Core *c) {
       prefix_result_name(result));
 }
 
-static bool
-copy_prefix_stream(Core *c, uint32_t model, uint32_t count, spyro::actor_prefix::OwnedStream &out) {
-  if (!physical_span(model, 8u)) {
-    return false;
-  }
-  const uint32_t model0 = c->mem_r32(kseg(model));
-  const uint32_t model1 = c->mem_r32(kseg(model + 4u));
-  uint32_t full = model0 & 0x1fffffu;
-  uint32_t delta = full + ((model1 >> 24) << 2);
-  if (!physical_span(full, 4u) || delta > 0x1fffffu) {
-    return false;
-  }
-  out = {};
-  out.firstFull = c->mem_r32(kseg(full));
-  full += 4;
-  uint32_t selector = out.firstFull;
-  for (uint32_t i = 1; i < count; ++i) {
-    if (selector & 1u) {
-      if (delta > 0x1ffffeu) {
-        return false;
-      }
-      const int16_t word = (int16_t)c->mem_r16(kseg(delta));
-      out.deltaWords.push_back(word);
-      selector = (uint16_t)word;
-      delta += 2;
-    } else {
-      if (!physical_span(full, 4u)) {
-        return false;
-      }
-      selector = c->mem_r32(kseg(full));
-      out.fullWords.push_back(selector);
-      full += 4;
-    }
-  }
-  return true;
-}
-
-static bool capture_prefix_record(Core *c, uint32_t record, PrefixBuildCapture::Record &capture) {
-  if (c->mem_r32(record) == 0) {
-    return false;
-  }
-  const uint32_t descriptor = c->mem_r32(record + 4u);
-  const uint32_t model = c->mem_r32(record + 8u);
-  const uint32_t alternate = c->mem_r32(record + 12u);
-  if (!physical_span(descriptor, 36u) || !physical_span(model, 8u)) {
-    return false;
-  }
-  auto &input = capture.input;
-  input = {};
-  input.header = c->mem_r32(record);
-  input.tx = (int32_t)c->mem_r32(record + 16u);
-  input.ty = (int32_t)c->mem_r32(record + 20u);
-  input.tz = (int32_t)c->mem_r32(record + 24u);
-  for (uint32_t i = 0; i < input.matrixWords.size(); ++i) {
-    input.matrixWords[i] = c->mem_r32(record + 28u + i * 4u);
-  }
-  input.cr29 = (int32_t)gte_read_ctrl(29);
-  input.cr30 = (int16_t)(input.matrixWords[4] >> 16);
-  input.transformShift = c->mem_r8(kseg(descriptor + 5u));
-  input.streamShift = (uint8_t)(c->mem_r8(kseg(descriptor + 6u)) + 1u);
-  input.vertexCount = c->mem_r8(kseg(descriptor + 8u));
-  const uint32_t modelMeta = c->mem_r32(kseg(model + 4u));
-  input.optionalExpansion = input.cr30 > 0 && (((modelMeta << 16) >> 14) != 0);
-  const uint16_t blend = (uint16_t)((input.header & 0xff00u) >> 2);
-  if (input.vertexCount != 0 && !copy_prefix_stream(c, model, input.vertexCount, input.primary)) {
-    return false;
-  }
-  if (blend != 0 && (!physical_span(alternate, 8u) ||
-                     !copy_prefix_stream(c, alternate, input.vertexCount, input.alternate))) {
-    return false;
-  }
-  input.projection = {.ofx = (int32_t)gte_read_ctrl(24),
-                      .ofy = (int32_t)gte_read_ctrl(25),
-                      .h = (uint16_t)gte_read_ctrl(26)};
-  if (input.cr30 >= 1024) {
-    input.colorArm = spyro::actor_prefix::ColorArm::High;
-  } else if (input.cr30 > 0) {
-    input.colorArm = spyro::actor_prefix::ColorArm::PositiveBlend;
-  } else if (input.cr29 <= 0 || input.cr30 >= -2048) {
-    input.colorArm = spyro::actor_prefix::ColorArm::Plain;
-  } else {
-    input.colorArm = spyro::actor_prefix::ColorArm::NegativeBlend;
-  }
-  const uint32_t colorCount = c->mem_r16(kseg(descriptor + 2u));
-  const uint32_t primaryColors = c->mem_r32(kseg(descriptor + 24u));
-  const uint32_t secondaryColors = c->mem_r32(kseg(descriptor + 32u));
-  if (!physical_span(primaryColors, std::max(1u, colorCount) * 4u)) {
-    return false;
-  }
-  input.primaryColors.reserve(colorCount);
-  for (uint32_t i = 0; i < colorCount; ++i) {
-    input.primaryColors.push_back(c->mem_r32(kseg(primaryColors + i * 4u)));
-  }
-  if (input.colorArm == spyro::actor_prefix::ColorArm::PositiveBlend) {
-    if (!physical_span(secondaryColors, std::max(1u, colorCount) * 4u)) {
-      return false;
-    }
-    input.secondaryColors.reserve(colorCount);
-    for (uint32_t i = 0; i < colorCount; ++i) {
-      input.secondaryColors.push_back(c->mem_r32(kseg(secondaryColors + i * 4u)));
-    }
-  }
-  const uint32_t command = c->mem_r32(kseg(descriptor + 20u));
-  uint32_t primitiveBytes = 0;
-  if (!copy_primitive_words(
-          [&](uint32_t p) {
-            return c->mem_r32(p);
-          },
-          command,
-          input.primitiveWords,
-          primitiveBytes)) {
-    return false;
-  }
-  capture.descriptor = kseg(descriptor);
-  capture.command = kseg(command);
-  capture.colorBase =
-      input.colorArm == spyro::actor_prefix::ColorArm::High ? kseg(primaryColors) : 0x80070DF4u;
-  capture.expected = spyro::actor_prefix::build(input);
-  capture.fog = capture.expected.fog;
-  return true;
-}
-
-static bool capture_prefix_records(Core *c, std::vector<PrefixBuildCapture::Record> &records) {
-  records.clear();
-  records.reserve(kDurableRecords);
-  for (uint32_t i = 0; i <= kTerminatorIndex; ++i) {
-    const uint32_t address = kRecordBase + i * kRecordSize;
-    if (c->mem_r32(address) == 0) {
-      return !records.empty();
-    }
-    PrefixBuildCapture::Record record{};
-    if (i == kTerminatorIndex || !capture_prefix_record(c, address, record)) {
-      records.clear();
-      return false;
-    }
-    records.push_back(std::move(record));
-  }
-  records.clear();
-  return false;
-}
-
-static spyro::actor_draw_recipe::Recipe
-compose_prefix_records(std::span<const PrefixBuildCapture::Record> records,
-                       std::vector<spyro::actor_prefix::Output> &outputs) {
-  outputs.clear();
-  outputs.reserve(records.size());
-  for (const auto &record : records) {
-    outputs.push_back(record.expected);
-  }
-  return spyro::actor_draw_recipe::compose(outputs);
-}
-
 static void prefix_build_first(PrefixBuildCapture &capture,
                                const char *field,
                                uint32_t index = 0,
@@ -1392,7 +1210,7 @@ static void prefix_build_checkpoint(Core *c, uint64_t cycle, uint32_t pc, void *
 
 static void actor_chain_prefix_build_oracle(Core *c) {
   PrefixBuildCapture capture{};
-  const bool captured = capture_prefix_records(c, capture.records);
+  const bool captured = capture_records(c, capture.records);
   std::vector<spyro::actor_prefix::Output> outputs;
   std::array<uint32_t, 9> statusCounts{};
   uint32_t expectedVertices = 0, expectedPositiveColors = 0, expectedVisibleRecords = 0;
@@ -1413,7 +1231,7 @@ static void actor_chain_prefix_build_oracle(Core *c) {
     }
     expectedVisibleRecords += record.expected.status == spyro::actor_prefix::Status::Ok;
   }
-  const auto recipe = compose_prefix_records(capture.records, outputs);
+  const auto recipe = compose_records(capture.records, outputs);
   const auto boundary = spyro::actor_prefix::classifyCall(outputs);
   const bool recipeComplete = recipe.status == spyro::actor_draw_recipe::Status::Ready ||
                               recipe.status == spyro::actor_draw_recipe::Status::ValidEmpty;
@@ -1545,9 +1363,9 @@ static void actor_chain_ot_oracle(Core *c) {
                                          0x80020860u,
                                          0x800208ACu};
   std::vector<PrefixBuildCapture::Record> prefixRecords;
-  const bool recipeCaptured = capture_prefix_records(c, prefixRecords);
+  const bool recipeCaptured = capture_records(c, prefixRecords);
   std::vector<spyro::actor_prefix::Output> prefixOutputs;
-  const auto recipe = compose_prefix_records(prefixRecords, prefixOutputs);
+  const auto recipe = compose_records(prefixRecords, prefixOutputs);
   OtCensus o{};
   o.recipe = &recipe;
   o.prefixRecords = &prefixRecords;
@@ -1895,9 +1713,9 @@ void actor_chain_oracle(Core *c) {
     abort();
   }
   std::vector<PrefixBuildCapture::Record> prefixRecords;
-  const bool recipeCaptured = capture_prefix_records(c, prefixRecords);
+  const bool recipeCaptured = capture_records(c, prefixRecords);
   std::vector<spyro::actor_prefix::Output> prefixOutputs;
-  const auto recipe = compose_prefix_records(prefixRecords, prefixOutputs);
+  const auto recipe = compose_records(prefixRecords, prefixOutputs);
   const uint32_t before = c->mem_r32(kPoolPtr);
   // Payload/source pass: two source heads + five family sites + final = PcObserver's exact limit.
   static constexpr uint32_t targets[] = {0x8001FFF8u,

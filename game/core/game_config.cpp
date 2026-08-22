@@ -9,11 +9,11 @@
 // in a way that looks like a framework bug, so an un-RE'd field stays 0 with an explicit TODO
 // rather than being filled with a plausible-looking value. Zero is honest; a wrong address is not.
 //
-// Installed once at the top of main() (game/core/main.cpp), before any Game/Core is constructed —
-// Core's ctor snapshots psxport_game_config() into c->cfg.
+// SpyroRuntime exposes this bounded compatibility view before any Game/Core is constructed. It
+// contains measured executable facts only; runtime behavior lives on the derived runtime.
 #include "game_iface.h"
+#include "legacy_game_interface.h"
 #include "overlay_table.h" // generated: REC_MAIN_LO/HI — our recompiler run's own text range
-#include "spyro_game.h"    // spyro_game_hooks()
 
 static const GameConfig g_spyro_config = {
     // ── crt0 / boot
@@ -77,7 +77,8 @@ static const GameConfig g_spyro_config = {
     // NOT YET REVERSE-ENGINEERED. These drive the framework's NATIVE per-frame loop
     // (native_step_frame): the double-buffered ordering-table + packet-pool addresses the game's
     // display code uses. Phase 0 runs the whole guest under the substrate (see game_hooks.cpp
-    // spyro_bootInit), which uses the game's OWN display code and never reads these — so leaving
+    // SpyroRuntime::bootInit), which uses the game's OWN display code and never reads these — so
+    // leaving
     // them
     // 0 is correct and load-bearing-free TODAY, and filling them with guesses would be exactly the
     // "fake the output before the RE is done" failure the porting playbook warns about.
@@ -435,6 +436,10 @@ static const GameConfig g_spyro_config = {
     .stackBias = {1, -8},
 };
 
-void spyro_install_game_config() {
-  psxport_install_game(&g_spyro_config, spyro_game_hooks());
+namespace spyro::legacy {
+
+const GameConfig &measuredConfig() {
+  return g_spyro_config;
 }
+
+} // namespace spyro::legacy

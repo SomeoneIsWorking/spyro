@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: ownership,ndiff,reach,spu
-depends: game/core/native_spu_hardware_init.cpp#initSpuHardwareNative, game/core/spu_hardware_init.h#spuHardwareNeedsFullReset, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_spu_hardware_init.cpp#main, external/open-spyro/src/c/InitSpuHardware.c#InitSpuHardware
+depends: game/core/native_spu_hardware_init.cpp#initSpuHardwareNative, game/core/spu_hardware_init.h#spuHardwareNeedsFullReset, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_spu_hardware_init.cpp#main, external/open-spyro/src/c/InitSpuHardware.c#InitSpuHardware
 reconfirmed: 2026-08-21
 verified_at: 2026-08-21 14:17:54
 ---

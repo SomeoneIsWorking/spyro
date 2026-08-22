@@ -155,6 +155,50 @@ PRODUCERS = [
              0x3C1F8008),
         ),
     },
+    {
+        "label": "actor:opaque",
+        "src": "game/render/fx_actor_draw.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The actor list renderer shares the 14-word assembly save prefix with 18 peers. Its
+        # immediate continuation loads the actor-list root, establishes gp in two steps, restores
+        # the GTE depth offset and reaches the list-empty branch. The similar translucent pass at
+        # 0x80020F34 matches through word +26; the branch at +27 distinguishes this owner. The
+        # complete 28-word sequence occurs exactly once in the retail executable.
+        "entry_sequence": (
+            "0x80077DD8 register-save + actor root/gp/GTE depth setup + list-empty branch (28 words)",
+            (
+                0x3C018007, 0x24217DD8,
+                0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+                0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+                0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C,
+                0x3C018007, 0x242157B0, 0x8C210000,
+                0x3C1C8007, 0x279CFCF4, 0x239C1600,
+                0x3C028007, 0x2442591C, 0x8C420000,
+                0x00200011, 0x48C2E800, 0x8F930000, 0x8F9F0004,
+                0x12600429,
+            ),
+        ),
+    },
+    {
+        "label": "world:static",
+        "src": "game/render/fx_world_draw.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # RenderWorldChunks shares the same 14-word hand-written renderer save prefix. Its next
+        # instruction copies a0 into ra as the renderer's persistent selector; prefix plus that
+        # operation identifies exactly one entry in the retail executable.
+        "entry_sequence": (
+            "0x80077DD8 register-save + persistent world-selector copy (15 words)",
+            (
+                0x3C018007, 0x24217DD8,
+                0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+                0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+                0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C,
+                0x209F0000,
+            ),
+        ),
+    },
 ]
 
 

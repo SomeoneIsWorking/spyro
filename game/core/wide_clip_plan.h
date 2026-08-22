@@ -36,6 +36,14 @@ constexpr uint32_t clipCode(int32_t sx, int32_t sy, int32_t right) {
   return clip;
 }
 
+// Actor renderers store SXY with the clip code in its low five bits. This is the same axis policy
+// as clipCode(), expressed in the guest renderer's packed scratch-word format.
+constexpr uint32_t packedClipStatus(uint32_t sxy, int32_t right) {
+  const int32_t sx = (int16_t)sxy;
+  const int32_t sy = (int16_t)(sxy >> 16);
+  return (sxy << 5) | clipCode(sx, sy, right);
+}
+
 // `lui rX,0x0200` materialises 512<<16, the horizontal right edge in the packed screen word.
 // `lui rX,0x0100` is the separate 256<<16 vertical edge and must never pass this predicate.
 constexpr bool isRightBoundLoad(uint32_t instruction) {

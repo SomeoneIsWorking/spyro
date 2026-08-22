@@ -57,7 +57,8 @@ if(BUILD_TESTING)
     ${CMAKE_SOURCE_DIR}/tests/test_actor_prefix_builder.cpp
     ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
     ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
-  target_include_directories(test_actor_prefix_builder PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_include_directories(test_actor_prefix_builder PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_actor_prefix_builder PRIVATE cxx_std_20)
   target_link_libraries(test_actor_prefix_builder PRIVATE psxport)
   add_test(NAME actor_prefix_builder COMMAND test_actor_prefix_builder)
@@ -66,10 +67,35 @@ if(BUILD_TESTING)
     ${CMAKE_SOURCE_DIR}/game/render/actor_draw_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
     ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
-  target_include_directories(test_actor_draw_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_include_directories(test_actor_draw_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_actor_draw_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_actor_draw_recipe PRIVATE psxport)
   add_test(NAME actor_draw_recipe COMMAND test_actor_draw_recipe)
+  add_executable(test_actor_global_order
+    ${CMAKE_SOURCE_DIR}/tests/test_actor_global_order.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_global_order.cpp)
+  target_include_directories(test_actor_global_order PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_actor_global_order PRIVATE cxx_std_20)
+  target_link_libraries(test_actor_global_order PRIVATE psxport)
+  add_test(NAME actor_global_order COMMAND test_actor_global_order)
+  add_executable(test_scene_painter_order
+    ${CMAKE_SOURCE_DIR}/tests/test_scene_painter_order.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/scene_painter_order.cpp)
+  target_include_directories(test_scene_painter_order PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${PSXPORT_DIR}/tests)
+  target_compile_features(test_scene_painter_order PRIVATE cxx_std_20)
+  target_link_libraries(test_scene_painter_order PRIVATE psxport)
+  add_test(NAME scene_painter_order COMMAND test_scene_painter_order)
+  add_executable(test_stage13_scene_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_stage13_scene_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/stage13_scene_recipe.cpp)
+  target_include_directories(test_stage13_scene_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_stage13_scene_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_stage13_scene_recipe PRIVATE psxport)
+  add_test(NAME stage13_scene_recipe COMMAND test_stage13_scene_recipe)
   add_executable(test_actor_mesh_scratch
     ${CMAKE_SOURCE_DIR}/tests/test_actor_mesh_scratch.cpp)
   target_include_directories(test_actor_mesh_scratch PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
@@ -90,6 +116,58 @@ if(BUILD_TESTING)
   target_include_directories(test_text_sprites PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_text_sprites PRIVATE cxx_std_20)
   add_test(NAME text_sprites COMMAND test_text_sprites)
+  add_executable(test_world_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_world_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp)
+  target_include_directories(test_world_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_world_recipe PRIVATE cxx_std_20)
+  add_test(NAME world_recipe COMMAND test_world_recipe)
+  add_executable(test_world_chunk_codec
+    ${CMAKE_SOURCE_DIR}/tests/test_world_chunk_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp)
+  target_include_directories(test_world_chunk_codec PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_world_chunk_codec PRIVATE cxx_std_20)
+  add_test(NAME world_chunk_codec COMMAND test_world_chunk_codec)
+  add_executable(test_world_material_codec
+    ${CMAKE_SOURCE_DIR}/tests/test_world_material_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_material_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_world_material_codec PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_world_material_codec PRIVATE cxx_std_20)
+  target_link_libraries(test_world_material_codec PRIVATE psxport)
+  add_test(NAME world_material_codec COMMAND test_world_material_codec)
+  add_executable(test_world_scene_prepare
+    ${CMAKE_SOURCE_DIR}/tests/test_world_scene_prepare.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_scene_prepare.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp)
+  target_include_directories(test_world_scene_prepare PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_world_scene_prepare PRIVATE cxx_std_20)
+  target_link_libraries(test_world_scene_prepare PRIVATE psxport)
+  add_test(NAME world_scene_prepare COMMAND test_world_scene_prepare)
+  add_executable(test_world_hq_refinement
+    ${CMAKE_SOURCE_DIR}/tests/test_world_hq_refinement.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_hq_refinement.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_material_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_world_hq_refinement PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_world_hq_refinement PRIVATE cxx_std_20)
+  target_link_libraries(test_world_hq_refinement PRIVATE psxport)
+  add_test(NAME world_hq_refinement COMMAND test_world_hq_refinement)
+  add_executable(test_world_scene_oracle
+    ${CMAKE_SOURCE_DIR}/tests/test_world_scene_oracle.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_scene_oracle.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp)
+  target_include_directories(test_world_scene_oracle PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_world_scene_oracle PRIVATE cxx_std_20)
+  add_test(NAME world_scene_oracle COMMAND test_world_scene_oracle)
   add_test(
     NAME format_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --check)
@@ -99,6 +177,9 @@ if(BUILD_TESTING)
   add_test(
     NAME launcher
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_launcher.py)
+  add_test(
+    NAME runtime_structure
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_runtime_structure.py)
   add_test(
     NAME computed_jumps_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
@@ -118,6 +199,8 @@ set(GAME_SRC
   game/core/main.cpp
   game/core/game_config.cpp
   game/core/game_hooks.cpp
+  game/core/spyro_context.cpp
+  game/core/spyro_runtime.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp
   game/core/frame_loop.cpp
@@ -131,6 +214,26 @@ set(GAME_SRC
   game/render/actor_model_codec.cpp
   game/render/actor_prefix_builder.cpp
   game/render/actor_draw_recipe.cpp
+  game/render/actor_global_order.cpp
+  game/render/scene_painter_order.cpp
+  game/render/stage13_scene_recipe.cpp
+  game/render/actor_recipe_capture.cpp
+  game/render/actor_scene_builder.cpp
+  game/render/actor_scene_oracle.cpp
+  game/render/painter_submission_preflight.cpp
+  game/render/fx_actor_draw.cpp
+  game/render/world_recipe.cpp
+  game/render/world_chunk_codec.cpp
+  game/render/world_material_codec.cpp
+  game/render/world_projection_math.cpp
+  game/render/world_scene_prepare.cpp
+  game/render/world_lq_recipe.cpp
+  game/render/world_hq_recipe.cpp
+  game/render/world_hq_refinement.cpp
+  game/render/world_scene_builder.cpp
+  game/render/world_scene_oracle.cpp
+  game/render/world_scene_capture.cpp
+  game/render/fx_world_draw.cpp
   game/render/fx_paired_actor.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp

@@ -17,4 +17,4 @@ scratch/logs/ndiff_world_shapes.log: 1555 'world-flat@0x800258F0 call #N matches
 
 ## What would falsify it
 
-This covers only what the run EXECUTED: 1682 of the 3587 calls the census (C199) counts for the same recipe, because the differential's cost changes how far 8000 frames reach. Any world-renderer path not entered in those 1682 calls is unverified — notably the packet-pool-exhausted and special-surface (Phase 3) arms if they did not fire. Falsified if a longer or differently-routed run reports any world-flat/world-occ divergence, or if generated/ is regenerated and the gate's transcribe check fails.
+This covers only what the run EXECUTED: 1682 of the 3587 calls the census (C199) counts for the same recipe, because the differential's cost changes how far 8000 frames reach. Any world-renderer path not entered in those 1682 calls is unverified — notably packet-pool exhaustion and adaptive GT3/GT4 replacement (C215) if they did not fire. Falsified if a longer or differently-routed run reports any world-flat/world-occ divergence, or if generated/ is regenerated and the gate's transcribe check fails.

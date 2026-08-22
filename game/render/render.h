@@ -91,7 +91,6 @@ private:
                        int32_t clipY0,
                        int32_t clipX1,
                        int32_t clipY1) const;
-  void titleMenuBacklogReport() const; // what stage 13 still owes, once per run
   bool spriteEmit(int32_t x,
                   int32_t y,
                   int32_t id,

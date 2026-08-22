@@ -31,6 +31,10 @@ int main() {
   expect(clipCode(700, 100, kNativeClipWidth) == kRight,
          "the same vertex is outside at native width");
   expect(clipCode(700, 100, 896) == 0u, "the same vertex is recovered by widescreen");
+  expect((packedClipStatus(700u | (100u << 16), 896) & 31u) == 0u,
+         "packed actor clip agrees with the wide policy");
+  expect((packedClipStatus(896u | (100u << 16), 896) & kRight) != 0u,
+         "packed actor clip recognizes the wide right edge");
   expect(clipCode(100, 300, kNativeClipWidth) == clipCode(100, 300, 896),
          "widescreen never changes vertical clipping");
 

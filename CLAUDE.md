@@ -1,9 +1,14 @@
 # SpyroEngine — working rules
 
-A native PC port of **Spyro the Dragon (PS1, SCUS_942.28)** built on the
+A multi-title native PC port for **Spyro 1, 2, and 3** built on the
 [psxport](https://github.com/SomeoneIsWorking/psxport) static-recompilation framework
 (`external/psxport`). psxport recompiles the game's MIPS code to C and supplies the PSX platform
 layer; this repo supplies the game — the seam, the RE, and the native reimplementations.
+
+The product is not complete until the launcher recognizes and runs all three verified executable
+identities. Spyro the Dragon (`SCUS_942.28`) is implemented today; Spyro 2/3 identities are not yet
+measured and must not be guessed. Each title gets a derived runtime selected by executable serial;
+shared code is extracted only from measured common behavior.
 
 **Read `external/psxport/docs/porting-a-new-psx-game.md` first.** It is the methodology; this file is
 only what is specific to Spyro.

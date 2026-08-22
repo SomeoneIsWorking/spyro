@@ -4,6 +4,7 @@
 // three layer transforms, fixed-point projection, face/material acceptance and authored-order
 // PainterObject submission.  The alternate/status-plane arm remains a loud refusal.
 #include "fx_paired_actor.h"
+
 #include "actor_model_codec.h"
 #include "cfg.h"
 #include "core.h"
@@ -2323,13 +2324,6 @@ void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
   state.refusal = nullptr;
 }
 
-SpyroPairedActorFrameState &spyro_paired_actor_state(Core *c) {
-  if (!c || !c->gameCtx) {
-    lucent::error("pairedactor", "FATAL: per-Core Spyro game context missing");
-    abort();
-  }
-  return *static_cast<SpyroPairedActorFrameState *>(c->gameCtx);
-}
 void spyro_paired_actor_fps60_rotate(Core *c) {
   auto &state = spyro_paired_actor_state(c);
   if (state.current.valid && !state.refusal) {

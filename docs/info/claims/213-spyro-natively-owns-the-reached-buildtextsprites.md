@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: ownership,ndiff,reach,text
-depends: game/core/native_text_sprites.cpp#buildTextSpritesNative, game/core/text_sprites.h#classifyTextGlyph, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_text_sprites.cpp#main, external/spyro-1/src/gamestates/draw.c#func_800181AC
+depends: game/core/native_text_sprites.cpp#buildTextSpritesNative, game/core/text_sprites.h#classifyTextGlyph, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_text_sprites.cpp#main, external/spyro-1/src/gamestates/draw.c#func_800181AC
 reconfirmed: 2026-08-21
 verified_at: 2026-08-21 14:17:54
 ---

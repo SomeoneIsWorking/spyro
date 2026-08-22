@@ -71,6 +71,9 @@ bool populate(const actor_prefix::Output &record,
     out.status[i] = vertex.scratchWord;
     out.xy[i] = (uint16_t)vertex.projected.sx | ((uint32_t)(uint16_t)vertex.projected.sy << 16);
     out.depth[i] = vertex.projected.sz;
+    out.screenX[i] = vertex.projected.px;
+    out.screenY[i] = vertex.projected.py;
+    out.viewZ[i] = vertex.projected.pz;
   }
   const uint32_t material = out.words[1];
   const uint32_t offsets[] = {(material >> 17) & 0x7fcu,
@@ -284,6 +287,7 @@ Recipe compose(std::span<const actor_prefix::Output> records) {
                                 result.family,
                                 result.origin,
                                 result.localBin,
+                                input,
                                 result.payload});
       } else {
         ++recipe.rejectedCandidates;

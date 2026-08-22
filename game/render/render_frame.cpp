@@ -8,15 +8,22 @@
 #include "cfg.h" // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
 #include "core.h"
 #include "frame_env.h" // nativeFrameBegin/End — the frame the native producers draw into
+#include "fx_actor_draw.h"
 #include "fx_paired_actor.h"
+#include "fx_world_draw.h"
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "guest_call.h" // rc0 — run a guest function to its `jr ra`
 #include "render.h"
 #include "spyro_game.h"
+#include "stage13_scene_recipe.h"
 #include <lucent/log.h>
 #include <stdlib.h> // abort
 
 void spyro_fps60_commit_field_delivered(Core *c);
+
+namespace {
+constexpr uint32_t kCamera = 0x80076dd0u;
+}
 
 // WHAT THE NATIVE LEG MEANS IN THIS PORT — one log line, no configuration. The render path itself
 // is the framework's (installed in dc_boot_init); this only says what choosing `native` implies
@@ -30,14 +37,13 @@ void SpyroRenderer::installModeFromConfig(Core *c) {
   // enables this frame loop. What is left is the one thing the framework cannot know. What the
   // NATIVE path means in THIS port specifically — which the framework cannot know. Stated
   // precisely, because the coarse version ("it aborts on anything not native") is not what the code
-  // does: it aborts per STAGE (no producer registered) and when the stage-13 producer declines a
-  // menu mode. Guest-drawn parts of a stage that DOES have a producer do not abort — stage 13's 3D
-  // backdrop is guest-drawn and only warns, once, via titleMenuBacklogReport.
+  // does: it aborts per STAGE (no producer registered) and when any stage-13 producer declines its
+  // complete atomic recipe.
   if (!c->rsub.mode.psxRender()) {
     lucent::info(
         "render",
-        "native path: ONE producer (stage {} front-end sprites, C167). Aborts on a stage with "
-        "no producer; guest-drawn parts WITHIN a producer's stage only warn. "
+        "native path: stage {} front-end sprites, actors, world, and cyclorama. Aborts on a stage "
+        "with no producer or when a complete stage-13 recipe is refused. "
         "PSXPORT_RENDER_PATH=gte for the reference picture (guest driver 0x8001ED5C).",
         (int)kStageFrontEnd);
   }
@@ -71,34 +77,36 @@ void SpyroRenderer::referenceOtWalk() const {
 // plausible picture is indistinguishable from a correct one. Stopping with the scene identity
 // printed turns the porting backlog into a crash sequence in dependency order.
 //
-// STAGE 13 IS THE ONE STAGE WITH A PRODUCER. Its front-end sprite layer is native
-// (game/render/fx_title_menu.cpp); its 3D backdrop is not, and `titleMenuBacklogReport` names the
-// five guest calls that would have drawn it, once per run, at warn level. The producer itself still
-// returns false — and this still aborts — for the menu modes it does not implement, so the seam's
-// discipline holds one level finer than the stage.
+// STAGE 13 is composed from four native display owners in the guest's authored order: front-end
+// sprites, actors, RenderWorldChunks, then the cyclorama. Each refuses before partial submission
+// when its semantic input cannot be represented.
 void SpyroRenderer::renderScene(const Scene &sc) const {
   if (sc.stage != kStageFrontEnd) {
     abortUnimplemented(sc, "no producer is registered for this stage");
   }
-  static bool reported = false;
-  if (!reported) {
-    reported = true;
-    titleMenuBacklogReport();
-  }
   const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
   const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
   const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
-  if (mC->mem_r32(0x80078D78u) == 3u) {
+  const uint32_t titleMode = mC->mem_r32(0x80078D78u);
+  if (!spyro::stage13_scene_recipe::hasSharedBackdrop(titleMode)) {
     if (!stage13Mode3Render()) {
       abortUnimplemented(sc, "mode 3 also armed paired-actor renderer 0x80023AC4");
     }
-  } else if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1)) {
+    return;
+  }
+  if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1)) {
     abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
   }
-  // 0x8004EBA8 is the common post-mode tail and final WORLD producer, with these exact arguments.
-  // The direct leg builds an immutable recipe and never calls or suppresses the guest packet body.
-  if (!spyro_terrain_submit(mC, -1, 0x80076DE4u, 0x80076DD0u)) {
-    abortUnimplemented(sc, "terrain producer 0x8004EBA8 refused its atomic recipe");
+  if (!spyro_actor_submit(mC)) {
+    abortUnimplemented(sc, "actor producer 0x8001F798 refused its atomic recipe");
+  }
+  const auto worldInvocation = spyro::stage13_scene_recipe::sharedBackdropInvocation();
+  spyro::stage13_scene_recipe::apply(mC, worldInvocation);
+  if (!spyro_world_submit(mC, worldInvocation.worldSelection)) {
+    abortUnimplemented(sc, "world producer 0x800258F0 refused its atomic recipe");
+  }
+  if (!spyro_terrain_submit(mC, -1, kCamera + 0x14u, kCamera)) {
+    abortUnimplemented(sc, "cyclorama producer 0x8004EBA8 refused its atomic recipe");
   }
 }
 

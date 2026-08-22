@@ -36,6 +36,9 @@ struct PrimitiveInput {
   uint32_t depthOrigin = 0;
   uint32_t shift = 0;
   uint32_t fog = 0;
+  std::array<float, 4> screenX{};
+  std::array<float, 4> screenY{};
+  std::array<float, 4> viewZ{};
 };
 
 struct Evaluation {
@@ -63,6 +66,7 @@ struct Face {
   Family family = Family::G3;
   Origin origin = Origin::Direct;
   uint32_t localBin = 0;
+  PrimitiveInput input;
   std::vector<uint32_t> payload;
 };
 

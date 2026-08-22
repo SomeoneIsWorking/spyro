@@ -1,4 +1,5 @@
 #include "actor_prefix_builder.h"
+#include "wide_clip_plan.h"
 
 #include <algorithm>
 #include <string_view>
@@ -57,24 +58,6 @@ uint32_t packedSxy(const psxport::native_projection::NativeProjectedVertex &proj
   return (uint16_t)projected.sx | ((uint32_t)(uint16_t)projected.sy << 16);
 }
 
-uint32_t clipStatusWord(uint32_t sxy) {
-  uint32_t flags = 0;
-  if ((int32_t)(sxy - 0x00010000u) <= 0) {
-    flags |= 1u;
-  }
-  if ((int32_t)(sxy - 0x01000000u) >= 0) {
-    flags |= 2u;
-  }
-  const uint32_t vertical = sxy << 16;
-  if ((int32_t)vertical <= 0) {
-    flags |= 4u;
-  }
-  if ((int32_t)(vertical - 0x02000000u) >= 0) {
-    flags |= 8u;
-  }
-  return (sxy << 5) | flags;
-}
-
 } // namespace
 
 Output build(const Input &input) {
@@ -103,6 +86,7 @@ Output build(const Input &input) {
   const uint8_t coordShift = input.header >> 24;
   const int8_t translationBias = (int8_t)(input.header >> 16);
   const bool clipMode = (int32_t)input.header < 0;
+  const int32_t clipRight = std::max(1, input.projection.ofx >> 15);
   int32_t cr14 = ((int32_t)input.tz >> 5) - translationBias;
   if (cr14 < 0) {
     cr14 = 0;
@@ -145,7 +129,7 @@ Output build(const Input &input) {
     const auto packed = projectionInput(resolved);
     const auto projected = psxport::native_projection::project(affine, input.projection, packed);
     const uint32_t sxy = packedSxy(projected);
-    const uint32_t scratchWord = clipMode ? clipStatusWord(sxy) : sxy;
+    const uint32_t scratchWord = clipMode ? spyro::wide::packedClipStatus(sxy, clipRight) : sxy;
     commonStatus &= scratchWord;
     out.vertices.push_back({a, b, resolved, packed, projected, scratchWord});
   }

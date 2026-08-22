@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: native,ownership,non-leaf
-depends: game/core/native_actor_mesh_scratch.cpp#initActorMeshScratchNative, game/core/actor_mesh_scratch.h#actorMeshScratchLayout, game/core/game_hooks.cpp#spyro_registerOverrides, tests/test_actor_mesh_scratch.cpp#main
+depends: game/core/native_actor_mesh_scratch.cpp#initActorMeshScratchNative, game/core/actor_mesh_scratch.h#actorMeshScratchLayout, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_actor_mesh_scratch.cpp#main
 reconfirmed: 2026-08-21
 verified_at: 2026-08-21 14:17:54
 ---

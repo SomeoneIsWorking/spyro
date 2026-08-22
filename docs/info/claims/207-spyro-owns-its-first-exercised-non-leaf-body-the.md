@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-20
 tags: [native, ownership]
-depends: game/core/native_printf.cpp#write_printf_native, game/core/game_hooks.cpp#spyro_registerOverrides
+depends: game/core/native_printf.cpp#write_printf_native, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides
 reconfirmed: 2026-08-21
 verified_at: 2026-08-21 14:17:54
 ---

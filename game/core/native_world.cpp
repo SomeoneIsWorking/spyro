@@ -4,10 +4,11 @@
 // 2D-vs-3D discrimination (re-frontier render.own-geometry-family): the framework's 2D widen shifts
 // the whole frame a second time at this port's ~2.5% depth coverage (C143) and the uncovered-margin
 // strip (issue 0039) is in the same class. Depth (SZ3) is a GTE/scratchpad intermediate ONLY in
-// this renderer — never written into the emitted GPU packets (C198) — so an interpreted body cannot
+// this renderer — never written into the emitted GPU packets (C201; C215 corrects C198's final-arm
+// label) — so an interpreted body cannot
 // supply it; only an OWNED body can emit depth as it projects.
 //
-// THE SHAPE, from the structural map (C198) and the recompiled body (generated/shard_3.c
+// THE SHAPE, from the corrected structural map (C215) and the recompiled body (generated/shard_3.c
 // gen_func_800258F0, ~5000 instructions across 0x800258F0..0x8002A6F4):
 //   Phase 1 (0x800258F0..0x800261A0): save callee-saved regs to the fixed save area kSaveArea (no
 //     stack frame), load the camera view matrix into the GTE (translation nulled), then walk the
@@ -17,11 +18,13 @@
 //     geometry/colour animation (INTPL/DPCS blocks writing into chunk vertex/colour arrays).
 //     Survivors are written to the work list at kWorkList+0x1C00.
 //   Phase 2 (0x800261A0..0x8002A0B0): project every surviving chunk's vertices (RTPS), write
-//     SXY2+SZ3 into the scratchpad vertex cache (0x1F800000, 8-byte interleaved), and emit gouraud
-//     quads (0x24) and tris (0x1C) into the packet pool with NCLIP backface culling, depth/LOD
-//     test, whole-face clip rejection, and OT binning by average SZ. This is where native DEPTH is
-//     emitted.
-//   Phase 3 (0x8002A51C): emit the special-surface (water/lava) textured quads from D_8006D5C8.
+//     SXY2+SZ3 into scratchpad caches, and emit LQ direct plus HQ direct/medium/near gouraud faces
+//     with NCLIP, depth/LOD, whole-face clip rejection, fog, texture-table selection, edge fillers,
+//     and OT binning. This is where native DEPTH is emitted.
+//   Phase 3 (0x8002A0A0..0x8002A6B0): breadth-first adaptive subdivision of oversized near GT3/GT4
+//     packets. D_8006D5E4/D_8006D5C8 are child-descriptor tables; each final child chain replaces
+//     its parent in the same OT slot. This is not a special-surface renderer (C215 supersedes
+//     C198).
 //   Epilogue: publish the pool pointer to kPoolPtr, link g_WorldOT, restore registers, return.
 //
 // HOW THE BODY IS PRODUCED — AND WHY IT IS NOT HAND-TRANSCRIBED. native_terrain.cpp's body
@@ -55,11 +58,14 @@
 #include "rec_decls.h"
 #include "recomp_iface.h"
 #include "spyro_game.h"
+#include "world_scene_builder.h"
+#include "world_scene_capture.h"
+#include <cstdlib>
 #include <lucent/log.h>
 
 namespace {
 
-// ── Guest globals this renderer reads and writes (C198 / whatis), named rather than raw. These are
+// ── Guest globals this renderer reads and writes (C206 / whatis), named rather than raw. These are
 //    the SAME names tools/transcribe.py folds the address-materialisation pairs into, so the two
 //    halves cannot drift: game/core/guest_names.json is the single table both sides read.
 constexpr uint32_t kSaveArea = 0x80077DD8u;    // fixed register-save block (no stack frame)
@@ -87,8 +93,8 @@ constexpr uint32_t kEnvironmentAnimations = 0x80078560u; // g_EnvironmentAnimati
 //                              read with mem_r8 and the walk stops on 0xFF. A per-group array of
 //                              pointers to 0xFF-TERMINATED sector-index lists — again C199's shape.
 //   +0x18  m_LQTexturePointer— Phase 2's texture base (world_body.inc:944).
-//   +0x1C  m_HQTexturePointer— Phase 3's texture base (world_body.inc:1878). The LQ/HQ split at two
-//                              different phases is what g_SkipLowPolyWorld selects between.
+//   +0x1C  m_HQTexturePointer— HQ medium/near texture-record base (world_body.inc:1878). The LQ/HQ
+//                              split is what g_SkipLowPolyWorld selects between.
 //   +0x24  m_LodDistance     — read three times and shifted (>>4 at entry, >>7 in Phase 2).
 //   +0x28  m_CullingDistance — Phase 1's cull radius, >>7. The CALLER sets it: the environment
 //                              layer 0x8002B9CC writes 0x28000 / 0x1C000 / 0x14000 into it and
@@ -177,6 +183,7 @@ void spyro_world_native_finish() {
 // read as coverage it does not have. Two sites make the log state which shapes actually ran, and
 // give each its own budget so a flood of one cannot starve the other.
 void world_owned(Core *c) {
+  const int32_t selection = (int32_t)c->r[4];
   const bool flat = (int32_t)c->r[4] < 0;
   s_world_calls++;
   if (flat) {
@@ -184,8 +191,25 @@ void world_owned(Core *c) {
   } else {
     s_world_occ++;
   }
+  spyro::world_scene_capture::begin(c);
   ndiff_run(
       c, flat ? "world-flat@0x800258F0" : "world-occ@0x800258F0", world_native, gen_func_800258F0);
+  if (cfg_on("PSXPORT_WORLD_SCENE_ORACLE")) {
+    spyro::world_hq_recipe::Audit audit;
+    const auto recipe = spyro::world_scene::build(c, selection, &audit);
+    if (recipe.status != spyro::world_recipe::Status::Ready &&
+        recipe.status != spyro::world_recipe::Status::ValidEmpty) {
+      lucent::error("worldsceneoracle",
+                    "semantic builder refused status={} reason={}",
+                    (uint32_t)recipe.status,
+                    recipe.refusal);
+      abort();
+    }
+    if (spyro::world_scene_capture::verify(c, recipe.faces, audit) !=
+        spyro::world_scene_capture::Status::Match) {
+      abort();
+    }
+  }
 }
 
 void spyro_register_native_world() {

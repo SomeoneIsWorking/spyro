@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-20
 tags: [native, ownership]
 depends: game/core/native_printf.cpp#write_printf_native, titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::registerOverrides
-reconfirmed: 2026-08-22 18:45:06
-verified_at: 2026-08-22 18:45:06
+reconfirmed: 2026-08-22
+verified_at: 2026-08-22 19:10:18
 ---
 
 ## Claim
@@ -36,3 +36,7 @@ Post-landing 9000-field NDIFF and full CTest 13/13 retained exact PsyQ printf wr
 ## Re-confirmed 2026-08-22 18:45:06
 
 Registration moved without semantic change into Spyro1Runtime::registerOverrides. The rebuilt SCUS_942.28 shipping gate gate-boot-20260822-184226.log reported printf@0x8006279C call #1 matching the retained body and passed 14/14; focused/full CTests remain green.
+
+## Re-confirmed 2026-08-22
+
+Post-commit 987f9f8 root rebuilt the authoritative Clang tree; 27/27 CTests pass and the clean-framework native gate passes 14/14 with 1,491,438 primitives.

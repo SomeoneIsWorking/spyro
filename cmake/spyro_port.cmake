@@ -36,6 +36,10 @@ add_custom_target(cpp-policy
   COMMENT "Checking Clang format, structure caps, and clang-tidy")
 
 if(BUILD_TESTING)
+  add_executable(test_wide_clip_plan ${CMAKE_SOURCE_DIR}/tests/test_wide_clip_plan.cpp)
+  target_include_directories(test_wide_clip_plan PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_wide_clip_plan PRIVATE cxx_std_20)
+  add_test(NAME wide_clip_plan COMMAND test_wide_clip_plan)
   add_executable(test_paired_actor_decode
     ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_decode.cpp
     ${CMAKE_SOURCE_DIR}/game/render/paired_actor_decode.cpp)

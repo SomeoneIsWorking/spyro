@@ -47,6 +47,7 @@
 #include "recomp_iface.h"
 #include "render_queue.h"
 #include "spyro_game.h"
+#include "wide_clip_plan.h"
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -216,6 +217,13 @@ static bool terrain_build_direct(
   if (!terrain_ram(mat1, 20) || !terrain_ram(mat2, 20)) {
     return refuse("matrix_bounds");
   }
+  int32_t rightClip = spyro::wide::kNativeClipWidth;
+  if (gpu_vk_wide_engine(c)) {
+    const int nw = gpu_vk_wide_engine_w(c);
+    rightClip = nw;
+    gte_write_ctrl(24u, (uint32_t)((nw / 2) << 16));
+    c->rsub.projParams.setGeomOfxForAspect((float)(nw / 2));
+  }
   auto load_matrix = [&](uint32_t p) {
     for (uint32_t i = 0; i < 5; ++i) {
       gte_write_ctrl(i, c->mem_r32(p + i * 4));
@@ -307,21 +315,8 @@ static bool terrain_build_direct(
       const int vx = (int16_t)packed, vy = (int16_t)(packed >> 16),
                 vz = (int16_t)((uint32_t)(w >> 21) + (uint32_t)oz);
       auto p = terrain_project(vx, vy, vz);
-      uint32_t clip = 0;
-      if (p.p.sy <= 0) {
-        clip |= 1;
-      }
-      if (p.p.sy >= 256) {
-        clip |= 2;
-      }
-      if (p.p.sx <= 0) {
-        clip |= 4;
-      }
-      if (p.p.sx >= 512) {
-        clip |= 8;
-      }
-      p.clip = clip;
-      all &= clip;
+      p.clip = spyro::wide::clipCode(p.p.sx, p.p.sy, rightClip);
+      all &= p.clip;
       vertices.push_back(p);
       ++out.vertices;
     }
@@ -1127,6 +1122,10 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
   }
   ProducerScope producer(&c->rsub.producerScope, kProducerKey, "terrain:F3G3");
   RenderQueue::PainterObjectScope painter(rq, kProducerKey);
+  int da_x1 = gpu.s_da_x1;
+  if (gpu_vk_wide_engine(c)) {
+    da_x1 = std::max(da_x1, gpu_vk_wide_engine_w(c) - 1);
+  }
   for (const auto &f : recipe.faces) {
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xf[4]{}, yf[4]{}, depth[4]{};
@@ -1169,7 +1168,7 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
                    gpu.s_tw_oy,
                    gpu.s_da_x0,
                    gpu.s_da_y0,
-                   gpu.s_da_x1,
+                   da_x1,
                    gpu.s_da_y1,
                    0,
                    nullptr,

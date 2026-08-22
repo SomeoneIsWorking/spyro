@@ -355,6 +355,7 @@ def run_static_checks(rep: Report, disc: str) -> None:
         'PSXPORT_NOAUDIO': '1',
         'PSXPORT_ASSET_DIR': os.path.join(REPO, 'external', 'psxport'),
         'PSXPORT_SPYRO_DISC': disc,
+        'PSXPORT_RENDER_PATH': 'native',
     })
     log = os.path.join(LOGDIR, f'gate-producers-{time.strftime("%Y%m%d-%H%M%S")}.log')
     try:
@@ -475,7 +476,9 @@ def cmd_boot(args) -> int:
     # 3000 is the floor for a run that must reach the title and emit the DB.
     env['PSXPORT_NATIVE_FRAMES'] = str(args.frames)
     if args.psx_render:
-        env['PSXPORT_RENDER_PSX'] = '1'        # the reference leg: guest driver 0x8001ED5C
+        env['PSXPORT_RENDER_PATH'] = 'gte'        # the reference leg: guest driver 0x8001ED5C
+    else:
+        env['PSXPORT_RENDER_PATH'] = 'native'
 
     os.makedirs(LOGDIR, exist_ok=True)
     logpath = os.path.join(LOGDIR, f'gate-boot-{time.strftime("%Y%m%d-%H%M%S")}.log')

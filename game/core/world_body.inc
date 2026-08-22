@@ -3,7 +3,7 @@
 // folded, offsets signed), so it is byte-exact by construction. `transcribe.py check`
 // re-derives the generated source from this file and fails on any divergence; that check
 // runs in the gate, so this stays exact as the substrate is regenerated.
-// Statements: 5065 generated -> 5017 emitted (50 address pair(s) folded, 2 annotation line(s)).
+// Statements: 5227 generated -> 5179 emitted (50 address pair(s) folded, 2 annotation line(s)).
 at = kSaveArea;
 c->mem_w32(at, s0);
 c->mem_w32((at + 4), s1);
@@ -41,13 +41,14 @@ t9 = (uint32_t)((int32_t)t9 >> 4);
 s4 = kCullScratch;
 at = s4 + (uint32_t)0;
 v0 = s4 + (uint32_t)256;
+rec_guest_instruction_ticks(c, 40u);
 L_80025990:;
 if (c->pending_work) rec_irq_poll(c);
 at = at + (uint32_t)16;
 c->mem_w32((at - 16), zero);
 c->mem_w32((at - 12), zero);
 c->mem_w32((at - 8), zero);
-{ int _t = (at != v0); c->mem_w32((at - 4), zero); if (_t) goto L_80025990; }
+{ int _t = (at != v0); c->mem_w32((at - 4), zero); rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80025990; }
 at = kEnvironment;
 s6 = c->mem_r32((at + 36));
 v0 = kWorkList;
@@ -56,29 +57,31 @@ s0 = v0 + (uint32_t)8192;
 sp = zero + (uint32_t)-1;
 fp = zero + (uint32_t)255;
 s6 = s6 >> 4;
-{ int _t = ((int32_t)ra < 0); s2 = c->mem_r32(at); if (_t) goto L_800259EC; }
+{ int _t = ((int32_t)ra < 0); s2 = c->mem_r32(at); rec_guest_instruction_ticks(c, 12u); if (_t) goto L_800259EC; }
 v0 = c->mem_r32((at + 8));
 v1 = ra << 2;
 v0 = v0 + v1;
-s3 = c->mem_r32(v0); goto L_800259FC;
+s3 = c->mem_r32(v0); rec_guest_instruction_ticks(c, 5u); goto L_800259FC;
 L_800259EC:;
 at = c->mem_r32((at + 4));
 s5 = s4 + (uint32_t)-1;
 at = at << 2;
 s3 = s2 + at;
+rec_guest_instruction_ticks(c, 4u);
 L_800259FC:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)ra >= 0); s5 = s5 + (uint32_t)1; if (_t) goto L_80025A14; }
-{ int _t = (s2 == s3); gte_hold_src(c, 17, s2); s1 = c->mem_r32(s2); if (_t) goto L_800261A0; }
-s2 = s2 + (uint32_t)4; goto L_80025A30;
+{ int _t = ((int32_t)ra >= 0); s5 = s5 + (uint32_t)1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80025A14; }
+{ int _t = (s2 == s3); gte_hold_src(c, 17, s2); s1 = c->mem_r32(s2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800261A0; }
+s2 = s2 + (uint32_t)4; rec_guest_instruction_ticks(c, 2u); goto L_80025A30;
 L_80025A14:;
 at = (uint32_t)c->mem_r8(s3);
 s3 = s3 + (uint32_t)1;
-{ int _t = (at == fp); v0 = at << 2; if (_t) goto L_800261A0; }
+{ int _t = (at == fp); v0 = at << 2; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_800261A0; }
 v0 = v0 + s2;
 gte_hold_src(c, 17, v0);
 s1 = c->mem_r32(v0);
 s5 = s4 + at;
+rec_guest_instruction_ticks(c, 3u);
 L_80025A30:;
 v0 = c->mem_r32(s1);
 a0 = c->mem_r32((s1 + 4));
@@ -106,75 +109,81 @@ t3 = t3 + t5;
 t0 = gte_read_data(11);
 a2 = gte_read_data(9);
 at = t0 + t2;
-{ int _t = ((int32_t)at <= 0); t4 = t4 + t5; if (_t) goto L_800259FC; }
-{ int _t = ((int32_t)a2 >= 0); v0 = t0 + t4; if (_t) goto L_80025AAC; }
+{ int _t = ((int32_t)at <= 0); t4 = t4 + t5; rec_guest_instruction_ticks(c, 28u); if (_t) goto L_800259FC; }
+{ int _t = ((int32_t)a2 >= 0); v0 = t0 + t4; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80025AAC; }
 a2 = zero - a2;
+rec_guest_instruction_ticks(c, 1u);
 L_80025AAC:;
 at = a2 - t3;
 at = at << 2;
 v1 = v0 << 1;
 v0 = v0 + v1;
 at = at - v0;
-{ int _t = ((int32_t)at >= 0); t5 = t2 >> 3; if (_t) goto L_800259FC; }
+{ int _t = ((int32_t)at >= 0); t5 = t2 >> 3; rec_guest_instruction_ticks(c, 7u); if (_t) goto L_800259FC; }
 t5 = t2 - t5;
 t6 = t2 >> 1;
 at = t2 >> 4;
 a3 = gte_read_data(10);
 t6 = t6 - at;
-{ int _t = ((int32_t)a3 >= 0); v0 = t0 + t6; if (_t) goto L_80025AE8; }
+{ int _t = ((int32_t)a3 >= 0); v0 = t0 + t6; rec_guest_instruction_ticks(c, 7u); if (_t) goto L_80025AE8; }
 a3 = zero - a3;
+rec_guest_instruction_ticks(c, 1u);
 L_80025AE8:;
 at = a3 - t5;
 at = at << 5;
 v1 = v0 << 4;
 v0 = v0 + v1;
 at = at - v0;
-{ int _t = ((int32_t)at >= 0); at = t0 - t2; if (_t) goto L_800259FC; }
-{ int _t = ((int32_t)at <= 0); gp = c->mem_r32((s1 + 24)); if (_t) goto L_80025B4C; }
+{ int _t = ((int32_t)at >= 0); at = t0 - t2; rec_guest_instruction_ticks(c, 7u); if (_t) goto L_800259FC; }
+{ int _t = ((int32_t)at <= 0); gp = c->mem_r32((s1 + 24)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80025B4C; }
 at = a2 + t3;
 v0 = t0 - t4;
 at = at << 2;
 v1 = v0 << 1;
 v0 = v0 + v1;
 at = at - v0;
-{ int _t = ((int32_t)at >= 0); at = a3 + t5; if (_t) goto L_80025B4C; }
+{ int _t = ((int32_t)at >= 0); at = a3 + t5; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80025B4C; }
 v0 = t0 - t6;
 at = at << 5;
 v1 = v0 << 4;
 v0 = v0 + v1;
 at = at - v0;
-{ int _t = ((int32_t)at >= 0);  if (_t) goto L_80025B4C; }
+{ int _t = ((int32_t)at >= 0);  rec_guest_instruction_ticks(c, 7u); if (_t) goto L_80025B4C; }
 a1 = a1 ^ 1u;
+rec_guest_instruction_ticks(c, 1u);
 L_80025B4C:;
 v0 = sp + (uint32_t)0;
 c->mem_w8(s5, (uint8_t)fp);
 at = t1 & 0x2000u;
-{ int _t = ((int32_t)at > 0); at = t1 & 0x8000u; if (_t) goto L_80025B80; }
-{ int _t = ((int32_t)at > 0); at = t0 + t2; if (_t) goto L_80025B74; }
+{ int _t = ((int32_t)at > 0); at = t1 & 0x8000u; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80025B80; }
+{ int _t = ((int32_t)at > 0); at = t0 + t2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80025B74; }
 at = at + (uint32_t)256;
 at = s6 - at;
-{ int _t = ((int32_t)at >= 0); c->mem_w32(s0, a1); gte_copy_pz(c, 17, s0); if (_t) goto L_80025B80; }
+{ int _t = ((int32_t)at >= 0); c->mem_w32(s0, a1); gte_copy_pz(c, 17, s0); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80025B80; }
 goto L_DSAFTER_80025B70;
-L_80025B74:; c->mem_w32(s0, a1); gte_copy_pz(c, 17, s0);
+L_80025B74:; c->mem_w32(s0, a1); gte_copy_pz(c, 17, s0); rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_80025B70:;
 s0 = s0 + (uint32_t)4;
 v0 = v0 << 16;
+rec_guest_instruction_ticks(c, 2u);
 L_80025B80:;
 at = t1 & 0x4000u;
-{ int _t = ((int32_t)at > 0); at = t0 - t2; if (_t) goto L_80025BAC; }
+{ int _t = ((int32_t)at > 0); at = t0 - t2; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80025BAC; }
 v1 = s6 - at;
-{ int _t = ((int32_t)v1 <= 0); at = at + (uint32_t)-256; if (_t) goto L_80025BAC; }
-{ int _t = ((int32_t)at >= 0); v0 = v0 & 0xFFFFu; if (_t) goto L_80025BA4; }
+{ int _t = ((int32_t)v1 <= 0); at = at + (uint32_t)-256; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80025BAC; }
+{ int _t = ((int32_t)at >= 0); v0 = v0 & 0xFFFFu; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80025BA4; }
 a1 = a1 + (uint32_t)2;
+rec_guest_instruction_ticks(c, 1u);
 L_80025BA4:;
 c->mem_w32(t7, a1);
 gte_copy_pz(c, 17, t7);
 t7 = t7 + (uint32_t)4;
+rec_guest_instruction_ticks(c, 2u);
 L_80025BAC:;
 gp = gp | v0;
-{ int _t = (gp == sp);  if (_t) goto L_800259FC; }
+{ int _t = (gp == sp);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800259FC; }
 at = gp << 24;
-{ int _t = ((int32_t)at < 0); at = at >> 24; if (_t) goto L_80025D14; }
+{ int _t = ((int32_t)at < 0); at = at >> 24; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80025D14; }
 c->mem_w8((s1 + 24), (uint8_t)sp);
 v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 20));
@@ -188,21 +197,22 @@ v0 = v0 + v1;
 a1 = (uint32_t)c->mem_r8((v0 + 4));
 v1 = (uint32_t)c->mem_r8((v0 + 5));
 a2 = (uint32_t)c->mem_r16((at + 6));
-{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } if (_t) goto L_80025C3C; }
+{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80025C3C; }
 v1 = c->mem_r32((at + 8));
 a0 = c->lo;
 at = at + a0;
 v1 = v1 + at;
 v0 = v1 + a2;
 at = s1 + (uint32_t)28;
+rec_guest_instruction_ticks(c, 6u);
 L_80025C20:;
 if (c->pending_work) rec_irq_poll(c);
 gte_hold_src(c, 4, v1);
 a0 = c->mem_r32(v1);
 v1 = v1 + (uint32_t)4;
 at = at + (uint32_t)4;
-{ int _t = (v1 != v0); c->mem_w32((at - 4), a0); gte_copy_pz(c, 4, (at - 4)); if (_t) goto L_80025C20; }
-goto L_80025D14;
+{ int _t = (v1 != v0); c->mem_w32((at - 4), a0); gte_copy_pz(c, 4, (at - 4)); rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80025C20; }
+rec_guest_instruction_ticks(c, 2u); goto L_80025D14;
 L_80025C3C:;
 a1 = a1 << 4;
 gte_write_data(8, a1);
@@ -228,6 +238,7 @@ t2 = a2 & 0x3FFu;
 gte_write_data(9, t0);
 gte_write_data(10, t1);
 gte_write_data(11, t2);
+rec_guest_instruction_ticks(c, 25u);
 L_80025CA0:;
 if (c->pending_work) rec_irq_poll(c);
 t0 = a3 >> 21;
@@ -257,10 +268,10 @@ t0 = t0 << 21;
 t1 = t1 << 10;
 t0 = t0 + t1;
 t0 = t0 + t2;
-{ int _t = (v0 != v1); c->mem_w32((at - 4), t0); if (_t) goto L_80025CA0; }
+{ int _t = (v0 != v1); c->mem_w32((at - 4), t0); rec_guest_instruction_ticks(c, 29u); if (_t) goto L_80025CA0; }
 L_80025D14:;
 at = gp << 16;
-{ int _t = ((int32_t)at < 0); at = at >> 24; if (_t) goto L_80025E5C; }
+{ int _t = ((int32_t)at < 0); at = at >> 24; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80025E5C; }
 c->mem_w8((s1 + 25), (uint8_t)sp);
 v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 28));
@@ -274,7 +285,7 @@ v0 = v0 + v1;
 a1 = (uint32_t)c->mem_r8((v0 + 4));
 v1 = (uint32_t)c->mem_r8((v0 + 5));
 a2 = (uint32_t)c->mem_r16((at + 6));
-{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } if (_t) goto L_80025DB8; }
+{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80025DB8; }
 v1 = c->mem_r32((at + 8));
 a0 = c->lo;
 at = at + a0;
@@ -286,6 +297,7 @@ at = at + (uint32_t)28;
 at = at + s1;
 a2 = 0xFFu << 16;
 a2 = a2 | 65535u;
+rec_guest_instruction_ticks(c, 11u);
 L_80025D90:;
 if (c->pending_work) rec_irq_poll(c);
 a0 = c->mem_r32(v1);
@@ -294,8 +306,8 @@ a1 = a0 >> 22;
 a1 = a1 & 0x3FCu;
 at = at + a1;
 a0 = a0 & a2;
-{ int _t = (v1 != v0); c->mem_w32(at, a0); if (_t) goto L_80025D90; }
-goto L_80025E5C;
+{ int _t = (v1 != v0); c->mem_w32(at, a0); rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80025D90; }
+rec_guest_instruction_ticks(c, 2u); goto L_80025E5C;
 L_80025DB8:;
 v1 = c->mem_r32((at + 8));
 v0 = (uint32_t)c->mem_r8((v0 + 6));
@@ -316,6 +328,7 @@ at = at + (uint32_t)28;
 at = at + s1;
 a2 = c->mem_r32(v1);
 a3 = c->mem_r32(a0);
+rec_guest_instruction_ticks(c, 19u);
 L_80025E04:;
 if (c->pending_work) rec_irq_poll(c);
 t0 = a2 & a1;
@@ -338,10 +351,10 @@ v1 = v1 + (uint32_t)4;
 a0 = a0 + (uint32_t)4;
 at = at + t0;
 t1 = gte_read_data(22);
-{ int _t = (v0 != v1); c->mem_w32(at, t1); if (_t) goto L_80025E04; }
+{ int _t = (v0 != v1); c->mem_w32(at, t1); rec_guest_instruction_ticks(c, 22u); if (_t) goto L_80025E04; }
 L_80025E5C:;
 at = gp << 8;
-{ int _t = ((int32_t)at < 0); at = at >> 24; if (_t) goto L_80025FD0; }
+{ int _t = ((int32_t)at < 0); at = at >> 24; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80025FD0; }
 c->mem_w8((s1 + 26), (uint8_t)sp);
 v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 36));
@@ -355,7 +368,7 @@ v0 = v0 + v1;
 a1 = (uint32_t)c->mem_r8((v0 + 4));
 v1 = (uint32_t)c->mem_r8((v0 + 5));
 a2 = (uint32_t)c->mem_r16((at + 6));
-{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } if (_t) goto L_80025EEC; }
+{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80025EEC; }
 v1 = c->mem_r32((at + 8));
 a0 = c->lo;
 at = at + a0;
@@ -365,14 +378,15 @@ a2 = (uint32_t)c->mem_r8((s1 + 23));
 at = s1 + (uint32_t)28;
 a2 = a2 << 2;
 at = at + a2;
+rec_guest_instruction_ticks(c, 9u);
 L_80025ED0:;
 if (c->pending_work) rec_irq_poll(c);
 gte_hold_src(c, 4, v1);
 a0 = c->mem_r32(v1);
 v1 = v1 + (uint32_t)4;
 at = at + (uint32_t)4;
-{ int _t = (v1 != v0); c->mem_w32((at - 4), a0); gte_copy_pz(c, 4, (at - 4)); if (_t) goto L_80025ED0; }
-goto L_80025FD0;
+{ int _t = (v1 != v0); c->mem_w32((at - 4), a0); gte_copy_pz(c, 4, (at - 4)); rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80025ED0; }
+rec_guest_instruction_ticks(c, 2u); goto L_80025FD0;
 L_80025EEC:;
 a1 = a1 << 4;
 gte_write_data(8, a1);
@@ -401,6 +415,7 @@ t2 = a2 & 0x3FFu;
 gte_write_data(9, t0);
 gte_write_data(10, t1);
 gte_write_data(11, t2);
+rec_guest_instruction_ticks(c, 28u);
 L_80025F5C:;
 if (c->pending_work) rec_irq_poll(c);
 t0 = a3 >> 21;
@@ -430,9 +445,9 @@ t0 = t0 << 21;
 t1 = t1 << 10;
 t0 = t0 + t1;
 t0 = t0 + t2;
-{ int _t = (v0 != v1); c->mem_w32((at - 4), t0); if (_t) goto L_80025F5C; }
+{ int _t = (v0 != v1); c->mem_w32((at - 4), t0); rec_guest_instruction_ticks(c, 29u); if (_t) goto L_80025F5C; }
 L_80025FD0:;
-{ int _t = ((int32_t)gp < 0); at = gp >> 24; if (_t) goto L_800259FC; }
+{ int _t = ((int32_t)gp < 0); at = gp >> 24; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800259FC; }
 c->mem_w8((s1 + 27), (uint8_t)sp);
 v0 = kEnvironmentAnimations;
 v0 = c->mem_r32((v0 + 44));
@@ -446,7 +461,7 @@ v0 = v0 + v1;
 a1 = (uint32_t)c->mem_r8((v0 + 4));
 v1 = (uint32_t)c->mem_r8((v0 + 5));
 a2 = (uint32_t)c->mem_r16((at + 6));
-{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } if (_t) goto L_80026098; }
+{ int _t = ((int32_t)a1 > 0); { int64_t _p = (int64_t)(int32_t)v1 * (int64_t)(int32_t)a2; c->lo = (uint32_t)_p; c->hi = (uint32_t)((uint64_t)_p >> 32); } rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80026098; }
 v1 = c->mem_r32((at + 8));
 a0 = c->lo;
 at = at + a0;
@@ -465,6 +480,7 @@ a2 = a2 & 0x3FCu;
 v0 = at + a2;
 a1 = 0xFFu << 16;
 a1 = a1 | 65535u;
+rec_guest_instruction_ticks(c, 18u);
 L_80026064:;
 if (c->pending_work) rec_irq_poll(c);
 a2 = c->mem_r32(v1);
@@ -477,8 +493,8 @@ at = at + t1;
 v0 = v0 + t1;
 a2 = a2 & a1;
 c->mem_w32(at, a2);
-{ int _t = (v1 != a0); c->mem_w32(v0, a3); gte_copy_pz(c, 7, v0); if (_t) goto L_80026064; }
-goto L_800259FC;
+{ int _t = (v1 != a0); c->mem_w32(v0, a3); gte_copy_pz(c, 7, v0); rec_guest_instruction_ticks(c, 11u); if (_t) goto L_80026064; }
+rec_guest_instruction_ticks(c, 2u); goto L_800259FC;
 L_80026098:;
 v1 = c->mem_r32((at + 8));
 v0 = (uint32_t)c->mem_r8((v0 + 6));
@@ -506,6 +522,7 @@ a3 = a3 & 0x3FCu;
 v0 = at + a3;
 a2 = 0xFFu << 16;
 a2 = a2 | 65535u;
+rec_guest_instruction_ticks(c, 26u);
 L_80026100:;
 if (c->pending_work) rec_irq_poll(c);
 t2 = t0 & a2;
@@ -544,8 +561,8 @@ t0 = c->mem_r32(v1);
 t1 = c->mem_r32(a0);
 t2 = gte_read_data(22);
 v0 = v0 + a3;
-{ int _t = (v1 != a1); c->mem_w32(v0, t2); if (_t) goto L_80026100; }
-goto L_800259FC;
+{ int _t = (v1 != a1); c->mem_w32(v0, t2); rec_guest_instruction_ticks(c, 38u); if (_t) goto L_80026100; }
+rec_guest_instruction_ticks(c, 2u); goto L_800259FC;
 L_800261A0:;
 c->mem_w32(s0, zero);
 c->mem_w32(t7, zero);
@@ -565,7 +582,7 @@ at = c->mem_r32(at);
 ra = kWorkList;
 ra = ra + (uint32_t)8192;
 fp = kPoolPtr;
-{ int _t = (at != zero); fp = c->mem_r32(fp); if (_t) goto L_80026788; }
+{ int _t = (at != zero); fp = c->mem_r32(fp); rec_guest_instruction_ticks(c, 24u); if (_t) goto L_80026788; }
 at = kEnvironment;
 gp = kOtBase;
 s2 = c->mem_r32((at + 40));
@@ -574,11 +591,12 @@ gp = c->mem_r32(gp);
 s2 = s2 >> 7;
 s3 = s3 >> 7;
 s3 = s3 + (uint32_t)-32;
+rec_guest_instruction_ticks(c, 10u);
 L_80026228:;
 if (c->pending_work) rec_irq_poll(c);
 t7 = c->mem_r32(ra);
 ra = ra + (uint32_t)4;
-{ int _t = (t7 == zero); s1 = t7 & 0x1u; if (_t) goto L_80026788; }
+{ int _t = (t7 == zero); s1 = t7 & 0x1u; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80026788; }
 t7 = t7 ^ s1;
 at = c->mem_r32((t7 + 8));
 s6 = (uint32_t)c->mem_r16((t7 + 14));
@@ -613,6 +631,7 @@ gte_write_data(1, v0);
 gte_write_data(0, v1);
 at = c->mem_r32(t7);
 t7 = t7 + (uint32_t)4;
+rec_guest_instruction_ticks(c, 34u);
 L_800262C0:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x800262C0u);
@@ -631,31 +650,34 @@ gte_write_data(0, v1);
 v0 = gte_read_data(14);
 gte_hold_pz(c, 2, 19);
 v1 = gte_read_data(19);
-{ int _t = ((int32_t)s1 > 0); t7 = t7 + (uint32_t)4; if (_t) goto L_8002631C; }
+{ int _t = ((int32_t)s1 > 0); t7 = t7 + (uint32_t)4; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_8002631C; }
 c->mem_w32(sp, v0);
 gte_record_pz(c, sp, 2);
 c->mem_w32((sp + 4), v1);
-{ int _t = (t7 != s0); sp = sp + (uint32_t)8; if (_t) goto L_800262C0; }
-goto L_80026364;
+{ int _t = (t7 != s0); sp = sp + (uint32_t)8; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_800262C0; }
+rec_guest_instruction_ticks(c, 2u); goto L_80026364;
 L_8002631C:;
 a0 = v0 << 5;
 a1 = v0 - t2;
-{ int _t = ((int32_t)a1 > 0); a1 = v0 - t3; if (_t) goto L_80026330; }
+{ int _t = ((int32_t)a1 > 0); a1 = v0 - t3; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80026330; }
 a0 = a0 + (uint32_t)1;
+rec_guest_instruction_ticks(c, 1u);
 L_80026330:;
-{ int _t = ((int32_t)a1 < 0); a1 = v0 & 0xFE00u; if (_t) goto L_8002633C; }
+{ int _t = ((int32_t)a1 < 0); a1 = v0 & 0xFE00u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002633C; }
 a0 = a0 + (uint32_t)2;
+rec_guest_instruction_ticks(c, 1u);
 L_8002633C:;
-{ int _t = (a1 == zero); c->mem_w32((sp + 4), v1); if (_t) goto L_80026348; }
+{ int _t = (a1 == zero); c->mem_w32((sp + 4), v1); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026348; }
 a0 = a0 + (uint32_t)4;
+rec_guest_instruction_ticks(c, 1u);
 L_80026348:;
 t6 = t6 & a0;
 c->mem_w32(sp, a0);
 //@ DEPTH: record this vertex's Z against its scratchpad slot. The recompiler's pz tap missed this arm — see native_world.cpp. a0 is (SXY2 << 5) | clipcode, derived from the same mfc2 whose SZ3 slot 2 already holds (gte_hold_pz at 0x800262E8), and sp is this vertex's 8-byte cache slot, so this is the same record the fall-through arm gets at 0x800262F8.
 /*@hook*/ gte_record_pz(c, sp, 2);
-{ int _t = (t7 != s0); sp = sp + (uint32_t)8; if (_t) goto L_800262C0; }
+{ int _t = (t7 != s0); sp = sp + (uint32_t)8; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_800262C0; }
 t6 = t6 & 0xFu;
-{ int _t = (t6 != zero);  if (_t) goto L_80026228; }
+{ int _t = (t6 != zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026228; }
 L_80026364:;
 s4 = s0 + (uint32_t)-8;
 s5 = t5 >> 6;
@@ -668,9 +690,10 @@ s6 = s6 + s5;
 t7 = 0x600u << 16;
 s0 = 0x800u << 16;
 sp = 0x1F80u << 16;
+rec_guest_instruction_ticks(c, 11u);
 L_80026390:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (s5 == s6); t6 = c->mem_r32((s5 + 4)); if (_t) goto L_80026228; }
+{ int _t = (s5 == s6); t6 = c->mem_r32((s5 + 4)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026228; }
 t1 = t5 >> 23;
 t1 = t1 & 0x1F8u;
 t2 = t5 >> 17;
@@ -679,7 +702,7 @@ t3 = t5 >> 11;
 t3 = t3 & 0x1F8u;
 t4 = t5 >> 5;
 t4 = t4 & 0x1F8u;
-{ int _t = (t3 == t4); t1 = t1 + sp; if (_t) goto L_800265D0; }
+{ int _t = (t3 == t4); t1 = t1 + sp; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_800265D0; }
 t2 = t2 + sp;
 t3 = t3 + sp;
 t4 = t4 + sp;
@@ -689,15 +712,16 @@ gte_hold_src(c, 2, t2);
 v0 = c->mem_r32(t2);
 gte_hold_src(c, 3, t3);
 v1 = c->mem_r32(t3);
-{ int _t = (s1 == zero); gte_hold_src(c, 4, t4); a0 = c->mem_r32(t4); if (_t) goto L_80026404; }
+{ int _t = (s1 == zero); gte_hold_src(c, 4, t4); a0 = c->mem_r32(t4); rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80026404; }
 a1 = at & v0;
 a1 = a1 & v1;
 a1 = a1 & a0;
 a1 = a1 & 0xFu;
-{ int _t = ((int32_t)a1 > 0); at = (uint32_t)((int32_t)at >> 5); if (_t) goto L_8002677C; }
+{ int _t = ((int32_t)a1 > 0); at = (uint32_t)((int32_t)at >> 5); rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002677C; }
 v0 = (uint32_t)((int32_t)v0 >> 5);
 v1 = (uint32_t)((int32_t)v1 >> 5);
 a0 = (uint32_t)((int32_t)a0 >> 5);
+rec_guest_instruction_ticks(c, 3u);
 L_80026404:;
 gte_write_data(12, at);
 gte_write_data(13, v0);
@@ -714,29 +738,31 @@ a3 = t5 & 0x80u;
 a2 = t5 & 0x1Fu;
 a1 = gte_read_data(24);
 gte_write_data(12, a0);
-{ int _t = ((int32_t)a1 > 0); s5 = s5 + (uint32_t)8; if (_t) goto L_8002647C; }
+{ int _t = ((int32_t)a1 > 0); s5 = s5 + (uint32_t)8; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_8002647C; }
 gte_op_at(c, 0x4B400006u, 0x80026448u);
 t5 = c->mem_r32(s5);
-{ int _t = ((int32_t)a3 > 0); t0 = t0 >> 5; if (_t) goto L_80026484; }
+{ int _t = ((int32_t)a3 > 0); t0 = t0 >> 5; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80026484; }
 a1 = t0 - s2;
-{ int _t = ((int32_t)a1 >= 0); a2 = a2 << 3; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a1 >= 0); a2 = a2 << 3; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026390; }
 a3 = gte_read_data(24);
 a1 = a2 + t0;
-{ int _t = ((int32_t)a3 >= 0); a1 = a1 - s3; if (_t) goto L_80026390; }
-a3 = t6 >> 24; goto L_8002649C;
+{ int _t = ((int32_t)a3 >= 0); a1 = a1 - s3; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80026390; }
+a3 = t6 >> 24; rec_guest_instruction_ticks(c, 2u); goto L_8002649C;
 L_8002647C:;
 t5 = c->mem_r32(s5);
 t0 = t0 >> 5;
+rec_guest_instruction_ticks(c, 2u);
 L_80026484:;
 a1 = t0 - s2;
-{ int _t = ((int32_t)a1 >= 0); a2 = a2 << 3; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a1 >= 0); a2 = a2 << 3; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026390; }
 a1 = a2 + t0;
 a1 = a1 - s3;
 a3 = t6 >> 24;
+rec_guest_instruction_ticks(c, 3u);
 L_8002649C:;
-{ int _t = ((int32_t)a1 >= 0); a3 = a3 & 0xFCu; if (_t) goto L_800264D4; }
+{ int _t = ((int32_t)a1 >= 0); a3 = a3 & 0xFCu; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800264D4; }
 a1 = a1 + (uint32_t)32;
-{ int _t = ((int32_t)a1 <= 0); a2 = s3 - a2; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a1 <= 0); a2 = s3 - a2; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026390; }
 a2 = a2 << 3;
 t1 = t1 - a2;
 t2 = t2 - a2;
@@ -745,9 +771,9 @@ t4 = t4 - a2;
 a2 = t1 & t2;
 a2 = a2 & t3;
 a2 = a2 & t4;
-{ int _t = ((int32_t)a2 < 0); a3 = a3 + s4; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a2 < 0); a3 = a3 + s4; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80026390; }
 goto L_DSAFTER_800264D0;
-L_800264D4:; a3 = a3 + s4;
+L_800264D4:; a3 = a3 + s4; rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_800264D0:;
 t1 = c->mem_r32(a3);
 t2 = t6 >> 18;
@@ -771,7 +797,7 @@ t0 = t0 + gp;
 a3 = t6 & 0x4u;
 gte_hold_src(c, 12, t4);
 t4 = c->mem_r32(t4);
-{ int _t = (a3 == zero); a2 = (uint32_t)14336u << 16; if (_t) goto L_8002657C; }
+{ int _t = (a3 == zero); a2 = (uint32_t)14336u << 16; rec_guest_instruction_ticks(c, 21u); if (_t) goto L_8002657C; }
 a1 = 0x200u << 16;
 a2 = a2 + a1;
 c->mem_w32(fp, a1);
@@ -784,13 +810,14 @@ a1 = zero | 57600u;
 c->mem_w16((fp + 6), (uint16_t)a1);
 a1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (a1 == zero); a3 = fp >> 16; if (_t) goto L_80026574; }
+{ int _t = (a1 == zero); a3 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80026574; }
 c->mem_w16(a1, (uint16_t)fp);
 c->mem_w8((a1 + 2), (uint8_t)a3);
-fp = fp + (uint32_t)12; goto L_8002657C;
+fp = fp + (uint32_t)12; rec_guest_instruction_ticks(c, 4u); goto L_8002657C;
 L_80026574:;
 c->mem_w32((t0 + 4), fp);
 fp = fp + (uint32_t)12;
+rec_guest_instruction_ticks(c, 2u);
 L_8002657C:;
 t1 = t1 + a2;
 c->mem_w32(fp, s0);
@@ -811,13 +838,13 @@ c->mem_w32((fp + 32), a0);
 gte_copy_pz(c, 4, (fp + 32));
 at = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (at == zero); v0 = fp >> 16; if (_t) goto L_800265C4; }
+{ int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_800265C4; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
-fp = fp + (uint32_t)36; goto L_80026390;
+fp = fp + (uint32_t)36; rec_guest_instruction_ticks(c, 4u); goto L_80026390;
 L_800265C4:;
 c->mem_w32((t0 + 4), fp);
-fp = fp + (uint32_t)36; goto L_80026390;
+fp = fp + (uint32_t)36; rec_guest_instruction_ticks(c, 3u); goto L_80026390;
 L_800265D0:;
 t2 = t2 + sp;
 t3 = t3 + sp;
@@ -825,13 +852,14 @@ gte_hold_src(c, 1, t1);
 at = c->mem_r32(t1);
 gte_hold_src(c, 2, t2);
 v0 = c->mem_r32(t2);
-{ int _t = (s1 == zero); gte_hold_src(c, 3, t3); v1 = c->mem_r32(t3); if (_t) goto L_80026604; }
+{ int _t = (s1 == zero); gte_hold_src(c, 3, t3); v1 = c->mem_r32(t3); rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80026604; }
 a1 = at & v0;
 a1 = a1 & v1;
 a1 = a1 & 0x1Fu;
-{ int _t = ((int32_t)a1 > 0); at = (uint32_t)((int32_t)at >> 5); if (_t) goto L_8002677C; }
+{ int _t = ((int32_t)a1 > 0); at = (uint32_t)((int32_t)at >> 5); rec_guest_instruction_ticks(c, 5u); if (_t) goto L_8002677C; }
 v0 = (uint32_t)((int32_t)v0 >> 5);
 v1 = (uint32_t)((int32_t)v1 >> 5);
+rec_guest_instruction_ticks(c, 2u);
 L_80026604:;
 gte_write_data(12, at);
 gte_write_data(13, v0);
@@ -848,28 +876,28 @@ t4 = t4 & 0xFCu;
 a1 = gte_read_data(24);
 t1 = c->mem_r32((t1 + 4));
 a1 = a1 + a3;
-{ int _t = ((int32_t)a1 <= 0); t2 = c->mem_r32((t2 + 4)); if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a1 <= 0); t2 = c->mem_r32((t2 + 4)); rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80026390; }
 t3 = c->mem_r32((t3 + 4));
 t0 = t1 + t2;
 t0 = t0 + t3;
 t0 = t0 + t3;
 t0 = t0 >> 5;
 a1 = t0 - s2;
-{ int _t = ((int32_t)a1 >= 0); t4 = t4 + s4; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a1 >= 0); t4 = t4 + s4; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80026390; }
 t4 = c->mem_r32(t4);
 a1 = a2 + t0;
 a1 = a1 - s3;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)32; if (_t) goto L_800266A0; }
-{ int _t = ((int32_t)a1 <= 0); a2 = s3 - a2; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)32; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_800266A0; }
+{ int _t = ((int32_t)a1 <= 0); a2 = s3 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026390; }
 a2 = a2 << 3;
 t1 = t1 - a2;
 t2 = t2 - a2;
 t3 = t3 - a2;
 a2 = t1 & t2;
 a2 = a2 & t3;
-{ int _t = ((int32_t)a2 < 0); t2 = t6 >> 18; if (_t) goto L_80026390; }
+{ int _t = ((int32_t)a2 < 0); t2 = t6 >> 18; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80026390; }
 goto L_DSAFTER_8002669C;
-L_800266A0:; t2 = t6 >> 18;
+L_800266A0:; t2 = t6 >> 18; rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_8002669C:;
 t2 = t2 & 0xFCu;
 t2 = t2 + s4;
@@ -886,7 +914,7 @@ t0 = t0 + (uint32_t)64;
 t0 = t0 << 3;
 t0 = t0 + gp;
 a3 = t6 & 0x4u;
-{ int _t = (a3 == zero); a2 = (uint32_t)12288u << 16; if (_t) goto L_80026730; }
+{ int _t = (a3 == zero); a2 = (uint32_t)12288u << 16; rec_guest_instruction_ticks(c, 15u); if (_t) goto L_80026730; }
 a1 = 0x200u << 16;
 a2 = a2 + a1;
 c->mem_w32(fp, a1);
@@ -899,13 +927,14 @@ a1 = zero | 57600u;
 c->mem_w16((fp + 6), (uint16_t)a1);
 a1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (a1 == zero); a3 = fp >> 16; if (_t) goto L_80026728; }
+{ int _t = (a1 == zero); a3 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80026728; }
 c->mem_w16(a1, (uint16_t)fp);
 c->mem_w8((a1 + 2), (uint8_t)a3);
-fp = fp + (uint32_t)12; goto L_80026730;
+fp = fp + (uint32_t)12; rec_guest_instruction_ticks(c, 4u); goto L_80026730;
 L_80026728:;
 c->mem_w32((t0 + 4), fp);
 fp = fp + (uint32_t)12;
+rec_guest_instruction_ticks(c, 2u);
 L_80026730:;
 c->mem_w32(fp, t7);
 t4 = t4 + a2;
@@ -922,16 +951,16 @@ c->mem_w32((fp + 24), v1);
 gte_copy_pz(c, 3, (fp + 24));
 at = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (at == zero); v0 = fp >> 16; if (_t) goto L_80026770; }
+{ int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 12u); if (_t) goto L_80026770; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
-fp = fp + (uint32_t)28; goto L_80026390;
+fp = fp + (uint32_t)28; rec_guest_instruction_ticks(c, 4u); goto L_80026390;
 L_80026770:;
 c->mem_w32((t0 + 4), fp);
-fp = fp + (uint32_t)28; goto L_80026390;
+fp = fp + (uint32_t)28; rec_guest_instruction_ticks(c, 3u); goto L_80026390;
 L_8002677C:;
 t5 = c->mem_r32((s5 + 8));
-s5 = s5 + (uint32_t)8; goto L_80026390;
+s5 = s5 + (uint32_t)8; rec_guest_instruction_ticks(c, 3u); goto L_80026390;
 L_80026788:;
 at = kOtBase;
 s4 = c->mem_r32(at);
@@ -952,11 +981,12 @@ v1 = v1 >> 2;
 gte_write_ctrl(13, at);
 gte_write_ctrl(14, v0);
 gte_write_ctrl(15, v1);
+rec_guest_instruction_ticks(c, 23u);
 L_800267E4:;
 if (c->pending_work) rec_irq_poll(c);
 t9 = c->mem_r32(ra);
 ra = ra + (uint32_t)4;
-{ int _t = (t9 == zero); s1 = t9 & 0x3u; if (_t) goto L_80027688; }
+{ int _t = (t9 == zero); s1 = t9 & 0x3u; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80027688; }
 t9 = t9 ^ s1;
 at = c->mem_r32((t9 + 8));
 v1 = gte_read_ctrl(13);
@@ -1005,8 +1035,8 @@ v1 = v1 + a0;
 gte_write_data(1, v0);
 gte_write_data(0, v1);
 v0 = s1 & 0x2u;
-{ int _t = ((int32_t)v0 > 0); t7 = t7 + (uint32_t)4; if (_t) goto L_800269CC; }
-{ int _t = ((int32_t)s1 > 0);  if (_t) goto L_80026930; }
+{ int _t = ((int32_t)v0 > 0); t7 = t7 + (uint32_t)4; rec_guest_instruction_ticks(c, 51u); if (_t) goto L_800269CC; }
+{ int _t = ((int32_t)s1 > 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026930; }
 L_800268C8:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x800268C8u);
@@ -1032,9 +1062,9 @@ c->mem_w32(s7, v0);
 gte_record_pz(c, s7, 2);
 c->mem_w16(t8, (uint16_t)v1);
 s7 = s7 + (uint32_t)4;
-{ int _t = (t7 != s0); t8 = t8 + (uint32_t)2; if (_t) goto L_800268C8; }
+{ int _t = (t7 != s0); t8 = t8 + (uint32_t)2; rec_guest_instruction_ticks(c, 23u); if (_t) goto L_800268C8; }
 s6 = s6 << 1;
-s6 = s6 >> 1; goto L_80026B48;
+s6 = s6 >> 1; rec_guest_instruction_ticks(c, 3u); goto L_80026B48;
 L_80026930:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x80026930u);
@@ -1058,23 +1088,26 @@ gte_hold_pz(c, 4, 19);
 a1 = gte_read_data(19);
 v0 = a0 << 5;
 v1 = a0 - t1;
-{ int _t = ((int32_t)v1 > 0); v1 = a0 - t2; if (_t) goto L_8002698C; }
+{ int _t = ((int32_t)v1 > 0); v1 = a0 - t2; rec_guest_instruction_ticks(c, 22u); if (_t) goto L_8002698C; }
 v0 = v0 + (uint32_t)1;
+rec_guest_instruction_ticks(c, 1u);
 L_8002698C:;
-{ int _t = ((int32_t)v1 < 0); v1 = a0 & 0xFE00u; if (_t) goto L_80026998; }
+{ int _t = ((int32_t)v1 < 0); v1 = a0 & 0xFE00u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026998; }
 v0 = v0 + (uint32_t)2;
+rec_guest_instruction_ticks(c, 1u);
 L_80026998:;
-{ int _t = (v1 == zero); c->mem_w16(t8, (uint16_t)a1); if (_t) goto L_800269A4; }
+{ int _t = (v1 == zero); c->mem_w16(t8, (uint16_t)a1); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800269A4; }
 v0 = v0 + (uint32_t)12;
+rec_guest_instruction_ticks(c, 1u);
 L_800269A4:;
 t0 = t0 & v0;
 c->mem_w32(s7, v0);
 gte_record_pz(c, s7, 4);
 s7 = s7 + (uint32_t)4;
-{ int _t = (t7 != s0); t8 = t8 + (uint32_t)2; if (_t) goto L_80026930; }
+{ int _t = (t7 != s0); t8 = t8 + (uint32_t)2; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80026930; }
 t0 = t0 & 0xFu;
-{ int _t = (t0 != zero);  if (_t) goto L_800267E4; }
-goto L_80026B48;
+{ int _t = (t0 != zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800267E4; }
+rec_guest_instruction_ticks(c, 2u); goto L_80026B48;
 L_800269CC:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x800269CCu);
@@ -1094,17 +1127,17 @@ t7 = t7 + (uint32_t)4;
 a1 = gte_read_data(19);
 a0 = gte_read_data(14);
 a2 = a1 + (uint32_t)-1536;
-{ int _t = ((int32_t)a2 >= 0); s7 = s7 + (uint32_t)4; if (_t) goto L_80026AF8; }
+{ int _t = ((int32_t)a2 >= 0); s7 = s7 + (uint32_t)4; rec_guest_instruction_ticks(c, 19u); if (_t) goto L_80026AF8; }
 a2 = a1 + (uint32_t)-256;
-{ int _t = ((int32_t)a2 >= 0); t8 = t8 + (uint32_t)2; if (_t) goto L_80026A8C; }
-{ int _t = (a2 == zero);  if (_t) goto L_80026A8C; }
+{ int _t = ((int32_t)a2 >= 0); t8 = t8 + (uint32_t)2; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026A8C; }
+{ int _t = (a2 == zero);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026A8C; }
 a2 = gte_read_data(25);
 a3 = gte_read_data(26);
 a2 = a2 + (uint32_t)256;
-{ int _t = ((int32_t)a2 <= 0); a2 = a2 + (uint32_t)-512; if (_t) goto L_80026A8C; }
-{ int _t = ((int32_t)a2 >= 0); a3 = a3 + (uint32_t)256; if (_t) goto L_80026A8C; }
-{ int _t = ((int32_t)a3 <= 0); a3 = a3 + (uint32_t)-512; if (_t) goto L_80026A8C; }
-{ int _t = ((int32_t)a3 >= 0);  if (_t) goto L_80026A8C; }
+{ int _t = ((int32_t)a2 <= 0); a2 = a2 + (uint32_t)-512; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80026A8C; }
+{ int _t = ((int32_t)a2 >= 0); a3 = a3 + (uint32_t)256; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026A8C; }
+{ int _t = ((int32_t)a3 <= 0); a3 = a3 + (uint32_t)-512; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026A8C; }
+{ int _t = ((int32_t)a3 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026A8C; }
 a2 = gte_read_data(1);
 a3 = gte_read_data(0);
 a2 = a2 << 4;
@@ -1116,50 +1149,59 @@ a3 = a3 & a2;
 gte_write_data(0, a3);
 gte_op_at(c, 0x4A180001u, 0x80026A84u);
 a0 = gte_read_data(14);
+rec_guest_instruction_ticks(c, 13u);
 L_80026A8C:;
 a2 = gte_read_ctrl(31);
 gte_write_data(1, v0);
 gte_write_data(0, v1);
 v0 = a0 << 5;
-{ int _t = ((int32_t)a2 >= 0); v1 = a0 - t1; if (_t) goto L_80026AA8; }
+{ int _t = ((int32_t)a2 >= 0); v1 = a0 - t1; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80026AA8; }
 v0 = v0 + (uint32_t)16;
+rec_guest_instruction_ticks(c, 1u);
 L_80026AA8:;
-{ int _t = ((int32_t)v1 > 0); v1 = a0 - t2; if (_t) goto L_80026AB4; }
+{ int _t = ((int32_t)v1 > 0); v1 = a0 - t2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026AB4; }
 v0 = v0 + (uint32_t)1;
+rec_guest_instruction_ticks(c, 1u);
 L_80026AB4:;
-{ int _t = ((int32_t)v1 < 0); v1 = a0 << 16; if (_t) goto L_80026AC0; }
+{ int _t = ((int32_t)v1 < 0); v1 = a0 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026AC0; }
 v0 = v0 + (uint32_t)2;
+rec_guest_instruction_ticks(c, 1u);
 L_80026AC0:;
-{ int _t = ((int32_t)v1 > 0); v1 = v1 - t3; if (_t) goto L_80026ACC; }
+{ int _t = ((int32_t)v1 > 0); v1 = v1 - t3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026ACC; }
 v0 = v0 + (uint32_t)4;
+rec_guest_instruction_ticks(c, 1u);
 L_80026ACC:;
-{ int _t = ((int32_t)v1 < 0); c->mem_w16((t8 - 2), (uint16_t)a1); if (_t) goto L_80026AD8; }
+{ int _t = ((int32_t)v1 < 0); c->mem_w16((t8 - 2), (uint16_t)a1); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026AD8; }
 v0 = v0 + (uint32_t)8;
+rec_guest_instruction_ticks(c, 1u);
 L_80026AD8:;
 t0 = t0 & v0;
-{ int _t = (t7 != s0); c->mem_w32((s7 - 4), v0); if (_t) goto L_800269CC; }
+{ int _t = (t7 != s0); c->mem_w32((s7 - 4), v0); rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800269CC; }
 t0 = t0 & 0xFu;
-{ int _t = (t0 != zero);  if (_t) goto L_800267E4; }
-goto L_80026B48;
+{ int _t = (t0 != zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800267E4; }
+rec_guest_instruction_ticks(c, 2u); goto L_80026B48;
 L_80026AF8:;
 t8 = t8 + (uint32_t)2;
 gte_write_data(1, v0);
 gte_write_data(0, v1);
 v0 = a0 << 5;
 v1 = a0 - t1;
-{ int _t = ((int32_t)v1 > 0); v1 = a0 - t2; if (_t) goto L_80026B18; }
+{ int _t = ((int32_t)v1 > 0); v1 = a0 - t2; rec_guest_instruction_ticks(c, 7u); if (_t) goto L_80026B18; }
 v0 = v0 + (uint32_t)1;
+rec_guest_instruction_ticks(c, 1u);
 L_80026B18:;
-{ int _t = ((int32_t)v1 < 0); v1 = a0 & 0xFE00u; if (_t) goto L_80026B24; }
+{ int _t = ((int32_t)v1 < 0); v1 = a0 & 0xFE00u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026B24; }
 v0 = v0 + (uint32_t)2;
+rec_guest_instruction_ticks(c, 1u);
 L_80026B24:;
-{ int _t = (v1 == zero); c->mem_w16((t8 - 2), (uint16_t)a1); if (_t) goto L_80026B30; }
+{ int _t = (v1 == zero); c->mem_w16((t8 - 2), (uint16_t)a1); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026B30; }
 v0 = v0 + (uint32_t)12;
+rec_guest_instruction_ticks(c, 1u);
 L_80026B30:;
 t0 = t0 & v0;
-{ int _t = (t7 != s0); c->mem_w32((s7 - 4), v0); if (_t) goto L_800269CC; }
+{ int _t = (t7 != s0); c->mem_w32((s7 - 4), v0); rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800269CC; }
 t0 = t0 & 0xFu;
-{ int _t = (t0 != zero);  if (_t) goto L_800267E4; }
+{ int _t = (t0 != zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800267E4; }
 L_80026B48:;
 t7 = s0 + (uint32_t)-8;
 s1 = s2 >> 6;
@@ -1172,9 +1214,10 @@ s2 = s2 & 0xFF0u;
 s2 = s2 + s1;
 s7 = 0x1F80u << 16;
 t8 = s7 + (uint32_t)680;
+rec_guest_instruction_ticks(c, 11u);
 L_80026B74:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (s1 == s2); at = t6 >> 22; if (_t) goto L_800267E4; }
+{ int _t = (s1 == s2); at = t6 >> 22; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800267E4; }
 v0 = t6 >> 14;
 v1 = t6 >> 6;
 a0 = t6 << 2;
@@ -1183,8 +1226,8 @@ at = at & 0x3FCu;
 v0 = v0 & 0x3FCu;
 v1 = v1 & 0x3FCu;
 a0 = a0 & 0x3FCu;
-{ int _t = (v1 == a0); s1 = s1 + (uint32_t)16; if (_t) goto L_80027168; }
-{ int _t = ((int32_t)s6 > 0); s6 = s6 + (uint32_t)1; if (_t) goto L_80026C08; }
+{ int _t = (v1 == a0); s1 = s1 + (uint32_t)16; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80027168; }
+{ int _t = ((int32_t)s6 > 0); s6 = s6 + (uint32_t)1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026C08; }
 a1 = at + s7;
 a2 = v0 + s7;
 a3 = v1 + s7;
@@ -1197,7 +1240,7 @@ t1 = a1 & a2;
 t1 = t1 & a3;
 t1 = t1 & t0;
 t1 = t1 & 0xFu;
-{ int _t = ((int32_t)t1 > 0); t1 = a1 | a2; if (_t) goto L_80026B74; }
+{ int _t = ((int32_t)t1 > 0); t1 = a1 | a2; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80026B74; }
 t1 = t1 | a3;
 t1 = t1 | t0;
 t5 = c->mem_r32((s1 - 4));
@@ -1205,7 +1248,7 @@ a1 = (uint32_t)((int32_t)a1 >> 5);
 a2 = (uint32_t)((int32_t)a2 >> 5);
 a3 = (uint32_t)((int32_t)a3 >> 5);
 t0 = (uint32_t)((int32_t)t0 >> 5);
-t1 = t1 & 0x10u; goto L_80026C30;
+t1 = t1 & 0x10u; rec_guest_instruction_ticks(c, 9u); goto L_80026C30;
 L_80026C08:;
 t5 = c->mem_r32((s1 - 4));
 t1 = zero + (uint32_t)0;
@@ -1217,6 +1260,7 @@ a1 = c->mem_r32(a1);
 a2 = c->mem_r32(a2);
 a3 = c->mem_r32(a3);
 t0 = c->mem_r32(t0);
+rec_guest_instruction_ticks(c, 10u);
 L_80026C30:;
 gte_write_data(12, a1);
 gte_write_data(13, a2);
@@ -1229,57 +1273,62 @@ v0 = v0 + t8;
 v1 = v1 >> 1;
 v1 = v1 + t8;
 a0 = a0 >> 1;
-{ int _t = ((int32_t)t1 > 0); t4 = t5 & 0x2u; if (_t) goto L_80026CD8; }
+{ int _t = ((int32_t)t1 > 0); t4 = t5 & 0x2u; rec_guest_instruction_ticks(c, 13u); if (_t) goto L_80026CD8; }
 t2 = gte_read_data(24);
-{ int _t = (t4 == zero); a0 = a0 + t8; if (_t) goto L_80026C74; }
+{ int _t = (t4 == zero); a0 = a0 + t8; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026C74; }
 t2 = zero - t2;
+rec_guest_instruction_ticks(c, 1u);
 L_80026C74:;
-{ int _t = ((int32_t)t2 >= 0); at = (uint32_t)c->mem_r16(at); if (_t) goto L_80026CE0; }
+{ int _t = ((int32_t)t2 >= 0); at = (uint32_t)c->mem_r16(at); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026CE0; }
 gte_write_data(12, a3);
 v0 = (uint32_t)c->mem_r16(v0);
 v1 = (uint32_t)c->mem_r16(v1);
 gte_op_at(c, 0x4B400006u, 0x80026C88u);
 a0 = (uint32_t)c->mem_r16(a0);
 t2 = t5 & 0x4u;
-{ int _t = ((int32_t)t2 > 0); t2 = at + v0; if (_t) goto L_80026CF0; }
+{ int _t = ((int32_t)t2 > 0); t2 = at + v0; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80026CF0; }
 t2 = t2 + v1;
-{ int _t = ((int32_t)t4 > 0); t2 = t2 + a0; if (_t) goto L_80026CC0; }
+{ int _t = ((int32_t)t4 > 0); t2 = t2 + a0; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026CC0; }
 t4 = gte_read_data(24);
 t3 = s5 - t2;
-{ int _t = ((int32_t)t4 > 0);  if (_t) goto L_80026B74; }
-goto L_80026CFC;
+{ int _t = ((int32_t)t4 > 0);  rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80026B74; }
+rec_guest_instruction_ticks(c, 2u); goto L_80026CFC;
 L_80026CC0:;
 t4 = gte_read_data(24);
 t3 = s5 - t2;
-{ int _t = ((int32_t)t4 < 0);  if (_t) goto L_80026B74; }
-goto L_80026CFC;
+{ int _t = ((int32_t)t4 < 0);  rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80026B74; }
+rec_guest_instruction_ticks(c, 2u); goto L_80026CFC;
 L_80026CD8:;
 a0 = a0 + t8;
 at = (uint32_t)c->mem_r16(at);
+rec_guest_instruction_ticks(c, 2u);
 L_80026CE0:;
 v0 = (uint32_t)c->mem_r16(v0);
 v1 = (uint32_t)c->mem_r16(v1);
 a0 = (uint32_t)c->mem_r16(a0);
 t2 = at + v0;
+rec_guest_instruction_ticks(c, 4u);
 L_80026CF0:;
 t2 = t2 + v1;
 t2 = t2 + a0;
 t3 = s5 - t2;
+rec_guest_instruction_ticks(c, 3u);
 L_80026CFC:;
-{ int _t = ((int32_t)t3 <= 0); t3 = t2 + (uint32_t)-8192; if (_t) goto L_80026B74; }
-{ int _t = ((int32_t)t3 >= 0); t3 = t5 & 0x80u; if (_t) goto L_80026DB8; }
-{ int _t = ((int32_t)t3 > 0); t3 = at + (uint32_t)-320; if (_t) goto L_80026DB8; }
-{ int _t = ((int32_t)t3 < 0); t3 = v0 + (uint32_t)-320; if (_t) goto L_80026D70; }
-{ int _t = ((int32_t)t3 < 0); t3 = v1 + (uint32_t)-320; if (_t) goto L_80026D70; }
-{ int _t = ((int32_t)t3 < 0); t3 = a0 + (uint32_t)-320; if (_t) goto L_80026D70; }
-{ int _t = ((int32_t)t3 < 0); t3 = t5 & 0x40u; if (_t) goto L_80026D70; }
-{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; if (_t) goto L_80026DB8; }
+{ int _t = ((int32_t)t3 <= 0); t3 = t2 + (uint32_t)-8192; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026B74; }
+{ int _t = ((int32_t)t3 >= 0); t3 = t5 & 0x80u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026DB8; }
+{ int _t = ((int32_t)t3 > 0); t3 = at + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026DB8; }
+{ int _t = ((int32_t)t3 < 0); t3 = v0 + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026D70; }
+{ int _t = ((int32_t)t3 < 0); t3 = v1 + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026D70; }
+{ int _t = ((int32_t)t3 < 0); t3 = a0 + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026D70; }
+{ int _t = ((int32_t)t3 < 0); t3 = t5 & 0x40u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026D70; }
+{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026DB8; }
 L_80026D3C:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t3 > 0); t9 = t9 | 1u; if (_t) goto L_80026D50; }
+{ int _t = ((int32_t)t3 > 0); t9 = t9 | 1u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026D50; }
 t3 = t9 >> 2;
 c->mem_w32(gp, t3);
 gp = gp + (uint32_t)4;
+rec_guest_instruction_ticks(c, 3u);
 L_80026D50:;
 t3 = s1 + (uint32_t)-16;
 t1 = t1 >> 4;
@@ -1287,15 +1336,16 @@ t3 = t3 + t1;
 c->mem_w32(gp, t3);
 gp = gp + (uint32_t)4;
 t3 = zero + (uint32_t)2;
-c->mem_w8((s6 - 1), (uint8_t)t3); goto L_80026B74;
+c->mem_w8((s6 - 1), (uint8_t)t3); rec_guest_instruction_ticks(c, 8u); goto L_80026B74;
 L_80026D70:;
-{ int _t = (t2 == zero); t3 = t5 & 0x40u; if (_t) goto L_80026B74; }
-{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; if (_t) goto L_80026D3C; }
+{ int _t = (t2 == zero); t3 = t5 & 0x40u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026B74; }
+{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026D3C; }
 t3 = t9 & 0x2u;
-{ int _t = ((int32_t)t3 > 0); t9 = t9 | 2u; if (_t) goto L_80026D98; }
+{ int _t = ((int32_t)t3 > 0); t9 = t9 | 2u; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80026D98; }
 t3 = t9 >> 2;
 c->mem_w32(sp, t3);
 sp = sp + (uint32_t)4;
+rec_guest_instruction_ticks(c, 3u);
 L_80026D98:;
 t3 = s1 + (uint32_t)-16;
 t1 = t1 >> 4;
@@ -1303,7 +1353,7 @@ t3 = t3 + t1;
 c->mem_w32(sp, t3);
 sp = sp + (uint32_t)4;
 t3 = zero + (uint32_t)4;
-c->mem_w8((s6 - 1), (uint8_t)t3); goto L_80026B74;
+c->mem_w8((s6 - 1), (uint8_t)t3); rec_guest_instruction_ticks(c, 8u); goto L_80026B74;
 L_80026DB8:;
 t4 = c->mem_r32((s1 - 12));
 t2 = t2 >> 7;
@@ -1316,8 +1366,9 @@ c->mem_w32((fp + 20), a2);
 c->mem_w32((fp + 32), t0);
 c->mem_w32((fp + 44), a3);
 a1 = t5 & 0x1u;
-{ int _t = (a1 == zero); t5 = s5 >> 2; if (_t) goto L_80026DF0; }
+{ int _t = (a1 == zero); t5 = s5 >> 2; rec_guest_instruction_ticks(c, 13u); if (_t) goto L_80026DF0; }
 t5 = t5 + (uint32_t)8192;
+rec_guest_instruction_ticks(c, 1u);
 L_80026DF0:;
 a2 = t4 >> 22;
 a2 = a2 & 0x3FCu;
@@ -1325,8 +1376,8 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 at = t5 - at;
 t0 = at + (uint32_t)-4096;
-{ int _t = ((int32_t)t0 >= 0); a2 = a2 + s0; if (_t) goto L_80026FB4; }
-{ int _t = ((int32_t)at <= 0); a2 = c->mem_r32(a2); if (_t) goto L_80026FAC; }
+{ int _t = ((int32_t)t0 >= 0); a2 = a2 + s0; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80026FB4; }
+{ int _t = ((int32_t)at <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026FAC; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1349,10 +1400,11 @@ a3 = gte_read_data(22);
 at = 0x3C00u << 16;
 a3 = a3 | at;
 c->mem_w32((fp + 4), a3);
+rec_guest_instruction_ticks(c, 22u);
 L_80026E70:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t0 >= 0);  if (_t) goto L_80026FE8; }
-{ int _t = ((int32_t)v0 <= 0); a2 = c->mem_r32(a2); if (_t) goto L_80026FE0; }
+{ int _t = ((int32_t)t0 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026FE8; }
+{ int _t = ((int32_t)v0 <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026FE0; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1373,10 +1425,11 @@ t0 = v1 + (uint32_t)-4096;
 a2 = a2 + s0;
 a3 = gte_read_data(22);
 c->mem_w32((fp + 16), a3);
+rec_guest_instruction_ticks(c, 21u);
 L_80026ED4:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t0 >= 0);  if (_t) goto L_80027014; }
-{ int _t = ((int32_t)v1 <= 0); a2 = c->mem_r32(a2); if (_t) goto L_8002700C; }
+{ int _t = ((int32_t)t0 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027014; }
+{ int _t = ((int32_t)v1 <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002700C; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1397,10 +1450,11 @@ t0 = a0 + (uint32_t)-4096;
 a2 = a2 + s0;
 a3 = gte_read_data(22);
 c->mem_w32((fp + 40), a3);
+rec_guest_instruction_ticks(c, 21u);
 L_80026F38:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t0 >= 0);  if (_t) goto L_80027040; }
-{ int _t = ((int32_t)a0 <= 0); a2 = c->mem_r32(a2); if (_t) goto L_80027038; }
+{ int _t = ((int32_t)t0 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027040; }
+{ int _t = ((int32_t)a0 <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027038; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1417,16 +1471,18 @@ gte_op_at(c, 0x4A780010u, 0x80026F78u);
 at = (uint32_t)(int8_t)c->mem_r8((s1 - 8));
 t0 = t0 + (uint32_t)4096;
 t5 = s3 + (uint32_t)0;
-{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; if (_t) goto L_80026F98; }
+{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; rec_guest_instruction_ticks(c, 18u); if (_t) goto L_80026F98; }
 t0 = zero + (uint32_t)0;
 t5 = t5 + (uint32_t)8;
+rec_guest_instruction_ticks(c, 2u);
 L_80026F98:;
 v0 = zero + (uint32_t)1;
 c->mem_w8((s6 - 1), (uint8_t)v0);
 a3 = gte_read_data(22);
-c->mem_w32((fp + 28), a3); goto L_80027070;
+c->mem_w32((fp + 28), a3); rec_guest_instruction_ticks(c, 5u); goto L_80027070;
 L_80026FAC:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_80026FB4:;
 at = 0x3C00u << 16;
 a1 = a1 | at;
@@ -1437,9 +1493,10 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 v0 = t5 - v0;
 t0 = v0 + (uint32_t)-4096;
-a2 = a2 + s0; goto L_80026E70;
+a2 = a2 + s0; rec_guest_instruction_ticks(c, 11u); goto L_80026E70;
 L_80026FE0:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_80026FE8:;
 c->mem_w32((fp + 16), a1);
 a2 = t4 >> 6;
@@ -1448,9 +1505,10 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 v1 = t5 - v1;
 t0 = v1 + (uint32_t)-4096;
-a2 = a2 + s0; goto L_80026ED4;
+a2 = a2 + s0; rec_guest_instruction_ticks(c, 9u); goto L_80026ED4;
 L_8002700C:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_80027014:;
 c->mem_w32((fp + 40), a1);
 a2 = t4 << 2;
@@ -1459,9 +1517,10 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 a0 = t5 - a0;
 t0 = a0 + (uint32_t)-4096;
-a2 = a2 + s0; goto L_80026F38;
+a2 = a2 + s0; rec_guest_instruction_ticks(c, 9u); goto L_80026F38;
 L_80027038:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_80027040:;
 c->mem_w32((fp + 28), a1);
 t0 = t2 << 5;
@@ -1469,22 +1528,25 @@ t0 = t0 - t5;
 t0 = t0 + (uint32_t)4096;
 at = (uint32_t)(int8_t)c->mem_r8((s1 - 8));
 t5 = s3 + (uint32_t)0;
-{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; if (_t) goto L_80027068; }
+{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80027068; }
 t0 = zero + (uint32_t)0;
 t5 = t5 + (uint32_t)8;
+rec_guest_instruction_ticks(c, 2u);
 L_80027068:;
 v0 = zero + (uint32_t)1;
 c->mem_w8((s6 - 1), (uint8_t)v0);
+rec_guest_instruction_ticks(c, 2u);
 L_80027070:;
 t4 = at << 4;
 t4 = t4 + t5;
-{ int _t = ((int32_t)at >= 0); a1 = (uint32_t)3072u << 16; if (_t) goto L_8002709C; }
+{ int _t = ((int32_t)at >= 0); a1 = (uint32_t)3072u << 16; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002709C; }
 v0 = zero + (uint32_t)62;
 c->mem_w8((fp + 7), (uint8_t)v0);
 v0 = at + (uint32_t)1;
-{ int _t = (v0 == zero); at = at & 0x7Fu; if (_t) goto L_800270F8; }
+{ int _t = (v0 == zero); at = at & 0x7Fu; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_800270F8; }
 t4 = at << 4;
 t4 = t4 + t5;
+rec_guest_instruction_ticks(c, 2u);
 L_8002709C:;
 at = c->mem_r32(t4);
 gte_hold_src(c, 2, (t4 + 4));
@@ -1502,13 +1564,13 @@ c->mem_w32(fp, a1);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (at == zero); v0 = fp >> 16; if (_t) goto L_800270EC; }
+{ int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 16u); if (_t) goto L_800270EC; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
-fp = fp + (uint32_t)52; goto L_80026B74;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 4u); goto L_80026B74;
 L_800270EC:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)52; goto L_80026B74;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 3u); goto L_80026B74;
 L_800270F8:;
 gte_hold_src(c, 1, (fp + 20));
 at = c->mem_r32((fp + 20));
@@ -1541,15 +1603,15 @@ c->mem_w32(fp, at);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (at == zero); v0 = fp >> 16; if (_t) goto L_8002715C; }
+{ int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 21u); if (_t) goto L_8002715C; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
-fp = fp + (uint32_t)36; goto L_80026B74;
+fp = fp + (uint32_t)36; rec_guest_instruction_ticks(c, 4u); goto L_80026B74;
 L_8002715C:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)36; goto L_80026B74;
+fp = fp + (uint32_t)36; rec_guest_instruction_ticks(c, 3u); goto L_80026B74;
 L_80027168:;
-{ int _t = ((int32_t)s6 > 0); s6 = s6 + (uint32_t)1; if (_t) goto L_800271B8; }
+{ int _t = ((int32_t)s6 > 0); s6 = s6 + (uint32_t)1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800271B8; }
 a1 = at + s7;
 a2 = v0 + s7;
 a3 = v1 + s7;
@@ -1559,13 +1621,13 @@ a3 = c->mem_r32(a3);
 t1 = a1 & a2;
 t1 = t1 & a3;
 t1 = t1 & 0xFu;
-{ int _t = ((int32_t)t1 > 0); t1 = a1 | a2; if (_t) goto L_80026B74; }
+{ int _t = ((int32_t)t1 > 0); t1 = a1 | a2; rec_guest_instruction_ticks(c, 11u); if (_t) goto L_80026B74; }
 t1 = t1 | a3;
 t5 = c->mem_r32((s1 - 4));
 a1 = (uint32_t)((int32_t)a1 >> 5);
 a2 = (uint32_t)((int32_t)a2 >> 5);
 a3 = (uint32_t)((int32_t)a3 >> 5);
-t1 = t1 & 0x10u; goto L_800271D8;
+t1 = t1 & 0x10u; rec_guest_instruction_ticks(c, 7u); goto L_800271D8;
 L_800271B8:;
 t5 = c->mem_r32((s1 - 4));
 t1 = zero + (uint32_t)0;
@@ -1575,6 +1637,7 @@ a3 = v1 + s7;
 a1 = c->mem_r32(a1);
 a2 = c->mem_r32(a2);
 a3 = c->mem_r32(a3);
+rec_guest_instruction_ticks(c, 8u);
 L_800271D8:;
 gte_write_data(12, a1);
 gte_write_data(13, a2);
@@ -1585,39 +1648,44 @@ gte_op_at(c, 0x4B400006u, 0x800271ECu);
 v0 = v0 >> 1;
 v0 = v0 + t8;
 t2 = t5 & 0x4u;
-{ int _t = ((int32_t)t2 > 0); v1 = v1 >> 1; if (_t) goto L_80027234; }
-{ int _t = ((int32_t)t1 > 0); v1 = v1 + t8; if (_t) goto L_80027238; }
+{ int _t = ((int32_t)t2 > 0); v1 = v1 >> 1; rec_guest_instruction_ticks(c, 11u); if (_t) goto L_80027234; }
+{ int _t = ((int32_t)t1 > 0); v1 = v1 + t8; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027238; }
 t2 = gte_read_data(24);
 t4 = t5 & 0x2u;
-{ int _t = (t4 == zero); at = (uint32_t)c->mem_r16(at); if (_t) goto L_80027220; }
+{ int _t = (t4 == zero); at = (uint32_t)c->mem_r16(at); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80027220; }
 t2 = zero - t2;
+rec_guest_instruction_ticks(c, 1u);
 L_80027220:;
-{ int _t = ((int32_t)t2 < 0); v0 = (uint32_t)c->mem_r16(v0); if (_t) goto L_80026B74; }
-v1 = (uint32_t)c->mem_r16(v1); goto L_80027244;
+{ int _t = ((int32_t)t2 < 0); v0 = (uint32_t)c->mem_r16(v0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026B74; }
+v1 = (uint32_t)c->mem_r16(v1); rec_guest_instruction_ticks(c, 2u); goto L_80027244;
+rec_guest_instruction_ticks(c, 1u);
 L_80027234:;
 v1 = v1 + t8;
+rec_guest_instruction_ticks(c, 1u);
 L_80027238:;
 at = (uint32_t)c->mem_r16(at);
 v0 = (uint32_t)c->mem_r16(v0);
 v1 = (uint32_t)c->mem_r16(v1);
+rec_guest_instruction_ticks(c, 3u);
 L_80027244:;
 t2 = at + v0;
 t2 = t2 + v1;
 t2 = t2 + v1;
 t3 = s5 - t2;
-{ int _t = ((int32_t)t3 <= 0); t3 = t2 + (uint32_t)-8192; if (_t) goto L_80026B74; }
-{ int _t = ((int32_t)t3 >= 0); t3 = t5 & 0x80u; if (_t) goto L_80027310; }
-{ int _t = ((int32_t)t3 > 0); t3 = at + (uint32_t)-320; if (_t) goto L_80027310; }
-{ int _t = ((int32_t)t3 < 0); t3 = v0 + (uint32_t)-320; if (_t) goto L_800272C4; }
-{ int _t = ((int32_t)t3 < 0); t3 = v1 + (uint32_t)-320; if (_t) goto L_800272C4; }
-{ int _t = ((int32_t)t3 < 0); t3 = t5 & 0x40u; if (_t) goto L_800272C4; }
-{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; if (_t) goto L_80027310; }
+{ int _t = ((int32_t)t3 <= 0); t3 = t2 + (uint32_t)-8192; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80026B74; }
+{ int _t = ((int32_t)t3 >= 0); t3 = t5 & 0x80u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027310; }
+{ int _t = ((int32_t)t3 > 0); t3 = at + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027310; }
+{ int _t = ((int32_t)t3 < 0); t3 = v0 + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800272C4; }
+{ int _t = ((int32_t)t3 < 0); t3 = v1 + (uint32_t)-320; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800272C4; }
+{ int _t = ((int32_t)t3 < 0); t3 = t5 & 0x40u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800272C4; }
+{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027310; }
 L_8002728C:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t3 > 0); t9 = t9 | 1u; if (_t) goto L_800272A0; }
+{ int _t = ((int32_t)t3 > 0); t9 = t9 | 1u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800272A0; }
 t3 = t9 >> 2;
 c->mem_w32(gp, t3);
 gp = gp + (uint32_t)4;
+rec_guest_instruction_ticks(c, 3u);
 L_800272A0:;
 t3 = s1 + (uint32_t)-16;
 t1 = t1 >> 4;
@@ -1626,15 +1694,16 @@ t3 = t3 | 2u;
 c->mem_w32(gp, t3);
 gp = gp + (uint32_t)4;
 t3 = zero + (uint32_t)2;
-c->mem_w8((s6 - 1), (uint8_t)t3); goto L_80026B74;
+c->mem_w8((s6 - 1), (uint8_t)t3); rec_guest_instruction_ticks(c, 9u); goto L_80026B74;
 L_800272C4:;
-{ int _t = (t2 == zero); t3 = t5 & 0x40u; if (_t) goto L_80026B74; }
-{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; if (_t) goto L_8002728C; }
+{ int _t = (t2 == zero); t3 = t5 & 0x40u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80026B74; }
+{ int _t = ((int32_t)t3 > 0); t3 = t9 & 0x1u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002728C; }
 t3 = t9 & 0x2u;
-{ int _t = ((int32_t)t3 > 0); t9 = t9 | 2u; if (_t) goto L_800272EC; }
+{ int _t = ((int32_t)t3 > 0); t9 = t9 | 2u; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800272EC; }
 t3 = t9 >> 2;
 c->mem_w32(sp, t3);
 sp = sp + (uint32_t)4;
+rec_guest_instruction_ticks(c, 3u);
 L_800272EC:;
 t3 = s1 + (uint32_t)-16;
 t1 = t1 >> 4;
@@ -1643,7 +1712,7 @@ t3 = t3 | 2u;
 c->mem_w32(sp, t3);
 sp = sp + (uint32_t)4;
 t3 = zero + (uint32_t)4;
-c->mem_w8((s6 - 1), (uint8_t)t3); goto L_80026B74;
+c->mem_w8((s6 - 1), (uint8_t)t3); rec_guest_instruction_ticks(c, 9u); goto L_80026B74;
 L_80027310:;
 t4 = c->mem_r32((s1 - 12));
 t2 = t2 >> 7;
@@ -1655,8 +1724,9 @@ c->mem_w32((fp + 8), a1);
 c->mem_w32((fp + 20), a2);
 c->mem_w32((fp + 32), a3);
 a1 = t5 & 0x1u;
-{ int _t = (a1 == zero); t5 = s5 >> 2; if (_t) goto L_80027344; }
+{ int _t = (a1 == zero); t5 = s5 >> 2; rec_guest_instruction_ticks(c, 12u); if (_t) goto L_80027344; }
 t5 = t5 + (uint32_t)8192;
+rec_guest_instruction_ticks(c, 1u);
 L_80027344:;
 a2 = t4 >> 22;
 a2 = a2 & 0x3FCu;
@@ -1664,8 +1734,8 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 at = t5 - at;
 t0 = at + (uint32_t)-4096;
-{ int _t = ((int32_t)t0 >= 0); a2 = a2 + s0; if (_t) goto L_800274A4; }
-{ int _t = ((int32_t)at <= 0); a2 = c->mem_r32(a2); if (_t) goto L_8002749C; }
+{ int _t = ((int32_t)t0 >= 0); a2 = a2 + s0; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_800274A4; }
+{ int _t = ((int32_t)at <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002749C; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1688,10 +1758,11 @@ a3 = gte_read_data(22);
 at = 0x3400u << 16;
 a3 = a3 | at;
 c->mem_w32((fp + 4), a3);
+rec_guest_instruction_ticks(c, 22u);
 L_800273C4:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t0 >= 0);  if (_t) goto L_800274D8; }
-{ int _t = ((int32_t)v0 <= 0); a2 = c->mem_r32(a2); if (_t) goto L_800274D0; }
+{ int _t = ((int32_t)t0 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800274D8; }
+{ int _t = ((int32_t)v0 <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800274D0; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1712,10 +1783,11 @@ t0 = v1 + (uint32_t)-4096;
 a2 = a2 + s0;
 a3 = gte_read_data(22);
 c->mem_w32((fp + 16), a3);
+rec_guest_instruction_ticks(c, 21u);
 L_80027428:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = ((int32_t)t0 >= 0);  if (_t) goto L_80027504; }
-{ int _t = ((int32_t)v1 <= 0); a2 = c->mem_r32(a2); if (_t) goto L_800274FC; }
+{ int _t = ((int32_t)t0 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027504; }
+{ int _t = ((int32_t)v1 <= 0); a2 = c->mem_r32(a2); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800274FC; }
 a3 = a1 << 4;
 a3 = a3 & 0xFF0u;
 t0 = a1 >> 4;
@@ -1732,16 +1804,18 @@ gte_op_at(c, 0x4A780010u, 0x80027468u);
 t4 = c->mem_r32((s1 - 8));
 t0 = t0 + (uint32_t)4096;
 t5 = s3 + (uint32_t)0;
-{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; if (_t) goto L_80027488; }
+{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; rec_guest_instruction_ticks(c, 18u); if (_t) goto L_80027488; }
 t0 = zero + (uint32_t)0;
 t5 = t5 + (uint32_t)8;
+rec_guest_instruction_ticks(c, 2u);
 L_80027488:;
 v0 = zero + (uint32_t)1;
 c->mem_w8((s6 - 1), (uint8_t)v0);
 a3 = gte_read_data(22);
-c->mem_w32((fp + 28), a3); goto L_80027534;
+c->mem_w32((fp + 28), a3); rec_guest_instruction_ticks(c, 5u); goto L_80027534;
 L_8002749C:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_800274A4:;
 at = 0x3400u << 16;
 a1 = a1 | at;
@@ -1752,9 +1826,10 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 v0 = t5 - v0;
 t0 = v0 + (uint32_t)-4096;
-a2 = a2 + s0; goto L_800273C4;
+a2 = a2 + s0; rec_guest_instruction_ticks(c, 11u); goto L_800273C4;
 L_800274D0:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_800274D8:;
 c->mem_w32((fp + 16), a1);
 a2 = t4 >> 6;
@@ -1763,9 +1838,10 @@ a1 = a2 + t7;
 a1 = c->mem_r32(a1);
 v1 = t5 - v1;
 t0 = v1 + (uint32_t)-4096;
-a2 = a2 + s0; goto L_80027428;
+a2 = a2 + s0; rec_guest_instruction_ticks(c, 9u); goto L_80027428;
 L_800274FC:;
 a1 = a2 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 2u);
 L_80027504:;
 c->mem_w32((fp + 28), a1);
 t0 = t2 << 5;
@@ -1773,25 +1849,28 @@ t0 = t0 - t5;
 t0 = t0 + (uint32_t)4096;
 t4 = c->mem_r32((s1 - 8));
 t5 = s3 + (uint32_t)0;
-{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; if (_t) goto L_8002752C; }
+{ int _t = ((int32_t)t0 > 0); t0 = t0 >> 8; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_8002752C; }
 t0 = zero + (uint32_t)0;
 t5 = t5 + (uint32_t)8;
+rec_guest_instruction_ticks(c, 2u);
 L_8002752C:;
 v0 = zero + (uint32_t)1;
 c->mem_w8((s6 - 1), (uint8_t)v0);
+rec_guest_instruction_ticks(c, 2u);
 L_80027534:;
 t2 = t4 & 0x7Fu;
 t2 = t2 << 4;
 t2 = t2 + t5;
 at = t4 << 24;
-{ int _t = ((int32_t)at >= 0); a1 = (uint32_t)2304u << 16; if (_t) goto L_8002756C; }
+{ int _t = ((int32_t)at >= 0); a1 = (uint32_t)2304u << 16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002756C; }
 v0 = zero + (uint32_t)54;
 c->mem_w8((fp + 7), (uint8_t)v0);
 at = (uint32_t)((int32_t)at >> 24);
 v0 = at + (uint32_t)1;
-{ int _t = (v0 == zero); at = at & 0x7Fu; if (_t) goto L_80027628; }
+{ int _t = (v0 == zero); at = at & 0x7Fu; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80027628; }
 t2 = at << 4;
 t2 = t2 + t5;
+rec_guest_instruction_ticks(c, 2u);
 L_8002756C:;
 at = c->mem_r32(t2);
 gte_hold_src(c, 2, (t2 + 4));
@@ -1799,26 +1878,26 @@ v0 = c->mem_r32((t2 + 4));
 t4 = t4 & 0x300u;
 t0 = t0 << 22;
 at = at + t0;
-{ int _t = ((int32_t)t4 > 0); t4 = t4 + (uint32_t)-256; if (_t) goto L_8002759C; }
+{ int _t = ((int32_t)t4 > 0); t4 = t4 + (uint32_t)-256; rec_guest_instruction_ticks(c, 7u); if (_t) goto L_8002759C; }
 v1 = at + (uint32_t)7936;
 c->mem_w32((fp + 12), at);
 c->mem_w32((fp + 24), v0);
 gte_copy_pz(c, 2, (fp + 24));
-c->mem_w32((fp + 36), v1); goto L_800275F4;
+c->mem_w32((fp + 36), v1); rec_guest_instruction_ticks(c, 5u); goto L_800275F4;
 L_8002759C:;
-{ int _t = ((int32_t)t4 > 0); t4 = t4 + (uint32_t)-256; if (_t) goto L_800275BC; }
+{ int _t = ((int32_t)t4 > 0); t4 = t4 + (uint32_t)-256; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800275BC; }
 v1 = at + (uint32_t)31;
 c->mem_w32((fp + 12), v1);
 v0 = v0 + (uint32_t)7936;
 c->mem_w32((fp + 24), v0);
-c->mem_w32((fp + 36), at); goto L_800275F4;
+c->mem_w32((fp + 36), at); rec_guest_instruction_ticks(c, 6u); goto L_800275F4;
 L_800275BC:;
-{ int _t = ((int32_t)t4 > 0);  if (_t) goto L_800275DC; }
+{ int _t = ((int32_t)t4 > 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800275DC; }
 at = at + (uint32_t)7967;
 c->mem_w32((fp + 12), at);
 v1 = v0 + (uint32_t)7905;
 c->mem_w32((fp + 24), v1);
-c->mem_w32((fp + 36), v0); goto L_800275F4;
+c->mem_w32((fp + 36), v0); rec_guest_instruction_ticks(c, 6u); goto L_800275F4;
 L_800275DC:;
 v1 = at + (uint32_t)7936;
 c->mem_w32((fp + 12), v1);
@@ -1826,18 +1905,19 @@ v0 = v0 + (uint32_t)-31;
 c->mem_w32((fp + 24), v0);
 at = at + (uint32_t)7967;
 c->mem_w32((fp + 36), at);
+rec_guest_instruction_ticks(c, 6u);
 L_800275F4:;
 c->mem_w32(fp, a1);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (at == zero); v0 = fp >> 16; if (_t) goto L_8002761C; }
+{ int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002761C; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
-fp = fp + (uint32_t)40; goto L_80026B74;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80026B74;
 L_8002761C:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)40; goto L_80026B74;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_80026B74;
 L_80027628:;
 gte_hold_src(c, 1, (fp + 20));
 at = c->mem_r32((fp + 20));
@@ -1862,13 +1942,13 @@ c->mem_w32(fp, at);
 t3 = t3 + s4;
 at = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (at == zero); v0 = fp >> 16; if (_t) goto L_8002767C; }
+{ int _t = (at == zero); v0 = fp >> 16; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_8002767C; }
 c->mem_w16(at, (uint16_t)fp);
 c->mem_w8((at + 2), (uint8_t)v0);
-fp = fp + (uint32_t)28; goto L_80026B74;
+fp = fp + (uint32_t)28; rec_guest_instruction_ticks(c, 4u); goto L_80026B74;
 L_8002767C:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)28; goto L_80026B74;
+fp = fp + (uint32_t)28; rec_guest_instruction_ticks(c, 3u); goto L_80026B74;
 L_80027688:;
 c->mem_w32(gp, zero);
 c->mem_w32(sp, zero);
@@ -1878,12 +1958,13 @@ sp = kEnvironment;
 sp = c->mem_r32((sp + 28));
 gp = kOtBase;
 gp = c->mem_r32(gp);
+rec_guest_instruction_ticks(c, 11u);
 L_800276B4:;
 if (c->pending_work) rec_irq_poll(c);
 s3 = c->mem_r32(ra);
 ra = ra + (uint32_t)4;
-{ int _t = (s3 == zero); t7 = (uint32_t)8064u << 16; if (_t) goto L_8002857C; }
-{ int _t = ((int32_t)s3 < 0); at = s3 << 2; if (_t) goto L_8002773C; }
+{ int _t = (s3 == zero); t7 = (uint32_t)8064u << 16; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002857C; }
+{ int _t = ((int32_t)s3 < 0); at = s3 << 2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002773C; }
 v0 = c->mem_r32((at + 8));
 a0 = gte_read_ctrl(13);
 a1 = gte_read_ctrl(14);
@@ -1912,11 +1993,12 @@ a0 = a0 & 0x7F8u;
 s6 = s5 + a0;
 v1 = v1 << 4;
 s6 = s6 - v1;
+rec_guest_instruction_ticks(c, 28u);
 L_8002773C:;
 s2 = s3 & 0x1u;
 at = s3 & 0x2u;
 s3 = s3 >> 2;
-{ int _t = ((int32_t)at > 0); s3 = s3 << 2; if (_t) goto L_80027F28; }
+{ int _t = ((int32_t)at > 0); s3 = s3 << 2; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80027F28; }
 t2 = c->mem_r32(s3);
 at = t2 >> 22;
 at = at & 0x3FCu;
@@ -2031,9 +2113,10 @@ t5 = (uint32_t)((int32_t)t5 >> 1);
 c->mem_w16((t7 + 68), (uint16_t)t5);
 at = c->mem_r32((s3 + 4));
 v0 = s0 & 0x80u;
-{ int _t = (v0 == zero); t0 = (uint32_t)15360u << 16; if (_t) goto L_8002792C; }
+{ int _t = (v0 == zero); t0 = (uint32_t)15360u << 16; rec_guest_instruction_ticks(c, 117u); if (_t) goto L_8002792C; }
 v0 = 0x200u << 16;
 t0 = t0 + v0;
+rec_guest_instruction_ticks(c, 2u);
 L_8002792C:;
 a0 = at >> 6;
 a0 = a0 & 0x3FCu;
@@ -2089,21 +2172,22 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_80027A40; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 56u); if (_t) goto L_80027A40; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_80027A40; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80027A40; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_80027A40; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80027A40; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80027A4C;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80027A4C;
 L_80027A40:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80027A4C:;
 gte_write_data(1, at);
 gte_write_data(0, v0);
@@ -2111,6 +2195,7 @@ t0 = t0 + (uint32_t)16;
 t2 = 0x1u << 16;
 t3 = 0x100u << 16;
 t4 = 0x200u << 16;
+rec_guest_instruction_ticks(c, 6u);
 L_80027A64:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x80027A64u);
@@ -2121,50 +2206,56 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_80027AC0; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80027AC0; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_80027AC0; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80027AC0; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_80027AC0; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80027AC0; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80027ACC;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80027ACC;
 L_80027AC0:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80027ACC:;
 v1 = gte_read_data(14);
 gte_hold_pz(c, 3, 19);
 a0 = gte_read_data(19);
 gte_write_data(1, at);
 gte_write_data(0, v0);
-{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; if (_t) goto L_80027AE8; }
+{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80027AE8; }
 a0 = a0 >> 4;
+rec_guest_instruction_ticks(c, 1u);
 L_80027AE8:;
 v0 = v1 - t2;
-{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; if (_t) goto L_80027AF8; }
+{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80027AF8; }
 a0 = a0 | 4096u;
+rec_guest_instruction_ticks(c, 1u);
 L_80027AF8:;
-{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; if (_t) goto L_80027B04; }
+{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027B04; }
 a0 = a0 | 8192u;
+rec_guest_instruction_ticks(c, 1u);
 L_80027B04:;
-{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; if (_t) goto L_80027B10; }
+{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027B10; }
 a0 = a0 | 16384u;
+rec_guest_instruction_ticks(c, 1u);
 L_80027B10:;
-{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); if (_t) goto L_80027B1C; }
+{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027B1C; }
 a0 = a0 | 32768u;
+rec_guest_instruction_ticks(c, 1u);
 L_80027B1C:;
-{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); if (_t) goto L_80027A64; }
+{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027A64; }
 at = c->mem_r32((t7 + 68));
 v1 = c->mem_r32((t7 + 64));
 a0 = at & 0xF000u;
-{ int _t = ((int32_t)a0 > 0); at = at & 0xFFFu; if (_t) goto L_80027BD0; }
+{ int _t = ((int32_t)a0 > 0); at = at & 0xFFFu; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_80027BD0; }
 at = at + (uint32_t)-1792;
-{ int _t = ((int32_t)at <= 0); v0 = at + (uint32_t)-256; if (_t) goto L_80027BD0; }
+{ int _t = ((int32_t)at <= 0); v0 = at + (uint32_t)-256; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80027BD0; }
 v0 = zero - v0;
 a0 = (uint32_t)((int32_t)v1 >> 16);
 v1 = v1 << 16;
@@ -2200,6 +2291,7 @@ v1 = at & 0xFFFFu;
 a0 = v0 << 16;
 v1 = v1 + a0;
 c->mem_w32((t7 + 64), v1);
+rec_guest_instruction_ticks(c, 35u);
 L_80027BD0:;
 t5 = s3 - s6;
 t5 = t5 >> 4;
@@ -2235,11 +2327,12 @@ at = at | v1;
 a0 = a0 & 0x1u;
 a0 = a0 << 24;
 at = at | a0;
+rec_guest_instruction_ticks(c, 36u);
 L_80027C60:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (at == zero); v0 = at & 0xFFu; if (_t) goto L_80027D7C; }
+{ int _t = (at == zero); v0 = at & 0xFFu; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027D7C; }
 at = at >> 8;
-{ int _t = (v0 == zero); t4 = t4 + (uint32_t)12; if (_t) goto L_80027C60; }
+{ int _t = (v0 == zero); t4 = t4 + (uint32_t)12; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80027C60; }
 a0 = c->mem_r32((t4 - 12));
 a1 = c->mem_r32((t4 - 8));
 v0 = a0 >> 16;
@@ -2255,7 +2348,7 @@ a2 = c->mem_r32((t4 - 4));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_80027C60; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80027C60; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -2306,19 +2399,20 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80027D70; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_80027D70; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_80027C60;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80027C60;
 L_80027D70:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)40; goto L_80027C60;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_80027C60;
 L_80027D7C:;
 at = 0x8006CF48u;
 v0 = at + (uint32_t)16;
+rec_guest_instruction_ticks(c, 3u);
 L_80027D88:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (at == v0); t6 = t6 + (uint32_t)8; if (_t) goto L_800276B4; }
+{ int _t = (at == v0); t6 = t6 + (uint32_t)8; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800276B4; }
 v1 = c->mem_r32(at);
 at = at + (uint32_t)4;
 a0 = c->mem_r32((v1 + 4));
@@ -2330,7 +2424,7 @@ t0 = a0 & a1;
 t0 = t0 & a2;
 t0 = t0 & a3;
 t0 = t0 & 0xF000u;
-{ int _t = ((int32_t)t0 > 0); a0 = a0 & 0xFFFu; if (_t) goto L_80027D88; }
+{ int _t = ((int32_t)t0 > 0); a0 = a0 & 0xFFFu; rec_guest_instruction_ticks(c, 13u); if (_t) goto L_80027D88; }
 t2 = c->mem_r32((t6 + 4));
 a1 = a1 & 0xFFFu;
 a2 = a2 & 0xFFFu;
@@ -2344,29 +2438,31 @@ gte_hold_src(c, 5, (v1 + 16));
 a1 = c->mem_r32((v1 + 16));
 gte_hold_src(c, 6, (v1 + 48));
 a2 = c->mem_r32((v1 + 48));
-{ int _t = (s2 == zero); gte_hold_src(c, 7, (v1 + 64)); a3 = c->mem_r32((v1 + 64)); if (_t) goto L_80027E58; }
+{ int _t = (s2 == zero); gte_hold_src(c, 7, (v1 + 64)); a3 = c->mem_r32((v1 + 64)); rec_guest_instruction_ticks(c, 12u); if (_t) goto L_80027E58; }
 gte_write_data(12, a0);
 gte_write_data(13, a1);
 gte_write_data(14, a2);
 t3 = s1 & 0x4u;
 gte_op_at(c, 0x4B400006u, 0x80027E08u);
-{ int _t = ((int32_t)t3 > 0); t3 = s1 & 0x2u; if (_t) goto L_80027E58; }
+{ int _t = ((int32_t)t3 > 0); t3 = s1 & 0x2u; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80027E58; }
 t4 = gte_read_data(24);
-{ int _t = (t3 == zero);  if (_t) goto L_80027E24; }
+{ int _t = (t3 == zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80027E24; }
 t4 = zero - t4;
+rec_guest_instruction_ticks(c, 1u);
 L_80027E24:;
-{ int _t = ((int32_t)t4 >= 0);  if (_t) goto L_80027E58; }
+{ int _t = ((int32_t)t4 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027E58; }
 gte_write_data(12, a3);
 gte_write_data(13, a2);
 gte_write_data(14, a1);
 gte_op_at(c, 0x4B400006u, 0x80027E40u);
 t4 = gte_read_data(24);
-{ int _t = (t3 == zero);  if (_t) goto L_80027E54; }
+{ int _t = (t3 == zero);  rec_guest_instruction_ticks(c, 9u); if (_t) goto L_80027E54; }
 t4 = zero - t4;
+rec_guest_instruction_ticks(c, 1u);
 L_80027E54:;
-{ int _t = ((int32_t)t4 < 0); c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8)); if (_t) goto L_80027D88; }
+{ int _t = ((int32_t)t4 < 0); c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80027D88; }
 goto L_DSAFTER_80027E54;
-L_80027E58:; c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8));
+L_80027E58:; c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8)); rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_80027E54:;
 c->mem_w32((fp + 20), a1);
 gte_copy_pz(c, 5, (fp + 20));
@@ -2396,7 +2492,7 @@ a0 = a0 >> 1;
 t0 = t0 + a0;
 t3 = t1 + (uint32_t)7936;
 v1 = t2 >> 25;
-{ int _t = (v1 == zero); t4 = t1 + (uint32_t)7967; if (_t) goto L_80027EDC; }
+{ int _t = (v1 == zero); t4 = t1 + (uint32_t)7967; rec_guest_instruction_ticks(c, 19u); if (_t) goto L_80027EDC; }
 a0 = 0x8006D058u;
 v1 = v1 + a0;
 a0 = c->mem_r32((v1 + 4));
@@ -2409,6 +2505,7 @@ a1 = v1 & 0xFFFFu;
 t1 = t1 + a1;
 a1 = (uint32_t)((int32_t)v1 >> 16);
 t2 = t2 + a1;
+rec_guest_instruction_ticks(c, 13u);
 L_80027EDC:;
 c->mem_w32((fp + 12), t1);
 c->mem_w32((fp + 24), t2);
@@ -2420,13 +2517,13 @@ t0 = t0 << 3;
 t0 = t0 + gp;
 v1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80027F1C; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 12u); if (_t) goto L_80027F1C; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)52; goto L_80027D88;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 4u); goto L_80027D88;
 L_80027F1C:;
 c->mem_w32((t0 + 4), fp);
-fp = fp + (uint32_t)52; goto L_80027D88;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 3u); goto L_80027D88;
 L_80027F28:;
 t2 = c->mem_r32(s3);
 at = t2 >> 22;
@@ -2508,9 +2605,10 @@ a2 = (uint32_t)((int32_t)a2 >> 1);
 c->mem_w16((t7 + 68), (uint16_t)a2);
 at = c->mem_r32((s3 + 4));
 v0 = s0 & 0x80u;
-{ int _t = (v0 == zero); t0 = (uint32_t)13312u << 16; if (_t) goto L_8002807C; }
+{ int _t = (v0 == zero); t0 = (uint32_t)13312u << 16; rec_guest_instruction_ticks(c, 83u); if (_t) goto L_8002807C; }
 v0 = 0x200u << 16;
 t0 = t0 + v0;
+rec_guest_instruction_ticks(c, 2u);
 L_8002807C:;
 v1 = at << 2;
 v1 = v1 & 0x3FCu;
@@ -2553,21 +2651,22 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_8002815C; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 43u); if (_t) goto L_8002815C; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_8002815C; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002815C; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_8002815C; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002815C; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80028168;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80028168;
 L_8002815C:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80028168:;
 gte_write_data(1, at);
 gte_write_data(0, v0);
@@ -2575,6 +2674,7 @@ t0 = t0 + (uint32_t)16;
 t2 = 0x1u << 16;
 t3 = 0x100u << 16;
 t4 = 0x200u << 16;
+rec_guest_instruction_ticks(c, 6u);
 L_80028180:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x80028180u);
@@ -2585,44 +2685,50 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_800281DC; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 10u); if (_t) goto L_800281DC; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_800281DC; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_800281DC; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_800281DC; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_800281DC; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_800281E8;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_800281E8;
 L_800281DC:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_800281E8:;
 v1 = gte_read_data(14);
 gte_hold_pz(c, 3, 19);
 a0 = gte_read_data(19);
 gte_write_data(1, at);
 gte_write_data(0, v0);
-{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; if (_t) goto L_80028204; }
+{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80028204; }
 a0 = a0 >> 4;
+rec_guest_instruction_ticks(c, 1u);
 L_80028204:;
 v0 = v1 - t2;
-{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; if (_t) goto L_80028214; }
+{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028214; }
 a0 = a0 | 4096u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028214:;
-{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; if (_t) goto L_80028220; }
+{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028220; }
 a0 = a0 | 8192u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028220:;
-{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; if (_t) goto L_8002822C; }
+{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002822C; }
 a0 = a0 | 16384u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002822C:;
-{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); if (_t) goto L_80028238; }
+{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028238; }
 a0 = a0 | 32768u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028238:;
-{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); if (_t) goto L_80028180; }
+{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028180; }
 t5 = s3 - s6;
 t5 = t5 >> 4;
 at = kWorkList;
@@ -2655,11 +2761,12 @@ v0 = v0 >> 3;
 v1 = v0 >> 3;
 t4 = t4 + v0;
 t4 = t4 + v1;
+rec_guest_instruction_ticks(c, 34u);
 L_800282C8:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (at == zero); v0 = at & 0xFFu; if (_t) goto L_800283DC; }
+{ int _t = (at == zero); v0 = at & 0xFFu; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800283DC; }
 at = at >> 8;
-{ int _t = (v0 == zero); t4 = t4 + (uint32_t)12; if (_t) goto L_800282C8; }
+{ int _t = (v0 == zero); t4 = t4 + (uint32_t)12; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800282C8; }
 a0 = c->mem_r32((t4 - 12));
 a1 = c->mem_r32((t4 - 8));
 v0 = a0 >> 16;
@@ -2675,7 +2782,7 @@ a2 = c->mem_r32((t4 - 4));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_800282C8; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_800282C8; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -2726,23 +2833,24 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_800283D0; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_800283D0; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_800282C8;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_800282C8;
 L_800283D0:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)40; goto L_800282C8;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_800282C8;
 L_800283DC:;
 t2 = 0x8006D0E8u;
 t3 = t2 + (uint32_t)16;
 t4 = 0x8006D378u;
 t5 = 0x8006D3C8u;
 t6 = t6 + (uint32_t)8;
+rec_guest_instruction_ticks(c, 8u);
 L_800283FC:;
 if (c->pending_work) rec_irq_poll(c);
 at = c->mem_r32(t2);
-{ int _t = (t2 == t3); t2 = t2 + (uint32_t)4; if (_t) goto L_800276B4; }
+{ int _t = (t2 == t3); t2 = t2 + (uint32_t)4; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800276B4; }
 v0 = s0 >> 8;
 v0 = v0 & 0x3u;
 v1 = at & 0xCu;
@@ -2784,7 +2892,7 @@ v1 = c->mem_r32((t1 + 4));
 a0 = at & v0;
 a0 = a0 & v1;
 a0 = a0 & 0xF000u;
-{ int _t = ((int32_t)a0 > 0); at = at & 0xFFFu; if (_t) goto L_800283FC; }
+{ int _t = ((int32_t)a0 > 0); at = at & 0xFFFu; rec_guest_instruction_ticks(c, 43u); if (_t) goto L_800283FC; }
 v0 = v0 & 0xFFFu;
 v1 = v1 & 0xFFFu;
 a0 = at + v0;
@@ -2794,20 +2902,21 @@ gte_hold_src(c, 1, a3);
 at = c->mem_r32(a3);
 gte_hold_src(c, 2, t0);
 v0 = c->mem_r32(t0);
-{ int _t = (s2 == zero); gte_hold_src(c, 3, t1); v1 = c->mem_r32(t1); if (_t) goto L_8002850C; }
+{ int _t = (s2 == zero); gte_hold_src(c, 3, t1); v1 = c->mem_r32(t1); rec_guest_instruction_ticks(c, 9u); if (_t) goto L_8002850C; }
 gte_write_data(12, at);
 gte_write_data(13, v0);
 gte_write_data(14, v1);
 a1 = s1 & 0x4u;
 gte_op_at(c, 0x4B400006u, 0x800284ECu);
-{ int _t = ((int32_t)a1 > 0); a1 = s1 & 0x2u; if (_t) goto L_8002850C; }
+{ int _t = ((int32_t)a1 > 0); a1 = s1 & 0x2u; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_8002850C; }
 a2 = gte_read_data(24);
-{ int _t = (a1 == zero);  if (_t) goto L_80028508; }
+{ int _t = (a1 == zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028508; }
 a2 = zero - a2;
+rec_guest_instruction_ticks(c, 1u);
 L_80028508:;
-{ int _t = ((int32_t)a2 < 0); c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8)); if (_t) goto L_800283FC; }
+{ int _t = ((int32_t)a2 < 0); c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800283FC; }
 goto L_DSAFTER_80028508;
-L_8002850C:; c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8));
+L_8002850C:; c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8)); rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_80028508:;
 c->mem_w32((fp + 20), v0);
 gte_copy_pz(c, 2, (fp + 20));
@@ -2835,24 +2944,25 @@ a0 = a0 << 3;
 a0 = a0 + gp;
 v0 = c->mem_r32(a0);
 c->mem_w32(a0, fp);
-{ int _t = (v0 == zero); v1 = fp >> 16; if (_t) goto L_80028570; }
+{ int _t = (v0 == zero); v1 = fp >> 16; rec_guest_instruction_ticks(c, 20u); if (_t) goto L_80028570; }
 c->mem_w16(v0, (uint16_t)fp);
 c->mem_w8((v0 + 2), (uint8_t)v1);
-fp = fp + (uint32_t)40; goto L_800283FC;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_800283FC;
 L_80028570:;
 c->mem_w32((a0 + 4), fp);
-fp = fp + (uint32_t)40; goto L_800283FC;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_800283FC;
 L_8002857C:;
 at = kWorkList;
 ra = at + (uint32_t)7680;
 at = at + (uint32_t)8192;
 c->mem_w32((t7 + 1020), at);
+rec_guest_instruction_ticks(c, 5u);
 L_80028590:;
 if (c->pending_work) rec_irq_poll(c);
 s3 = c->mem_r32(ra);
 ra = ra + (uint32_t)4;
-{ int _t = (s3 == zero); t7 = (uint32_t)8064u << 16; if (_t) goto L_800294F4; }
-{ int _t = ((int32_t)s3 < 0); at = s3 << 2; if (_t) goto L_80028618; }
+{ int _t = (s3 == zero); t7 = (uint32_t)8064u << 16; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_800294F4; }
+{ int _t = ((int32_t)s3 < 0); at = s3 << 2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028618; }
 v0 = c->mem_r32((at + 8));
 a0 = gte_read_ctrl(13);
 a1 = gte_read_ctrl(14);
@@ -2881,9 +2991,10 @@ a0 = a0 & 0x7F8u;
 s6 = s5 + a0;
 v1 = v1 << 4;
 s6 = s6 - v1;
+rec_guest_instruction_ticks(c, 28u);
 L_80028618:;
 at = s3 & 0x2u;
-{ int _t = ((int32_t)at > 0); s2 = s3 & 0x1u; if (_t) goto L_80028590; }
+{ int _t = ((int32_t)at > 0); s2 = s3 & 0x1u; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028590; }
 s3 = s3 >> 2;
 s3 = s3 << 2;
 a0 = c->mem_r32(s3);
@@ -3144,9 +3255,10 @@ t2 = (uint32_t)((int32_t)t2 >> 1);
 c->mem_w16((t7 + 292), (uint16_t)t2);
 at = c->mem_r32((s3 + 4));
 v0 = s0 & 0x80u;
-{ int _t = (v0 == zero); a1 = (uint32_t)15360u << 16; if (_t) goto L_80028A48; }
+{ int _t = (v0 == zero); a1 = (uint32_t)15360u << 16; rec_guest_instruction_ticks(c, 263u); if (_t) goto L_80028A48; }
 v0 = 0x200u << 16;
 a1 = a1 + v0;
+rec_guest_instruction_ticks(c, 2u);
 L_80028A48:;
 a0 = at >> 6;
 a0 = a0 & 0x3FCu;
@@ -3255,21 +3367,22 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_80028C30; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 109u); if (_t) goto L_80028C30; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_80028C30; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80028C30; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_80028C30; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80028C30; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80028C3C;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80028C3C;
 L_80028C30:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80028C3C:;
 gte_write_data(1, at);
 gte_write_data(0, v0);
@@ -3277,6 +3390,7 @@ t0 = t0 + (uint32_t)16;
 t2 = 0x1u << 16;
 t3 = 0x100u << 16;
 t4 = 0x200u << 16;
+rec_guest_instruction_ticks(c, 6u);
 L_80028C54:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x80028C54u);
@@ -3287,83 +3401,94 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_80028CB0; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80028CB0; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_80028CB0; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80028CB0; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_80028CB0; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80028CB0; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80028CBC;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80028CBC;
 L_80028CB0:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80028CBC:;
 v1 = gte_read_data(14);
 gte_hold_pz(c, 3, 19);
 a0 = gte_read_data(19);
 gte_write_data(1, at);
 gte_write_data(0, v0);
-{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; if (_t) goto L_80028CD8; }
+{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80028CD8; }
 a0 = a0 >> 4;
+rec_guest_instruction_ticks(c, 1u);
 L_80028CD8:;
-{ int _t = ((int32_t)a0 > 0); v0 = v1 - t2; if (_t) goto L_80028CE4; }
+{ int _t = ((int32_t)a0 > 0); v0 = v1 - t2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028CE4; }
 a0 = a0 | 61440u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028CE4:;
-{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; if (_t) goto L_80028CF0; }
+{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028CF0; }
 a0 = a0 | 4096u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028CF0:;
-{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; if (_t) goto L_80028CFC; }
+{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028CFC; }
 a0 = a0 | 8192u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028CFC:;
-{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; if (_t) goto L_80028D08; }
+{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028D08; }
 a0 = a0 | 16384u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028D08:;
-{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); if (_t) goto L_80028D14; }
+{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028D14; }
 a0 = a0 | 32768u;
+rec_guest_instruction_ticks(c, 1u);
 L_80028D14:;
-{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); if (_t) goto L_80028C54; }
+{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028C54; }
 at = c->mem_r32((t7 + 4));
 v0 = c->mem_r32((t7 + 68));
 v1 = c->mem_r32((t7 + 324));
 a0 = c->mem_r32((t7 + 388));
 at = at & 0xFFFu;
 at = at + (uint32_t)-64;
-{ int _t = ((int32_t)at <= 0); v0 = v0 & 0xFFFu; if (_t) goto L_80028E48; }
+{ int _t = ((int32_t)at <= 0); v0 = v0 & 0xFFFu; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80028E48; }
 v0 = v0 + (uint32_t)-64;
-{ int _t = ((int32_t)v0 <= 0); v1 = v1 & 0xFFFu; if (_t) goto L_80028E48; }
+{ int _t = ((int32_t)v0 <= 0); v1 = v1 & 0xFFFu; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028E48; }
 v1 = v1 + (uint32_t)-64;
-{ int _t = ((int32_t)v1 <= 0); a0 = a0 & 0xFFFu; if (_t) goto L_80028E48; }
+{ int _t = ((int32_t)v1 <= 0); a0 = a0 & 0xFFFu; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028E48; }
 a0 = a0 + (uint32_t)-64;
-{ int _t = ((int32_t)a0 <= 0); a1 = v0 - at; if (_t) goto L_80028E48; }
-{ int _t = ((int32_t)a1 >= 0);  if (_t) goto L_80028D6C; }
+{ int _t = ((int32_t)a0 <= 0); a1 = v0 - at; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028E48; }
+{ int _t = ((int32_t)a1 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028D6C; }
 at = v0 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 1u);
 L_80028D6C:;
 a1 = v1 - at;
-{ int _t = ((int32_t)a1 >= 0);  if (_t) goto L_80028D7C; }
+{ int _t = ((int32_t)a1 >= 0);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028D7C; }
 at = v1 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 1u);
 L_80028D7C:;
 a1 = a0 - at;
-{ int _t = ((int32_t)a1 >= 0);  if (_t) goto L_80028D8C; }
+{ int _t = ((int32_t)a1 >= 0);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028D8C; }
 at = a0 + (uint32_t)0;
+rec_guest_instruction_ticks(c, 1u);
 L_80028D8C:;
 v0 = at + (uint32_t)-256;
 v0 = zero - v0;
 at = at >> 1;
 v1 = 0x8006D0D8u;
 a0 = v1 + (uint32_t)16;
+rec_guest_instruction_ticks(c, 6u);
 L_80028DA4:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (v1 == a0); a1 = c->mem_r32(v1); if (_t) goto L_80028E48; }
+{ int _t = (v1 == a0); a1 = c->mem_r32(v1); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028E48; }
 v1 = v1 + (uint32_t)4;
 a3 = c->mem_r32((a1 + 4));
 a2 = c->mem_r32(a1);
 a3 = a3 & 0xF000u;
-{ int _t = ((int32_t)a3 > 0); a3 = (uint32_t)((int32_t)a2 >> 16); if (_t) goto L_80028DA4; }
+{ int _t = ((int32_t)a3 > 0); a3 = (uint32_t)((int32_t)a2 >> 16); rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80028DA4; }
 a2 = a2 << 16;
 a2 = (uint32_t)((int32_t)a2 >> 16);
 gte_write_data(8, v0);
@@ -3395,7 +3520,7 @@ a3 = (uint32_t)((int32_t)a3 >> 8);
 t0 = a2 & 0xFFFFu;
 t1 = a3 << 16;
 t0 = t0 + t1;
-c->mem_w32(a1, t0); goto L_80028DA4;
+c->mem_w32(a1, t0); rec_guest_instruction_ticks(c, 33u); goto L_80028DA4;
 L_80028E48:;
 t5 = s3 - s6;
 t5 = t5 >> 4;
@@ -3431,11 +3556,12 @@ at = at | v1;
 a0 = a0 & 0x3u;
 a0 = a0 << 24;
 at = at | a0;
+rec_guest_instruction_ticks(c, 36u);
 L_80028ED8:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (at == zero); t5 = at & 0xFFu; if (_t) goto L_80029204; }
+{ int _t = (at == zero); t5 = at & 0xFFu; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029204; }
 at = at >> 8;
-{ int _t = (t5 == zero); t4 = t4 + (uint32_t)36; if (_t) goto L_80028ED8; }
+{ int _t = (t5 == zero); t4 = t4 + (uint32_t)36; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028ED8; }
 a0 = c->mem_r32((t4 - 36));
 a1 = c->mem_r32((t4 - 32));
 v0 = a0 >> 16;
@@ -3451,7 +3577,7 @@ a2 = c->mem_r32((t4 - 28));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_80028FF0; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80028FF0; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -3502,13 +3628,14 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80028FE8; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_80028FE8; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_80028FF0;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80028FF0;
 L_80028FE8:;
 c->mem_w32((t3 + 4), fp);
 fp = fp + (uint32_t)40;
+rec_guest_instruction_ticks(c, 2u);
 L_80028FF0:;
 a0 = c->mem_r32((t4 - 24));
 a1 = c->mem_r32((t4 - 20));
@@ -3525,7 +3652,7 @@ a2 = c->mem_r32((t4 - 16));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_800290F4; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_800290F4; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -3576,16 +3703,17 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_800290EC; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_800290EC; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_800290F4;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_800290F4;
 L_800290EC:;
 c->mem_w32((t3 + 4), fp);
 fp = fp + (uint32_t)40;
+rec_guest_instruction_ticks(c, 2u);
 L_800290F4:;
 t5 = t5 & 0x1u;
-{ int _t = (t5 == zero); a0 = c->mem_r32((t4 - 12)); if (_t) goto L_80028ED8; }
+{ int _t = (t5 == zero); a0 = c->mem_r32((t4 - 12)); rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80028ED8; }
 a1 = c->mem_r32((t4 - 8));
 v0 = a0 >> 16;
 v0 = v0 + t7;
@@ -3600,7 +3728,7 @@ a2 = c->mem_r32((t4 - 4));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_80028ED8; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 16u); if (_t) goto L_80028ED8; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -3651,20 +3779,21 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_800291F8; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 42u); if (_t) goto L_800291F8; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_80028ED8;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80028ED8;
 L_800291F8:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)40; goto L_80028ED8;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_80028ED8;
 L_80029204:;
 at = 0x8006CF58u;
 v0 = at + (uint32_t)64;
 t6 = t6 + (uint32_t)32;
+rec_guest_instruction_ticks(c, 4u);
 L_80029214:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (at == v0); t6 = t6 + (uint32_t)8; if (_t) goto L_80028590; }
+{ int _t = (at == v0); t6 = t6 + (uint32_t)8; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80028590; }
 v1 = c->mem_r32(at);
 at = at + (uint32_t)4;
 a0 = c->mem_r32((v1 + 4));
@@ -3676,7 +3805,7 @@ t0 = a0 & a1;
 t0 = t0 & a2;
 t0 = t0 & a3;
 t0 = t0 & 0xF000u;
-{ int _t = ((int32_t)t0 > 0); a0 = a0 & 0xFFFu; if (_t) goto L_80029214; }
+{ int _t = ((int32_t)t0 > 0); a0 = a0 & 0xFFFu; rec_guest_instruction_ticks(c, 13u); if (_t) goto L_80029214; }
 t2 = c->mem_r32((t6 + 4));
 a1 = a1 & 0xFFFu;
 a2 = a2 & 0xFFFu;
@@ -3702,7 +3831,7 @@ c->mem_w32((fp + 40), a3);
 gte_copy_pz(c, 7, (fp + 40));
 t3 = t1 + (uint32_t)3840;
 a0 = t2 >> 25;
-{ int _t = (a0 == zero); t4 = t1 + (uint32_t)3855; if (_t) goto L_800292D0; }
+{ int _t = (a0 == zero); t4 = t1 + (uint32_t)3855; rec_guest_instruction_ticks(c, 19u); if (_t) goto L_800292D0; }
 a1 = 0x8006D058u;
 a0 = a0 + a1;
 a1 = c->mem_r32((a0 + 4));
@@ -3715,6 +3844,7 @@ a2 = a0 & 0xFFFFu;
 t1 = t1 + a2;
 a2 = (uint32_t)((int32_t)a0 >> 16);
 t2 = t2 + a2;
+rec_guest_instruction_ticks(c, 13u);
 L_800292D0:;
 c->mem_w32((fp + 12), t1);
 c->mem_w32((fp + 24), t2);
@@ -3726,29 +3856,31 @@ gte_hold_src(c, 5, (v1 + 16));
 a1 = c->mem_r32((v1 + 16));
 gte_hold_src(c, 6, (v1 + 80));
 a2 = c->mem_r32((v1 + 80));
-{ int _t = (s2 == zero); gte_hold_src(c, 7, (v1 + 96)); a3 = c->mem_r32((v1 + 96)); if (_t) goto L_80029358; }
+{ int _t = (s2 == zero); gte_hold_src(c, 7, (v1 + 96)); a3 = c->mem_r32((v1 + 96)); rec_guest_instruction_ticks(c, 9u); if (_t) goto L_80029358; }
 gte_write_data(12, a0);
 gte_write_data(13, a1);
 gte_write_data(14, a2);
 t3 = s1 & 0x4u;
 gte_op_at(c, 0x4B400006u, 0x80029308u);
-{ int _t = ((int32_t)t3 > 0); t3 = s1 & 0x2u; if (_t) goto L_80029358; }
+{ int _t = ((int32_t)t3 > 0); t3 = s1 & 0x2u; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80029358; }
 t4 = gte_read_data(24);
-{ int _t = (t3 == zero);  if (_t) goto L_80029324; }
+{ int _t = (t3 == zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029324; }
 t4 = zero - t4;
+rec_guest_instruction_ticks(c, 1u);
 L_80029324:;
-{ int _t = ((int32_t)t4 >= 0);  if (_t) goto L_80029358; }
+{ int _t = ((int32_t)t4 >= 0);  rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029358; }
 gte_write_data(12, a3);
 gte_write_data(13, a2);
 gte_write_data(14, a1);
 gte_op_at(c, 0x4B400006u, 0x80029340u);
 t4 = gte_read_data(24);
-{ int _t = (t3 == zero);  if (_t) goto L_80029354; }
+{ int _t = (t3 == zero);  rec_guest_instruction_ticks(c, 9u); if (_t) goto L_80029354; }
 t4 = zero - t4;
+rec_guest_instruction_ticks(c, 1u);
 L_80029354:;
-{ int _t = ((int32_t)t4 < 0); c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8)); if (_t) goto L_80029214; }
+{ int _t = ((int32_t)t4 < 0); c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029214; }
 goto L_DSAFTER_80029354;
-L_80029358:; c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8));
+L_80029358:; c->mem_w32((fp + 8), a0); gte_copy_pz(c, 4, (fp + 8)); rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_80029354:;
 c->mem_w32((fp + 20), a1);
 gte_copy_pz(c, 5, (fp + 20));
@@ -3762,40 +3894,40 @@ a2 = (uint32_t)(int16_t)c->mem_r16((v1 + 82));
 a3 = (uint32_t)(int16_t)c->mem_r16((v1 + 98));
 t1 = a0 - a1;
 t1 = t1 + (uint32_t)-512;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a0 - a2; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 11u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a0 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-512;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a2; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-512;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a3; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-512;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a2 - a3; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a2 - a3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-512;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); a0 = (uint32_t)(int16_t)c->mem_r16(v1); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); a0 = (uint32_t)(int16_t)c->mem_r16(v1); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 a1 = (uint32_t)(int16_t)c->mem_r16((v1 + 16));
 a2 = (uint32_t)(int16_t)c->mem_r16((v1 + 80));
 a3 = (uint32_t)(int16_t)c->mem_r16((v1 + 96));
 t1 = a0 - a1;
 t1 = t1 + (uint32_t)-1024;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a0 - a2; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 7u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a0 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-1024;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a2; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-1024;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a3; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a1 - a3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-1024;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); t1 = a2 - a3; if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); t1 = a2 - a3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
 t1 = t1 + (uint32_t)-1024;
-{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; if (_t) goto L_800294A0; }
-{ int _t = ((int32_t)t1 <= 0); v1 = t0 >> 7; if (_t) goto L_800294A0; }
-{ int _t = (t0 == zero); a0 = s1 & 0x38u; if (_t) goto L_80029214; }
+{ int _t = ((int32_t)t1 >= 0); t1 = t1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_800294A0; }
+{ int _t = ((int32_t)t1 <= 0); v1 = t0 >> 7; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800294A0; }
+{ int _t = (t0 == zero); a0 = s1 & 0x38u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029214; }
 a0 = a0 >> 1;
 t0 = v1 + a0;
 v1 = 0xC00u << 16;
@@ -3804,18 +3936,18 @@ t0 = t0 << 3;
 t0 = t0 + gp;
 v1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80029494; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80029494; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)52; goto L_80029214;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 4u); goto L_80029214;
 L_80029494:;
 if (c->pending_work) rec_irq_poll(c);
 c->mem_w32((t0 + 4), fp);
-fp = fp + (uint32_t)52; goto L_80029214;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 3u); goto L_80029214;
 L_800294A0:;
 gte_hold_src(c, 3, (t7 + 1020));
 v1 = c->mem_r32((t7 + 1020));
-{ int _t = (t0 == zero); c->mem_w32(v1, fp); if (_t) goto L_80029214; }
+{ int _t = (t0 == zero); c->mem_w32(v1, fp); rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029214; }
 v1 = v1 + (uint32_t)4;
 c->mem_w32((t7 + 1020), v1);
 gte_copy_pz(c, 3, (t7 + 1020));
@@ -3829,19 +3961,20 @@ t0 = t0 << 3;
 t0 = t0 + gp;
 v1 = c->mem_r32(t0);
 c->mem_w32(t0, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80029494; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_80029494; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)52; goto L_80029214;
+fp = fp + (uint32_t)52; rec_guest_instruction_ticks(c, 4u); goto L_80029214;
 L_800294F4:;
 ra = kWorkList;
 ra = ra + (uint32_t)7680;
+rec_guest_instruction_ticks(c, 3u);
 L_80029500:;
 if (c->pending_work) rec_irq_poll(c);
 s3 = c->mem_r32(ra);
 ra = ra + (uint32_t)4;
-{ int _t = (s3 == zero); t7 = (uint32_t)8064u << 16; if (_t) goto L_8002A0A0; }
-{ int _t = ((int32_t)s3 < 0); at = s3 << 2; if (_t) goto L_80029588; }
+{ int _t = (s3 == zero); t7 = (uint32_t)8064u << 16; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002A0A0; }
+{ int _t = ((int32_t)s3 < 0); at = s3 << 2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029588; }
 v0 = c->mem_r32((at + 8));
 a0 = gte_read_ctrl(13);
 a1 = gte_read_ctrl(14);
@@ -3870,9 +4003,10 @@ a0 = a0 & 0x7F8u;
 s6 = s5 + a0;
 v1 = v1 << 4;
 s6 = s6 - v1;
+rec_guest_instruction_ticks(c, 28u);
 L_80029588:;
 at = s3 & 0x2u;
-{ int _t = (at == zero); s2 = s3 & 0x1u; if (_t) goto L_80029500; }
+{ int _t = (at == zero); s2 = s3 & 0x1u; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029500; }
 s3 = s3 >> 2;
 s3 = s3 << 2;
 a0 = c->mem_r32(s3);
@@ -4036,9 +4170,10 @@ t2 = (uint32_t)((int32_t)t2 >> 1);
 c->mem_w16((t7 + 164), (uint16_t)t2);
 at = c->mem_r32((s3 + 4));
 v0 = s0 & 0x80u;
-{ int _t = (v0 == zero); a1 = (uint32_t)13312u << 16; if (_t) goto L_80029834; }
+{ int _t = (v0 == zero); a1 = (uint32_t)13312u << 16; rec_guest_instruction_ticks(c, 166u); if (_t) goto L_80029834; }
 v0 = 0x200u << 16;
 a1 = a1 + v0;
+rec_guest_instruction_ticks(c, 2u);
 L_80029834:;
 v1 = at << 2;
 v1 = v1 & 0x3FCu;
@@ -4111,21 +4246,22 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_8002998C; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 73u); if (_t) goto L_8002998C; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_8002998C; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002998C; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_8002998C; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002998C; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80029998;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80029998;
 L_8002998C:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80029998:;
 gte_write_data(1, at);
 gte_write_data(0, v0);
@@ -4133,6 +4269,7 @@ t0 = t0 + (uint32_t)16;
 t2 = 0x1u << 16;
 t3 = 0x100u << 16;
 t4 = 0x200u << 16;
+rec_guest_instruction_ticks(c, 6u);
 L_800299B0:;
 if (c->pending_work) rec_irq_poll(c);
 gte_op_at(c, 0x4A180001u, 0x800299B0u);
@@ -4143,46 +4280,53 @@ v1 = (uint32_t)(int16_t)c->mem_r16((t0 + 4));
 a0 = (uint32_t)((int32_t)at >> 8);
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); if (_t) goto L_80029A0C; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v0 >> 8); rec_guest_instruction_ticks(c, 10u); if (_t) goto L_80029A0C; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); if (_t) goto L_80029A0C; }
+{ int _t = (a0 != zero); a0 = (uint32_t)((int32_t)v1 >> 8); rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80029A0C; }
 a0 = a0 + (uint32_t)1;
 a0 = (uint32_t)((int32_t)a0 >> 1);
-{ int _t = (a0 != zero); a0 = v1 << 20; if (_t) goto L_80029A0C; }
+{ int _t = (a0 != zero); a0 = v1 << 20; rec_guest_instruction_ticks(c, 4u); if (_t) goto L_80029A0C; }
 at = at << 4;
 v0 = v0 << 4;
 v0 = v0 + a0;
-a2 = zero + (uint32_t)1; goto L_80029A18;
+a2 = zero + (uint32_t)1; rec_guest_instruction_ticks(c, 5u); goto L_80029A18;
 L_80029A0C:;
 v1 = v1 << 16;
 v0 = v0 + v1;
 a2 = zero + (uint32_t)0;
+rec_guest_instruction_ticks(c, 3u);
 L_80029A18:;
 v1 = gte_read_data(14);
 gte_hold_pz(c, 3, 19);
 a0 = gte_read_data(19);
 gte_write_data(1, at);
 gte_write_data(0, v0);
-{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; if (_t) goto L_80029A34; }
+{ int _t = (a3 == zero); t0 = t0 + (uint32_t)16; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_80029A34; }
 a0 = a0 >> 4;
+rec_guest_instruction_ticks(c, 1u);
 L_80029A34:;
-{ int _t = ((int32_t)a0 > 0); v0 = v1 - t2; if (_t) goto L_80029A40; }
+{ int _t = ((int32_t)a0 > 0); v0 = v1 - t2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029A40; }
 a0 = a0 | 61440u;
+rec_guest_instruction_ticks(c, 1u);
 L_80029A40:;
-{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; if (_t) goto L_80029A4C; }
+{ int _t = ((int32_t)v0 > 0); v0 = v1 - t3; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029A4C; }
 a0 = a0 | 4096u;
+rec_guest_instruction_ticks(c, 1u);
 L_80029A4C:;
-{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; if (_t) goto L_80029A58; }
+{ int _t = ((int32_t)v0 < 0); v0 = v1 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029A58; }
 a0 = a0 | 8192u;
+rec_guest_instruction_ticks(c, 1u);
 L_80029A58:;
-{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; if (_t) goto L_80029A64; }
+{ int _t = ((int32_t)v0 > 0); v0 = v0 - t4; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029A64; }
 a0 = a0 | 16384u;
+rec_guest_instruction_ticks(c, 1u);
 L_80029A64:;
-{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); if (_t) goto L_80029A70; }
+{ int _t = ((int32_t)v0 < 0); c->mem_w32((t0 - 32), v1); gte_record_pz(c, (t0 - 32), 3); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029A70; }
 a0 = a0 | 32768u;
+rec_guest_instruction_ticks(c, 1u);
 L_80029A70:;
-{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); if (_t) goto L_800299B0; }
+{ int _t = (t0 != t1); c->mem_w32((t0 - 28), a0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_800299B0; }
 t5 = s3 - s6;
 t5 = t5 >> 4;
 at = kWorkList;
@@ -4216,11 +4360,12 @@ v1 = v1 << 16;
 at = at | v1;
 a0 = c->lo;
 t4 = t4 + a0;
+rec_guest_instruction_ticks(c, 35u);
 L_80029B04:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (at == zero); t5 = at & 0xFFu; if (_t) goto L_80029E18; }
+{ int _t = (at == zero); t5 = at & 0xFFu; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029E18; }
 at = at >> 8;
-{ int _t = (t5 == zero); t4 = t4 + (uint32_t)36; if (_t) goto L_80029B04; }
+{ int _t = (t5 == zero); t4 = t4 + (uint32_t)36; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029B04; }
 a0 = c->mem_r32((t4 - 36));
 a1 = c->mem_r32((t4 - 32));
 v0 = a0 >> 16;
@@ -4236,7 +4381,7 @@ a2 = c->mem_r32((t4 - 28));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_80029C14; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80029C14; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -4287,13 +4432,14 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80029C0C; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_80029C0C; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_80029C14;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80029C14;
 L_80029C0C:;
 c->mem_w32((t3 + 4), fp);
 fp = fp + (uint32_t)40;
+rec_guest_instruction_ticks(c, 2u);
 L_80029C14:;
 a0 = c->mem_r32((t4 - 24));
 a1 = c->mem_r32((t4 - 20));
@@ -4310,7 +4456,7 @@ a2 = c->mem_r32((t4 - 16));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_80029D10; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 17u); if (_t) goto L_80029D10; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -4361,16 +4507,17 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80029D08; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_80029D08; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_80029D10;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80029D10;
 L_80029D08:;
 c->mem_w32((t3 + 4), fp);
 fp = fp + (uint32_t)40;
+rec_guest_instruction_ticks(c, 2u);
 L_80029D10:;
 t5 = t5 & 0x1u;
-{ int _t = (t5 == zero); a0 = c->mem_r32((t4 - 12)); if (_t) goto L_80029B04; }
+{ int _t = (t5 == zero); a0 = c->mem_r32((t4 - 12)); rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029B04; }
 a1 = c->mem_r32((t4 - 8));
 v0 = a0 >> 16;
 v0 = v0 + t7;
@@ -4385,7 +4532,7 @@ a2 = c->mem_r32((t4 - 4));
 t2 = a3 & t0;
 t2 = t2 & t1;
 t2 = t2 & 0xF000u;
-{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; if (_t) goto L_80029B04; }
+{ int _t = ((int32_t)t2 > 0); a3 = a3 & 0xFFFu; rec_guest_instruction_ticks(c, 16u); if (_t) goto L_80029B04; }
 t2 = c->mem_r32(t6);
 t0 = t0 & 0xFFFu;
 t1 = t1 & 0xFFFu;
@@ -4436,23 +4583,24 @@ t3 = t3 << 3;
 t3 = t3 + gp;
 v1 = c->mem_r32(t3);
 c->mem_w32(t3, fp);
-{ int _t = (v1 == zero); a0 = fp >> 16; if (_t) goto L_80029E0C; }
+{ int _t = (v1 == zero); a0 = fp >> 16; rec_guest_instruction_ticks(c, 40u); if (_t) goto L_80029E0C; }
 c->mem_w16(v1, (uint16_t)fp);
 c->mem_w8((v1 + 2), (uint8_t)a0);
-fp = fp + (uint32_t)40; goto L_80029B04;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80029B04;
 L_80029E0C:;
 c->mem_w32((t3 + 4), fp);
-fp = fp + (uint32_t)40; goto L_80029B04;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_80029B04;
 L_80029E18:;
 t2 = 0x8006D0F8u;
 t3 = t2 + (uint32_t)64;
 t4 = 0x8006D388u;
 t5 = 0x8006D3C8u;
 t6 = t6 + (uint32_t)40;
+rec_guest_instruction_ticks(c, 8u);
 L_80029E38:;
 if (c->pending_work) rec_irq_poll(c);
 at = c->mem_r32(t2);
-{ int _t = (t2 == t3); t2 = t2 + (uint32_t)4; if (_t) goto L_80029500; }
+{ int _t = (t2 == t3); t2 = t2 + (uint32_t)4; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029500; }
 v0 = s0 >> 8;
 v0 = v0 & 0x3u;
 v1 = at & 0x3Cu;
@@ -4494,7 +4642,7 @@ v1 = c->mem_r32((t1 + 4));
 a0 = at & v0;
 a0 = a0 & v1;
 a0 = a0 & 0xF000u;
-{ int _t = ((int32_t)a0 > 0); gte_hold_src(c, 4, (a3 + 8)); a0 = c->mem_r32((a3 + 8)); if (_t) goto L_80029E38; }
+{ int _t = ((int32_t)a0 > 0); gte_hold_src(c, 4, (a3 + 8)); a0 = c->mem_r32((a3 + 8)); rec_guest_instruction_ticks(c, 43u); if (_t) goto L_80029E38; }
 gte_hold_src(c, 5, (t0 + 8));
 a1 = c->mem_r32((t0 + 8));
 gte_hold_src(c, 6, (t1 + 8));
@@ -4515,20 +4663,21 @@ gte_hold_src(c, 1, a3);
 at = c->mem_r32(a3);
 gte_hold_src(c, 2, t0);
 v0 = c->mem_r32(t0);
-{ int _t = (s2 == zero); gte_hold_src(c, 3, t1); v1 = c->mem_r32(t1); if (_t) goto L_80029F60; }
+{ int _t = (s2 == zero); gte_hold_src(c, 3, t1); v1 = c->mem_r32(t1); rec_guest_instruction_ticks(c, 15u); if (_t) goto L_80029F60; }
 gte_write_data(12, at);
 gte_write_data(13, v0);
 gte_write_data(14, v1);
 a1 = s1 & 0x4u;
 gte_op_at(c, 0x4B400006u, 0x80029F40u);
-{ int _t = ((int32_t)a1 > 0); a1 = s1 & 0x2u; if (_t) goto L_80029F60; }
+{ int _t = ((int32_t)a1 > 0); a1 = s1 & 0x2u; rec_guest_instruction_ticks(c, 8u); if (_t) goto L_80029F60; }
 a2 = gte_read_data(24);
-{ int _t = (a1 == zero);  if (_t) goto L_80029F5C; }
+{ int _t = (a1 == zero);  rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029F5C; }
 a2 = zero - a2;
+rec_guest_instruction_ticks(c, 1u);
 L_80029F5C:;
-{ int _t = ((int32_t)a2 < 0); c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8)); if (_t) goto L_80029E38; }
+{ int _t = ((int32_t)a2 < 0); c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029E38; }
 goto L_DSAFTER_80029F5C;
-L_80029F60:; c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8));
+L_80029F60:; c->mem_w32((fp + 8), at); gte_copy_pz(c, 1, (fp + 8)); rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_80029F5C:;
 c->mem_w32((fp + 20), v0);
 gte_copy_pz(c, 2, (fp + 20));
@@ -4539,27 +4688,27 @@ v0 = (uint32_t)(int16_t)c->mem_r16((t0 + 2));
 v1 = (uint32_t)(int16_t)c->mem_r16((t1 + 2));
 a1 = at - v0;
 a1 = a1 + (uint32_t)-512;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)1024; if (_t) goto L_8002A04C; }
-{ int _t = ((int32_t)a1 <= 0); a1 = at - v1; if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 9u); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 <= 0); a1 = at - v1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A04C; }
 a1 = a1 + (uint32_t)-512;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)1024; if (_t) goto L_8002A04C; }
-{ int _t = ((int32_t)a1 <= 0); a1 = v0 - v1; if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 <= 0); a1 = v0 - v1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A04C; }
 a1 = a1 + (uint32_t)-512;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)1024; if (_t) goto L_8002A04C; }
-{ int _t = ((int32_t)a1 <= 0); at = (uint32_t)(int16_t)c->mem_r16(a3); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 <= 0); at = (uint32_t)(int16_t)c->mem_r16(a3); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A04C; }
 v0 = (uint32_t)(int16_t)c->mem_r16(t0);
 v1 = (uint32_t)(int16_t)c->mem_r16(t1);
 a1 = at - v0;
 a1 = a1 + (uint32_t)-1024;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)2048; if (_t) goto L_8002A04C; }
-{ int _t = ((int32_t)a1 <= 0); a1 = at - v1; if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 <= 0); a1 = at - v1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A04C; }
 a1 = a1 + (uint32_t)-1024;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)2048; if (_t) goto L_8002A04C; }
-{ int _t = ((int32_t)a1 <= 0); a1 = v0 - v1; if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 <= 0); a1 = v0 - v1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A04C; }
 a1 = a1 + (uint32_t)-1024;
-{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)2048; if (_t) goto L_8002A04C; }
-{ int _t = ((int32_t)a1 <= 0); v1 = a0 >> 7; if (_t) goto L_8002A04C; }
-{ int _t = (a0 == zero); a1 = s1 & 0x38u; if (_t) goto L_80029E38; }
+{ int _t = ((int32_t)a1 >= 0); a1 = a1 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A04C; }
+{ int _t = ((int32_t)a1 <= 0); v1 = a0 >> 7; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A04C; }
+{ int _t = (a0 == zero); a1 = s1 & 0x38u; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_80029E38; }
 a1 = a1 >> 1;
 a0 = v1 + a1;
 v0 = 0x900u << 16;
@@ -4568,18 +4717,18 @@ a0 = a0 << 3;
 a0 = a0 + gp;
 v0 = c->mem_r32(a0);
 c->mem_w32(a0, fp);
-{ int _t = (v0 == zero); v1 = fp >> 16; if (_t) goto L_8002A040; }
+{ int _t = (v0 == zero); v1 = fp >> 16; rec_guest_instruction_ticks(c, 10u); if (_t) goto L_8002A040; }
 c->mem_w16(v0, (uint16_t)fp);
 c->mem_w8((v0 + 2), (uint8_t)v1);
-fp = fp + (uint32_t)40; goto L_80029E38;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80029E38;
 L_8002A040:;
 if (c->pending_work) rec_irq_poll(c);
 c->mem_w32((a0 + 4), fp);
-fp = fp + (uint32_t)40; goto L_80029E38;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 3u); goto L_80029E38;
 L_8002A04C:;
 gte_hold_src(c, 3, (t7 + 1020));
 v1 = c->mem_r32((t7 + 1020));
-{ int _t = (a0 == zero); c->mem_w32(v1, fp); if (_t) goto L_80029E38; }
+{ int _t = (a0 == zero); c->mem_w32(v1, fp); rec_guest_instruction_ticks(c, 3u); if (_t) goto L_80029E38; }
 v1 = v1 + (uint32_t)4;
 c->mem_w32((t7 + 1020), v1);
 gte_copy_pz(c, 3, (t7 + 1020));
@@ -4593,21 +4742,22 @@ a0 = a0 << 3;
 a0 = a0 + gp;
 v0 = c->mem_r32(a0);
 c->mem_w32(a0, fp);
-{ int _t = (v0 == zero); v1 = fp >> 16; if (_t) goto L_8002A040; }
+{ int _t = (v0 == zero); v1 = fp >> 16; rec_guest_instruction_ticks(c, 14u); if (_t) goto L_8002A040; }
 c->mem_w16(v0, (uint16_t)fp);
 c->mem_w8((v0 + 2), (uint8_t)v1);
-fp = fp + (uint32_t)40; goto L_80029E38;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 4u); goto L_80029E38;
 L_8002A0A0:;
 sp = c->mem_r32((t7 + 1020));
 ra = kWorkList;
 ra = ra + (uint32_t)8192;
+rec_guest_instruction_ticks(c, 4u);
 L_8002A0B0:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (ra == sp); gp = c->mem_r32(ra); if (_t) goto L_8002A6B0; }
+{ int _t = (ra == sp); gp = c->mem_r32(ra); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A6B0; }
 ra = ra + (uint32_t)4;
 at = (uint32_t)(int8_t)c->mem_r8((gp + 3));
 v0 = zero + (uint32_t)12;
-{ int _t = (at != v0); c->mem_w8((gp + 3), (uint8_t)zero); if (_t) goto L_8002A354; }
+{ int _t = (at != v0); c->mem_w8((gp + 3), (uint8_t)zero); rec_guest_instruction_ticks(c, 5u); if (_t) goto L_8002A354; }
 gte_hold_src(c, 1, (gp + 8));
 at = c->mem_r32((gp + 8));
 gte_hold_src(c, 2, (gp + 20));
@@ -4755,28 +4905,33 @@ v0 = t7 + (uint32_t)144;
 v1 = 0x1u << 16;
 a0 = 0x100u << 16;
 a1 = 0x200u << 16;
+rec_guest_instruction_ticks(c, 139u);
 L_8002A2F8:;
 if (c->pending_work) rec_irq_poll(c);
 a2 = c->mem_r32(at);
 t0 = zero + (uint32_t)0;
 a3 = a2 - v1;
-{ int _t = ((int32_t)a3 > 0); a3 = a2 - a0; if (_t) goto L_8002A310; }
+{ int _t = ((int32_t)a3 > 0); a3 = a2 - a0; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_8002A310; }
 t0 = t0 | 1u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A310:;
-{ int _t = ((int32_t)a3 < 0); a3 = a2 << 16; if (_t) goto L_8002A31C; }
+{ int _t = ((int32_t)a3 < 0); a3 = a2 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A31C; }
 t0 = t0 | 2u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A31C:;
-{ int _t = ((int32_t)a3 > 0); a3 = a3 - a1; if (_t) goto L_8002A328; }
+{ int _t = ((int32_t)a3 > 0); a3 = a3 - a1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A328; }
 t0 = t0 | 4u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A328:;
-{ int _t = ((int32_t)a3 < 0); at = at + (uint32_t)16; if (_t) goto L_8002A334; }
+{ int _t = ((int32_t)a3 < 0); at = at + (uint32_t)16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A334; }
 t0 = t0 | 8u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A334:;
-{ int _t = (at != v0); c->mem_w8((at - 1), (uint8_t)t0); if (_t) goto L_8002A2F8; }
+{ int _t = (at != v0); c->mem_w8((at - 1), (uint8_t)t0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A2F8; }
 t4 = c->mem_r32(gp);
 t3 = gp + (uint32_t)0;
 s0 = 0x8006D5E4u;
-s1 = s0 + (uint32_t)48; goto L_8002A51C;
+s1 = s0 + (uint32_t)48; rec_guest_instruction_ticks(c, 6u); goto L_8002A51C;
 L_8002A354:;
 gte_hold_src(c, 1, (gp + 8));
 at = c->mem_r32((gp + 8));
@@ -4882,31 +5037,37 @@ v0 = t7 + (uint32_t)96;
 v1 = 0x1u << 16;
 a0 = 0x100u << 16;
 a1 = 0x200u << 16;
+rec_guest_instruction_ticks(c, 92u);
 L_8002A4C4:;
 if (c->pending_work) rec_irq_poll(c);
 a2 = c->mem_r32(at);
 t0 = zero + (uint32_t)0;
 a3 = a2 - v1;
-{ int _t = ((int32_t)a3 > 0); a3 = a2 - a0; if (_t) goto L_8002A4DC; }
+{ int _t = ((int32_t)a3 > 0); a3 = a2 - a0; rec_guest_instruction_ticks(c, 5u); if (_t) goto L_8002A4DC; }
 t0 = t0 | 1u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A4DC:;
-{ int _t = ((int32_t)a3 < 0); a3 = a2 << 16; if (_t) goto L_8002A4E8; }
+{ int _t = ((int32_t)a3 < 0); a3 = a2 << 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A4E8; }
 t0 = t0 | 2u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A4E8:;
-{ int _t = ((int32_t)a3 > 0); a3 = a3 - a1; if (_t) goto L_8002A4F4; }
+{ int _t = ((int32_t)a3 > 0); a3 = a3 - a1; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A4F4; }
 t0 = t0 | 4u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A4F4:;
-{ int _t = ((int32_t)a3 < 0); at = at + (uint32_t)16; if (_t) goto L_8002A500; }
+{ int _t = ((int32_t)a3 < 0); at = at + (uint32_t)16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A500; }
 t0 = t0 | 8u;
+rec_guest_instruction_ticks(c, 1u);
 L_8002A500:;
-{ int _t = (at != v0); c->mem_w8((at - 1), (uint8_t)t0); if (_t) goto L_8002A4C4; }
+{ int _t = (at != v0); c->mem_w8((at - 1), (uint8_t)t0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A4C4; }
 t4 = c->mem_r32(gp);
 t3 = gp + (uint32_t)0;
 s0 = 0x8006D5C8u;
 s1 = s0 + (uint32_t)28;
+rec_guest_instruction_ticks(c, 5u);
 L_8002A51C:;
 if (c->pending_work) rec_irq_poll(c);
-{ int _t = (s0 == s1); t2 = c->mem_r32(s0); if (_t) goto L_8002A674; }
+{ int _t = (s0 == s1); t2 = c->mem_r32(s0); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A674; }
 s0 = s0 + (uint32_t)4;
 at = t2 >> 24;
 v0 = t2 >> 16;
@@ -4921,7 +5082,7 @@ a1 = (uint32_t)(int8_t)c->mem_r8((v0 + 15));
 a2 = (uint32_t)(int8_t)c->mem_r8((v1 + 15));
 a0 = a0 & a1;
 a0 = a0 & a2;
-{ int _t = ((int32_t)a0 > 0); a0 = (uint32_t)c->mem_r16((at + 8)); if (_t) goto L_8002A51C; }
+{ int _t = ((int32_t)a0 > 0); a0 = (uint32_t)c->mem_r16((at + 8)); rec_guest_instruction_ticks(c, 16u); if (_t) goto L_8002A51C; }
 a1 = (uint32_t)c->mem_r16((v0 + 8));
 a2 = (uint32_t)c->mem_r16((v1 + 8));
 gte_hold_src(c, 7, (at + 4));
@@ -4948,33 +5109,33 @@ t0 = c->mem_r32(v0);
 gte_hold_src(c, 9, v1);
 t1 = c->mem_r32(v1);
 t2 = t2 & 0x1u;
-{ int _t = ((int32_t)t2 > 0); a0 = (uint32_t)(int16_t)c->mem_r16((at + 2)); if (_t) goto L_8002A63C; }
+{ int _t = ((int32_t)t2 > 0); a0 = (uint32_t)(int16_t)c->mem_r16((at + 2)); rec_guest_instruction_ticks(c, 19u); if (_t) goto L_8002A63C; }
 a1 = (uint32_t)(int16_t)c->mem_r16((v0 + 2));
 a2 = (uint32_t)(int16_t)c->mem_r16((v1 + 2));
 t2 = a0 - a1;
 t2 = t2 + (uint32_t)-512;
-{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)1024; if (_t) goto L_8002A668; }
-{ int _t = ((int32_t)t2 <= 0); t2 = a0 - a2; if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)1024; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 <= 0); t2 = a0 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A668; }
 t2 = t2 + (uint32_t)-512;
-{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)1024; if (_t) goto L_8002A668; }
-{ int _t = ((int32_t)t2 <= 0); t2 = a1 - a2; if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 <= 0); t2 = a1 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A668; }
 t2 = t2 + (uint32_t)-512;
-{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)1024; if (_t) goto L_8002A668; }
-{ int _t = ((int32_t)t2 <= 0); a0 = (uint32_t)(int16_t)c->mem_r16(at); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)1024; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 <= 0); a0 = (uint32_t)(int16_t)c->mem_r16(at); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A668; }
 a1 = (uint32_t)(int16_t)c->mem_r16(v0);
 a2 = (uint32_t)(int16_t)c->mem_r16(v1);
 t2 = a0 - a1;
 t2 = t2 + (uint32_t)-1024;
-{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)2048; if (_t) goto L_8002A668; }
-{ int _t = ((int32_t)t2 <= 0); t2 = a0 - a2; if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)2048; rec_guest_instruction_ticks(c, 6u); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 <= 0); t2 = a0 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A668; }
 t2 = t2 + (uint32_t)-1024;
-{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)2048; if (_t) goto L_8002A668; }
-{ int _t = ((int32_t)t2 <= 0); t2 = a1 - a2; if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 <= 0); t2 = a1 - a2; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A668; }
 t2 = t2 + (uint32_t)-1024;
-{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)2048; if (_t) goto L_8002A668; }
-{ int _t = ((int32_t)t2 <= 0); c->mem_w32((fp + 8), a3); gte_copy_pz(c, 7, (fp + 8)); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 >= 0); t2 = t2 + (uint32_t)2048; rec_guest_instruction_ticks(c, 3u); if (_t) goto L_8002A668; }
+{ int _t = ((int32_t)t2 <= 0); c->mem_w32((fp + 8), a3); gte_copy_pz(c, 7, (fp + 8)); rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A668; }
 goto L_DSAFTER_8002A638;
-L_8002A63C:; c->mem_w32((fp + 8), a3); gte_copy_pz(c, 7, (fp + 8));
+L_8002A63C:; c->mem_w32((fp + 8), a3); gte_copy_pz(c, 7, (fp + 8)); rec_guest_instruction_ticks(c, 1u);
 L_DSAFTER_8002A638:;
 c->mem_w32((fp + 20), t0);
 gte_copy_pz(c, 8, (fp + 20));
@@ -4986,23 +5147,24 @@ at = fp >> 16;
 c->mem_w16(t3, (uint16_t)fp);
 c->mem_w8((t3 + 2), (uint8_t)at);
 t3 = fp + (uint32_t)0;
-fp = fp + (uint32_t)40; goto L_8002A51C;
+fp = fp + (uint32_t)40; rec_guest_instruction_ticks(c, 10u); goto L_8002A51C;
 L_8002A668:;
 c->mem_w32(sp, fp);
-sp = sp + (uint32_t)4; goto L_8002A63C;
+sp = sp + (uint32_t)4; rec_guest_instruction_ticks(c, 3u); goto L_8002A63C;
 L_8002A674:;
-{ int _t = (t4 == zero); at = t4 >> 16; if (_t) goto L_8002A688; }
+{ int _t = (t4 == zero); at = t4 >> 16; rec_guest_instruction_ticks(c, 2u); if (_t) goto L_8002A688; }
 c->mem_w16(t3, (uint16_t)t4);
-c->mem_w8((t3 + 2), (uint8_t)at); goto L_8002A0B0;
+c->mem_w8((t3 + 2), (uint8_t)at); rec_guest_instruction_ticks(c, 3u); goto L_8002A0B0;
 L_8002A688:;
 at = kOtBase;
 at = c->mem_r32(at);
+rec_guest_instruction_ticks(c, 4u);
 L_8002A698:;
 if (c->pending_work) rec_irq_poll(c);
 v0 = c->mem_r32(at);
 at = at + (uint32_t)8;
-{ int _t = (v0 != gp);  if (_t) goto L_8002A698; }
-c->mem_w32((at - 8), t3); goto L_8002A0B0;
+{ int _t = (v0 != gp);  rec_guest_instruction_ticks(c, 4u); if (_t) goto L_8002A698; }
+c->mem_w32((at - 8), t3); rec_guest_instruction_ticks(c, 2u); goto L_8002A0B0;
 L_8002A6B0:;
 at = kPoolPtr;
 c->mem_w32(at, fp);
@@ -5019,5 +5181,5 @@ s3 = c->mem_r32((at + 12));
 s2 = c->mem_r32((at + 8));
 s1 = c->mem_r32((at + 4));
 s0 = c->mem_r32(at);
-return;
+rec_guest_instruction_ticks(c, 19u); return;
 return;

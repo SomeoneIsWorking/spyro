@@ -31,6 +31,7 @@
 #include "core.h"
 #include "recomp_iface.h"
 #include "spyro_game.h"
+#include "wide_clip_plan.h"
 #include <lucent/log.h>
 
 void interp_call(Core *c, uint32_t pc); // interp.cpp — nested call leaving the guest's ra alone
@@ -72,11 +73,11 @@ const Renderer kRenderers[] = {
      "EmitStaticActorMeshList — sky + distant terrain",
      {0x8004ED8Cu},
      0x8004EE2Cu,
-     0}, // lui t7,0x0200 -> sub a1,a1,t7
+     0}, // lui t7,0x0200 -> sub a1,a1,t7 (horizontal right clip)
     {0x80022A2Cu,
      "RasterizeSpritePrimQueue — the foreground gem + the DEMO MODE caption",
      {0x80022FF8u},
-     0x800230ACu,  // lui s0,0x0200 -> sub a0,a0,s0
+     0x800230ACu,  // lui s0,0x0200 -> sub a0,a0,s0 (horizontal right clip)
      0x80023958u}, // `lui at,0x0100; ctc2 at,OFX` at 0x8002395C — this body RESETS the projection
                    // centre to the 4:3 256 partway through, so the OFX we install below would be
                    // silently undone for everything it draws after that point.
@@ -84,12 +85,12 @@ const Renderer kRenderers[] = {
      "EmitActorDrawList — the orange character",
      {0x8001F9F4u},
      0x8001FC94u,
-     0}, // lui t9,0x0200 -> sub t6,t6,t9
+     0}, // lui t9,0x0200 -> sub t6,t6,t9 (horizontal right clip)
     {0x80020F34u,
      "EmitSecondaryActorPrimitives — a second character",
      {0x80021190u},
      0x80021454u,
-     0}, // lui t9,0x0200 -> sub t6,t6,t9
+     0}, // lui t9,0x0200 -> sub t6,t6,t9 (horizontal right clip)
     {0x800258F0u,
      "RenderWorldChunks — the GROUND and the cliffs",
      {0x8002626Cu,
@@ -102,9 +103,9 @@ const Renderer kRenderers[] = {
       0x8002A4C0u},
      0,
      0},
-    // eight bounds, each the third of a 0x0001/0x0100/0x0200 triple. The SIX other 0x02000000
-    // immediates in this function (0x8002652C, 0x800266E0, 0x80027924, 0x80028074, 0x80028A40,
-    // 0x8002982C) are each `lui rX,0x3n00; lui rY,0x0200; add` — GPU command words, not bounds.
+    // Eight bounds, each the third (0x0200) load in a 0x0001/0x0100/0x0200 clip triple. The nearby
+    // 0x0100 loads are the vertical 256-line bound; patching those caused issue 0074's long
+    // top/bottom triangles.
 };
 constexpr int kRendererCount = (int)(sizeof kRenderers / sizeof kRenderers[0]);
 
@@ -120,12 +121,6 @@ uint32_t s_ofx_orig[kRendererCount];
 bool s_have_ofx[kRendererCount];
 
 // The right bound lives in the HIGH half of the packed screen word, so the immediate is simply the
-// width: 512 -> 0x0200, 684 -> 0x02AC. Both are exact because the low 16 bits of `width << 16` are
-// always zero — a `lui` can express any bound this game could want.
-inline uint32_t with_bound(uint32_t insn, int width) {
-  return (insn & 0xFFFF0000u) | (uint32_t)(width & 0xFFFF);
-}
-
 // ── THE INSTRUMENT (PSXPORT_DEBUG=wideprims), and why it is this quantity and not a picture.
 //
 // "Did widening the bound change anything?" was asked of a screenshot first, and a screenshot could
@@ -214,31 +209,32 @@ void run(Core *c, int ri) {
 
   const int nw = gpu_vk_wide_engine_w(c);
   int n = 0;
+  uint32_t firstWideWord = 0;
   for (; n < 8 && R.sites[n]; n++) {
     const uint32_t at = R.sites[n];
+    const uint32_t original = s_have_orig[ri][n] ? s_orig[ri][n] : c->mem_r32(at);
+    // Replacement and validation are one operation: a caller cannot accidentally patch the
+    // adjacent vertical 0x0100 load by forgetting a separate predicate.
+    const auto widened = spyro::wide::replaceRightBound(original, nw);
+    if (!widened) {
+      lucent::error("wide",
+                    "0x{:08X}: expected `lui rX,0x0200` at the clip-bound site 0x{:08X}, "
+                    "found {:08X}. NOT patching this renderer ({}) — its bounds stay at 4:3.",
+                    R.addr,
+                    at,
+                    original,
+                    R.what);
+      s_refused[ri] = true;
+      break;
+    }
     if (!s_have_orig[ri][n]) {
-      const uint32_t w = c->mem_r32(at);
-      // A site that is not `lui rX, 0x0200` is not the instruction this table describes. Refuse the
-      // whole renderer rather than patch a word whose meaning is unknown — and say so, because a
-      // silently-skipped patch would present as "widescreen just does not widen here".
-      // opcode(31:26)=lui, rs(25:21)=0, imm(15:0)=0x0200. The DESTINATION register (20:16) is free
-      // — it differs per renderer (s0 in one, t9 in two, t3/t4/a1 across the eight in 0x800258F0),
-      // and pinning it is how the first version of this check refused all eleven genuine sites.
-      if ((w & 0xFFE0FFFFu) != 0x3C000200u) {
-        lucent::error("wide",
-                      "0x{:08X}: expected `lui rX,0x0200` at the clip-bound site 0x{:08X}, "
-                      "found {:08X}. NOT patching this renderer ({}) — its bounds stay at 4:3.",
-                      R.addr,
-                      at,
-                      w,
-                      R.what);
-        s_refused[ri] = true;
-        break;
-      }
-      s_orig[ri][n] = w;
+      s_orig[ri][n] = original;
       s_have_orig[ri][n] = true;
     }
-    c->mem_w32(at, with_bound(s_orig[ri][n], nw));
+    c->mem_w32(at, *widened);
+    if (n == 0) {
+      firstWideWord = *widened;
+    }
   }
   // The in-body OFX reset, where one exists: `lui rX, 0x0100` feeding ctc2 OFX. Same shape of
   // patch, same shape of refusal — 256 becomes nw/2, so the body re-centres to the WIDE centre
@@ -290,7 +286,7 @@ void run(Core *c, int ri) {
                  nw,
                  R.sites[0],
                  s_orig[ri][0],
-                 with_bound(s_orig[ri][0], nw));
+                 firstWideWord);
   }
 
   // RE-CENTRE THE PROJECTION. Widening the bounds alone is very nearly a no-op — measured, it moved

@@ -96,6 +96,12 @@ if(BUILD_TESTING)
   target_compile_features(test_stage13_scene_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_stage13_scene_recipe PRIVATE psxport)
   add_test(NAME stage13_scene_recipe COMMAND test_stage13_scene_recipe)
+  add_executable(test_field_environment_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_environment_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_environment_recipe.cpp)
+  target_include_directories(test_field_environment_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_field_environment_recipe PRIVATE cxx_std_20)
+  add_test(NAME field_environment_recipe COMMAND test_field_environment_recipe)
   add_executable(test_actor_mesh_scratch
     ${CMAKE_SOURCE_DIR}/tests/test_actor_mesh_scratch.cpp)
   target_include_directories(test_actor_mesh_scratch PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
@@ -217,6 +223,8 @@ set(GAME_SRC
   game/render/actor_global_order.cpp
   game/render/scene_painter_order.cpp
   game/render/stage13_scene_recipe.cpp
+  game/render/field_environment_recipe.cpp
+  game/render/field_environment_oracle.cpp
   game/render/actor_recipe_capture.cpp
   game/render/actor_scene_builder.cpp
   game/render/actor_scene_oracle.cpp

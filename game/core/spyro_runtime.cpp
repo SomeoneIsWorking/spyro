@@ -1,6 +1,7 @@
 #include "spyro_runtime.h"
 
 #include "cfg.h"
+#include "field_environment_oracle.h"
 #include "fntrace.h"
 #include "hostprof.h"
 #include "legacy_game_interface.h"
@@ -50,6 +51,7 @@ void SpyroRuntime::registerOverrides(Game &) {
     spyro_register_wide_clip();
     spyro_register_actor_chain_oracle();
     spyro_register_native_render();
+    spyro_register_field_environment_oracle();
   }
   fntrace_init();
 }

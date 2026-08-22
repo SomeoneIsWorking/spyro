@@ -4,9 +4,9 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: native,ownership,non-leaf
-depends: game/core/native_actor_mesh_scratch.cpp#initActorMeshScratchNative, game/core/actor_mesh_scratch.h#actorMeshScratchLayout, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_actor_mesh_scratch.cpp#main
-reconfirmed: 2026-08-21
-verified_at: 2026-08-21 14:17:54
+depends: game/core/native_actor_mesh_scratch.cpp#initActorMeshScratchNative, game/core/actor_mesh_scratch.h#actorMeshScratchLayout, titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::registerOverrides, tests/test_actor_mesh_scratch.cpp#main
+reconfirmed: 2026-08-22 18:45:06
+verified_at: 2026-08-22 18:45:06
 ---
 
 ## Claim
@@ -44,3 +44,7 @@ Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports actor-
 ## Re-confirmed 2026-08-21
 
 Post-landing full CTest 13/13 and long native differential retained the actor mesh scratch owner while composing the new text owner.
+
+## Re-confirmed 2026-08-22 18:45:06
+
+Registration moved into Spyro1Runtime::registerOverrides. The rebuilt SCUS_942.28 shipping gate gate-boot-20260822-184226.log reported actor-scratch@0x8005B6F8 call #1 matching the retained body; the focused test and full 27/27 CTests pass.

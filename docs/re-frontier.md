@@ -31,11 +31,11 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ### boot.provision — Extract SCUS_942.28 from the disc + recompile it to C
 - status: re-verified
-- deps: 
-- evidence: tools/ensure_recomp.py runs discdump + emit.py end to end; 621 functions emitted, hash-checked against the exe + recompiler sources + seed file. SYSTEM.CNF confirms BOOT=cdrom:\SCUS_942.28.
-- where: tools/ensure_recomp.py, game/recomp_seeds.json
+- deps:
+- evidence: tools/ensure_recomp.py first stages SYSTEM.CNF + SCUS_942.28 through the serial manifest publisher, then runs discdump + emit.py end to end; 621 functions emitted and hash-checked against exe + recompiler sources + seed file. Real Spyro 1 media matched 11/11 identity facts.
+- where: tools/provision_title.py, tools/title_identity.py, tools/ensure_recomp.py, game/recomp_seeds.json
 - gap: 
-- notes: Spyro is a SINGLE executable: no \BIN\*.BIN code overlays, all data in WAD.WAD. Structurally simpler than psxport's Tomba!2 reference consumer.
+- notes: Spyro 1 is a single boot executable; its code overlays are ranges inside WAD.WAD rather than root-directory executable files. The title-aware publisher closes issue 0078 before recomp cache reuse.
 
 ### boot.crt0 — GameConfig crt0/boot group from the real crt0
 - status: re-verified
@@ -49,7 +49,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - status: re-verified
 - deps: boot.crt0
 - evidence: See claim C002: headless backtrace shows main -> gen_func_80012204 -> ...800127C0 -> ...8001250C -> ...80016500 -> ...800163E4.
-- where: game/core/spyro_runtime.cpp SpyroRuntime::bootInit
+- where: titles/spyro1/core/spyro1_runtime.cpp Spyro1Runtime::bootInit
 - gap: 
 - notes: 
 
@@ -360,3 +360,22 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: game/core/game_hooks.cpp (`spyro_fps60ReadSceneCam`); external/psxport/runtime/recomp/game_iface.h + game_hooks_opt.cpp + fps60.cpp (framework seam)
 - gap: DONE. The framework defect was fixed at psxport `a1c53d7c`: `Fps60::sceneCam` requires the game's `fps60ReadSceneCam` hook instead of interpreting Tomba!2 scratchpad offsets as universal. Spyro now supplies its persistent game camera state. Renderer `0x80022A2C` reads five packed rotation words from `0x80076DD0`, reads camera world position from `0x80076DF8`, subtracts that position from every world point, and then applies the rotation. The hook performs the algebraically identical affine transform: raw 1.3.12 `R`, `T = -(R * cameraPosition) / 4096`. `PSXPORT_SELFTEST=scenecam` protects signed matrix unpacking, the `R22` halfword, and translation sign with identity and rotated cases.
 - notes: This does not read GTE control registers or transient scratchpad state. The path is ready for a native producer, but is not evidence that Spyro has such a producer yet: `sceneCam` still has zero game callers today.
+
+
+## spyro2
+
+### spyro2.identity — Identify SCUS_944.25 and provision it without Spyro 1 cache conflation
+- status: re-partial
+- deps:
+- evidence: The measured 358400-byte executable matches 11/11 manifest facts (SHA-1 42633ff8cf1b43c49c5fe23d00eca6eb2703828b; SHA-256 7b54002789ab379e0d3a6b49d7b50078b9c9c2fed589f41ff9878ebb68fe0bc1; entry 0x8005478C). Both-answer provisioning tests preload a Spyro 1 cache and prove a requested Spyro 2 operation stages and validates SYSTEM.CNF before publishing.
+- where: titles/spyro2/executable.json, tools/title_identity.py, tools/provision_title.py
+- gap: No Spyro 2 CHD was available, so SYSTEM.CNF/disc provenance has not been measured on real Spyro 2 media.
+- notes: SCUS_942.28 and SCUS_944.25 have separate title specs, environment keys, manifests, and cache destinations.
+
+### spyro2.crt0 — Own Spyro 2 executable image and stop at the first unverified execution boundary
+- status: re-partial
+- deps: spyro2.identity
+- evidence: Shipping psxport crt0_extract resolves 8/8 SCUS_944.25 boot-group fields and crt0_plan; shipping decode of words 0x80054814=0x0C016AF6 and 0x80054828=0x0C0046B7 identifies libcInit 0x8005ABD8 followed by game main 0x80011ADC. The Clang runtime test checks the inherited runtime's typed GuestProgramImage and absence of Spyro 1 legacy views.
+- where: game/core/spyro_runtime.*, titles/spyro2/core/spyro2_runtime.*, tests/test_spyro2_runtime.cpp
+- gap: No generated SCUS_944.25 substrate or differential execution exists; bootInit refuses rather than entering unverified code.
+- notes: SpyroRuntime is the lineage root; Spyro1Runtime and Spyro2Runtime inherit it. Only Spyro1Runtime binds the remaining SCUS_942.28 GameConfig compatibility view.

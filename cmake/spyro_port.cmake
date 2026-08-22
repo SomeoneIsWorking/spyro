@@ -187,6 +187,18 @@ if(BUILD_TESTING)
     NAME runtime_structure
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_runtime_structure.py)
   add_test(
+    NAME title_provision
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_provision_titles.py)
+  add_executable(test_spyro2_runtime
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro2_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/game/core/spyro_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_runtime.cpp)
+  target_include_directories(test_spyro2_runtime PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/core ${CMAKE_SOURCE_DIR}/titles/spyro2/core)
+  target_compile_features(test_spyro2_runtime PRIVATE cxx_std_20)
+  target_link_libraries(test_spyro2_runtime PRIVATE psxport)
+  add_test(NAME spyro2_runtime COMMAND test_spyro2_runtime)
+  add_test(
     NAME computed_jumps_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
   add_test(NAME cpp_policy COMMAND ${SPYRO_CPP_POLICY_COMMAND})
@@ -207,6 +219,7 @@ set(GAME_SRC
   game/core/game_hooks.cpp
   game/core/spyro_context.cpp
   game/core/spyro_runtime.cpp
+  titles/spyro1/core/spyro1_runtime.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp
   game/core/frame_loop.cpp
@@ -290,7 +303,8 @@ set_target_properties(spyro_port PROPERTIES
 
 # Only game/* include dirs here — the framework's (runtime, generated, vendored backends, SDL,
 # freetype) are inherited PUBLICly from the psxport link below.
-target_include_directories(spyro_port PRIVATE game game/core game/render)
+target_include_directories(spyro_port PRIVATE
+  game game/core game/render titles/spyro1/core)
 
 target_compile_options(spyro_port PRIVATE -w -O2 -g
   ${SDL3_CFLAGS_OTHER} ${FREETYPE_CFLAGS_OTHER})

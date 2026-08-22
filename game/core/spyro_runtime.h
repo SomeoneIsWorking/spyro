@@ -1,17 +1,21 @@
 #pragma once
 
-#include "game_iface.h"
+#include "game_runtime.h"
 
 namespace spyro {
 
-class SpyroRuntime final : public LegacyGameRuntimeAdapter {
+// Engine-lineage runtime root. Each serial owns its immutable executable image and behavior in a
+// derived title runtime; this base prevents one title's GameConfig from becoming another title's
+// identity by accident.
+class SpyroRuntime : public GameRuntime {
 public:
-  SpyroRuntime();
+  const GuestProgramImage *guestProgramImage() const final;
 
-  void *createContext(Core &core) override;
-  void destroyContext(void *context) override;
-  void registerOverrides(Game &game) override;
-  void bootInit(Core &core) override;
+protected:
+  explicit SpyroRuntime(const GuestProgramImage &programImage);
+
+private:
+  const GuestProgramImage &programImage_;
 };
 
 } // namespace spyro

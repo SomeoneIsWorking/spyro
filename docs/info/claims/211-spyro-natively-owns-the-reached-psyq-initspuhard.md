@@ -4,9 +4,9 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: ownership,ndiff,reach,spu
-depends: game/core/native_spu_hardware_init.cpp#initSpuHardwareNative, game/core/spu_hardware_init.h#spuHardwareNeedsFullReset, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_spu_hardware_init.cpp#main, external/open-spyro/src/c/InitSpuHardware.c#InitSpuHardware
-reconfirmed: 2026-08-21
-verified_at: 2026-08-21 14:17:54
+depends: game/core/native_spu_hardware_init.cpp#initSpuHardwareNative, game/core/spu_hardware_init.h#spuHardwareNeedsFullReset, titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::registerOverrides, tests/test_spu_hardware_init.cpp#main, external/open-spyro/src/c/InitSpuHardware.c#InitSpuHardware
+reconfirmed: 2026-08-22 18:45:07
+verified_at: 2026-08-22 18:45:07
 ---
 
 ## Claim
@@ -30,3 +30,7 @@ psxport issue 0010 fixed nested NDIFF's singleton snapshot corruption without ch
 ## Re-confirmed 2026-08-21
 
 Post-landing nesting-safe NDIFF reports InitSpuHardware parent call 1 and WriteSpuRamPio child calls 1-2 exact with no fabricated divergence.
+
+## Re-confirmed 2026-08-22 18:45:07
+
+Registration moved into Spyro1Runtime::registerOverrides. The rebuilt SCUS_942.28 shipping gate gate-boot-20260822-184226.log reported spu-init@0x8005BBF4 call #1 matching the retained body; the focused test and full 27/27 CTests pass.

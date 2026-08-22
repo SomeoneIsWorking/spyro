@@ -1,0 +1,22 @@
+{
+  "title": "Spyro 2: Ripto's Rage!",
+  "region": "USA",
+  "serial": "SCUS_944.25",
+  "executable": "SCUS_944.25",
+  "file_size": 358400,
+  "sha1": "42633ff8cf1b43c49c5fe23d00eca6eb2703828b",
+  "sha256": "7b54002789ab379e0d3a6b49d7b50078b9c9c2fed589f41ff9878ebb68fe0bc1",
+  "header": {
+    "entry": "0x8005478C",
+    "gp": "0x00000000",
+    "text_address": "0x80010000",
+    "text_size": "0x00057000",
+    "stack_address": "0x801FFFF0",
+    "stack_offset": "0x00000000"
+  },
+  "region_markers": [
+    "Sony Computer Entertainment Inc. for North America area",
+    "Spyro2 requires",
+    "Ripto's Arena"
+  ]
+}

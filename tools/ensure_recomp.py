@@ -6,8 +6,9 @@ matches a deterministic hash of its INPUTS. tools/run.py calls this; all recomp 
 here rather than being duplicated in the launcher.
 
 What it does, in order:
-  1. Resolve the disc image (CLI arg > $PSXPORT_SPYRO_DISC > .env > *.chd drop-in).
-  2. Extract SCUS_942.28 via psxport's `discdump`, plus WAD.WAD, and slice the overlays out of it.
+  1. Resolve the Spyro 1 disc without consulting another title's key or cache.
+  2. Stage SYSTEM.CNF + its boot executable, verify the SCUS_942.28 manifest, then publish it; plus
+     WAD.WAD and slices of the observed overlays.
   3. Compute the recomp IDENTITY = emit.py's RECOMP_VERSION + a hash of the INPUTS (the executable +
      the recompiler module sources + OUR SEED FILE). If the stored identity matches, the on-disk
      version stamp matches, and the generated set is complete, do nothing. Otherwise re-run emit.py.
@@ -28,9 +29,12 @@ Exit:  0 on success, non-zero with a diagnostic on any failure.
 import hashlib
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
+
+import provision_title
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -48,8 +52,6 @@ RECOMP_SRCS = [f"{RECOMP_DIR}/emit.py", f"{RECOMP_DIR}/decode.py", f"{RECOMP_DIR
 # Our own recompiler seeds (emit.py --seeds): addresses discovery cannot see. A game fact, so we own
 # it — the framework ships none. It is a recomp INPUT, hence hashed alongside the recompiler sources.
 SEEDS = "game/recomp_seeds.json"
-
-EXE_DISC_PATH = "SCUS_942.28"          # its path on the disc (root dir); also the SYSTEM.CNF BOOT target
 
 # Overlays. Spyro's are not separate disc files: they live INSIDE WAD.WAD and are loaded into the
 # heap (docs/issues/0001). Each entry is (name, byte offset into WAD.WAD, length); the matching load
@@ -117,22 +119,12 @@ def recomp_version():
 
 
 def resolve_disc(argv):
-    """CLI arg > $PSXPORT_SPYRO_DISC > .env (PSXPORT_SPYRO_DISC|PSXPORT_DISC) > *.chd drop-in."""
-    disc = argv[1] if len(argv) > 1 and argv[1] else os.environ.get("PSXPORT_SPYRO_DISC", "")
-    if not disc and os.path.isfile(os.path.join(ROOT, ".env")):
-        env = open(os.path.join(ROOT, ".env")).read()
-        for key in ("PSXPORT_SPYRO_DISC", "PSXPORT_DISC"):
-            m = re.search(rf"^\s*{key}\s*=\s*(.+?)\s*$", env, re.M)
-            if m:
-                disc = m.group(1)
-                break
-    if not disc:
-        chds = sorted(p for p in os.listdir(ROOT) if p.lower().endswith(".chd"))
-        if chds:
-            disc = os.path.join(ROOT, chds[0])
-    if not disc or not os.path.isfile(disc):
-        die("no disc image — pass it as ./run.sh <disc.chd>, set PSXPORT_SPYRO_DISC, or drop a *.chd here")
-    return disc
+    """Resolve only Spyro 1 media; executable identity is verified later before cache reuse."""
+    argument = argv[1] if len(argv) > 1 and argv[1] else None
+    try:
+        return str(provision_title.resolve_disc(provision_title.SPECS["spyro1"], argument).path)
+    except provision_title.Refused as error:
+        die(str(error))
 
 
 def find_discdump():
@@ -148,29 +140,19 @@ def find_discdump():
         "(cmake --build external/psxport/build --target discdump)")
 
 
-def disc_tree(discdump, disc):
-    """`discdump list <disc>` — the ISO9660 file tree, for diagnosing a failed extraction."""
-    r = subprocess.run([discdump, "list", disc], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return (r.stdout or b"").decode(errors="replace")
-
-
 def extract_exe(discdump, disc):
-    """Pull SCUS_942.28 off the disc if not already present. Never swallows the diagnostic — a failed
-    extraction is a build-breaker, and the disc tree tells us whether the name/path differs (e.g. a
-    non-USA release with a different SCUS/SCES id)."""
-    out = os.path.join(ROOT, EXE)
-    if os.path.isfile(out):
-        return out
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    r = subprocess.run([discdump, "get", EXE_DISC_PATH, disc, os.path.dirname(out)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    if r.returncode != 0 or not os.path.isfile(out):
-        err = (r.stderr or b"").decode(errors="replace").strip()
-        die(f"could not extract {EXE_DISC_PATH} from {disc}\n"
-            f"  discdump: {err or '(no message)'}\n"
-            f"  This port targets Spyro the Dragon (USA), whose SYSTEM.CNF boots cdrom:\\SCUS_942.28.\n"
-            f"  Disc tree (discdump list) follows — check the executable's real name:\n" + disc_tree(discdump, disc))
-    return out
+    """Inspect selected media in staging, then publish the verified SCUS_942.28 cache."""
+    try:
+        return str(
+            provision_title.provision(
+                provision_title.SPECS["spyro1"],
+                pathlib.Path(disc),
+                pathlib.Path(discdump),
+                output_dir=pathlib.Path(ROOT) / "scratch/bin/spyro",
+            )
+        )
+    except (OSError, provision_title.Refused) as error:
+        die(str(error))
 
 
 def extract_overlays(discdump, disc):

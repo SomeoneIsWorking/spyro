@@ -6,7 +6,7 @@ struct GameHooks;
 namespace spyro::legacy {
 
 // Bounded compatibility views for framework facts/callbacks that have not yet received typed seams.
-// Runtime behavior is owned by SpyroRuntime, not by these bags.
+// Runtime behavior is owned by Spyro1Runtime, not by these bags.
 const GameConfig &measuredConfig();
 const GameHooks &compatibilityHooks();
 

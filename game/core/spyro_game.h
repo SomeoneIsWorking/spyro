@@ -1,7 +1,7 @@
 // spyro_game.h — declarations for Spyro's cohesive game-side subsystems.
 #include <cstdint>
 //
-// The framework never includes this; SpyroRuntime composes these operations.
+// The framework never includes this; Spyro1Runtime composes these operations.
 #pragma once
 
 class Game;

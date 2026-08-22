@@ -6,9 +6,10 @@ A multi-title native PC port for **Spyro 1, 2, and 3** built on the
 layer; this repo supplies the game — the seam, the RE, and the native reimplementations.
 
 The product is not complete until the launcher recognizes and runs all three verified executable
-identities. Spyro the Dragon (`SCUS_942.28`) is implemented today; Spyro 2/3 identities are not yet
-measured and must not be guessed. Each title gets a derived runtime selected by executable serial;
-shared code is extracted only from measured common behavior.
+identities. Spyro the Dragon (`SCUS_942.28`) is implemented today. Spyro 2 (`SCUS_944.25`) has a
+measured executable identity and derived crt0-boundary runtime but no verified disc/substrate/boot;
+Spyro 3 is unmeasured. Each title gets a derived runtime selected by executable serial, and shared
+code is extracted only from measured common behavior.
 
 **Read `external/psxport/docs/porting-a-new-psx-game.md` first.** It is the methodology; this file is
 only what is specific to Spyro.

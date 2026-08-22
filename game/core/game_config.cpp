@@ -9,7 +9,7 @@
 // in a way that looks like a framework bug, so an un-RE'd field stays 0 with an explicit TODO
 // rather than being filled with a plausible-looking value. Zero is honest; a wrong address is not.
 //
-// SpyroRuntime exposes this bounded compatibility view before any Game/Core is constructed. It
+// Spyro1Runtime exposes this bounded compatibility view before any Game/Core is constructed. It
 // contains measured executable facts only; runtime behavior lives on the derived runtime.
 #include "game_iface.h"
 #include "legacy_game_interface.h"
@@ -77,7 +77,7 @@ static const GameConfig g_spyro_config = {
     // NOT YET REVERSE-ENGINEERED. These drive the framework's NATIVE per-frame loop
     // (native_step_frame): the double-buffered ordering-table + packet-pool addresses the game's
     // display code uses. Phase 0 runs the whole guest under the substrate (see game_hooks.cpp
-    // SpyroRuntime::bootInit), which uses the game's OWN display code and never reads these — so
+    // Spyro1Runtime::bootInit), which uses the game's OWN display code and never reads these — so
     // leaving
     // them
     // 0 is correct and load-bearing-free TODAY, and filling them with guesses would be exactly the

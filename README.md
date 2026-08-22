@@ -5,8 +5,9 @@ A multi-title native PC port for the original PlayStation **Spyro trilogy**, bui
 
 The repository is complete only when one launcher selects and runs all three games by verified
 executable identity. Spyro the Dragon (`SCUS_942.28`) is the current implemented target. Spyro 2
-and Spyro 3 have explicit title slots under `titles/`, but their executable identities and derived
-runtimes have not been measured yet; the status below describes Spyro 1 only.
+(`SCUS_944.25`) now has a verified executable identity and derived runtime/crt0 boundary, but no
+verified disc, generated substrate, boot, or rendering. Spyro 3 remains an unmeasured title slot;
+the gameplay/rendering status below still describes Spyro 1 only.
 
 psxport statically recompiles the game's MIPS R3000A machine code into C and runs it on a native
 platform layer — so the result is a PC program, not an emulator. This repo is the *game* half: the
@@ -27,7 +28,7 @@ rendering coverage outside the reached stage-13 scene and gameplay remain incomp
 
 | | state |
 |---|---|
-| Disc → executable provisioning | ✅ hash-checked, reproducible (`tools/ensure_recomp.py`) |
+| Disc → executable provisioning | 🟡 serial-selected and identity-first; real Spyro 1 disc verified, Spyro 2 disc unavailable |
 | Static recompilation | ✅ 621 functions from `SCUS_942.28` |
 | Build + link (`spyro_port`) | ✅ |
 | crt0 / boot (`GameConfig` boot group) | ✅ derived from the real crt0, not guessed |
@@ -38,7 +39,8 @@ rendering coverage outside the reached stage-13 scene and gameplay remain incomp
 | Past the splash into game init | ✅ boot advances; 3781 frames, 18 distinct occupancies, zero recomp misses |
 | BIOS event delivery | ✅ class `0xF0000009` delivered per-frame from the vblank wait |
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
-| Derived runtime + native frame loop | ✅ `SpyroRuntime`, selected before `Game/Core` |
+| Derived runtime + native frame loop | ✅ Spyro 1 `Spyro1Runtime`, selected before `Game/Core` |
+| Spyro 2 bring-up | 🔬 `Spyro2Runtime` owns measured `SCUS_944.25` crt0 facts and refuses at the first unverified execution boundary |
 | Native renderer coverage | 🟡 reached stage-13 scene is coherent at 16:9; other scenes remain |
 | Native input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
@@ -80,7 +82,7 @@ Useful knobs: `PSXPORT_NOAUDIO=1`, `PSXPORT_NOWINDOW=1` (headless), `PSXPORT_FOR
 
 ```
 game/           shared Spyro-lineage components and the current Spyro 1 implementation
-  core/         SpyroRuntime, measured legacy facts, substrate registry, frame loop
+  core/         SpyroRuntime lineage root, measured legacy facts, substrate registry, frame loop
   render/       semantic graphics producers and render orchestration
 titles/         per-title identity and status (Spyro 1/2/3)
 game/recomp_seeds.json   recompiler seeds — addresses discovery cannot see
@@ -102,10 +104,11 @@ Spyro differs in ways that matter:
   *inside* `WAD.WAD` is an open question — see above.
 - **No cooperative stage/task scheduler** of the kind the framework's `SchedBody` hooks describe.
 
-Runtime behavior is owned through `SpyroRuntime` inheritance. The residual `GameConfig` and
-`GameHooks` views are bounded framework compatibility for measured executable facts and four
-callbacks that do not yet have typed seams. Un-RE'd fact fields remain honestly `0`: a plausible
-but wrong guest address breaks boot in a way that looks like a framework bug.
+Runtime behavior is owned through inheritance: `SpyroRuntime : GameRuntime` is the lineage root,
+and each serial has a final derived runtime. Only `Spyro1Runtime` binds the residual `GameConfig`
+and `GameHooks` compatibility views; `Spyro2Runtime` does not inherit or reuse them. Un-RE'd fact
+fields remain honestly `0`: a plausible but wrong guest address breaks boot in a way that looks like
+a framework bug.
 
 ## The seed file
 

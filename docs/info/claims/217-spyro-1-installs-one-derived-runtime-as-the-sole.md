@@ -4,7 +4,9 @@ kind: claim
 status: holds
 created: 2026-08-22
 tags: architecture,runtime,inheritance
-depends: game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, game/core/main.cpp#main, tests/test_runtime_structure.py
+depends: game/core/spyro_runtime.cpp#SpyroRuntime::guestProgramImage, titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::registerOverrides, game/core/main.cpp#main, tests/test_runtime_structure.py, tests/test_spyro2_runtime.cpp
+reconfirmed: 2026-08-22 18:45:07
+verified_at: 2026-08-22 18:45:07
 ---
 
 ## Claim
@@ -18,3 +20,7 @@ Clang build and 24/24 CTest pass; runtime_structure proves SpyroRuntime inherits
 ## What would falsify it
 
 A shipping path constructs Game before installing SpyroRuntime, a moved behavior reappears in GameHooks, or the real boot/runtime gates fail.
+
+## Re-confirmed 2026-08-22 18:45:07
+
+SpyroRuntime now directly inherits GameRuntime as the lineage root; Spyro1Runtime final owns context lifecycle, override registration, and frame-loop boot while alone binding the residual SCUS_942.28 compatibility views. Main installs it before Game/Core. Spyro2Runtime separately inherits the root and binds no Spyro 1 config/hooks. The structure/runtime gates and full 27/27 CTests pass; the real 3,000-field Spyro 1 gate exits 0 and passes 14/14.

@@ -1,5 +1,5 @@
 // Residual compatibility callbacks for framework operations that do not yet have typed runtime
-// methods. Context lifecycle, boot, and override registration belong to SpyroRuntime.
+// methods. Context lifecycle, boot, and override registration belong to Spyro1Runtime.
 #include "boot_skip.h"
 #include "core.h"
 #include "fx_paired_actor.h"

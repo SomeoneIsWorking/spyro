@@ -9,8 +9,8 @@
 #include "game.h"
 #include "platform_hle.h"
 #include "producer_run.h" // the graphics-producer DB's lifecycle — this port owns it (issue #58)
+#include "spyro1_runtime.h"
 #include "spyro_game.h"
-#include "spyro_runtime.h"
 #include <lucent/log.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
   // Core snapshots the installed runtime during construction, so this process-lifetime instance
   // must be installed before Game. The legacy facts/callbacks it exposes are bounded framework
   // compatibility; lifecycle, boot, and override behavior dispatch virtually through this type.
-  static spyro::SpyroRuntime runtime;
+  static spyro1::Spyro1Runtime runtime;
   psxport_install_game(runtime);
   spyro_install_recomp();
 
@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
   c->r[5] = 0; // a0/a1 as the BIOS would leave them (minimal)
 
   // Boot: bind the per-core hardware, register overrides (none yet), run crt0, then enter the
-  // port's non-returning frame loop through SpyroRuntime::bootInit.
+  // port's non-returning frame loop through Spyro1Runtime::bootInit.
   dc_boot_init(c);
 
   lucent::info("boot", "guest main() returned");

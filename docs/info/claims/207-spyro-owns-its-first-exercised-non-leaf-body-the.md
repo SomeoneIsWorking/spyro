@@ -4,9 +4,9 @@ kind: claim
 status: holds
 created: 2026-08-20
 tags: [native, ownership]
-depends: game/core/native_printf.cpp#write_printf_native, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides
-reconfirmed: 2026-08-21
-verified_at: 2026-08-21 14:17:54
+depends: game/core/native_printf.cpp#write_printf_native, titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::registerOverrides
+reconfirmed: 2026-08-22 18:45:06
+verified_at: 2026-08-22 18:45:06
 ---
 
 ## Claim
@@ -32,3 +32,7 @@ Post-landing current-tree NDIFF log gate-boot-20260821-032916.log reports printf
 ## Re-confirmed 2026-08-21
 
 Post-landing 9000-field NDIFF and full CTest 13/13 retained exact PsyQ printf wrapper ownership while composing the new text owner.
+
+## Re-confirmed 2026-08-22 18:45:06
+
+Registration moved without semantic change into Spyro1Runtime::registerOverrides. The rebuilt SCUS_942.28 shipping gate gate-boot-20260822-184226.log reported printf@0x8006279C call #1 matching the retained body and passed 14/14; focused/full CTests remain green.

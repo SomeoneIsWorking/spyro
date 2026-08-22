@@ -4,9 +4,9 @@ kind: claim
 status: holds
 created: 2026-08-21
 tags: ownership,ndiff,reach,text
-depends: game/core/native_text_sprites.cpp#buildTextSpritesNative, game/core/text_sprites.h#classifyTextGlyph, game/core/spyro_runtime.cpp#SpyroRuntime::registerOverrides, tests/test_text_sprites.cpp#main, external/spyro-1/src/gamestates/draw.c#func_800181AC
-reconfirmed: 2026-08-21
-verified_at: 2026-08-21 14:17:54
+depends: game/core/native_text_sprites.cpp#buildTextSpritesNative, game/core/text_sprites.h#classifyTextGlyph, titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::registerOverrides, tests/test_text_sprites.cpp#main, external/spyro-1/src/gamestates/draw.c#func_800181AC
+reconfirmed: 2026-08-22 18:45:07
+verified_at: 2026-08-22 18:45:07
 ---
 
 ## Claim
@@ -28,3 +28,7 @@ Reconfirmed after the final Clang rebuild against exact pushed psxport 3418a79b6
 ## Re-confirmed 2026-08-21
 
 Post-landing BuildTextSprites calls 1-8 match the generated oracle exactly in the 9000-field gate; focused glyph test and full CTest pass 13/13; default gate passes 14/14.
+
+## Re-confirmed 2026-08-22 18:45:07
+
+The ownership body and focused test are unchanged; only registration moved into Spyro1Runtime::registerOverrides. Full 27/27 CTests and the current 3,000-field SCUS_942.28 shipping gate pass; the prior 9,000-field NDIFF=8 evidence remains the call-level proof for this later-reached body.

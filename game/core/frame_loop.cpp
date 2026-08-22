@@ -3,7 +3,7 @@
 // WHY THIS FILE EXISTS. Every native-graphics step in this port needs one thing first: a place in
 // PORT code that runs once per LOGIC FRAME, above the guest's renderers, where a native producer
 // can be called instead of a recompiled one. Until now there was no such place.
-// `SpyroRuntime::bootInit` dispatched the guest's `main()` and never came back (proof below), so
+// `Spyro1Runtime::bootInit` dispatched the guest's `main()` and never came back (proof below), so
 // the framework's own frame loop (native_boot.cpp `native_step_frame`) never ran,
 // `GameHooks::frameUpdate` / `GameHooks::drawOTag` were never called, and the only per-frame point
 // the port had was the libetc vblank wait in vsync.cpp — which is a VBLANK boundary, not a frame

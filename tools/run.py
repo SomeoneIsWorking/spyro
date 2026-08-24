@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import ensure_recomp
+import provision_title
 
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build"
@@ -93,11 +94,11 @@ def sync_submodules(psxport):
     say("WARNING: framework submodule-sync tool is absent; Spyro reference submodules were not synced")
 
 
-def resolve_disc(explicit):
-    argv = [str(ROOT / "tools/run.py")]
-    if explicit:
-        argv.append(explicit)
-    return Path(ensure_recomp.resolve_disc(argv)).resolve()
+def resolve_disc(spec, explicit):
+    try:
+        return provision_title.resolve_disc(spec, explicit).path
+    except provision_title.Refused as error:
+        raise Refusal(str(error)) from error
 
 
 def cache_value(build, key):
@@ -176,13 +177,19 @@ def build_discdump(psxport, cc, cxx):
     raise Refusal("discdump build produced no executable")
 
 
-def provision(disc, psxport, discdump):
+def provision(spec, disc, psxport, discdump):
+    if spec.slug != "spyro1":
+        try:
+            return provision_title.provision(spec, disc, discdump)
+        except provision_title.Refused as error:
+            raise Refusal(str(error)) from error
     env = os.environ.copy()
     env["PSXPORT_DIR"] = str(psxport)
     env["PSXPORT_DISCDUMP"] = str(discdump)
     command([sys.executable, ROOT / "tools/ensure_recomp.py", disc], env=env)
     if not EXE.is_file():
         raise Refusal(f"recomp provisioning produced no {EXE.relative_to(ROOT)}")
+    return EXE
 
 
 def configure_and_build(psxport, cc, cxx):
@@ -195,7 +202,7 @@ def configure_and_build(psxport, cc, cxx):
         raise Refusal(f"build produced no executable at {PORT.relative_to(ROOT)}")
 
 
-def launch_environment(psxport, disc):
+def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
     env = os.environ.copy()
     if env.get("PSXPORT_NOWINDOW"):
         env["PSXPORT_VK_HEADLESS"] = "1"
@@ -203,18 +210,25 @@ def launch_environment(psxport, disc):
         env["PSXPORT_VK_WINDOW"] = "1"
     env.setdefault("PSXPORT_ASSET_DIR", str(psxport))
     env.setdefault("PSXPORT_DEBUG_SERVER", "1")
-    env["PSXPORT_SPYRO_DISC"] = str(disc)
+    env["PSXPORT_DISC"] = str(disc)
+    for key in spec.env_keys:
+        env[key] = str(disc)
     return env
 
 
-def launch(psxport, disc):
-    say("launching Spyro the Dragon (native PC port)…")
-    os.execve(PORT, [str(PORT), str(EXE)], launch_environment(psxport, disc))
+def launch(psxport, disc, spec, executable):
+    say(f"launching {spec.title} (native PC port)…")
+    os.execve(
+        PORT,
+        [str(PORT), str(executable)],
+        launch_environment(psxport, disc, spec),
+    )
 
 
 def execute(
     disc,
     *,
+    title="spyro1",
     preflight_step=preflight,
     sync_step=sync_framework,
     submodule_step=sync_submodules,
@@ -225,20 +239,27 @@ def execute(
     launch_step=launch,
 ):
     """Run the shipping sequence; injectable steps let tests exercise refusal ordering."""
+    spec = provision_title.SPECS[title]
     cc, cxx = preflight_step()
     psxport = sync_step()
     submodule_step(psxport)
-    resolved_disc = resolve_step(disc)
+    resolved_disc = resolve_step(spec, disc)
     say(f"disc: {resolved_disc}")
     discdump = discdump_step(psxport, cc, cxx)
-    provision_step(resolved_disc, psxport, discdump)
+    executable = provision_step(spec, resolved_disc, psxport, discdump)
     build_step(psxport, cc, cxx)
-    launch_step(psxport, resolved_disc)
+    launch_step(psxport, resolved_disc, spec, executable)
 
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(
-        description="Provision, build, and launch the current Spyro the Dragon native PC port."
+        description="Provision, build, and launch a serial-identified Spyro native PC port."
+    )
+    parser.add_argument(
+        "--title",
+        choices=sorted(provision_title.SPECS),
+        default="spyro1",
+        help="engine-lineage title codeword (default: spyro1)",
     )
     parser.add_argument("disc", nargs="?", help="Spyro (USA) CHD; otherwise use env/.env/drop-in")
     return parser.parse_args(argv)
@@ -247,7 +268,7 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        execute(args.disc)
+        execute(args.disc, title=args.title)
     except (OSError, Refusal) as error:
         print(f"[run] error: {error}", file=sys.stderr)
         return 2

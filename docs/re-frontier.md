@@ -34,7 +34,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps:
 - evidence: tools/ensure_recomp.py first stages SYSTEM.CNF + SCUS_942.28 through the serial manifest publisher, then runs discdump + emit.py end to end; 621 functions emitted and hash-checked against exe + recompiler sources + seed file. Real Spyro 1 media matched 11/11 identity facts.
 - where: tools/provision_title.py, tools/title_identity.py, tools/ensure_recomp.py, game/recomp_seeds.json
-- gap: 
+- gap:
 - notes: Spyro 1 is a single boot executable; its code overlays are ranges inside WAD.WAD rather than root-directory executable files. The title-aware publisher closes issue 0078 before recomp cache reuse.
 
 ### boot.crt0 — GameConfig crt0/boot group from the real crt0
@@ -206,7 +206,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ### harness.sbs — Stand up the differential (SBS) harness against an oracle
 - status: re-verified
-- deps: 
+- deps:
 - evidence: I019,C075
 - where: 
 - gap: 
@@ -271,7 +271,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ### gpu.upload-only-screens — Upload-only screens (logos, FMV stills) do not reach the display
 - status: re-verified
-- deps: 
+- deps:
 - evidence: C099,C100,C097,C104,C105
 - where: external/psxport/runtime/recomp/gpu_vk.cpp render_geom/present; game/core/game_config.cpp preserveVramBackdrop
 - gap: CLOSED. These screens had TWO stacked faults. (1) render_geom's `total == 0` early return cleared s_vram_tex unconditionally, above every other backdrop control, so preserveVramBackdrop (C100) could never reach the very frames it was added for — fixed, C104, issue 0029. (2) With them visible, they were 24bpp (GP1(08) bit 4, set frames 1-436) decoded as 1555 — fixed, C105, issue 0016. Both decoders of the display region now honour the bit: the present shader and the CPU shot/readback. Verified by looking at the pixels — frame 300 renders the correct Universal Interactive Studios logo at full width. Gate 14/14.
@@ -279,7 +279,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ### gpu.native-depth — Native per-vertex depth from the GTE tap
 - status: re-verified
-- deps: 
+- deps:
 - evidence: C125,C126,C143,C145,C146,C198,C201,C203,C204
 - where: external/psxport/tools/recomp/emit.py vertex_pz_stores; runtime/recomp/gte_beetle.cpp gte_hold_pz/gte_record_pz/gte_copy_pz; proj_prim.cpp
 - gap: MECHANISM RE-VERIFIED, COVERAGE IS NOT. Where a primitive's vertices resolve, they resolve exactly: sampled frames reach 210/210 prims with miss=0, and the rendered image is unchanged from before depth was enabled (C126), which is the correct result — the game's own painter order is still right for its own camera, so real depth only changes the picture once the camera moves or widens.
@@ -337,6 +337,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ## render
 
+### render.native-presentation-base — Select guest-VRAM preservation per frame owner
+- status: re-verified
+- deps: frame.own-render-driver
+- evidence: Issue 0080; real SCUS_942.28; psxport bc8c8897; fresh present-stage PIDs 548759/545600/546633. Standard boot presents 30/300 are real 252/16216-color SCEA/Universal uploads. Native stage-13 present 700 is a real 2738-color 16:9 frame and 2961-color 4:3 control; both scaled eight-row guard bands are exactly one color black with mean zero. Full hashes/commands/logs are in scratch/screenshots/spyro-vram-policy-20260824/capture-metadata.txt.
+- where: game/render/presentation_owner.*; game/render/render_frame.cpp; titles/spyro1/core/spyro1_runtime.*; external/psxport/runtime/recomp/guest_vram_composite_policy.h
+- gap:
+- notes: SpyroPresentationOwner defaults to guest VRAM before the frame driver exists and is published before each reference/native seam can present. Spyro1Runtime exposes that per-Game state through the required GameRuntime virtual; Spyro 2/3 fail loudly rather than inherit an unverified answer. psxport rebuilds the persistent composite whenever ownership changes and restores a whole guest-VRAM upload when ownership returns to the guest. The prior authored-painter draw-area clip remains independently green (`outside=0000`, `inside=001F`), and deferred native fields no longer recapture the consumed queue.
+
 ### render.own-geometry-family — Own the hand-written assembly geometry renderers (the gate for widescreen AND 60fps)
 - status: re-partial
 - deps: gpu.native-depth
@@ -379,3 +387,33 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: game/core/spyro_runtime.*, titles/spyro2/core/spyro2_runtime.*, tests/test_spyro2_runtime.cpp
 - gap: No generated SCUS_944.25 substrate or differential execution exists; bootInit refuses rather than entering unverified code.
 - notes: SpyroRuntime is the lineage root; Spyro1Runtime and Spyro2Runtime inherit it. Only Spyro1Runtime binds the remaining SCUS_942.28 GameConfig compatibility view.
+
+
+## runtime
+
+### title.runtime-selection — Select exact executable identity and derived runtime before Game
+- status: re-verified
+- deps:
+- evidence: C221; selection CTest covers exact, unsupported, mutated and renamed inputs; real SCUS_942.28 boots and real SCUS_944.67 reaches the no-substrate refusal before Game
+- where: game/core/title_selection.*; game/core/title_runtime_registry.*; game/core/main.cpp; titles/spyro*/core/*_runtime.*; titles/spyro*/executable.json; tools/generate_title_catalog.py
+- gap: DONE for exact USA executable selection. Only Spyro 1 has an executable substrate; Spyro 2/3 deliberately refuse before Game.
+- notes: Each derived runtime owns title behavior and substrate installation/refusal. The JSON manifests are the single executable-identity authority and generate the C++ catalog. No GameConfig discriminator or fallback to Spyro 1 exists.
+
+
+## spyro3
+
+### spyro3.identity — Identify USA Spyro 3 executable without title conflation
+- status: re-partial
+- deps:
+- evidence: The measured 380928-byte SCUS_944.67 matches 11/11 manifest facts: SHA-1 31ad35fd03539910b5b3d9309ae52f5acaf3612e, SHA-256 cb819ee78c556d403779309859cb08a7111331f624759bc1bc380946261bb26e, entry 0x80059444.
+- where: titles/spyro3/executable.json; tools/title_identity.py; tools/provision_title.py
+- gap: No Spyro 3 CHD was available, so SYSTEM.CNF/disc provenance remains unmeasured.
+- notes: SCUS_944.67 has its own manifest, environment key, and cache destination.
+
+### spyro3.crt0 — Own Spyro 3 executable image and stop at the first unverified execution boundary
+- status: re-partial
+- deps: spyro3.identity
+- evidence: Shipping psxport crt0_extract resolves 8/8 SCUS_944.67 boot-group fields and crt0_plan; decode identifies libcInit 0x8005F63C and game main 0x8001200C. The Clang runtime test checks its typed image and absence of Spyro 1 legacy views.
+- where: game/core/spyro_runtime.*; titles/spyro3/core/spyro3_runtime.*; tests/test_spyro3_runtime.cpp
+- gap: No generated SCUS_944.67 substrate or differential execution exists; selection refuses before Game.
+- notes: Spyro3Runtime inherits SpyroRuntime directly and binds no Spyro 1 compatibility config/hooks.

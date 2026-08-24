@@ -3,9 +3,12 @@
 #include "cfg.h"
 #include "field_environment_oracle.h"
 #include "fntrace.h"
+#include "fps60.h"
+#include "game.h"
 #include "hostprof.h"
 #include "legacy_game_interface.h"
 #include "overlay_table.h"
+#include "presentation_owner.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
 
@@ -29,8 +32,17 @@ const GuestProgramImage Spyro1Runtime::programImage_{
     .stackBias = {true, -8},
 };
 
-Spyro1Runtime::Spyro1Runtime() : SpyroRuntime(programImage_) {
+Spyro1Runtime::Spyro1Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro1) {
   bindLegacyInterface(&spyro::legacy::measuredConfig(), &spyro::legacy::compatibilityHooks());
+}
+
+bool Spyro1Runtime::installSubstrate() {
+  spyro_install_recomp();
+  return true;
+}
+
+std::string_view Spyro1Runtime::substrateRefusal() const {
+  return {};
 }
 
 void *Spyro1Runtime::createContext(Core &) {
@@ -76,6 +88,15 @@ void Spyro1Runtime::registerOverrides(Game &) {
 
 void Spyro1Runtime::bootInit(Core &core) {
   spyro_frame_loop_run(&core);
+}
+
+bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {
+  return spyro_presentation_owner(game.core).guestVramIsPicture();
+}
+
+std::unique_ptr<TemporalFramePresentation>
+Spyro1Runtime::createTemporalFramePresentation(Game &game) {
+  return std::make_unique<Fps60>(game);
 }
 
 } // namespace spyro1

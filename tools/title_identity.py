@@ -145,7 +145,7 @@ def check(manifest: dict[str, object], path: pathlib.Path, *, verbose: bool = Tr
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--title", choices=("spyro1", "spyro2"), required=True)
+    parser.add_argument("--title", choices=("spyro1", "spyro2", "spyro3"), required=True)
     parser.add_argument("--exe", type=pathlib.Path, required=True)
     args = parser.parse_args()
     try:

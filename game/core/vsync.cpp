@@ -354,13 +354,18 @@ bool deliver_field(
   // identical black-front-end symptom — see the comment in native_boot.cpp.
   //
   // Here is the right place for the same reason the event delivery below is: this wait IS the
-  // port's per-frame boundary. Flush before present, so the frame being presented is the one the
-  // guest just drew.
+  // port's per-frame boundary. Flush before an immediate present, so the frame being presented is
+  // the one the guest just drew. A caller that delegates presentation to frame_commit has already
+  // flushed its frame before spending fields; flushing again here would append the same consumed
+  // queue once per field to that pending capture. The stage-13 native path spends two fields, so
+  // the old unconditional call produced three byte-identical copies at flush ordinals 0/1/2.
   // Read the queue BEFORE it is flushed, for the `pace` line: `n>0 && !consumed` would mean this
   // loop is the queue's FIRST consumer this frame. See g_pace_rq_unconsumed above.
   const int rq_n = c->game->rq.n, rq_unconsumed = (rq_n > 0 && !c->game->rq.consumed) ? 1 : 0;
   g_pace_rq_unconsumed += (unsigned)rq_unconsumed;
-  c->game->rq.flush(c);
+  if (presentHere) {
+    c->game->rq.flush(c);
+  }
   // FILL THE PAD BUFFERS. Spyro's libpad (0x80069000-0x8006C000) fills them from SIO0 inside the
   // VBlank IRQ handler, and this runtime raises no IRQs — so on the port that state machine never
   // runs and the buffers keep the 0xFF "no controller" byte its init wrote (0x8006B100). The

@@ -46,6 +46,13 @@ SPECS = {
         ("PSXPORT_SPYRO2_DISC", "PSXPORT_DISC"),
         ROOT / "scratch" / "bin" / "spyro2",
     ),
+    "spyro3": ProvisionSpec(
+        "Spyro: Year of the Dragon",
+        "spyro3",
+        "SCUS_944.67",
+        ("PSXPORT_SPYRO3_DISC", "PSXPORT_DISC"),
+        ROOT / "scratch" / "bin" / "spyro3",
+    ),
 }
 
 

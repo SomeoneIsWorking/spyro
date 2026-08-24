@@ -6,8 +6,9 @@ A multi-title native PC port for the original PlayStation **Spyro trilogy**, bui
 The repository is complete only when one launcher selects and runs all three games by verified
 executable identity. Spyro the Dragon (`SCUS_942.28`) is the current implemented target. Spyro 2
 (`SCUS_944.25`) now has a verified executable identity and derived runtime/crt0 boundary, but no
-verified disc, generated substrate, boot, or rendering. Spyro 3 remains an unmeasured title slot;
-the gameplay/rendering status below still describes Spyro 1 only.
+verified disc, generated substrate, boot, or rendering. Spyro 3 (`SCUS_944.67`) has the same measured
+identity/crt0 boundary and honest no-substrate refusal. The gameplay/rendering status below still
+describes Spyro 1 only.
 
 psxport statically recompiles the game's MIPS R3000A machine code into C and runs it on a native
 platform layer — so the result is a PC program, not an emulator. This repo is the *game* half: the
@@ -28,7 +29,7 @@ rendering coverage outside the reached stage-13 scene and gameplay remain incomp
 
 | | state |
 |---|---|
-| Disc → executable provisioning | 🟡 serial-selected and identity-first; real Spyro 1 disc verified, Spyro 2 disc unavailable |
+| Disc → executable provisioning | 🟡 `spyro1`/`spyro2`/`spyro3` selected explicitly and identity-first; only the real Spyro 1 disc is verified |
 | Static recompilation | ✅ 621 functions from `SCUS_942.28` |
 | Build + link (`spyro_port`) | ✅ |
 | crt0 / boot (`GameConfig` boot group) | ✅ derived from the real crt0, not guessed |
@@ -41,6 +42,7 @@ rendering coverage outside the reached stage-13 scene and gameplay remain incomp
 | VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
 | Derived runtime + native frame loop | ✅ Spyro 1 `Spyro1Runtime`, selected before `Game/Core` |
 | Spyro 2 bring-up | 🔬 `Spyro2Runtime` owns measured `SCUS_944.25` crt0 facts and refuses at the first unverified execution boundary |
+| Spyro 3 bring-up | 🔬 `Spyro3Runtime` owns measured `SCUS_944.67` crt0 facts and refuses at the first unverified execution boundary |
 | Native renderer coverage | 🟡 reached stage-13 scene is coherent at 16:9; other scenes remain |
 | Native input | ⬜ not started |
 | Differential (SBS) harness | ⬜ not started |
@@ -55,7 +57,7 @@ has already been tried.
 
 ## Requirements
 
-- **Linux:** `cmake`, `pkg-config`, SDL3, libzstd, zlib, `python3`, a Clang C/C++ toolchain
+- **Linux:** `cmake`, `pkg-config`, SDL3, libzstd, zlib, OpenSSL, `python3`, a Clang C/C++ toolchain
 - **macOS:** `brew install cmake pkg-config sdl3 zstd zlib python3`
 - A Vulkan-capable GPU + drivers
 
@@ -65,11 +67,17 @@ has already been tried.
 git clone --recursive https://github.com/<you>/SpyroEngine.git
 cd SpyroEngine
 ./run.sh /path/to/'Spyro the Dragon (USA).chd'
+
+# The other serials already have separate identity/runtime paths, but still refuse before Game
+# until their generated substrates exist:
+./run.sh --title spyro2 /path/to/'Spyro 2 - Ripto (USA).chd'
+./run.sh --title spyro3 /path/to/'Spyro - Year of the Dragon (USA).chd'
 ```
 
 `run.sh` is the stable entry point; it delegates the build policy to `tools/run.py`, which builds the
-CHD tooling, extracts `SCUS_942.28` from your disc, statically recompiles it to C, builds the port,
-and launches it. Alternatively set
+CHD tooling, verifies the selected serial from fresh media, builds the port, and launches that exact
+executable. Spyro 1 additionally recompiles `SCUS_942.28` to C; Spyro 2/3 currently stop at their
+explicit no-substrate runtime boundary. Alternatively set
 `PSXPORT_SPYRO_DISC`, copy `.env.example` to `.env`, or drop a `*.chd` in the repo root — the
 resolution order is *CLI arg > env var > `.env` > drop-in*.
 
@@ -87,7 +95,7 @@ game/           shared Spyro-lineage components and the current Spyro 1 implemen
 titles/         per-title identity and status (Spyro 1/2/3)
 game/recomp_seeds.json   recompiler seeds — addresses discovery cannot see
 generated/      the recompiled substrate (git-ignored; rebuilt from your disc)
-external/psxport   the PSX-generic framework (submodule)
+external/psxport   the PSX-generic framework (workspace symlink or pinned private clone)
 tools/          provisioning + the project's information system
 docs/           codemap, RE frontier, issues, claims/instruments ledgers, references
 ```
@@ -106,7 +114,8 @@ Spyro differs in ways that matter:
 
 Runtime behavior is owned through inheritance: `SpyroRuntime : GameRuntime` is the lineage root,
 and each serial has a final derived runtime. Only `Spyro1Runtime` binds the residual `GameConfig`
-and `GameHooks` compatibility views; `Spyro2Runtime` does not inherit or reuse them. Un-RE'd fact
+and `GameHooks` compatibility views; `Spyro2Runtime` and `Spyro3Runtime` do not inherit or reuse
+them. Un-RE'd fact
 fields remain honestly `0`: a plausible but wrong guest address breaks boot in a way that looks like
 a framework bug.
 

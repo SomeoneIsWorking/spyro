@@ -13,10 +13,12 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 import provision_title
+import generate_title_catalog
 import title_identity
 
 SPYRO1 = provision_title.SPECS["spyro1"]
 SPYRO2 = provision_title.SPECS["spyro2"]
+SPYRO3 = provision_title.SPECS["spyro3"]
 
 
 class ProvisionTest(unittest.TestCase):
@@ -60,6 +62,19 @@ class ProvisionTest(unittest.TestCase):
         self.assertEqual(result.name, SPYRO2.serial)
         self.assertEqual(result.read_bytes(), b"identity fixture")
         self.assertEqual(cached.read_bytes(), b"cached Spyro 1")
+
+    def test_spyro3_has_a_distinct_serial_and_cache(self) -> None:
+        result = provision_title.provision(
+            SPYRO3,
+            self.disc,
+            pathlib.Path("unused"),
+            output_dir=self.root / "spyro3",
+            extract=self.extractor(SPYRO3.serial),
+            identity_check=lambda _: [],
+        )
+        self.assertEqual(result.name, "SCUS_944.67")
+        self.assertNotEqual(SPYRO3.cache_dir, SPYRO1.cache_dir)
+        self.assertNotEqual(SPYRO3.cache_dir, SPYRO2.cache_dir)
 
     def test_selected_spyro1_disc_is_refused_for_spyro2_even_with_cache(self) -> None:
         output = self.root / "spyro2"
@@ -172,6 +187,17 @@ class IdentityTest(unittest.TestCase):
         self.executable.write_bytes(b"not a PS-X EXE")
         with self.assertRaisesRegex(title_identity.Refused, "not a valid PS-X EXE"):
             title_identity.check(self.manifest, self.executable, verbose=False)
+
+
+class CatalogGenerationTest(unittest.TestCase):
+    def test_catalog_is_generated_from_all_three_manifests(self) -> None:
+        catalog = generate_title_catalog.render()
+        for slug, enum_name in generate_title_catalog.TITLE_ENUMS:
+            manifest = title_identity.load_manifest(slug)
+            self.assertIn(f"SpyroTitle::{enum_name}", catalog)
+            self.assertIn(str(manifest["serial"]), catalog)
+            self.assertIn(str(manifest["sha256"]), catalog)
+        self.assertNotIn("GameConfig", catalog)
 
 
 if __name__ == "__main__":

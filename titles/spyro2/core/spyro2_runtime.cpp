@@ -22,7 +22,16 @@ const GuestProgramImage Spyro2Runtime::programImage_{
     .stackBias = {true, -8},
 };
 
-Spyro2Runtime::Spyro2Runtime() : SpyroRuntime(programImage_) {}
+Spyro2Runtime::Spyro2Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro2) {}
+
+bool Spyro2Runtime::installSubstrate() {
+  return false;
+}
+
+std::string_view Spyro2Runtime::substrateRefusal() const {
+  return "SCUS_944.25 is measured through crt0 and its first game-main call, but has no generated "
+         "substrate; execution is refused before Game construction";
+}
 
 void *Spyro2Runtime::createContext(Core &) {
   return nullptr;
@@ -36,6 +45,11 @@ void Spyro2Runtime::bootInit(Core &) {
   lucent::error("spyro2-runtime",
                 "native boot is unavailable: SCUS_944.25 is verified through its crt0 facts and "
                 "first game-main call only; a generated-path comparison is required next");
+  std::abort();
+}
+
+bool Spyro2Runtime::guestVramIsPicture(const Game &) const {
+  lucent::error("spyro2-runtime", "{}", substrateRefusal());
   std::abort();
 }
 

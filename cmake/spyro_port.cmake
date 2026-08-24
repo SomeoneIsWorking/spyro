@@ -35,6 +35,28 @@ add_custom_target(cpp-policy
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   COMMENT "Checking Clang format, structure caps, and clang-tidy")
 
+# Keeping executable identity selection in a small target lets the shipping path and its falsifiers
+# exercise one exact implementation.
+add_library(spyro_title_selection STATIC ${CMAKE_SOURCE_DIR}/game/core/title_selection.cpp)
+target_include_directories(spyro_title_selection PUBLIC ${CMAKE_SOURCE_DIR}/game/core)
+target_compile_features(spyro_title_selection PUBLIC cxx_std_20)
+target_link_libraries(spyro_title_selection PUBLIC psxport OpenSSL::Crypto)
+
+set(SPYRO_TITLE_CATALOG_DIR ${CMAKE_BINARY_DIR}/generated/spyro)
+set(SPYRO_TITLE_CATALOG ${SPYRO_TITLE_CATALOG_DIR}/spyro_title_catalog.generated.h)
+add_custom_command(
+  OUTPUT ${SPYRO_TITLE_CATALOG}
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/generate_title_catalog.py
+          --output ${SPYRO_TITLE_CATALOG}
+  DEPENDS
+    ${CMAKE_SOURCE_DIR}/tools/generate_title_catalog.py
+    ${CMAKE_SOURCE_DIR}/tools/title_identity.py
+    ${CMAKE_SOURCE_DIR}/titles/spyro1/executable.json
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/executable.json
+    ${CMAKE_SOURCE_DIR}/titles/spyro3/executable.json
+  COMMENT "Generating serial-identified Spyro executable catalog")
+add_custom_target(spyro_title_catalog DEPENDS ${SPYRO_TITLE_CATALOG})
+
 if(BUILD_TESTING)
   add_executable(test_wide_clip_plan ${CMAKE_SOURCE_DIR}/tests/test_wide_clip_plan.cpp)
   target_include_directories(test_wide_clip_plan PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
@@ -198,6 +220,22 @@ if(BUILD_TESTING)
   target_compile_features(test_spyro2_runtime PRIVATE cxx_std_20)
   target_link_libraries(test_spyro2_runtime PRIVATE psxport)
   add_test(NAME spyro2_runtime COMMAND test_spyro2_runtime)
+  add_executable(test_spyro3_runtime
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro3_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/game/core/spyro_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro3/core/spyro3_runtime.cpp)
+  target_include_directories(test_spyro3_runtime PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/core ${CMAKE_SOURCE_DIR}/titles/spyro3/core)
+  target_compile_features(test_spyro3_runtime PRIVATE cxx_std_20)
+  target_link_libraries(test_spyro3_runtime PRIVATE psxport)
+  add_test(NAME spyro3_runtime COMMAND test_spyro3_runtime)
+  add_executable(test_title_selection ${CMAKE_SOURCE_DIR}/tests/test_title_selection.cpp)
+  target_link_libraries(test_title_selection PRIVATE spyro_title_selection)
+  add_test(NAME title_selection COMMAND test_title_selection)
+  add_executable(test_presentation_owner ${CMAKE_SOURCE_DIR}/tests/test_presentation_owner.cpp)
+  target_include_directories(test_presentation_owner PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_presentation_owner PRIVATE cxx_std_20)
+  add_test(NAME presentation_owner COMMAND test_presentation_owner)
   add_test(
     NAME computed_jumps_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
@@ -219,6 +257,9 @@ set(GAME_SRC
   game/core/game_hooks.cpp
   game/core/spyro_context.cpp
   game/core/spyro_runtime.cpp
+  game/core/title_runtime_registry.cpp
+  titles/spyro2/core/spyro2_runtime.cpp
+  titles/spyro3/core/spyro3_runtime.cpp
   titles/spyro1/core/spyro1_runtime.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp
@@ -230,6 +271,7 @@ set(GAME_SRC
   game/render/fx_title_menu.cpp
   game/render/fx_sprite_queue.cpp
   game/render/paired_actor_decode.cpp
+  game/render/presentation_owner.cpp
   game/render/actor_model_codec.cpp
   game/render/actor_prefix_builder.cpp
   game/render/actor_draw_recipe.cpp
@@ -304,9 +346,11 @@ set_target_properties(spyro_port PROPERTIES
 # Only game/* include dirs here — the framework's (runtime, generated, vendored backends, SDL,
 # freetype) are inherited PUBLICly from the psxport link below.
 target_include_directories(spyro_port PRIVATE
-  game game/core game/render titles/spyro1/core)
+  game game/core game/render titles/spyro1/core titles/spyro2/core titles/spyro3/core
+  ${SPYRO_TITLE_CATALOG_DIR})
+add_dependencies(spyro_port spyro_title_catalog)
 
 target_compile_options(spyro_port PRIVATE -w -O2 -g
   ${SDL3_CFLAGS_OTHER} ${FREETYPE_CFLAGS_OTHER})
 
-target_link_libraries(spyro_port PRIVATE psxport)
+target_link_libraries(spyro_port PRIVATE spyro_title_selection psxport)

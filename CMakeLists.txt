@@ -63,6 +63,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(ZLIB REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 find_package(zstd CONFIG QUIET)
 if(NOT TARGET zstd::libzstd_shared)
   find_library(ZSTD_LIBRARY zstd REQUIRED)

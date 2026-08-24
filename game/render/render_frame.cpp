@@ -7,12 +7,14 @@
 // directly instead. Filling the hook would look like wiring and connect to nothing.
 #include "cfg.h" // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
 #include "core.h"
+#include "fps60.h"     // checked access to Spyro 1's title-owned temporal presentation product
 #include "frame_env.h" // nativeFrameBegin/End — the frame the native producers draw into
 #include "fx_actor_draw.h"
 #include "fx_paired_actor.h"
 #include "fx_world_draw.h"
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "guest_call.h" // rc0 — run a guest function to its `jr ra`
+#include "presentation_owner.h"
 #include "render.h"
 #include "spyro_game.h"
 #include "stage13_scene_recipe.h"
@@ -125,10 +127,10 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
 void SpyroRenderer::drawFrame() {
   const Scene sc = classifyScene();
   auto &paired = spyro_paired_actor_state(mC);
+  Fps60 &temporal = fps60(*mC->game);
   const bool pairedState = mC->mem_r32(0x80078D7Cu) == 2u;
-  spyro_paired_actor_frame_begin(
-      paired, pairedState, mC->rsub.mode.psxRender(), mC->game->fps60.active());
-  mC->game->fps60.mTier1EligibleCur = false;
+  spyro_paired_actor_frame_begin(paired, pairedState, mC->rsub.mode.psxRender(), temporal.active());
+  temporal.mTier1EligibleCur = false;
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the
   // denominator is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It
   // is how "which scenes does a real run actually reach" gets answered with data rather than from
@@ -140,6 +142,9 @@ void SpyroRenderer::drawFrame() {
                 mC->rsub.mode.psxRender() ? "psx_render" : "native",
                 sc.arm ? sc.arm->what : "(outside 0..15 — the guest draws nothing)");
   if (mC->rsub.mode.psxRender()) {
+    // The guest driver may present from inside referenceOtWalk's VSync before this function gets
+    // control back. Publish ownership first; the runtime policy must describe that inner present.
+    spyro_presentation_owner(*mC).beginGuestFrame();
     const bool pairedOracle = sc.stage == kStageFrontEnd && mC->mem_r32(0x80078D7Cu) == 2u &&
                               (cfg_str("PSXPORT_PAIREDPOSE_ORACLE") != nullptr ||
                                cfg_str("PSXPORT_PAIRED_TRANSFORM_ORACLE") != nullptr ||
@@ -158,7 +163,7 @@ void SpyroRenderer::drawFrame() {
     // frame_commit's present_vk is the one that actually draws. This also drains the capture, so no
     // reset_capture is needed (it was a band-aid that discarded the picture instead of emitting
     // it).
-    mC->game->fps60.frame_commit(mC, 1);
+    temporal.frame_commit(mC, 1);
     spyro_fps60_commit_field_delivered(mC);
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) {
       abort();
@@ -168,6 +173,9 @@ void SpyroRenderer::drawFrame() {
     }
     return;
   }
+  // Boot upload-only screens intentionally leave the default at guest VRAM. Reaching this explicit
+  // native frame seam is the first point where the whole picture is known to come from producers.
+  spyro_presentation_owner(*mC).beginNativeFrame();
   // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
   // and programs the GPU from it; on this leg nothing does, so the producers would emit into the
   // buffer that is NOT on screen and read as broken. game/render/frame_env.cpp owns that — it is
@@ -192,8 +200,8 @@ void SpyroRenderer::drawFrame() {
       foreignWorld = true;
     }
   }
-  mC->game->fps60.mTier1EligibleCur = paired.endpoints_compatible && pairedWorld && !foreignWorld &&
-                                      spyro_paired_actor_fps60_eligible(paired);
+  temporal.mTier1EligibleCur = paired.endpoints_compatible && pairedWorld && !foreignWorld &&
+                               spyro_paired_actor_fps60_eligible(paired);
   // THE ONE PLACE NATIVE PRIMS REACH THE RENDERER. Producers push into the render queue as they
   // draw; nothing is on screen until the queue is emitted, and this is that emit. Unreachable while
   // every scene aborts above — which is exactly why it is written now, next to the branch that will
@@ -216,6 +224,6 @@ void SpyroRenderer::drawFrame() {
   // (present_vk -> presentRotate -> mNCur = 0) is the ONLY drain. guestFields=1: one whole-field
   // pace for the ordinary frame; present_vk inserts the extra lerped frame only when fps60 is
   // active (extraFrame = active() && mHavePrev).
-  mC->game->fps60.frame_commit(mC, 1);
+  temporal.frame_commit(mC, 1);
   spyro_fps60_commit_field_delivered(mC);
 }

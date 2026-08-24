@@ -8,8 +8,11 @@ layer; this repo supplies the game — the seam, the RE, and the native reimplem
 The product is not complete until the launcher recognizes and runs all three verified executable
 identities. Spyro the Dragon (`SCUS_942.28`) is implemented today. Spyro 2 (`SCUS_944.25`) has a
 measured executable identity and derived crt0-boundary runtime but no verified disc/substrate/boot;
-Spyro 3 is unmeasured. Each title gets a derived runtime selected by executable serial, and shared
-code is extracted only from measured common behavior.
+Spyro 3 (`SCUS_944.67`) has a measured executable identity and derived crt0-boundary runtime but no
+verified disc/substrate/boot. Each title gets a derived runtime selected by executable serial, and
+shared code is extracted only from measured common behavior. The three `titles/*/executable.json`
+manifests are the sole identity-fact authority; the build generates the C++ selection catalog from
+them rather than copying those facts into runtime classes.
 
 **Read `external/psxport/docs/porting-a-new-psx-game.md` first.** It is the methodology; this file is
 only what is specific to Spyro.

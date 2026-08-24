@@ -5,12 +5,12 @@
 // it touches only framework symbols.
 #include "cfg.h" // cfg_str — PSXPORT_SELFTEST is a feature flag, not a diagnostic
 #include "core.h"
-#include "fs_util.h"
 #include "game.h"
 #include "platform_hle.h"
 #include "producer_run.h" // the graphics-producer DB's lifecycle — this port owns it (issue #58)
-#include "spyro1_runtime.h"
 #include "spyro_game.h"
+#include "title_runtime_registry.h"
+#include "title_selection.h"
 #include <lucent/log.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,36 +26,34 @@ void load_exe(const char *path, Core *c); // framework: runtime/recomp/boot.cpp
 void dc_boot_init(Core *c);               // framework: crt0_setup + game_init (-> hooks->bootInit)
 int selftest_run(const char *path);       // framework: runtime/recomp/selftest.cpp
 
-// Spyro boots straight from SCUS_942.28 — unlike Tomba!2 there is no separate SCEA boot stub that
-// LoadExec's a MAIN.EXE, so there is no stub stage to run and no second image to load.
+// Spyro 1 boots straight from SCUS_942.28 — unlike Tomba!2 there is no separate SCEA boot stub that
+// LoadExec's a MAIN.EXE, so there is no stub stage to run and no second image to load. The
+// executable basename is also the serial-selection input; the bytes must then match that title's
+// exact identity.
 static const char *kDefaultExe = "scratch/bin/spyro/SCUS_942.28";
-static const char *kDiscExePath = "SCUS_942.28"; // its path on the disc (root directory)
 
 int main(int argc, char **argv) {
-  // Core snapshots the installed runtime during construction, so this process-lifetime instance
-  // must be installed before Game. The legacy facts/callbacks it exposes are bounded framework
-  // compatibility; lifecycle, boot, and override behavior dispatch virtually through this type.
-  static spyro1::Spyro1Runtime runtime;
-  psxport_install_game(runtime);
-  spyro_install_recomp();
-
   const char *path = argc > 1 ? argv[1] : kDefaultExe;
+  const spyro::SelectionResult selection =
+      spyro::selectExecutableFile(path, spyro::executableCatalog());
+  if (!selection) {
+    lucent::error("boot", "{}", selection.detail);
+    return 2;
+  }
+
+  // Core snapshots the installed runtime during construction. Identity selection, runtime install,
+  // and substrate refusal therefore all happen before Game: a Spyro 2/3 executable can never
+  // inherit Spyro 1's generated code, GameConfig compatibility views, or native owners.
+  spyro::SpyroRuntime &runtime = spyro::runtimeFor(selection.identity->title);
+  psxport_install_game(runtime);
+  if (!runtime.installSubstrate()) {
+    lucent::error("boot", "{}", runtime.substrateRefusal());
+    return 2;
+  }
+  lucent::info("boot", "{}", selection.detail);
 
   Game *game = new Game();
   Core *c = &game->core;
-
-  // Self-provision the executable: with just a disc image (PSXPORT_SPYRO_DISC, .env, or a *.chd in
-  // the working directory) the binary runs directly, no prior ./run.sh extraction needed.
-  if (!Fs::exists(path)) {
-    // `path` is argv[1] or kDefaultExe — never null, so passing it straight to std::format is safe.
-    lucent::warn("boot", "{} missing — extracting from disc", path);
-    if (!disc_extract_file(&game->disc, kDiscExePath, path)) {
-      lucent::error("boot",
-                    "extraction failed: provide a disc (PSXPORT_SPYRO_DISC, .env, or a *.chd "
-                    "in the working directory) or run ./run.sh");
-      return 1;
-    }
-  }
 
   // Framework GPU self-tests run before the executable/disc path and exit from
   // GpuVkState::tritest. Without this call the documented knobs are silently

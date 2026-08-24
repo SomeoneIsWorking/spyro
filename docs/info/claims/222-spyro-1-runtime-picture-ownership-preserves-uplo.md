@@ -5,6 +5,8 @@ status: holds
 created: 2026-08-24
 tags: render,widescreen,presentation
 depends: titles/spyro1/core/spyro1_runtime.cpp#Spyro1Runtime::guestVramIsPicture, game/render/presentation_owner.h#SpyroPresentationOwner, game/render/render_frame.cpp#SpyroRenderer::drawFrame, external/psxport/runtime/recomp/guest_vram_composite_policy.h#GuestVramCompositePolicy
+reconfirmed: 2026-08-24 20:24:20
+verified_at: 2026-08-24 20:24:20
 ---
 
 ## Claim
@@ -18,3 +20,7 @@ Real SCUS_942.28, shipping launcher, app build 50c02b9-dirty+psxport-bc8c8897. P
 ## What would falsify it
 
 If the same build/policy makes either boot upload disappear, produces a non-black stage-13 guard-band crop, or a capture log shows the tested frame was not native stage 13, this claim is falsified.
+
+## Re-confirmed 2026-08-24 20:24:20
+
+After 426c83b, tracked presentation-owner contents match the visually verified tree: SCEA and Universal uploads remained visible; root inspected matched native stage-13 16:9/4:3 captures whose measured guard crops are one-color black with mean zero.

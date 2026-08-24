@@ -5,8 +5,8 @@ status: holds
 created: 2026-08-22
 tags: runtime,identity,spyro2,spyro3
 depends: game/core/title_selection.cpp#selectExecutable, game/core/main.cpp#main, game/core/title_runtime_registry.cpp#runtimeFor, tools/generate_title_catalog.py#render, tools/run.py#execute, titles/spyro3/core/spyro3_runtime.cpp#Spyro3Runtime
-reconfirmed: 2026-08-24 19:44:11
-verified_at: 2026-08-24 19:44:11
+reconfirmed: 2026-08-24 20:24:20
+verified_at: 2026-08-24 20:24:20
 ---
 
 ## Claim
@@ -24,3 +24,7 @@ Any supported-serial executable reaches Game with a different title runtime, any
 ## Re-confirmed 2026-08-24 19:44:11
 
 Fresh authoritative Clang verifier on 2026-08-24 passed 30/30 CTests against recorded psxport d2266f4b, including exact/mutated/renamed selection, three-codeword launcher routing, manifest-generated catalog coverage, inherited Spyro 2/3 no-legacy/no-substrate runtimes, formatting, structure caps, clang-tidy, and pin check.
+
+## Re-confirmed 2026-08-24 20:24:20
+
+After 426c83b, tracked selection/runtime contents match the verified tree: root reran the authoritative Clang build and 30/30 CTests, including exact/mutated/renamed identity and three codeword isolation.

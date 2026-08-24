@@ -50,6 +50,10 @@ struct Face {
   uint32_t sector = 0;
   uint32_t source = 0;
   uint32_t sourceOrdinal = 0;
+  // Address of the authored texture words used for this face. Refinement and
+  // adaptive descendants retain it so an oracle mismatch can be traced back
+  // to the exact material-table input rather than inferred from decoded UVs.
+  uint32_t textureSource = 0;
   // Every packet linked into the guest OT receives a monotonically increasing
   // group. Adaptive subdivision replaces one linked parent in place, so all
   // of its final descendants retain that parent's group and use suborder to

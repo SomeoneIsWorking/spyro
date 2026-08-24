@@ -355,17 +355,14 @@ bool appendTransition(const RamView &ram,
   return !face.vertexCount || appendFace(out, face, why);
 }
 
-world_material_codec::DecodedTile quadTile(const RamView &ram, uint32_t pair) {
-  const uint32_t first = ram.r32(pair);
-  const uint32_t second = ram.r32(pair + 4u);
-  return packedTile({first, second, first + 0x1f00u, first + 0x1f1fu}, 4);
-}
-
-bool nearQuadTile(const RamView &ram, uint32_t pair, world_material_codec::DecodedTile &out) {
+bool refinedQuadTile(const RamView &ram,
+                     uint32_t pair,
+                     uint8_t extent,
+                     world_material_codec::DecodedTile &out) {
   uint32_t first = ram.r32(pair);
   uint32_t second = ram.r32(pair + 4u);
-  uint32_t third = first + 0x0f00u;
-  uint32_t fourth = first + 0x0f0fu;
+  uint32_t third = first + ((uint32_t)extent << 8);
+  uint32_t fourth = third + extent;
   const uint32_t attribute = second >> 25;
   if (attribute) {
     const uint32_t adjustment = 0x8006d058u + attribute;
@@ -481,16 +478,18 @@ bool appendMedium(const RamView &ram,
         const uint8_t p = kQuadTopLeft[child];
         const std::array<uint8_t, 4> indices = {
             p, (uint8_t)(p + 1), (uint8_t)(p + 3), (uint8_t)(p + 4)};
+        const uint32_t textureSource = material + 8u + child * 8u;
+        world_material_codec::DecodedTile tile{};
+        if (!refinedQuadTile(ram, textureSource, 0x1fu, tile)) {
+          why = "medium_quad_texture";
+          return false;
+        }
         Face face{};
-        if (!makeChild(parent,
-                       lattice,
-                       indices,
-                       quadTile(ram, material + 8u + child * 8u),
-                       Origin::Medium,
-                       face)) {
+        if (!makeChild(parent, lattice, indices, tile, Origin::Medium, face)) {
           why = "medium_quad_child";
           return false;
         }
+        face.textureSource = textureSource;
         if (face.vertexCount && !appendFace(out, face, why)) {
           return false;
         }
@@ -753,8 +752,9 @@ bool appendNearQuads(const RamView &ram,
       const uint8_t p = kTopLeft[child];
       const std::array<uint8_t, 4> indices = {
           p, (uint8_t)(p + 1), (uint8_t)(p + 5), (uint8_t)(p + 6)};
+      const uint32_t textureSource = material + 0x28u + child * 8u;
       world_material_codec::DecodedTile tile{};
-      if (!nearQuadTile(ram, material + 0x28u + child * 8u, tile)) {
+      if (!refinedQuadTile(ram, textureSource, 0x0fu, tile)) {
         why = "near_quad_texture";
         return false;
       }
@@ -763,6 +763,7 @@ bool appendNearQuads(const RamView &ram,
         why = "near_quad_child";
         return false;
       }
+      face.textureSource = textureSource;
       if (!face.vertexCount) {
         continue;
       }

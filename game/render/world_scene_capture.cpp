@@ -628,7 +628,7 @@ Status verify(Core *core,
         const auto &face = semantic[semanticOrder[mismatchRecord]];
         lucent::error("worldsceneoracle",
                       "semantic face source={:#010x} sector={:#010x} origin={} bin={} "
-                      "depth={}/{}/{}/{} uv0={}/{} uv1={}/{}",
+                      "depth={}/{}/{}/{} uv0={}/{} uv1={}/{} texture_source={:#010x}",
                       face.source,
                       face.sector,
                       (uint32_t)face.origin,
@@ -640,7 +640,24 @@ Status verify(Core *core,
                       face.vertices[0].u,
                       face.vertices[0].v,
                       face.vertices[1].u,
-                      face.vertices[1].v);
+                      face.vertices[1].v,
+                      face.textureSource);
+        if (face.textureSource && ramSpan(face.textureSource, 8u)) {
+          const uint32_t rawFirst = core->mem_r32(face.textureSource);
+          const uint32_t rawSecond = core->mem_r32(face.textureSource + 4u);
+          const uint32_t attribute = rawSecond >> 25;
+          const uint32_t adjustment = 0x8006d058u + attribute;
+          const bool hasAdjustment = attribute && ramSpan(adjustment, 8u);
+          lucent::error("worldsceneoracle",
+                        "semantic texture raw={:#010x}/{:#010x} attribute={:#04x} "
+                        "adjustment={:#010x} words={:#010x}/{:#010x}",
+                        rawFirst,
+                        rawSecond,
+                        attribute,
+                        adjustment,
+                        hasAdjustment ? core->mem_r32(adjustment) : 0u,
+                        hasAdjustment ? core->mem_r32(adjustment + 4u) : 0u);
+        }
         for (const size_t index : semanticOrder) {
           const auto &sameSource = semantic[index];
           if (sameSource.source == retail[mismatchRecord].source) {

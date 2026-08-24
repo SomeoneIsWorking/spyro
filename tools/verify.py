@@ -6,18 +6,36 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import run
 
 
+def verify_clang_build(build: Path) -> None:
+    compiler_files = sorted((build / "CMakeFiles").glob("*/CMakeCXXCompiler.cmake"))
+    if not compiler_files or not any(
+        'CMAKE_CXX_COMPILER_ID "Clang"' in path.read_text(errors="replace")
+        for path in compiler_files
+    ):
+        raise run.Refusal(f"the configured maintainer build in {build} is not using Clang")
+
+
 def verify(jobs: int) -> None:
-    cc, cxx = run.preflight()
+    compiler_options = run.preflight()
     psxport = run.sync_framework()
     run.sync_submodules(psxport)
-    run.configure(run.ROOT, run.BUILD, cc, cxx, f"-DPSXPORT_DIR={psxport}")
-    run.verify_clang_build(run.BUILD, "authoritative Spyro")
-    run.command(["cmake", "--build", run.BUILD, "-j", str(jobs)])
-    run.command(["ctest", "--test-dir", run.BUILD, "--output-on-failure"])
+    run.configure(
+        run.ROOT,
+        run.MAINTAINER_BUILD,
+        compiler_options,
+        f"-DPSXPORT_DIR={psxport}",
+        build_testing=True,
+    )
+    verify_clang_build(run.MAINTAINER_BUILD)
+    run.command(["cmake", "--build", run.MAINTAINER_BUILD, "-j", str(jobs)])
+    run.command(
+        ["ctest", "--test-dir", run.MAINTAINER_BUILD, "--output-on-failure"]
+    )
     run.command([sys.executable, run.ROOT / "tools/psxport_sync.py", "--check"])
 
 

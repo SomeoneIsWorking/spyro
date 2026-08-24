@@ -25,6 +25,7 @@ psxport_settings.ini
 # leak that a TEXT-only audit cannot see, because they are binary.
 __pycache__/
 *.pyc
+.venv/
 
 # Editor/OS noise
 .DS_Store

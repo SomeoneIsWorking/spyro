@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
-set -eu
-cd -- "$(dirname -- "$0")"
-exec python3 tools/run.py "$@"
+#!/bin/sh
+cd "$(dirname "$0")" || exit 1
+exec uv run --frozen python bootstrap.py "$@"

@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """Provision, build, and launch the current Spyro the Dragon port target."""
 
+from __future__ import annotations
+
 import argparse
 import os
+import platform
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TextIO
 
-import ensure_recomp
-import provision_title
+TOOLS = Path(__file__).resolve().parent
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
+import ensure_recomp  # noqa: E402
+import provision_title  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-BUILD = ROOT / "build"
-FRAMEWORK_BUILD = ROOT / "scratch/build/psxport"
+PLAYER_BUILD = ROOT / "scratch/build/player"
+FRAMEWORK_BUILD = ROOT / "scratch/build/player-tools"
+MAINTAINER_BUILD = ROOT / "build"
 EXE = ROOT / "scratch/bin/spyro/SCUS_942.28"
 PORT = ROOT / "scratch/bin/spyro_port"
 
@@ -22,11 +32,39 @@ class Refusal(RuntimeError):
     """The requested run cannot be performed honestly."""
 
 
-def say(message):
-    print(f"[run] {message}", file=sys.stderr)
+class Host:
+    """Narrow injectable seam around host discovery and process execution."""
+
+    @staticmethod
+    def which(name: str) -> str | None:
+        return shutil.which(name)
+
+    @staticmethod
+    def run(args: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess:
+        return subprocess.run([str(value) for value in args], **kwargs)
+
+    @staticmethod
+    def system() -> str:
+        return platform.system()
+
+    @staticmethod
+    def linux_distribution() -> str:
+        try:
+            values = {}
+            for line in Path("/etc/os-release").read_text().splitlines():
+                key, separator, value = line.partition("=")
+                if separator:
+                    values[key] = value.strip().strip('"').lower()
+        except OSError:
+            return "unknown"
+        return " ".join((values.get("ID", ""), values.get("ID_LIKE", ""))).strip()
 
 
-def command(args, *, env=None, quiet=False):
+def say(message: str, stream: TextIO = sys.stderr) -> None:
+    print(f"[run] {message}", file=stream)
+
+
+def command(args: Sequence[object], *, env=None, quiet=False):
     result = subprocess.run(
         [str(value) for value in args],
         cwd=ROOT,
@@ -38,25 +76,110 @@ def command(args, *, env=None, quiet=False):
         raise Refusal(f"command failed ({result.returncode}): {' '.join(map(str, args))}")
 
 
-def checked_clang(name, default):
-    compiler = os.environ.get(name, default)
-    if not shutil.which(compiler):
-        raise Refusal(f"{name}={compiler} was not found")
-    probe = subprocess.run(
-        [compiler, "--version"], capture_output=True, text=True, check=False
+def package_command(host: Host, package: str) -> str | None:
+    system = host.system()
+    if system == "Darwin":
+        return {
+            "cmake": "brew install cmake",
+            "git": "xcode-select --install",
+            "pkg-config": "brew install pkg-config",
+            "sdl3": "brew install sdl3",
+            "zlib": "brew install zlib",
+            "openssl": "brew install openssl@3",
+            "zstd": "brew install zstd",
+        }[package]
+    if system == "Windows":
+        return {
+            "cmake": "winget install Kitware.CMake",
+            "git": "winget install Git.Git",
+            "pkg-config": "vcpkg install pkgconf",
+            "sdl3": "vcpkg install sdl3",
+            "zlib": "vcpkg install zlib",
+            "openssl": "vcpkg install openssl",
+            "zstd": "vcpkg install zstd",
+        }[package]
+    if system != "Linux":
+        return None
+
+    distribution = set(host.linux_distribution().split())
+    if distribution & {"fedora", "rhel", "centos", "rocky", "almalinux"}:
+        return {
+            "cmake": "sudo dnf install cmake",
+            "git": "sudo dnf install git",
+            "pkg-config": "sudo dnf install pkgconf-pkg-config",
+            "sdl3": "sudo dnf install SDL3-devel",
+            "zlib": "sudo dnf install zlib-devel",
+            "openssl": "sudo dnf install openssl-devel",
+            "zstd": "sudo dnf install libzstd-devel",
+        }[package]
+    if distribution & {"debian", "ubuntu", "linuxmint", "pop"}:
+        return {
+            "cmake": "sudo apt install cmake",
+            "git": "sudo apt install git",
+            "pkg-config": "sudo apt install pkg-config",
+            "sdl3": "sudo apt install libsdl3-dev",
+            "zlib": "sudo apt install zlib1g-dev",
+            "openssl": "sudo apt install libssl-dev",
+            "zstd": "sudo apt install libzstd-dev",
+        }[package]
+    return None
+
+
+def missing_dependency(host: Host, name: str, package: str) -> Refusal:
+    install = package_command(host, package)
+    if install:
+        return Refusal(f"{name} was not found. Install it with: {install}")
+    system = host.system()
+    distribution = host.linux_distribution() if system == "Linux" else "unknown"
+    return Refusal(
+        f"{name} was not found, and no package command is recorded for "
+        f"{system}/{distribution}; tell us which supported platform/version and package path you use"
     )
-    if probe.returncode or "clang" not in (probe.stdout + probe.stderr).lower():
-        raise Refusal(f"{name}={compiler} is not Clang")
-    return compiler
 
 
-def preflight():
+def require_tool(host: Host, name: str) -> None:
+    if host.which(name) is None:
+        raise missing_dependency(host, name, name)
+
+
+def require_library(host: Host, module: str, name: str, package: str) -> None:
+    try:
+        result = host.run(["pkg-config", "--exists", module], check=False)
+    except OSError as error:
+        raise Refusal(f"could not query {name}: {error}") from error
+    if result.returncode:
+        raise missing_dependency(host, name, package)
+
+
+def compiler_arguments(host: Host, environment: Mapping[str, str]) -> list[str]:
+    """Pass user compiler choices through; otherwise prefer Clang if it is present."""
+
+    arguments = []
+    if cc := environment.get("CC"):
+        arguments.append(f"-DCMAKE_C_COMPILER={cc}")
+    if cxx := environment.get("CXX"):
+        arguments.append(f"-DCMAKE_CXX_COMPILER={cxx}")
+    if arguments:
+        return arguments
+    if host.which("clang") is not None and host.which("clang++") is not None:
+        return ["-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++"]
+    return []
+
+
+def preflight(
+    host: Host | None = None, environment: Mapping[str, str] | None = None
+) -> list[str]:
+    machine = host or Host()
     for tool in ("cmake", "git", "pkg-config"):
-        if not shutil.which(tool):
-            raise Refusal(f"{tool} was not found")
-    if subprocess.run(["pkg-config", "--exists", "sdl3"], check=False).returncode:
-        raise Refusal("SDL3 was not found by pkg-config (install SDL3-devel/libsdl3-dev)")
-    return checked_clang("CC", "clang"), checked_clang("CXX", "clang++")
+        require_tool(machine, tool)
+    for module, name, package in (
+        ("sdl3", "SDL3 development files", "sdl3"),
+        ("zlib", "zlib development files", "zlib"),
+        ("openssl", "OpenSSL development files", "openssl"),
+        ("libzstd", "zstd development files", "zstd"),
+    ):
+        require_library(machine, module, name, package)
+    return compiler_arguments(machine, os.environ if environment is None else environment)
 
 
 def git_output(psxport, *args):
@@ -112,20 +235,20 @@ def cache_value(build, key):
     return ""
 
 
-def configure(source, build, cc, cxx, *definitions):
+def configure(source, build, compiler_options, *definitions, build_testing=False):
     build.mkdir(parents=True, exist_ok=True)
-    cached_cxx = cache_value(build, "CMAKE_CXX_COMPILER")
     cached_source = cache_value(build, "CMAKE_HOME_DIRECTORY")
     selection_file = build / ".spyro-toolchain"
-    selection = f"CC={cc}\nCXX={cxx}\n"
-    if selection_file.is_file():
-        fresh = selection_file.read_text() != selection
-    else:
-        fresh = bool(cached_cxx and Path(cached_cxx).name != Path(cxx).name)
+    selection = "\n".join(compiler_options) + "\n"
+    fresh = selection_file.is_file() and selection_file.read_text() != selection
     fresh |= bool(cached_source and Path(cached_source).resolve() != source.resolve())
     if fresh:
-        say(f"reconfiguring {build.relative_to(ROOT)} for the selected Clang toolchain")
-        allowed = {BUILD.resolve(), FRAMEWORK_BUILD.resolve()}
+        say(f"reconfiguring {build.relative_to(ROOT)} for the selected compiler settings")
+        allowed = {
+            PLAYER_BUILD.resolve(),
+            FRAMEWORK_BUILD.resolve(),
+            MAINTAINER_BUILD.resolve(),
+        }
         if build.resolve() not in allowed:
             raise Refusal(f"refusing to clean unexpected build directory {build}")
         shutil.rmtree(build)
@@ -137,27 +260,18 @@ def configure(source, build, cc, cxx, *definitions):
         "-B",
         build,
         "-DCMAKE_BUILD_TYPE=Release",
-        f"-DCMAKE_C_COMPILER={cc}",
-        f"-DCMAKE_CXX_COMPILER={cxx}",
+        f"-DBUILD_TESTING={'ON' if build_testing else 'OFF'}",
+        f"-DPython3_EXECUTABLE={sys.executable}",
+        *compiler_options,
         *definitions,
     ]
     command(args, quiet=True)
     selection_file.write_text(selection)
 
 
-def verify_clang_build(build, target):
-    compiler_files = sorted((build / "CMakeFiles").glob("*/CMakeCXXCompiler.cmake"))
-    if not compiler_files or not any(
-        'CMAKE_CXX_COMPILER_ID "Clang"' in path.read_text(errors="replace")
-        for path in compiler_files
-    ):
-        raise Refusal(f"the configured {target} build is not using Clang")
-
-
-def build_discdump(psxport, cc, cxx):
+def build_discdump(psxport, compiler_options):
     say("building libchdr + discdump (incremental)…")
-    configure(psxport, FRAMEWORK_BUILD, cc, cxx)
-    verify_clang_build(FRAMEWORK_BUILD, "discdump")
+    configure(psxport, FRAMEWORK_BUILD, compiler_options)
     command(
         [
             "cmake",
@@ -192,12 +306,11 @@ def provision(spec, disc, psxport, discdump):
     return EXE
 
 
-def configure_and_build(psxport, cc, cxx):
+def configure_and_build(psxport, compiler_options):
     jobs = str(os.cpu_count() or 4)
     say(f"building the native port (CMake -j{jobs})…")
-    configure(ROOT, BUILD, cc, cxx, f"-DPSXPORT_DIR={psxport}")
-    verify_clang_build(BUILD, "spyro_port")
-    command(["cmake", "--build", BUILD, "--target", "spyro_port", "-j", jobs])
+    configure(ROOT, PLAYER_BUILD, compiler_options, f"-DPSXPORT_DIR={psxport}")
+    command(["cmake", "--build", PLAYER_BUILD, "--target", "spyro_port", "-j", jobs])
     if not os.access(PORT, os.X_OK):
         raise Refusal(f"build produced no executable at {PORT.relative_to(ROOT)}")
 
@@ -237,17 +350,21 @@ def execute(
     provision_step=provision,
     build_step=configure_and_build,
     launch_step=launch,
+    prepare_only=False,
 ):
     """Run the shipping sequence; injectable steps let tests exercise refusal ordering."""
     spec = provision_title.SPECS[title]
-    cc, cxx = preflight_step()
+    compiler_options = preflight_step()
     psxport = sync_step()
     submodule_step(psxport)
     resolved_disc = resolve_step(spec, disc)
     say(f"disc: {resolved_disc}")
-    discdump = discdump_step(psxport, cc, cxx)
+    discdump = discdump_step(psxport, compiler_options)
     executable = provision_step(spec, resolved_disc, psxport, discdump)
-    build_step(psxport, cc, cxx)
+    build_step(psxport, compiler_options)
+    if prepare_only:
+        say(f"{spec.title} is built and ready.")
+        return
     launch_step(psxport, resolved_disc, spec, executable)
 
 
@@ -262,13 +379,18 @@ def parse_args(argv):
         help="engine-lineage title codeword (default: spyro1)",
     )
     parser.add_argument("disc", nargs="?", help="Spyro (USA) CHD; otherwise use env/.env/drop-in")
+    parser.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="provision and build the selected target without launching it",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        execute(args.disc, title=args.title)
+        execute(args.disc, title=args.title, prepare_only=args.prepare_only)
     except (OSError, Refusal) as error:
         print(f"[run] error: {error}", file=sys.stderr)
         return 2

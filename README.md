@@ -57,8 +57,9 @@ has already been tried.
 
 ## Requirements
 
-- **Linux:** `cmake`, `pkg-config`, SDL3, libzstd, zlib, OpenSSL, `python3`, a Clang C/C++ toolchain
-- **macOS:** `brew install cmake pkg-config sdl3 zstd zlib python3`
+- `uv`, CMake, Git, pkg-config, SDL3, libzstd, zlib, OpenSSL, and a compatible C/C++ toolchain
+- On a missing native dependency, `run.sh` names the exact Homebrew, DNF, APT, winget, or vcpkg
+  command for the detected platform; it never installs privileged packages itself.
 - A Vulkan-capable GPU + drivers
 
 ## Running
@@ -80,6 +81,12 @@ executable. Spyro 1 additionally recompiles `SCUS_942.28` to C; Spyro 2/3 curren
 explicit no-substrate runtime boundary. Alternatively set
 `PSXPORT_SPYRO_DISC`, copy `.env.example` to `.env`, or drop a `*.chd` in the repo root — the
 resolution order is *CLI arg > env var > `.env` > drop-in*.
+
+The launcher enters through the frozen `uv.lock` environment and passes that same Python interpreter
+to CMake, provisioning, and code generation. `./run.sh --prepare-only` performs the same provisioning
+and build without starting the game. The player launcher uses isolated `scratch/build/player` and
+`scratch/build/player-tools` trees, builds only `spyro_port`, and never runs the CTest/developer
+verification suite.
 
 Useful knobs: `PSXPORT_NOAUDIO=1`, `PSXPORT_NOWINDOW=1` (headless), `PSXPORT_FORCE_RECOMP=1`,
 `PSXPORT_DEBUG=cd` (channel-gated diagnostics; see psxport's `docs/config.md`).

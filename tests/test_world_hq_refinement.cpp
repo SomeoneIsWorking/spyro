@@ -1,7 +1,9 @@
+#include "world_chunk_codec.h"
 #include "world_hq_refinement.h"
 #include "world_projection_math.h"
 
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -24,6 +26,20 @@ FixedAffine identity() {
 
 HighVertex project(const ProjectionParams &projection, Position position, uint8_t tags) {
   return spyro::world_hq_refinement::projectVertex(identity(), projection, position, tags, 512);
+}
+
+void w32(std::vector<uint8_t> &ram, uint32_t address, uint32_t value) {
+  for (uint32_t i = 0; i < 4; ++i) {
+    ram[address + i] = (uint8_t)(value >> (i * 8u));
+  }
+}
+
+void writeIdentity(std::vector<uint8_t> &ram, uint32_t address) {
+  w32(ram, address, 0x00001000u);
+  w32(ram, address + 4u, 0u);
+  w32(ram, address + 8u, 0x00001000u);
+  w32(ram, address + 12u, 0u);
+  w32(ram, address + 16u, 0x00001000u);
 }
 
 void test_depth_and_clip_paths() {
@@ -99,6 +115,103 @@ void test_near_quad_color_graph() {
   require(colors[6] != 0x001c1c1cu);
 }
 
+void test_near_quad_texture_attribute() {
+  constexpr uint32_t kCamera = 0x76dd0u;
+  constexpr uint32_t kEnvironment = 0x785a8u;
+  constexpr uint32_t kMaterial = 0x90000u;
+  std::vector<uint8_t> bytes(0x200000u);
+  writeIdentity(bytes, kCamera);
+  w32(bytes, kEnvironment + 0x1cu, kMaterial);
+  w32(bytes, kEnvironment + 0x20u, 1u);
+
+  // The executable's attribute-0x68 table is the FIELD case that was absent
+  // from the original hermetic corpus. It rotates the authored e0/ff U pair
+  // by +31/-31 and supplies the matching lower two corners.
+  w32(bytes, 0x6d0c0u, 0xffe1001fu);
+  w32(bytes, 0x6d0c4u, 0x1f001f1fu);
+  for (uint32_t child = 0; child < 16u; ++child) {
+    const uint32_t pair = kMaterial + 0x28u + child * 8u;
+    w32(bytes, pair, 0x2420e0e0u);
+    w32(bytes, pair + 4u, 0xd088e0ffu);
+  }
+
+  spyro::world_hq_refinement::Work work{};
+  spyro::world_hq_refinement::Parent parent{};
+  parent.count = 4;
+  parent.materialWord = 0;
+  parent.statusAddress = 0x100u;
+  parent.vertices[0].position = {-128, -128, 1024};
+  parent.vertices[1].position = {128, -128, 1024};
+  parent.vertices[2].position = {128, 128, 1024};
+  parent.vertices[3].position = {-128, 128, 1024};
+  for (auto &vertex : parent.vertices) {
+    vertex.projected.rgb = 0x00406080u;
+  }
+  work.near.push_back(parent);
+
+  spyro::world_recipe::Recipe recipe{};
+  const char *why = "none";
+  const ProjectionParams projection{256 << 16, 120 << 16, 341};
+  require(spyro::world_hq_refinement::append(
+      spyro::world_chunk_codec::RamView(bytes), projection, 512, work, recipe, why));
+  require(recipe.faces.size() == 16u);
+  for (uint32_t child = 0; child < recipe.faces.size(); ++child) {
+    const auto &face = recipe.faces[child];
+    require(face.vertexCount == 4u && face.material.clut == 0x2420u &&
+            face.material.tpage == 0xd088u);
+    require(face.textureSource == kMaterial + 0x28u + child * 8u);
+    require(face.vertices[0].u == 0xffu && face.vertices[1].u == 0xe0u &&
+            face.vertices[2].u == 0xffu && face.vertices[3].u == 0xe0u);
+  }
+}
+
+void test_medium_quad_texture_attribute() {
+  constexpr uint32_t kCamera = 0x76dd0u;
+  constexpr uint32_t kEnvironment = 0x785a8u;
+  constexpr uint32_t kMaterial = 0x90000u;
+  std::vector<uint8_t> bytes(0x200000u);
+  writeIdentity(bytes, kCamera);
+  w32(bytes, kEnvironment + 0x1cu, kMaterial);
+  w32(bytes, kEnvironment + 0x20u, 1u);
+
+  w32(bytes, 0x6d0c0u, 0xffe1001fu);
+  w32(bytes, 0x6d0c4u, 0x1f001f1fu);
+  for (uint32_t child = 0; child < 4u; ++child) {
+    const uint32_t pair = kMaterial + 8u + child * 8u;
+    w32(bytes, pair, 0x2420e0e0u);
+    w32(bytes, pair + 4u, 0xd088e0ffu);
+  }
+
+  spyro::world_hq_refinement::Work work{};
+  spyro::world_hq_refinement::Parent parent{};
+  parent.count = 4;
+  parent.materialWord = 0;
+  parent.statusAddress = 0x100u;
+  parent.vertices[0].position = {-128, -128, 1024};
+  parent.vertices[1].position = {128, -128, 1024};
+  parent.vertices[2].position = {128, 128, 1024};
+  parent.vertices[3].position = {-128, 128, 1024};
+  for (auto &vertex : parent.vertices) {
+    vertex.projected.rgb = 0x00406080u;
+  }
+  work.medium.push_back(parent);
+
+  spyro::world_recipe::Recipe recipe{};
+  const char *why = "none";
+  const ProjectionParams projection{256 << 16, 120 << 16, 341};
+  require(spyro::world_hq_refinement::append(
+      spyro::world_chunk_codec::RamView(bytes), projection, 512, work, recipe, why));
+  require(recipe.faces.size() == 4u);
+  for (uint32_t child = 0; child < recipe.faces.size(); ++child) {
+    const auto &face = recipe.faces[child];
+    require(face.origin == spyro::world_recipe::Origin::Medium && face.vertexCount == 4u &&
+            face.material.clut == 0x2420u && face.material.tpage == 0xd088u);
+    require(face.textureSource == kMaterial + 8u + child * 8u);
+    require(face.vertices[0].u == 0xffu && face.vertices[1].u == 0xe0u &&
+            face.vertices[2].u == 0xffu && face.vertices[3].u == 0xe0u);
+  }
+}
+
 } // namespace
 
 int main() {
@@ -106,5 +219,7 @@ int main() {
   test_projection_flag_facing_gate();
   test_packed_projection_input_borrow();
   test_near_quad_color_graph();
+  test_near_quad_texture_attribute();
+  test_medium_quad_texture_attribute();
   return 0;
 }

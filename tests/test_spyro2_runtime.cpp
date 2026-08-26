@@ -8,8 +8,11 @@ static_assert(std::derived_from<spyro::SpyroRuntime, GameRuntime>);
 int main() {
   spyro2::Spyro2Runtime runtime;
   const GuestProgramImage *image = runtime.guestProgramImage();
+  const RenderCapabilities capabilities = runtime.renderCapabilities();
   if (image == nullptr || runtime.legacyConfigForMigration() != nullptr ||
-      runtime.legacyHooksForMigration() != nullptr || runtime.installSubstrate()) {
+      runtime.legacyHooksForMigration() != nullptr || runtime.installSubstrate() ||
+      capabilities.defaultPath != RenderPath::Gte || capabilities.nativeRenderPath ||
+      capabilities.temporalInterpolation) {
     return 1;
   }
   return runtime.title() == spyro::SpyroTitle::Spyro2 && image->bss.begin == 0x80066ED8u &&

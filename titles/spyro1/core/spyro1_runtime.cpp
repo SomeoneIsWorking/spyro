@@ -11,6 +11,7 @@
 #include "presentation_owner.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
+#include "title_menu_oracle.h"
 
 #include <lucent/log.h>
 
@@ -84,6 +85,7 @@ void Spyro1Runtime::registerOverrides(Game &) {
     spyro_register_native_render();
     spyro_register_field_environment_oracle();
   }
+  spyro_register_title_menu_oracle();
   fntrace_init();
 }
 

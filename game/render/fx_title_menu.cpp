@@ -45,10 +45,10 @@
 // or GP0 packet is inspected, and no gen_func_* body runs to make this picture.
 //
 // WHAT IS *NOT* PORTED, stated here rather than discovered later:
-//   * Modes 1 and 2 of 0x8007CEE4 (the page-driven text screens and the 3-slot save screen). They
-//     are reachable only by pressing START, this session could not drive into them, and a
-//     transcription nothing has ever executed is exactly the "plausible picture" this project keeps
-//     paying for. `titleMenuRender` returns false for them and the seam ABORTS naming the mode.
+//   * Mode 2 of 0x8007CEE4 (the 3-slot save screen). Mode 1's memory-card pages are transcribed
+//     through title_menu_recipe.cpp from the same overlay body and corroborated by the vendored
+//     TitlescreenDraw Rosetta source. Its hermetic recipe coverage is current, but its real-data
+//     command differential remains serialized run work (issue 0085).
 //   * The 3D backdrop of stage 13 — 0x800521C0, 0x8001F158, 0x8001F798, 0x800258F0, 0x8004EBA8.
 //     Those are the world renderer, shared with the FIELD arm, and they are the next producers.
 //     Reported every frame on the `titlefx` channel with their own denominator.
@@ -89,7 +89,7 @@
 // substrate body whose surrounding guest code legitimately writes guest RAM, so the pc_render
 // read-only-overlay invariant has to be armed for just that block. This producer is not inside any
 // `gen_func_*` body: its whole call chain is port code (frame_loop.cpp -> SpyroRenderer::drawFrame
-// -> renderScene -> titleMenuRender -> here), it only READS guest memory (the four state globals,
+// -> renderScene -> titleMenuRender -> here), it only READS guest memory (the title state globals,
 // the ease tables, the sprite/style tables), and it writes none. Arming the guard would therefore
 // assert nothing this call chain can violate — and it would ALSO fire on the guest calls the
 // enclosing frame legitimately makes, since the guard is per-Core and this frame's env setup
@@ -99,6 +99,8 @@
 #include "producer_scope.h" // ProducerScope — the native leg's "who is drawing right now"
 #include "render.h"
 #include "render_queue.h"
+#include "title_menu_recipe.h"
+#include "title_menu_state.h"
 #include <lucent/log.h>
 
 namespace {
@@ -108,16 +110,6 @@ namespace {
 // `spriteEmit` below is its transcription, so its native prims belong in ITS row — see the
 // PRODUCER DB block in the banner for why not 0x8007CEE4, 0x800168DC or 0x80016784.
 constexpr uint32_t kGuestSpriteEmitter = 0x8007CD38u;
-
-// ── The front-end state machine's own globals (all in the overlay's data, read never written) ────
-constexpr uint32_t kMode = 0x80078D78u; // 0/1/2 select the arm; 3 is the OTHER stage-13 handler
-constexpr uint32_t kAnim = 0x80078D84u; // the arm's animation frame index (also the blink phase)
-constexpr uint32_t kPage = 0x80078D88u; // which screen of mode 0 / mode 1 is up
-constexpr uint32_t kGateVarPtr =
-    0x80075680u; // *(*this) — a global counter the logo drop-in waits on.
-                 // Its wider meaning is NOT RE'd; the arm only asks
-                 // "< 0x492", and that is all this file claims about it.
-constexpr uint32_t kGateValue = 0x492u;
 
 // ── The two ease tables the logo animates along (main-executable data, 16 bytes each) ────────────
 // Byte tables, indexed by kAnim, biased by the emitter's own constant. Dumped from the snapshot:
@@ -177,19 +169,6 @@ struct SpriteRec {
             c->mem_r8(b + 5),
             c->mem_r8(b + 6),
             c->mem_r8(b + 7)};
-  }
-};
-
-// ── The state the arm dispatches on ──────────────────────────────────────────────────────────────
-struct MenuState {
-  uint32_t mode, page, anim;
-  bool gateOpen; // the mode-0 page-2 arm's own "may I draw the logo yet" test
-  static MenuState read(Core *c) {
-    const uint32_t gatePtr = c->mem_r32(kGateVarPtr);
-    return {c->mem_r32(kMode),
-            c->mem_r32(kPage),
-            c->mem_r32(kAnim),
-            gatePtr != 0 && c->mem_r32(gatePtr) >= kGateValue};
   }
 };
 
@@ -305,7 +284,7 @@ bool SpyroRenderer::spriteEmit(int32_t x,
   return true;
 }
 
-// titleMenuRender — the port of 0x8007CEE4's SPRITE half, mode 0 only.
+// titleMenuRender — the port of 0x8007CEE4's SPRITE half, modes 0 and 1.
 //
 // Returns false when the frame's mode has no producer, so the seam can abort naming it instead of
 // presenting a screen with its menu missing.
@@ -316,15 +295,42 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                                     int32_t clipX1,
                                     int32_t clipY1) const {
   Core *c = mC;
-  const MenuState st = MenuState::read(c);
+  const auto st = spyro::title_menu_state::read(c);
+  if (st.mode == 1) {
+    const auto recipe = spyro::title_menu_recipe::buildMode1(st.mode1Input());
+    int emitted = 0;
+    for (size_t i = 0; i < recipe.size; ++i) {
+      const auto &command = recipe.commands[i];
+      emitted += spriteEmit(command.x,
+                            command.y,
+                            command.sprite,
+                            command.style,
+                            drawOfsX,
+                            drawOfsY,
+                            clipX0,
+                            clipY0,
+                            clipX1,
+                            clipY1)
+                     ? 1
+                     : 0;
+    }
+    lucent::debug("titlefx",
+                  "mode={} substate={} anim={} option={} card={} recipe={} emitted={}",
+                  st.mode,
+                  st.page,
+                  st.anim,
+                  st.optionSelected,
+                  st.cardSelected,
+                  recipe.size,
+                  emitted);
+    return true;
+  }
   if (st.mode != 0) {
     lucent::error("render",
-                  "  stage 13 mode [0x{:08X}] = {} has NO native producer. Only mode 0 (the "
-                  "logo/attract front end) is ported; modes 1 and 2 — the page-driven text "
-                  "screens and the 3-slot save screen — are RE'd in "
-                  "scratch/decomp/title_stage13.c but were never REACHED by any run this "
-                  "port can drive, so they are not transcribed.",
-                  kMode,
+                  "  stage 13 mode [0x{:08X}] = {} has NO native producer. Modes 0 and 1 "
+                  "(the logo front end and memory-card menus) are ported; mode 2 — the "
+                  "3-slot save screen — remains RE'd but unowned.",
+                  spyro::title_menu_state::kModeAddress,
                   st.mode);
     return false;
   }

@@ -32,6 +32,17 @@ public:
   const GuestProgramImage *guestProgramImage() const final;
   SpyroTitle title() const;
 
+  // An identified lineage title does not acquire Spyro 1's renderer merely by deriving from this
+  // base. Titles without an installed substrate refuse before Game construction; these facts keep
+  // the framework from advertising native or temporal products if that boundary is later reached.
+  RenderCapabilities renderCapabilities() const override {
+    return {
+        .defaultPath = RenderPath::Gte,
+        .nativeRenderPath = false,
+        .temporalInterpolation = false,
+    };
+  }
+
   // A selected title owns its substrate decision. Returning false is an honest pre-Game refusal:
   // the title was identified, but this repository cannot execute it yet.
   virtual bool installSubstrate() = 0;

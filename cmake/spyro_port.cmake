@@ -62,6 +62,12 @@ if(BUILD_TESTING)
   target_include_directories(test_wide_clip_plan PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_wide_clip_plan PRIVATE cxx_std_20)
   add_test(NAME wide_clip_plan COMMAND test_wide_clip_plan)
+  add_executable(test_title_menu_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_title_menu_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/title_menu_recipe.cpp)
+  target_include_directories(test_title_menu_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_title_menu_recipe PRIVATE cxx_std_20)
+  add_test(NAME title_menu_recipe COMMAND test_title_menu_recipe)
   add_executable(test_paired_actor_decode
     ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_decode.cpp
     ${CMAKE_SOURCE_DIR}/game/render/paired_actor_decode.cpp)
@@ -277,6 +283,9 @@ set(GAME_SRC
   game/render/scene.cpp
   game/render/frame_env.cpp
   game/render/fx_title_menu.cpp
+  game/render/title_menu_recipe.cpp
+  game/render/title_menu_state.cpp
+  game/render/title_menu_oracle.cpp
   game/render/fx_sprite_queue.cpp
   game/render/paired_actor_decode.cpp
   game/render/presentation_owner.cpp

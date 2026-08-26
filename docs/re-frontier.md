@@ -42,16 +42,16 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: boot.provision
 - evidence: See claim C001: disassembly of entry 0x8005B8E0 maps 1:1 onto psxport's generic crt0_setup().
 - where: game/core/game_config.cpp
-- gap: 
-- notes: 
+- gap:
+- notes:
 
 ### boot.guest-main — Reach the guest's own main() as recompiled code
 - status: re-verified
 - deps: boot.crt0
 - evidence: See claim C002: headless backtrace shows main -> gen_func_80012204 -> ...800127C0 -> ...8001250C -> ...80016500 -> ...800163E4.
 - where: titles/spyro1/core/spyro1_runtime.cpp Spyro1Runtime::bootInit
-- gap: 
-- notes: 
+- gap:
+- notes:
 
 ### boot.post-splash — Get past the boot splash into game init
 - status: re-partial
@@ -59,16 +59,15 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: Root-caused. The stall is a SPIN, not slow init (claim C008): sampled mem_w32 addresses repeat at 0x801FFDB0/B4 — adjacent slots below the stack top 0x801FFFF0, i.e. one frame re-pushed — with the profile pinned to func_800163E4 <- 80016500 <- 8001250C <- 800127C0 <- main. It spins because no CD read ever delivers data.
 - where: func_800163E4 (game code — low addresses are game, libraries are high in this link order)
 - gap: Blocked on cd.reads: Spyro uses stock libcd (Setloc-then-read), so the LBA is not an argument to the read and psxport's cd_read(blocks,lba,buf) contract does not fit. See docs/issues/0003.
-- notes: 
+- notes:
 
 ### boot.post-cd — Get past the post-CD stall at func_8005CBB0
 - status: re-verified
 - deps: cd.reads
 - evidence: Root-caused and fixed. func_8005CBB0 polls BIOS event handle 0xF1000000; PSXPORT_DEBUG=ev (new framework tracer) showed it was opened on class 0xF0000009 spec 0x20. Two things were needed: the class in GameConfig::irqEventClasses, AND delivery from the vblank wait — the framework's own delivery point (native_step_frame) never runs while the guest owns its frame loop. Verified: 226 -> 436 frames and 18 distinct frame-occupancy values (was ~2), so content genuinely progresses (C023).
 - where: func_8005CBB0, func_80014564
-- gap: 
-- notes: 
-
+- gap:
+- notes:
 
 ## cd
 
@@ -77,7 +76,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: boot.guest-main
 - evidence: libcd = stock Sony bios.c v1.86 (C004). Wired, each with its SIGNATURE CONFIRMED from the recompiled body rather than the name it prints: hle.cdInitHandshake=0x800653B4 (CD_init), hle.cdDataSync=0x800655A0 (CD_datasync), cfg->cdCommand=0x80064CEC (CD_cw: a0&255 indexes the command tables, a1=param, a2=result), cfg->cdSync=0x800647A0 (CD_sync: a0 mode in r21, a1 result in r22; it polls via VSync(-1) waiting on a ready flag only a CD IRQ would set). Plus the missing game->cd.overridesInit() call. 4 plat-hle primitives installed; zero CD timeouts; a stack profile that sat in CD_sync now shows it gone.
 - where: game/core/game_config.cpp CD chokepoints group (all 0 today)
-- gap: 
+- gap:
 - notes: This is the CURRENT BLOCKER: the boot reaches guest main, then spins on 'CD timeout: CD_cw:(CdlSetmode/CdlSetloc)' because no native CD override is installed and the 0x1F801800 controller model is only partial.
 
 ### cd.reads — Serve stock-libcd data reads (Setloc-tracking read path)
@@ -86,24 +85,23 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: Loader identified and owned: func_80016500(a0=base LBA 37, a1=dest, a2=len, a3=byte offset), confirmed by logging every call (C019, C020). Serving it reads sector a0+a3/2048 into dest and super-calls, so the guest's own wait/bookkeeping stay intact. Real data now moves with correct per-request offsets: 2048 / 262144 / 14336 / 110592 bytes to three distinct destinations.
 - where: game/core/ (new), GameConfig cd group
 - gap: Frames only 218 -> 226: the reads are served but the game still does not progress visually. Content correctness is UNVERIFIED — nothing yet checks the loaded bytes against what the guest expects (no checksum observed). Next: verify content (compare a loaded region against the disc independently) and find what the guest does with it after load, since fixing the offset did not unblock it.
-- notes: 
+- notes:
 
 ### cd.loader-content — Verify the loader writes the RIGHT bytes
 - status: re-partial
 - deps: cd.reads
 - evidence: The loaded content is structurally valid: the words at heapBase+0x174 are all exactly 0x800-aligned sector offsets (1196/28645/26/28671), i.e. a WAD index — precisely what the archive's first sector should hold (C025). So the loader is placing plausible archive data, and the earlier 'writes wrong bytes' suspicion is NOT supported.
-- where: 
+- where:
 - gap: Origin of the garbage call target 0x8007ABAC is still unexplained. Not the index words themselves (they are valid). More likely the guest indexes this table with a value the port has not got right, or reads a pointer the port never populated. Also unexplained: a later load logs the same region as ALL ZEROS, so something does overwrite or re-read it differently.
-- notes: 
+- notes:
 
 ### cd.pc-owned-stock-libcd — OWN Spyro's loader natively — do NOT move the CD path down to hardware-level handlers
-- status: todo
+- status: re-verified
 - deps: boot.post-cd
-- evidence: C074
-- where: game/core/cd_queue.cpp; game/core/game_config.cpp cd group; external/psxport/runtime/recomp/cd_override.cpp
-- gap: DIRECTION SETTLED; the counts in the previous version of this entry were stale. The user's directive is that the goal is more PC-DRIVEN, not more faithful: at the hardware layer the guest's libcd AND its loader both still run as recompiled MIPS, so moving down GIVES UP ownership. Up is the direction — replace guest bodies with native ones. Current ownership is derived mechanically as 26 ndiff_run sites (C207/C209/C210/C211/C213); the old 35-overrides/15-native ratio is retired rather than extrapolated. Both game-level CD loaders are owned at the right layer — they serve the bytes from the disc natively, then super-call the guest's own wait/bookkeeping (C106; issues 0003/0004/0007/0008/0010/0012 all resolved). The remaining super-call wrappers in this subsystem are observation-only. (game/core/level_load_probe.cpp and its 5 probes are GONE — deleted, as this entry used to ask for; do not go looking for that file.) NEXT: ownership's frontier is non-leaf bodies (see own.non-leaf). Note a spin-loop body like func_80016500 CANNOT be validated by the per-call differential — the recompiled side's spin calls the queue service and mutates state a native body would never touch, so ndiff would report divergence for a correct reimplementation. Own its callees first.
-- notes: BLOCKED ON VERIFICATION, not on effort. psxport's methodology is that each native reimplementation is gated byte-exact against the substrate it replaces (sbs.cpp); this port has never wired that harness (frontier harness.sbs, outstanding all session). Replacing a loader body natively without it is unverifiable, which CLAUDE.md's own 'verify on real data, distrust green' rule forbids. So harness.sbs is the real prerequisite for the whole native-ownership programme, and it is what to build next — not another CD layer decision.
-
+- evidence: C074,C106
+- where: game/core/cd_queue.cpp; game/core/game_config.cpp cd group
+- gap: DONE at the game-owned layer selected by the user: both loader paths serve disc bytes natively, then super-call only the guest wait/bookkeeping they do not yet own. tools/own_candidates.py derives 27 current ndiff_run owners; further bottom-up function ownership is tracked only by own.non-leaf. The remaining CD super-call wrappers are observation-only, not missing loader implementations.
+- notes: The old hardware-handler direction and harness blocker were stale. Moving down would run more guest libcd rather than make the port more PC-driven; issue 0004 records the user-selected game-loader boundary. Per-call NDIFF is already the accepted verification seam for native owners (harness.sbs/I019), and C106 is the real-data loader evidence.
 
 ## frame
 
@@ -120,8 +118,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: cd.chokepoints
 - evidence: libetc VSync (func_8005DBC4) delegates to a wait helper (0x8005DD0C) whose condition is [0x800749E0] < a0 — the vblank counter, frozen with no IRQ to increment it. Overridden game-side (game/core/vsync.cpp): advance the counter toward the target, presenting+pacing one frame per vblank. Chose the HELPER over VSync itself so VSync's own return value and GPU polling still run on the real recompiled body. VERIFIED on a real run: counter advances (target=7 -> counter=7 (+1 frames), target=8 -> counter=8 (+1 frames)) across 16 waits, no crash, SDL_GPU device + headless renderer up.
 - where: game/core/vsync.cpp; hle window 1 [0x8005B000,0x80063000) covers libetc
-- gap: 
-- notes: 
+- gap:
+- notes:
 
 ### frame.own-render-driver — Own the per-frame RENDER DRIVER 0x8001ED5C — the actual native-graphics seam
 - status: re-partial
@@ -201,25 +199,23 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
   the guest leg as reference; RQ submission and guest suppression are still absent, and unreached
   FT4/semi/raw remain refusal gates.
 
-
 ## harness
 
 ### harness.sbs — Stand up the differential (SBS) harness against an oracle
 - status: re-verified
 - deps:
 - evidence: I019,C075
-- where: 
-- gap: 
+- where:
+- gap:
 - notes: UNBLOCKED by a different route, and the old dependency on frame.native-loop was the wrong shape. psxport's SBS harness is whole-run and its stepper (dc_step_frame) hardcodes the first consumer's addresses (GAME_ENTRY 0x8010637C, TASK0_ENTRY 0x801fe00c), so it cannot be wired for Spyro without a framework generalisation. But full-run SBS is not what validating ONE replacement needs. native_diff.cpp (PSXPORT_NDIFF=n) does a PER-CALL differential: snapshot RAM+scratchpad+registers, run the native body, rewind, run the recompiled body, compare. It is stronger for this purpose than a whole-run diff — it asks 'does this function, from THIS exact input state, produce exactly what the substrate produces' and answers on every call. Validated both directions (I019): it catches a one-byte perturbation, and it caught a real inequivalence in the first native function (an unreproduced $at clobber) that reading the code did not. The whole-run harness is still worth having eventually for cross-function drift; it is no longer the prerequisite for owning functions.
 
 ### harness.gate — Boot-progress regression gate (tools/gate.sh)
 - status: re-verified
 - deps: boot.post-cd
 - evidence: tools/gate.sh runs the port headless and asserts seven measurable properties: frames >=300, DISTINCT frame occupancies >=8 (catches a regression to a held screen, which frame count alone cannot — it was 218 for a static splash), loader invocations, bytes actually read from disc, completions delivered, and zero recomp-misses / refused HLE registrations. Caught a real recomp-MISS on its FIRST run that manual log reading had missed.
-- where: 
+- where:
 - gap: This is a BOOT-PROGRESS gate, not the byte-exact SBS differential the playbook asks for; it cannot prove the native path matches the substrate instruction-for-instruction. harness.sbs remains outstanding.
-- notes: 
-
+- notes:
 
 ## recomp
 
@@ -237,8 +233,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: C059,C060
 - where: docs/issues/0021; emit.py label emission
 - gap: RESOLVED. Was misdiagnosed as data-driven and unanalysable; it was a computed RETURN (C058/C059) plus a no-index computed jump (C060), both now handled in the recompiler. The port no longer crashes: zero recomp misses, frame count scales with wall time, gate 11/11.
-- notes: 
-
+- notes:
 
 ## input
 
@@ -247,7 +242,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: boot.post-cd
 - evidence: C063,C064
 - where: game/core/game_config.cpp pad group; psxport PlatformHle pad path
-- gap: 
+- gap:
 - notes: RESOLVED. The producer was never a pad-buffer address to guess — it was a callback that never fired. Boot registers the game's own decoder 0x80053C68 as the VBlank handler (VSyncCallback, 0x8005DE58) and this runtime raises no IRQs, so it ran once at boot and never again (C063). Two things were missing and both are now supplied from the vblank wait (game/core/vsync.cpp): Pad::serviceFrame() writes the standard PSX packet into the buffers libpad's SIO read would have filled (0x800786A0 slot0 / 0x80078E50 slot1, registered by PadInitDirect at 0x800123E0; the driver keeps those pointers at 0x80075D48 with a 240-byte stride — GameConfig padSlot0Buf/padSlot1Buf/padSlotPtrTable/padSlotPtrStride), then the registered vblank callback runs with the register file saved and restored as an IRQ would. Measured: pad class [0x80077384] moves 0 -> 2 (digital) and the decoder goes from 1 call per run to 4106+. The game then LEAVES ATTRACT and loads a level — bytes-from-disc doubled to 9.9 MB and a third overlay (OVL2, WAD +0x237D000) loads into the arena. C035 falsified along the way: the SIO accesses were always there, reached through the pointer [0x80075220] = 0x1F801040 (C064). Remaining work is downstream: OVL2 function discovery is starved (6 fns from 1 seed) and a run fail-fasts on 0x8007CFB4.
 
 ### input.start-skip-sequences — Start skips logos, loading overlays, and scripted sequences
@@ -258,7 +253,6 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: BOOT COMPLETE, BROADER STEP PARTIAL. Boot uses a fresh edge to advance only its exact 0xD2 presentation clock. Title/attract keeps its legitimate guest transition. Stage mode 14 is now classified as recorded/demo playback and ALREADY handles Start/Cross in guest `0x800331AC` by accelerating its cursor toward the natural completion writer `0x8002D440`; adding a native transition would duplicate it. Observed stage13/sub3 phases are required streaming/I/O, not a presentation hold, and remain unmodified. NEXT: find an independently timed post-load overlay or another scripted-sequence family, then trace its natural completion writer. Never pulse Start across modes 0/2 gameplay, where it means UI/pause.
 - notes: `skipmap` has a negative denominator every 600 fields and reports every edge/state transition uncapped. Boot classification uses the dynamic lifetime of `0x800127C0`, not a frame threshold.
 
-
 ## gpu
 
 ### gpu.ot-crash — Port aborts at frame 3781 — runaway OT linked-list DMA
@@ -267,7 +261,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: C037,I008
 - where: issue 0015; gen_func_80061820 submit path
 - gap: RESOLVED. The render-queue drain (C037) fixed the abort. The 'black screen' that appeared to remain was a MEASUREMENT ARTEFACT, not a defect: PSXPORT_GPU_DUMP reads s_vram and VK-path polygons never touch it (instrument I008), so the dump goes black the moment real rendering starts. The guest's own prim count shows 680 frames submitting geometry in the last quarter of the run. C038, which claimed prims reached the renderer but not the screen, is falsified. Remaining unknown, tracked as issue 0018: there is no headless way to capture VK output, so 'are the pixels CORRECT' is unmeasured — a per-frame readback hangs the port and was reverted. The port's live blocker is now the recomp miss at 0x8008772C (issue 0017).
-- notes: 
+- notes:
 
 ### gpu.upload-only-screens — Upload-only screens (logos, FMV stills) do not reach the display
 - status: re-verified
@@ -285,7 +279,6 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: MECHANISM RE-VERIFIED, COVERAGE IS NOT. Where a primitive's vertices resolve, they resolve exactly: sampled frames reach 210/210 prims with miss=0, and the rendered image is unchanged from before depth was enabled (C126), which is the correct result — the game's own painter order is still right for its own camera, so real depth only changes the picture once the camera moves or widens.
 - notes: RESOLVED 2026-08-19 (C204, issue 0067): per-primitive depth coverage is 63.60% of 3,483,268 prims, 85.30% of vertex-depth lookups resolved — up from 2.10%/6.41% — with the picture BYTE-IDENTICAL (f6001 md5 b6223ab7) and the gate 13 PASS / 709529 native producer prims unchanged. The blocker was NEVER this game's renderers: ProjPrim keyed entries by guest address alone, which forced entry lifetime down to one buffer flip, because a recycled packet-pool slot would otherwise be served the depth of the vertex that used to occupy it. Guarding each entry by the WORD it was recorded against makes a reused address unable to alias, so retention went to 8 generations (framework 2de90164 + tests/test_proj_prim_stale.cpp, shown RED first). Ruled out on the way, each of which looked like the answer: owning the world renderer (changed coverage by NOTHING), the recompiler pz tap not firing (fires 16.7M times; the one real gap on the clip arm at 0x8002631C is worth +43 prims of 3.48M), and the buffer-to-buffer carry not running (runs 20.5M times, carries 10M). READ THE STALE COUNT WITH THE COVERAGE NUMBER: with the guard compiled out the same run reads 70.53%, and those extra points are prims whose recorded word no longer matches memory — the previous attempt at longer lifetimes bought 6.9%->23% the same way and depth-culled the player character. Measure with I051; I041 stays distrusted. NEXT: the 2D/3D discriminator now has its signal, so widescreen re-centering (C143) and the uncovered-margin strip (issue 0039) are unblocked — but 63.60% was measured on the REFERENCE leg, which computes depth without ordering by it, so an unchanged picture there is not evidence the depths are CORRECT. The native leg must reach the field (issue 0065) for that.
 
-
 ## overlay
 
 ### overlay.ovl2-discovery — Overlay set + per-overlay entry seeds
@@ -293,7 +286,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: input.pad
 - evidence: C065,C066
 - where: tools/overlay_scan.py; game/overlays.json; tools/ensure_recomp.py; game/recomp_seeds.json overlay_seeds
-- gap: 
+- gap:
 - notes: RESOLVED, and the original framing was wrong. 0x8007CFB4 was never in the overlay it was being read from: the arena is reloaded constantly, so the last IDENTIFIED overlay is not the resident one at a fail-fast (C065). Both earlier conclusions — 'jump-table case label' and 'the overlays are mostly data' — were artifacts of reading the wrong image. The port now dumps guest RAM at every miss (I012), which settles residency by searching WAD.WAD for the resident bytes. tools/overlay_scan.py (I011) recovers the whole set from a run's arena loads into game/overlays.json; overlays are named by WAD offset so the set grows without renaming and re-pointing existing seeds; ensure_recomp.py now also deletes slices that leave the set, since emit.py walks the directory and a stale slice emits a whole module at the live arena base. Seven overlays extracted, all identified at load, zero unmatched. Per-overlay what remains is ONE seed each — the per-frame entry installed into [0x80075734], called indirectly at 0x80033AA4 (C066) — each verified as a real prologue in the RESIDENT bytes before being added. With OV_237D000 0x8007AEB8 and OV_2F5B000 0x8007B7A8 seeded the port runs a full 45s at rc=137 with zero recomp misses.
 
 ### overlay.entry-seeds-auto — Automate the per-overlay entry seed instead of one fail-fast per rebuild
@@ -301,9 +294,8 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: overlay.ovl2-discovery
 - evidence: C066,C067
 - where: tools/overlay_scan.py; game/recomp_seeds.json overlay_seeds
-- gap: 
+- gap:
 - notes: DONE. The rule works and the earlier doubt was my own bad measurement: I had reported that the confirmed entries were NOT in main's install table, which was wrong — the value-extraction scan was grabbing a neighbouring store's lui/addiu pair. Redone correctly, the table has 43 store sites yielding 36 DISTINCT addresses, matching the 36 code overlays of C033 and the ~37 the decomps describe, and every confirmed entry is in it. An address is claimed by an overlay only when it is prologue-shaped (addiu sp,sp,-N) in THAT overlay's own bytes, which is what stops another level's entry being seeded into the wrong module — all overlays share one base, so 35 of 36 would otherwise land mid-function. The test separates cleanly: each level overlay claims exactly one (OV_237D000 0x8007AEB8, OV_2F5B000 0x8007B7A8, OV_502F800 0x8007CFB4), the two small data-only reads claim none, and OV_B83800 claims two. tools/overlay_scan.py derives them into game/overlays.json; ensure_recomp.py merges them with the hand-reasoned seeds into generated/.recomp_seeds_merged.json and hashes them into the recomp identity so a newly-derived entry cannot leave generated/ looking current. The hand file's overlay_seeds is now empty by design. 0x8007CFB4 — the address that cost a whole wrong diagnosis — is now supplied automatically.
-
 
 ## ownership
 
@@ -312,28 +304,26 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - deps: harness.sbs
 - evidence: C075,C080,C207,I019,I020,I021
 - where: game/core/native_rand.cpp is the pattern; game/core/ observation wrappers are the candidates
-- gap: 
-- notes: PHASE DONE: the high-caller LEAF work is complete. tools/own_candidates.py now derives 26 owned bodies from the live ndiff_run sites; C081's historical count of 15 is superseded. Four are GTE bodies, owned without reimplementing the GTE — scalar logic native, COP2 via the platform's gte_op/gte_read_data/gte_write_ctrl, integer divide via cpu_div (C++ division is UB exactly where MIPS defines behaviour: /0 and INT_MIN/-1). Its best remaining LEAF has 15 callers, down from 136, so this seam has given what it has to give. CAVEAT on exhausted: the caller count is STATIC, so indirect calls are invisible and a low count is not proof of coldness — a runtime call histogram is the honest measurement. Continuing is tracked by own.non-leaf.
+- gap:
+- notes: PHASE DONE: the high-caller LEAF work is complete. tools/own_candidates.py now derives 27 owned bodies from the live ndiff_run sites; C081's historical count of 15 is superseded. Four are GTE bodies, owned without reimplementing the GTE — scalar logic native, COP2 via the platform's gte_op/gte_read_data/gte_write_ctrl, integer divide via cpu_div (C++ division is UB exactly where MIPS defines behaviour: /0 and INT_MIN/-1). Its best remaining LEAF has 15 callers, down from 136, so this seam has given what it has to give. CAVEAT on exhausted: the caller count is STATIC, so indirect calls are invisible and a low count is not proof of coldness — a runtime call histogram is the honest measurement. Continuing is tracked by own.non-leaf.
 
 ### own.non-leaf — Own NON-LEAF functions, bottom-up from the leaves already owned
-- status: re-partial
+- status: in-progress
 - deps: own.next-targets
-- evidence: C082,C207,C209,C210,C211,C213,I019,I020,I028
-- where: game/core/native_printf.cpp; game/core/native_actor_mesh_scratch.cpp; game/core/native_spu_pio_upload.cpp; game/core/spu_pio_upload.h; game/core/native_spu_hardware_init.cpp; game/core/spu_hardware_init.h; game/core/native_text_sprites.cpp; game/core/text_sprites.h; tools/own_candidates.py --ready-nonleaf
-- gap: FIFTH STEP VERIFIED, not the family. BuildTextSprites 0x800181AC is now owned bottom-up: its 168-instruction SCUS_942.28 body calls only the already-owned FillWord and CopyVector boundaries. The ordinary 3,000-field native/reference corpus explicitly left it cold; a 9,000-field reference-leg corpus reached it 1,625 times after entering gameplay, with positive and negative FNTRACE answers in the same run. Its first two real calls then matched the retained generated parent across NDIFF's compared state. The focused test covers both classification/capitalization answers and every supported special glyph. Issue 0071 records why the reach horizon, not static rank alone, decides when the queue is actionable. Continue with the dependency-ready queue and a known-positive FNTRACE batch long enough to reach the content that owns the candidate.
+- evidence: C082,C207,C209,C210,C211,C213,C224,I019,I020,I028
+- where: game/core/native_printf.cpp; game/core/native_actor_mesh_scratch.cpp; game/core/native_spu_pio_upload.cpp; game/core/spu_pio_upload.h; game/core/native_spu_hardware_init.cpp; game/core/spu_hardware_init.h; game/core/native_text_sprites.cpp; game/core/text_sprites.h; game/core/native_memcard_event_stack.cpp; game/core/memcard_event_stack.h; tools/own_candidates.py --ready-nonleaf
+- gap: SIXTH STEP VERIFIED. libmcrd event-stack push 0x80068F44 is dependency-ready: its 32-instruction SCUS_942.28 body has 13 libmcrd callers and only the already-owned printf child. Current-binary reference log `scratch/logs/gate-boot-20260826-213811.log` reached it 1,253 times after the positive control 0x8005BBF4; `scratch/logs/gate-boot-20260826-213915.log` matched native calls 1 and 2 exactly against retained `gen_func_80068F44`. The focused test covers reset/last/overflow indices plus the 16-byte state and 4-byte handler strides. C224 records the compared surface and falsifier. The next dependency-ready parents are MemCardExist 0x8006635C and MemCardAccept 0x800665B8; rank and inspect their real reach before choosing the seventh step.
 - notes: C082 puts all guest code at only 4.5-4.9% of host CPU, so further ownership buys correctness and architecture, not speed. Pick from tools/prof_hot.py for measured speed work and from the static queue for coverage. FNTRACE and an owned override cannot be armed on the same address because both use its one override slot; C207, C209, C210, C211, and C213 therefore cite separate reach and equality runs. NDIFF does not snapshot host-only device/framework state; C211 records the SPU blind surface rather than laundering the exact compared-state result into a whole-device equivalence claim.
-
 
 ## perf
 
 ### perf.diagnostics-overhead — The logger costs ~6% of CPU with logging switched OFF
 - status: re-verified
-- deps: 
+- deps:
 - evidence: C083,C084,C085,C088,C089,I022,I023
 - where: lucent (external, the user's own library); external/psxport/runtime/recomp/cfg.cpp; Core::wwatch_check
-- gap: 
+- gap:
 - notes: DONE, and STOP HERE unless a CPU-bound workload appears. Three fixes landed, all measured: lucent channel_enabled 6.06%->0.33% (fixed in the shared library); the per-store watch hooks ~4.9% (inlined armed test); the generation-counter chain ~6% (trackStore -> cfg_dbg_generation -> bootstrap_once). Frames 16508 -> ~18700, seventh overlay reached. BUT C089 is the finding that should govern what happens next: the LAST ~6% bought no measurable throughput at all, and the run reaches an identical point either way. ~29% of samples sit outside the binary (driver/loader) and do not shrink. Further micro-optimisation of this workload is optimising something that is not the constraint. TWICE in this work a fast path silently never engaged (lucent's early return, trackStore's statics vs members) and BOTH were invisible to reading and obvious to re-profiling — never accept an optimisation on the strength of the diff.
-
 
 ## render
 
@@ -355,7 +345,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ### render.projection-constants — Wire Spyro's native projection constants (libgte SetGeomOffset/SetGeomScreen)
 - status: re-verified
-- deps: 
+- deps:
 - evidence: C156
 - where: game/core/game_config.cpp .hle.setGeomOffset/.setGeomScreen; guest leaves 0x80062618 (CR24/CR25) and 0x80062638 (CR26); call site FUN_800127c0 at 0x80012818/0x80012824; framework side external/psxport/runtime/recomp/proj_params.cpp + sync_overrides.cpp
 - gap: DONE. This is the FIRST step of a native renderer and it blocked every later one: ProjParams::geomValid() was false, so any native producer would abort in requireGeom() on its first frame. Spyro's OWN stated projection is OFX=256 OFY=120 H=341 (half of its 512x240 display) — not libgte's 160/120 and not Tomba!2's H=350; the values are read at the call site where the game states them, never out of the GTE at draw time, so this is not a tap. Measured live: geomValid()=1 from boot init, and the native handlers reproduce the recompiled bodies' entire effect (CR24=0x01000000, CR25=0x00780000, CR26=0x00000155, a0/a1 shifted in place).
@@ -368,7 +358,6 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: game/core/game_hooks.cpp (`spyro_fps60ReadSceneCam`); external/psxport/runtime/recomp/game_iface.h + game_hooks_opt.cpp + fps60.cpp (framework seam)
 - gap: DONE. The framework defect was fixed at psxport `a1c53d7c`: `Fps60::sceneCam` requires the game's `fps60ReadSceneCam` hook instead of interpreting Tomba!2 scratchpad offsets as universal. Spyro now supplies its persistent game camera state. Renderer `0x80022A2C` reads five packed rotation words from `0x80076DD0`, reads camera world position from `0x80076DF8`, subtracts that position from every world point, and then applies the rotation. The hook performs the algebraically identical affine transform: raw 1.3.12 `R`, `T = -(R * cameraPosition) / 4096`. `PSXPORT_SELFTEST=scenecam` protects signed matrix unpacking, the `R22` halfword, and translation sign with identity and rotated cases.
 - notes: This does not read GTE control registers or transient scratchpad state. The path is ready for a native producer, but is not evidence that Spyro has such a producer yet: `sceneCam` still has zero game callers today.
-
 
 ## spyro2
 
@@ -388,7 +377,6 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: No generated SCUS_944.25 substrate or differential execution exists; bootInit refuses rather than entering unverified code.
 - notes: SpyroRuntime is the lineage root; Spyro1Runtime and Spyro2Runtime inherit it. Only Spyro1Runtime binds the remaining SCUS_942.28 GameConfig compatibility view.
 
-
 ## runtime
 
 ### title.runtime-selection — Select exact executable identity and derived runtime before Game
@@ -398,7 +386,6 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - where: game/core/title_selection.*; game/core/title_runtime_registry.*; game/core/main.cpp; titles/spyro*/core/*_runtime.*; titles/spyro*/executable.json; tools/generate_title_catalog.py
 - gap: DONE for exact USA executable selection. Only Spyro 1 has an executable substrate; Spyro 2/3 deliberately refuse before Game.
 - notes: Each derived runtime owns title behavior and substrate installation/refusal. The JSON manifests are the single executable-identity authority and generate the C++ catalog. No GameConfig discriminator or fallback to Spyro 1 exists.
-
 
 ## spyro3
 

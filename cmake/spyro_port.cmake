@@ -144,6 +144,11 @@ if(BUILD_TESTING)
   target_include_directories(test_text_sprites PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_text_sprites PRIVATE cxx_std_20)
   add_test(NAME text_sprites COMMAND test_text_sprites)
+  add_executable(test_memcard_event_stack
+    ${CMAKE_SOURCE_DIR}/tests/test_memcard_event_stack.cpp)
+  target_include_directories(test_memcard_event_stack PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_memcard_event_stack PRIVATE cxx_std_20)
+  add_test(NAME memcard_event_stack COMMAND test_memcard_event_stack)
   add_executable(test_world_recipe
     ${CMAKE_SOURCE_DIR}/tests/test_world_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp)
@@ -202,6 +207,9 @@ if(BUILD_TESTING)
   add_test(
     NAME format_tool_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/format.py --selftest)
+  add_test(
+    NAME re_frontier_tool_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/re_frontier.py --selftest)
   add_test(
     NAME launcher
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_launcher.py)
@@ -310,6 +318,7 @@ set(GAME_SRC
   game/core/native_spu_pio_upload.cpp
   game/core/native_spu_hardware_init.cpp
   game/core/native_text_sprites.cpp
+  game/core/native_memcard_event_stack.cpp
   game/core/native_render.cpp
   game/core/wide_clip.cpp
   game/core/native_terrain.cpp

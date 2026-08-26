@@ -60,6 +60,10 @@ void spyro_register_native_spu_hardware_init();
 // native_text_sprites.cpp — owns BuildTextSprites 0x800181AC. Its FillWord and CopyVector children
 // are already owned; the retained generated parent is its per-call oracle.
 void spyro_register_native_text_sprites();
+
+// native_memcard_event_stack.cpp — owns libmcrd's 0x80068F44 event-stack push. Its printf child
+// is already owned; the retained generated parent is its per-call oracle.
+void spyro_register_native_memcard_event_stack();
 // native_terrain.cpp — BRING-UP, installs nothing unless PSXPORT_NATIVE_TERRAIN=1: a full native
 // body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();

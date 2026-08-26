@@ -107,11 +107,12 @@ class Entry:
     def serialize(self):
         out = [f"### {self.id} — {self.title}"]
         out.append(f"- status: {self.status}")
-        out.append(f"- deps: {', '.join(self.deps)}")
+        deps = ", ".join(self.deps)
+        out.append(f"- deps:{' ' + deps if deps else ''}")
         for f in ("evidence", "where", "gap", "notes"):
             val = getattr(self, f)
             lines = val.split("\n")
-            out.append(f"- {f}: {lines[0]}")
+            out.append(f"- {f}:{' ' + lines[0] if lines[0] else ''}")
             # Continuation lines are stored verbatim (leading whitespace included) so a
             # multi-line gap/notes value round-trips: the first line carries the `- field:`
             # prefix, the rest are written back exactly as they were parsed.
@@ -183,13 +184,12 @@ def save(entries, order):
         a = entries[eid].area
         if a not in areas:
             areas.append(a)
+    sections = [HEADER.rstrip()]
+    for area in areas:
+        serialized = [entries[eid].serialize() for eid in order if entries[eid].area == area]
+        sections.append(f"## {area}\n\n" + "\n\n".join(serialized))
     with open(ROADMAP, "w", encoding="utf-8") as fh:
-        fh.write(HEADER)
-        for a in areas:
-            fh.write(f"\n## {a}\n\n")
-            for eid in order:
-                if entries[eid].area == a:
-                    fh.write(entries[eid].serialize() + "\n\n")
+        fh.write("\n\n".join(sections) + "\n")
 
 
 def effective_status(e, entries):
@@ -452,7 +452,7 @@ def cmd_set(entries, order, args):
 
 
 def run_selftest() -> int:
-    """Prove a `set`/`add` round-trip preserves multi-line gap/notes values.
+    """Prove a `set`/`add` round-trip preserves values and clean Markdown.
 
     The bug this guards: load() dropped every continuation line of a multi-line
     field (anything that was not a `- field:` head), so one `set` silently erased
@@ -477,30 +477,35 @@ def run_selftest() -> int:
         "  note continuation one\n"
         "  note continuation two\n"
     )
-    tmp = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False)
-    tmp.write(fixture)
-    tmp.close()
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as tmp:
+        tmp.write(fixture)
+        fixture_path = tmp.name
     global ROADMAP
     old = ROADMAP
-    ROADMAP = tmp.name
+    ROADMAP = fixture_path
     try:
         entries, order = load()
         save(entries, order)
+        with open(ROADMAP, "rb") as saved_file:
+            saved = saved_file.read()
         entries, order = load()
         e = entries["t.step"]
         gap_ok = e.gap == ("head line\n- PROGRESS 2026-08-06: bullet line\n"
                            "  * (1) indented continuation\n"
                            "- NEXT, in the abort's own order: trailing")
         notes_ok = e.notes == "note head\n  note continuation one\n  note continuation two"
+        clean_ok = (not any(line.endswith(b" ") for line in saved.splitlines()) and
+                    saved.endswith(b"\n") and not saved.endswith(b"\n\n"))
     finally:
         ROADMAP = old
-        os.unlink(tmp.name)
-    if not gap_ok or not notes_ok:
+        os.unlink(fixture_path)
+    if not gap_ok or not notes_ok or not clean_ok:
         print("[re-frontier] selftest FAILED: multi-line gap/notes were not preserved "
-              f"(gap_ok={gap_ok}, notes_ok={notes_ok}) — a `set`/`add` would lose data",
+              f"or Markdown was dirtied (gap_ok={gap_ok}, notes_ok={notes_ok}, "
+              f"clean_ok={clean_ok}) — a `set`/`add` would corrupt the roadmap",
               file=sys.stderr)
         return 1
-    print("[re-frontier] selftest OK: multi-line gap/notes round-trip preserved")
+    print("[re-frontier] selftest OK: values preserved; no trailing whitespace or EOF blank line")
     return 0
 
 

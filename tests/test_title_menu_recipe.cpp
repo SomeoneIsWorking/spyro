@@ -4,16 +4,18 @@
 #include <initializer_list>
 
 using spyro::title_menu_recipe::Mode1Input;
+using spyro::title_menu_recipe::Mode2Input;
+using spyro::title_menu_recipe::Mode2Slot;
+using spyro::title_menu_recipe::Recipe;
 using spyro::title_menu_recipe::SpriteCommand;
 
 namespace {
 
 int failures = 0;
 
-void expect(const char *name,
-            const Mode1Input &input,
-            std::initializer_list<SpriteCommand> expected) {
-  const auto actual = spyro::title_menu_recipe::buildMode1(input);
+void expectRecipe(const char *name,
+                  const Recipe &actual,
+                  std::initializer_list<SpriteCommand> expected) {
   if (actual.size != expected.size()) {
     std::fprintf(stderr,
                  "title_menu_recipe: %s size: got %zu expected %zu\n",
@@ -45,6 +47,18 @@ void expect(const char *name,
     }
     ++i;
   }
+}
+
+void expect(const char *name,
+            const Mode1Input &input,
+            std::initializer_list<SpriteCommand> expected) {
+  expectRecipe(name, spyro::title_menu_recipe::buildMode1(input), expected);
+}
+
+void expectMode2(const char *name,
+                 const Mode2Input &input,
+                 std::initializer_list<SpriteCommand> expected) {
+  expectRecipe(name, spyro::title_menu_recipe::buildMode2(input), expected);
 }
 
 constexpr SpriteCommand cmd(int32_t x, int32_t y, int32_t sprite, uint32_t style = 0) {
@@ -169,6 +183,82 @@ int main() {
          {leftBorder, rightBorder, cmd(128, 46, 51), cmd(128, 88, 60), cmd(256, 88, 61, 1)});
   expect("unknown substate", {99, 0, 0, 0}, {leftBorder, rightBorder});
 
+  expectMode2("save picker setup", {.state = 0}, {leftBorder, rightBorder});
+
+  Mode2Input newGame = {.state = 1, .optionSelected = 1, .subTick = 0};
+  newGame.slots = {Mode2Slot{},
+                   {.occupied = true, .homeworldSprite = 3, .dragonCount = 12},
+                   {.occupied = true, .homeworldSprite = 6, .dragonCount = 5}};
+  expectMode2("select new-game slot",
+              newGame,
+              {leftBorder,
+               rightBorder,
+               cmd(140, 38, 8, 3),
+               cmd(220, 38, 3),
+               cmd(264, 22, 23),
+               cmd(248, 22, 15),
+               cmd(232, 22, 14),
+               cmd(300, 38, 6, 3),
+               cmd(344, 22, 23, 3),
+               cmd(328, 22, 18, 3),
+               cmd(220, 38, 9),
+               cmd(128, 88, 59, 1),
+               cmd(256, 88, 58),
+               cmd(128, 106, 46)});
+
+  Mode2Input overwrite = {.state = 2, .optionSelected = 1, .subTick = 16, .secondaryOption = 0};
+  overwrite.slots = {Mode2Slot{.occupied = true, .homeworldSprite = 2, .dragonCount = 10},
+                     Mode2Slot{.occupied = true, .homeworldSprite = 3, .dragonCount = 21},
+                     Mode2Slot{.occupied = true, .homeworldSprite = 4, .dragonCount = 32}};
+  expectMode2("confirm overwrite at capacity",
+              overwrite,
+              {leftBorder,
+               rightBorder,
+               cmd(140, 38, 2, 3),
+               cmd(184, 22, 23, 3),
+               cmd(168, 22, 13, 3),
+               cmd(152, 22, 14, 3),
+               cmd(220, 38, 3),
+               cmd(264, 22, 23),
+               cmd(248, 22, 14),
+               cmd(232, 22, 15),
+               cmd(300, 38, 4, 3),
+               cmd(344, 22, 23, 3),
+               cmd(328, 22, 15, 3),
+               cmd(312, 22, 16, 3),
+               cmd(220, 38, 10),
+               cmd(220, 38, 9),
+               cmd(128, 88, 62, 1),
+               cmd(256, 88, 54)});
+
+  Mode2Input loadGame = {.state = 3, .optionSelected = 2, .subTick = 8};
+  expectMode2("select load slot blink off",
+              loadGame,
+              {leftBorder,
+               rightBorder,
+               cmd(140, 38, 8, 3),
+               cmd(220, 38, 8, 3),
+               cmd(300, 38, 8, 3),
+               cmd(128, 88, 59),
+               cmd(256, 88, 58, 1),
+               cmd(128, 106, 47)});
+
+  Mode2Input chooseAction = {.state = 4, .optionSelected = 1, .subTick = 0, .cardSelected = 1};
+  expectMode2("choose new or load",
+              chooseAction,
+              {leftBorder,
+               rightBorder,
+               cmd(140, 38, 8, 3),
+               cmd(220, 38, 8, 3),
+               cmd(300, 38, 8, 3),
+               cmd(128, 88, 59),
+               cmd(256, 88, 58, 1),
+               cmd(128, 106, 50)});
+
+  expectMode2("save picker slide out",
+              {.state = 5, .subTick = 3, .slideY = -24},
+              {cmd(108, -24, 1), cmd(255, -24, -1)});
+
   const auto base = spyro::title_menu_recipe::buildMode1({4, 1, 16, 0});
   auto mutated = base;
   size_t mismatch = 99;
@@ -192,6 +282,6 @@ int main() {
   if (failures != 0) {
     return 1;
   }
-  std::puts("title_menu_recipe: PASS (20 recipes + exact/mutated/truncated oracle streams)");
+  std::puts("title_menu_recipe: PASS (26 recipes + exact/mutated/truncated oracle streams)");
   return 0;
 }

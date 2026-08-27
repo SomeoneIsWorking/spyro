@@ -54,6 +54,17 @@ class FakeHost(launcher.Host):
 
 
 class LauncherTest(unittest.TestCase):
+    def test_help_exits_before_shipping_discovery(self):
+        for option in ("-h", "--help"):
+            with self.subTest(option=option), mock.patch.object(
+                launcher, "execute"
+            ) as execute, contextlib.redirect_stdout(io.StringIO()) as output:
+                with self.assertRaises(SystemExit) as stopped:
+                    launcher.main([option])
+                self.assertEqual(stopped.exception.code, 0)
+                self.assertIn("usage:", output.getvalue().lower())
+                execute.assert_not_called()
+
     def test_no_argument_sequence_reaches_current_target(self):
         events = []
         psxport = ROOT / "external/psxport"

@@ -1073,7 +1073,7 @@ static bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint
     return true;
   }
   const auto plan = spyro::painter_submission::preflight(
-      rq, kProducerKey, recipe.faces.size(), spyro::scene_painter_order::kStage13Domain);
+      rq, kProducerKey, recipe.faces.size(), spyro::scene_painter_order::kActorWorldTerrainDomain);
   if (!plan.ready) {
     return false;
   }

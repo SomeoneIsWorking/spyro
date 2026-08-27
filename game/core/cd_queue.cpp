@@ -21,6 +21,7 @@
 #include "overlay_router.h" // overlay_note_load — give the arena slot a load-time identity
 #include "rec_decls.h"      // generated: gen_func_8002BBE0 — the body we super-call
 #include "recomp_iface.h"
+#include "spyro1_field_scheduler.h"
 #include "spyro_game.h"
 #include <lucent/log.h>
 
@@ -32,6 +33,11 @@ constexpr uint32_t kPending = 0x800776C4u; // pending-event code (service comple
 constexpr uint32_t kQueued = 0x800776C8u;  // queued-request slot (drained -> func_800567F4)
 constexpr uint32_t kReqArg = 0x800776B0u;  // request argument handed to the processor
 constexpr uint32_t kGate = 0x80076BB8u;    // wait-loop gate: must be 0 to even test the rest
+constexpr uint32_t kRequestToken = 0x800756E0u;
+constexpr uint32_t kCallbackState = 0x8007588Cu;
+constexpr uint32_t kTransferSectorCount = 0x80076B94u;
+constexpr uint32_t kTransferPosition = 0x80076B98u;
+constexpr uint32_t kTransferDestination = 0x80076B9Cu;
 
 // Service routine 0x8002BBE0. Log the queue words on entry, then run the real body.
 void cd_service(Core *c) {
@@ -83,12 +89,6 @@ constexpr uint32_t kB = 0x800758CCu;
 // read is already complete by the time the guest could have been interrupted, and completion is
 // exactly the event the controller would have raised. The alternative — writing 0 to the gate
 // ourselves — would be the poke, because it would skip everything else the callback does.
-// Streaming-read state. Armed when the guest issues its read (the probe below sees the destination
-// buffer in a1) and advanced one sector per delivered completion, mirroring a ReadN stream.
-// -1 = no read in flight.
-int32_t cd_stream_lba = -1;
-uint32_t cd_stream_dest = 0;
-
 // One completion per issued read. Re-armed at the READ ISSUE point, not by observing the gate reach
 // 0: the guest re-issues its read (re-setting the gate) before the retry body samples it, so a
 // gate-watching trigger latches after the first delivery and never fires again.
@@ -200,15 +200,63 @@ CD_PROBE(800567F4, 0x800567F4u) // the queue's request processor
 // and the mode in a2, so this is where the stream is armed: start at the position the guest last
 // Setloc'd (tracked framework-side in Cd::setloc_lba) and hand sectors over one per completion.
 void probe_80065DBC(Core *c) {
-  const uint32_t dest = c->r[5];
-  const int32_t lba = c->game->cd.setloc_lba;
-  lucent::debug("cdq", "read issued: dest=0x{:08X} mode=0x{:X} lba={}", dest, c->r[6], lba);
-  if (lba >= 0) {
-    cd_stream_lba = lba;
-    cd_stream_dest = dest;
-  }
+  lucent::debug("cdq",
+                "unexpected retained read issue: dest=0x{:08X} mode=0x{:X} lba={}",
+                c->r[5],
+                c->r[6],
+                c->game->cd.setloc_lba);
   cd_completion_pending = true; // this read is complete the moment it is issued (synchronous CD)
   gen_func_80065DBC(c);
+}
+
+struct ArchiveRead {
+  uint32_t baseLba;
+  uint32_t destination;
+  uint32_t length;
+  uint32_t byteOffset;
+  uint32_t token;
+};
+
+ArchiveRead archiveReadFromRegisters(Core &core) {
+  return {.baseLba = core.r[4],
+          .destination = core.r[5],
+          .length = core.r[6],
+          .byteOffset = core.r[7],
+          .token = core.mem_r32(core.r[29] + 16u)};
+}
+
+uint32_t copyArchiveRead(Core &core, const ArchiveRead &read) {
+  const uint32_t start = read.baseLba + read.byteOffset / 2048u;
+  uint32_t moved = 0;
+  if (read.length != 0 && read.destination != 0) {
+    uint8_t sector[2048];
+    for (uint32_t offset = 0; offset < read.length; offset += sizeof sector) {
+      if (!disc_read_sector(&core.game->disc, start + offset / sizeof sector, sector)) {
+        break;
+      }
+      const uint32_t count =
+          (read.length - offset) < sizeof sector ? (read.length - offset) : sizeof sector;
+      for (uint32_t index = 0; index < count; ++index) {
+        core.mem_w8(read.destination + offset + index, sector[index]);
+      }
+      moved += count;
+    }
+  }
+  return moved;
+}
+
+void publishTransferState(Core &core, const ArchiveRead &read, bool pending) {
+  // Preserve the game-level loader's guest-visible state without issuing libcd work. CdIntToPos is
+  // a finite arithmetic leaf, so the title can retain that exact conversion while owning the
+  // command/wait boundary above it.
+  core.r[4] = read.baseLba + read.byteOffset / 2048u;
+  core.r[5] = kTransferPosition;
+  func_80064094(&core);
+  core.mem_w32(kTransferSectorCount, (read.length + 2047u) / 2048u);
+  core.mem_w32(kTransferDestination, read.destination);
+  core.mem_w32(kGate, pending ? 1u : 0u);
+  core.mem_w32(kCallbackState, 0u);
+  core.mem_w32(kRequestToken, pending ? read.token : 0u);
 }
 
 // ── THE GAME-LEVEL LOADER ────────────────────────────────────────────────────────────────────────
@@ -221,39 +269,22 @@ void probe_80065DBC(Core *c) {
 // is an ARGUMENT here, rather than something to reverse-engineer out of a transfer path that our
 // own lower-level override prevented from ever running (C018).
 //
-// Serve the bytes BEFORE the body runs, then super-call. The guest's own logic — its wait loop, its
-// bookkeeping, its return value — is left entirely intact; we only ensure the data it is about to
-// wait for is already there. That keeps the recompiled body live and diffable rather than replacing
-// behaviour we have not fully RE'd.
+// Serve the bytes and publish the measured final bookkeeping directly. The retained body remains
+// compiled as an A/B oracle, but the product cannot dispatch it: its synchronous wait descends into
+// libcd's VSync(-1) query even though the host disc transfer already completed.
 void cd_loader(Core *c) {
   // NOTE: this function takes a FIFTH argument on the stack. Its prologue does `sp -= 56` and then
   // reads sp+72, i.e. caller_sp+16 — so at override entry (before the body's prologue runs) it is
   // at r[29]+16. a0 is CONSTANT at 37 across every call while lengths and destinations vary, so a0
   // is not a per-call offset; the stack argument is the prime candidate for the real one.
-  const uint32_t lba = c->r[4], dest = c->r[5], len = c->r[6];
-  const uint32_t arg_off = c->r[7]; // a3 = byte offset into the archive
-  const uint32_t arg5 = c->mem_r32(c->r[29] + 16);
+  const ArchiveRead read = archiveReadFromRegisters(*c);
   // a3 is the BYTE OFFSET into the archive, and a0 is its base LBA (constant 37 = WAD.WAD).
   // Observed a3 values are always 2048-aligned — 0x00000, 0x5F000, 0x5F800, 0x5B800, 0x00800 — i.e.
   // whole sectors, which is what makes the mapping unambiguous:
   //     sector = a0 + a3 / 2048
   // Reading from a0 alone (ignoring a3) fetched the archive's first sectors for every request: the
   // right destination and length, but the wrong CONTENT. Bytes moved, so it looked like it worked.
-  const uint32_t start = lba + (arg_off / 2048u);
-  uint32_t moved = 0;
-  if (len && dest) {
-    uint8_t sec[2048];
-    for (uint32_t off = 0; off < len; off += sizeof sec) {
-      if (!disc_read_sector(&c->game->disc, start + off / sizeof sec, sec)) {
-        break;
-      }
-      const uint32_t n = (len - off) < sizeof sec ? (len - off) : (uint32_t)sizeof sec;
-      for (uint32_t i = 0; i < n; i++) {
-        c->mem_w8(dest + off + i, sec[i]);
-      }
-      moved += n;
-    }
-  }
+  const uint32_t moved = copyArchiveRead(*c, read);
   // C024's falsifier: the guest calls 0x8007ABAC = heapBase+0x174, inside what this loader places.
   // If that region really is CODE loaded from WAD.WAD, those words decode as MIPS; if it is data
   // reached through a corrupt pointer, they will not. Log the raw words and decode them offline —
@@ -261,19 +292,19 @@ void cd_loader(Core *c) {
   if (moved > 0x174 + 16) {
     lucent::debug("cdq",
                   "  callsite-words @0x{:08X}: {:08X} {:08X} {:08X} {:08X}",
-                  dest + 0x174,
-                  c->mem_r32(dest + 0x174),
-                  c->mem_r32(dest + 0x178),
-                  c->mem_r32(dest + 0x17C),
-                  c->mem_r32(dest + 0x180));
+                  read.destination + 0x174,
+                  c->mem_r32(read.destination + 0x174),
+                  c->mem_r32(read.destination + 0x178),
+                  c->mem_r32(read.destination + 0x17C),
+                  c->mem_r32(read.destination + 0x180));
   }
   lucent::debug("cdq",
                 "loader: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> moved {} bytes",
-                lba,
-                dest,
-                len,
-                arg_off,
-                arg5,
+                read.baseLba,
+                read.destination,
+                read.length,
+                read.byteOffset,
+                read.token,
                 moved);
   // Give the overlay router its LOAD-TIME identity for the arena slot. This must happen HERE, right
   // after the copy and before the guest's own bookkeeping runs: overlay_router.cpp is explicit that
@@ -282,9 +313,10 @@ void cd_loader(Core *c) {
   // than one overlay shares the arena (claim C032, docs/issues/0013). A non-overlay blob — the bulk
   // data loads to 0x801BF800 — is not at a slot base, so this is a no-op for them.
   if (moved) {
-    overlay_note_load(c, dest);
+    overlay_note_load(c, read.destination);
   }
-  gen_func_80016500(c); // super-call: the guest's own wait/bookkeeping, now with data present
+  publishTransferState(*c, read, false);
+  c->r[2] = 2u; // the retained synchronous path returns after CdReady reports complete
 }
 
 // ── the ASYNC/streaming read primitive 0x80016698 ───────────────────────────────────────────────
@@ -298,47 +330,29 @@ void cd_loader(Core *c) {
 // computes `a0 = s2 + (s1 >> 11)`, i.e. sector = baseLBA + byteOffset/2048, exactly as 0x80016500
 // does. At override entry (before the prologue) the 5th argument is at r[29]+0x10.
 //
-// WHY SERVING IT HERE MAKES THE EXISTING COMPLETION HONEST. This port already delivers the guest's
-// CD callback for every issued read (deliver_cd_complete). For reads that went through 0x80016500
-// that is truthful — the bytes are there. For reads through THIS function nothing moved, so the
-// guest was told "your read finished" over an untouched buffer: it sailed through all six streaming
-// phases with zero bytes landed, installed the level handler 0x8008772C from the per-level table,
-// and called into memory no load had ever written. Serving the bytes at issue time is not a new
-// mechanism — our disc is synchronous, so the data IS available the moment the read is issued, and
-// delivering completion after it is then a true statement rather than a lie.
+// The host transfer completes immediately, but this game-level API is asynchronous. Publish the
+// same in-flight globals as the retained body and arm exactly one completion for the title's next
+// polling point. That preserves the observable API boundary without dispatching libcd's VSync-based
+// command path.
 void cd_stream_read(Core *c) {
-  const uint32_t lba = c->r[4], dest = c->r[5], len = c->r[6];
-  const uint32_t arg_off = c->r[7];
-  const uint32_t arg5 = c->mem_r32(c->r[29] + 16);
-  const uint32_t start = lba + (arg_off / 2048u);
-  uint32_t moved = 0;
-  if (len && dest) {
-    uint8_t sec[2048];
-    for (uint32_t off = 0; off < len; off += sizeof sec) {
-      if (!disc_read_sector(&c->game->disc, start + off / sizeof sec, sec)) {
-        break;
-      }
-      const uint32_t n = (len - off) < sizeof sec ? (len - off) : (uint32_t)sizeof sec;
-      for (uint32_t i = 0; i < n; i++) {
-        c->mem_w8(dest + off + i, sec[i]);
-      }
-      moved += n;
-    }
-  }
+  const ArchiveRead read = archiveReadFromRegisters(*c);
+  const uint32_t moved = copyArchiveRead(*c, read);
   lucent::debug("cdq",
                 "stream: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> moved {} bytes",
-                lba,
-                dest,
-                len,
-                arg_off,
-                arg5,
+                read.baseLba,
+                read.destination,
+                read.length,
+                read.byteOffset,
+                read.token,
                 moved);
   // Same load-time identity the sync loader records, for the same reason: an overlay's signature
   // only matches its slot before the game mutates the image header.
   if (moved) {
-    overlay_note_load(c, dest);
+    overlay_note_load(c, read.destination);
   }
-  gen_func_80016698(c); // super-call: Setmode/Setloc/in-flight flag bookkeeping, now over real data
+  publishTransferState(*c, read, true);
+  cd_completion_pending = true;
+  c->r[2] = 1u; // CdRead accepted; completion is delivered at the title's next polling point
 }
 
 // ── loader-hunt probes ───────────────────────────────────────────────────────────────────────────
@@ -368,8 +382,8 @@ LOADER_PROBE(80012480, 0x80012480u)
 #undef LOADER_PROBE
 
 // 0x800127C0 owns the complete two-logo boot sequence and its intervening overlay load.  Keep an
-// exact dynamic lifetime for the Start/skip mapper in vsync.cpp.  A frame-number threshold would
-// turn headless speed, CD latency, or a future boot change into a silent misclassification.
+// exact dynamic lifetime for the title FieldScheduler's Start/skip mapper. A frame-number threshold
+// would turn headless speed, CD latency, or a future boot change into a silent misclassification.
 bool g_boot_sequence_active = false;
 
 void lp_800127C0(Core *c) {
@@ -380,7 +394,7 @@ void lp_800127C0(Core *c) {
         "skipmap", "boot sequence re-entered at call {} — classification is invalid", calls);
   }
   g_boot_sequence_active = true;
-  spyro_boot_skip_begin();
+  spyro1::beginBootSkip(*c);
   lucent::debug("skipmap",
                 "boot sequence ENTER call={} phase={} vblank={}",
                 calls,
@@ -392,7 +406,7 @@ void lp_800127C0(Core *c) {
                 calls,
                 c->mem_r32(0x80075864u),
                 c->mem_r32(0x800749E0u));
-  spyro_boot_skip_end();
+  spyro1::endBootSkip(*c);
   g_boot_sequence_active = false;
 }
 

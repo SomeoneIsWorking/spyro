@@ -23,28 +23,31 @@ take ownership of that recompiled substrate, each one gated byte-exact against t
 
 ## Status — honest
 
-**The port boots, runs its owned frame loop on a restored vblank timebase, loads assets from the
-disc, and renders the reached title scene natively at 16:9.** It is not yet playable: native
-rendering coverage outside the reached stage-13 scene and gameplay remain incomplete.
+**The port boots through its title-owned frame/field path and renders the reached title and save
+picker natively at 16:9 without guest VSync.** A real-disc New Game transition identified stage 14
+as the next boundary; its complete native cutscene recipe now builds, but still needs an isolated
+runtime and visual check. Gameplay and the remaining scene arms remain incomplete.
 
 | | state |
 |---|---|
 | Disc → executable provisioning | 🟡 `spyro1`/`spyro2`/`spyro3` selected explicitly and identity-first; only the real Spyro 1 disc is verified |
-| Static recompilation | ✅ 621 functions from `SCUS_942.28` |
+| Static recompilation | ✅ 1,110 functions from the current `SCUS_942.28` executable/overlay set |
 | Build + link (`spyro_port`) | ✅ |
 | crt0 / boot (`GameConfig` boot group) | ✅ derived from the real crt0, not guessed |
 | Reaches the guest's `main()` as recompiled code | ✅ verified by backtrace |
 | CD sync/command path | ✅ `CD_init`, `CD_datasync`, `CD_cw`, `CD_sync` wired — every signature confirmed from the body |
-| CD *reads* returning data | 🔬 root-caused: the override point is too low — own the game's loader, not libcd ([`0010`](docs/issues/0010-the-override-point-is-too-low-own-the-game-s-loa.md)) |
+| CD *reads* returning data | ✅ both game loader primitives serve disc bytes natively |
 | **Renders the boot splash** | ✅ SCE splash draws and fades in over 8 frames |
 | Past the splash into game init | ✅ boot advances; 3781 frames, 18 distinct occupancies, zero recomp misses |
 | BIOS event delivery | ✅ class `0xF0000009` delivered per-frame from the vblank wait |
-| VSync / vblank timebase | ✅ counter `0x800749E0` restored; guest's own frame loop runs, presents and paces |
-| Derived runtime + native frame loop | ✅ Spyro 1 `Spyro1Runtime`, selected before `Game/Core` |
+| VSync / vblank timebase | ✅ title `FieldScheduler` owns the counter/services; real capped product runs satisfy the frame contract while guest VSync remains fatal |
+| Derived runtime + native frame loop | ✅ finite Spyro 1 driver is selected before `Game/Core` and drives real boot/title runs without dispatching guest main |
 | Spyro 2 bring-up | 🔬 `Spyro2Runtime` owns measured `SCUS_944.25` crt0 facts and refuses at the first unverified execution boundary |
 | Spyro 3 bring-up | 🔬 `Spyro3Runtime` owns measured `SCUS_944.67` crt0 facts and refuses at the first unverified execution boundary |
-| Native renderer coverage | 🟡 reached stage-13 scene is coherent at 16:9; other scenes remain |
-| Native input | ⬜ not started |
+| Native renderer coverage | 🟡 stage-13 title/save flow is coherent; stage-14 cutscene recipe builds but is not yet live-verified |
+| Widescreen | 🟡 player aspect control and 16:9 stage-13 producers are verified; stage-14 uses wide geometry/fade but awaits visual proof |
+| Temporal lerp / 60fps | 🟡 Spyro 1 exposes the temporal product; the reached paired actor is verified on the new loop, while other scenes remain unowned |
+| Native input | 🟡 pad packets are serviced by the title field scheduler and drive the real card/save-picker flow; level controls remain to be reached |
 | Differential (SBS) harness | ⬜ not started |
 | Code overlays | ✅ OVL0 extracted from `WAD.WAD` and recompiled (1 of ~37 located) |
 
@@ -73,6 +76,7 @@ cd SpyroEngine
 # until their generated substrates exist:
 ./run.sh --title spyro2 /path/to/'Spyro 2 - Ripto (USA).chd'
 ./run.sh --title spyro3 /path/to/'Spyro - Year of the Dragon (USA).chd'
+./run.sh --help
 ```
 
 `run.sh` is the stable entry point; it delegates the build policy to `tools/run.py`, which builds the
@@ -87,6 +91,10 @@ to CMake, provisioning, and code generation. `./run.sh --prepare-only` performs 
 and build without starting the game. The player launcher uses isolated `scratch/build/player` and
 `scratch/build/player-tools` trees, builds only `spyro_port`, and never runs the CTest/developer
 verification suite.
+
+`-h` and `--help` print usage and exit successfully before dependency, framework, disc, asset,
+provisioning, build, or launch discovery. The built `spyro_port` executable accepts the same help
+spellings before it inspects its executable argument.
 
 Useful knobs: `PSXPORT_NOAUDIO=1`, `PSXPORT_NOWINDOW=1` (headless), `PSXPORT_FORCE_RECOMP=1`,
 `PSXPORT_DEBUG=cd` (channel-gated diagnostics; see psxport's `docs/config.md`).

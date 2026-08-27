@@ -18,7 +18,8 @@ PainterReplayOrder world(uint16_t otBin, uint32_t paintGroup, uint32_t paintSubo
   if (paintGroup > kOrdinalMask) {
     return {};
   }
-  return {kStage13Domain, {otBin, linkOrdinal(LinkPhase::World, paintGroup), paintSuborder}};
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::World, paintGroup), paintSuborder}};
 }
 
 PainterReplayOrder actor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal) {
@@ -27,12 +28,12 @@ PainterReplayOrder actor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainO
   }
   // The coalescer appends later records to the existing global chain. The
   // framework sorts link ordinals descending, so invert the source ordinal.
-  return {kStage13Domain,
+  return {kActorWorldTerrainDomain,
           {otBin, linkOrdinal(LinkPhase::Actor, kOrdinalMask - recordOrdinal), chainOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {
-  return {kStage13Domain, {2047u, linkOrdinal(LinkPhase::Cyclorama, 0u), chainOrdinal}};
+  return {kActorWorldTerrainDomain, {2047u, linkOrdinal(LinkPhase::Cyclorama, 0u), chainOrdinal}};
 }
 
 } // namespace spyro::scene_painter_order

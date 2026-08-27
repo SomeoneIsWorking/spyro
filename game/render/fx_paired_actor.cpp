@@ -1,8 +1,4 @@
-// fx_paired_actor.cpp — first native ownership slice of Spyro renderer 0x80023AC4.
-//
-// This file owns the normal opaque/textured arm of 0x80023AC4 end-to-end: animation inputs,
-// three layer transforms, fixed-point projection, face/material acceptance and authored-order
-// PainterObject submission.  The alternate/status-plane arm remains a loud refusal.
+// Owns renderer 0x80023AC4's normal arm; its alternate/status-plane arm remains a loud refusal.
 #include "fx_paired_actor.h"
 
 #include "actor_model_codec.h"
@@ -2348,26 +2344,29 @@ void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
   RenderQueue &sink = *c->game->rqRedirect;
   const int before = sink.n;
   const auto result = emit_interpolated(c, sink, state.previous, state.current, t);
-  ++state.temporal_calls;
+  ++state.temporal.calls;
   if (t == 0.0f || t == 1.0f) {
-    ++state.temporal_endpoint_calls;
+    ++state.temporal.endpoint_calls;
+  } else if (t > 0.0f && t < 1.0f) {
+    ++state.temporal.midpoint_calls;
   } else {
-    ++state.temporal_midpoint_calls;
+    lucent::error("pairedactor", "FATAL: fps60 paired pass received invalid t={}", t);
+    abort();
   }
   if (result == SpyroPairedRebuildResult::Emitted) {
-    ++state.temporal_emitted;
+    ++state.temporal.emitted;
   }
   if (result == SpyroPairedRebuildResult::NoOutput) {
-    ++state.temporal_no_output;
+    ++state.temporal.no_output;
   }
   lucent::debug("pairedactor",
                 "temporal pass census: calls={} midpoint={} endpoint={} emitted={} no_output={} "
                 "t={:.3f} sink_added={} result={}",
-                state.temporal_calls,
-                state.temporal_midpoint_calls,
-                state.temporal_endpoint_calls,
-                state.temporal_emitted,
-                state.temporal_no_output,
+                state.temporal.calls,
+                state.temporal.midpoint_calls,
+                state.temporal.endpoint_calls,
+                state.temporal.emitted,
+                state.temporal.no_output,
                 t,
                 sink.n - before,
                 (int)result);
@@ -2378,7 +2377,8 @@ void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
   }
 }
 
-bool spyro_paired_actor_fps60_eligible(const SpyroPairedActorFrameState &state) {
+bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state) {
+  ++state.temporal.eligibility_checks;
   if (!frames_compatible(state.previous, state.current)) {
     return false;
   }
@@ -2421,6 +2421,9 @@ bool spyro_paired_actor_fps60_eligible(const SpyroPairedActorFrameState &state) 
                 rm ? rm.candidates : 0,
                 rm ? rm.faces.size() : 0,
                 rm && rm.error.empty() ? "none" : rm.error.c_str());
+  if (accepted) {
+    ++state.temporal.eligible_intervals;
+  }
   return accepted;
 }
 
@@ -2460,6 +2463,7 @@ bool spyro_paired_actor_oracle_finish(Core *c) {
 
 int spyro_paired_actor_selftest() {
   int checks = 0;
+  bool ok = true;
   auto expect = [&](bool pass, const char *what) {
     ++checks;
     if (!pass) {
@@ -2467,7 +2471,9 @@ int spyro_paired_actor_selftest() {
     }
     return pass;
   };
-  bool ok = true;
+
+  ok &=
+      expect(spyro_paired_temporal_selftest(), "temporal presenter evidence rejects partial runs");
   ok &= expect(unpack_accum(0x00200801u).x == 1, "packed X extraction");
   std::array<uint32_t, 27> identity{};
   identity[0] = 4096;

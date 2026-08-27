@@ -1,6 +1,7 @@
 #pragma once
 
 #include "paired_actor_decode.h"
+#include "paired_actor_temporal_evidence.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -52,11 +53,7 @@ struct SpyroPairedActorFrameState {
   bool was_state2 = false;
   uint64_t stage2_epoch = 0;
   bool was_fps60_active = false;
-  uint64_t temporal_calls = 0;
-  uint64_t temporal_midpoint_calls = 0;
-  uint64_t temporal_endpoint_calls = 0;
-  uint64_t temporal_emitted = 0;
-  uint64_t temporal_no_output = 0;
+  SpyroPairedTemporalEvidence temporal{};
   uint64_t parser_scanned = 0;
   uint64_t parser_normal = 0;
   uint64_t parser_alternate = 0;
@@ -77,7 +74,7 @@ void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
 SpyroPairedActorFrameState &spyro_paired_actor_state(Core *c);
 void spyro_paired_actor_fps60_rotate(Core *c);
 void spyro_paired_actor_fps60_world_pass(Core *c, float t);
-bool spyro_paired_actor_fps60_eligible(const SpyroPairedActorFrameState &state);
+bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state);
 bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState &state,
                                      bool reference_leg,
                                      bool expect_group);

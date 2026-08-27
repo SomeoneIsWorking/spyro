@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-12
 tags: producers,census,frame-loop
-depends: game/core/frame_loop.cpp
+depends: titles/spyro1/core/spyro1_frame_driver.cpp
 ---
 
 ## Claim

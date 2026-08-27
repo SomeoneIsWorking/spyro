@@ -1,4 +1,5 @@
 #include "spyro1_runtime.h"
+#include "spyro1_frame_driver.h"
 
 #include "cfg.h"
 #include "field_environment_oracle.h"
@@ -90,7 +91,11 @@ void Spyro1Runtime::registerOverrides(Game &) {
 }
 
 void Spyro1Runtime::bootInit(Core &core) {
-  spyro_frame_loop_run(&core);
+  frameDriver(core).initialize(core);
+}
+
+std::unique_ptr<FrameDriver> Spyro1Runtime::createFrameDriver(Game &game) {
+  return std::make_unique<Spyro1FrameDriver>(game);
 }
 
 bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {

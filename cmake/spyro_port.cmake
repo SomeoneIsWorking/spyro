@@ -74,6 +74,15 @@ if(BUILD_TESTING)
   target_include_directories(test_paired_actor_decode PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
   target_compile_features(test_paired_actor_decode PRIVATE cxx_std_20)
   add_test(NAME paired_actor_decode COMMAND test_paired_actor_decode)
+  add_executable(test_paired_actor_temporal_evidence
+    ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_temporal_evidence.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/paired_actor_temporal_evidence.cpp
+    ${CMAKE_SOURCE_DIR}/game/core/spyro_context.cpp)
+  target_include_directories(test_paired_actor_temporal_evidence PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_paired_actor_temporal_evidence PRIVATE cxx_std_20)
+  target_link_libraries(test_paired_actor_temporal_evidence PRIVATE psxport)
+  add_test(NAME paired_actor_temporal_evidence COMMAND test_paired_actor_temporal_evidence)
   add_executable(test_actor_model_codec
     ${CMAKE_SOURCE_DIR}/tests/test_actor_model_codec.cpp
     ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
@@ -124,6 +133,22 @@ if(BUILD_TESTING)
   target_compile_features(test_stage13_scene_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_stage13_scene_recipe PRIVATE psxport)
   add_test(NAME stage13_scene_recipe COMMAND test_stage13_scene_recipe)
+  add_executable(test_cutscene_scene_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_cutscene_scene_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/cutscene_scene_recipe.cpp)
+  target_include_directories(test_cutscene_scene_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_cutscene_scene_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_cutscene_scene_recipe PRIVATE psxport)
+  add_test(NAME cutscene_scene_recipe COMMAND test_cutscene_scene_recipe)
+  add_executable(test_screen_fade_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_screen_fade_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/screen_fade_recipe.cpp)
+  target_include_directories(test_screen_fade_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${PSXPORT_DIR}/tests)
+  target_compile_features(test_screen_fade_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_screen_fade_recipe PRIVATE psxport)
+  add_test(NAME screen_fade_recipe COMMAND test_screen_fade_recipe)
   add_executable(test_field_environment_recipe
     ${CMAKE_SOURCE_DIR}/tests/test_field_environment_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/field_environment_recipe.cpp)
@@ -250,6 +275,12 @@ if(BUILD_TESTING)
   target_include_directories(test_presentation_owner PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
   target_compile_features(test_presentation_owner PRIVATE cxx_std_20)
   add_test(NAME presentation_owner COMMAND test_presentation_owner)
+  add_executable(test_spyro1_frame_policy
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro1_frame_policy.cpp)
+  target_include_directories(test_spyro1_frame_policy PRIVATE
+    ${CMAKE_SOURCE_DIR}/titles/spyro1/core)
+  target_compile_features(test_spyro1_frame_policy PRIVATE cxx_std_20)
+  add_test(NAME spyro1_frame_policy COMMAND test_spyro1_frame_policy)
   add_test(
     NAME computed_jumps_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
@@ -275,9 +306,11 @@ set(GAME_SRC
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp
   titles/spyro1/core/spyro1_runtime.cpp
+  titles/spyro1/core/spyro1_frame_driver.cpp
+  titles/spyro1/core/spyro1_field_scheduler.cpp
+  titles/spyro1/core/spyro1_boot_sequence.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp
-  game/core/frame_loop.cpp
   game/core/producer_run.cpp
   game/render/render_frame.cpp
   game/render/scene.cpp
@@ -295,6 +328,9 @@ set(GAME_SRC
   game/render/actor_global_order.cpp
   game/render/scene_painter_order.cpp
   game/render/stage13_scene_recipe.cpp
+  game/render/cutscene_scene_recipe.cpp
+  game/render/screen_fade_recipe.cpp
+  game/render/fx_screen_fade.cpp
   game/render/field_environment_recipe.cpp
   game/render/field_environment_oracle.cpp
   game/render/actor_recipe_capture.cpp
@@ -314,6 +350,7 @@ set(GAME_SRC
   game/render/world_scene_oracle.cpp
   game/render/world_scene_capture.cpp
   game/render/fx_world_draw.cpp
+  game/render/paired_actor_temporal_evidence.cpp
   game/render/fx_paired_actor.cpp
   game/core/cd_queue.cpp
   game/core/native_rand.cpp
@@ -372,3 +409,10 @@ target_compile_options(spyro_port PRIVATE -w -O2 -g
   ${SDL3_CFLAGS_OTHER} ${FREETYPE_CFLAGS_OTHER})
 
 target_link_libraries(spyro_port PRIVATE spyro_title_selection psxport)
+
+if(BUILD_TESTING)
+  add_test(NAME executable_help_short COMMAND $<TARGET_FILE:spyro_port> -h)
+  add_test(NAME executable_help_long COMMAND $<TARGET_FILE:spyro_port> --help)
+  set_tests_properties(executable_help_short executable_help_long PROPERTIES
+    PASS_REGULAR_EXPRESSION "Usage: .*spyro_port \\[executable\\]")
+endif()

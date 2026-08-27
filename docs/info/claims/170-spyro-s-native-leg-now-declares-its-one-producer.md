@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-12
 tags: producers
-depends: game/render/fx_title_menu.cpp#spriteEmit, game/core/frame_loop.cpp
+depends: game/render/fx_title_menu.cpp#spriteEmit, titles/spyro1/core/spyro1_frame_driver.cpp
 reconfirmed: 2026-08-12 21:16:05
 verified_at: 2026-08-12 21:16:05
 ---

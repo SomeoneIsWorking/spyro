@@ -51,6 +51,7 @@
 // pins both env bases AND the field layout from the game's own code.
 #include "frame_env.h"
 #include "core.h"
+#include "spyro1_field_scheduler.h"
 #include <cstdlib>
 #include <lucent/log.h>
 
@@ -90,8 +91,8 @@ constexpr uint32_t kDeR0 = 0x19u, kDeG0 = 0x1Au, kDeB0 = 0x1Bu;
 // DISPENV: RECT disp, RECT screen. Only `disp` is read — see note 3 above.
 constexpr uint32_t kDiDispX = 0x00u, kDiDispY = 0x02u;
 
-// The display tail's own state: the guest's vblank counter (the same address game/core/vsync.cpp
-// serves VSync from) and the two field stamps its >= 2-field throttle compares.
+// The display tail's own state: the vblank counter now advanced by Spyro 1's FieldScheduler and the
+// two field stamps its >= 2-field throttle compares.
 constexpr uint32_t kVblankCounter = 0x800749E0u;
 constexpr uint32_t kStampLastFrame = 0x80075950u; // the field count when the PREVIOUS frame ended
 constexpr uint32_t kStampThisFrame = 0x80075954u; // …and this one's, written as the loop spins
@@ -110,10 +111,6 @@ uint32_t nativeFrameDisplayEnv(uint32_t drawEnv, bool fps60CommitPending) {
   return drawEnv == kEnvA ? kEnvB : kEnvA;
 }
 
-// game/core/vsync.cpp — the port's ONE definition of "a display field happened": flush, pad, the
-// guest's vblank callback, present. Declared here rather than in a header because vsync.cpp is the
-// only other file that uses it, and a two-caller extern is clearer than a header nobody else reads.
-bool spyro_deliver_field(Core *c, const char *site, bool fps60CommitPending);
 extern "C" void rec_dispatch(Core *c, uint32_t addr);
 
 // A typed lens over one of the game's DRAWENVs, so the GP0 words below read as what they are.
@@ -266,12 +263,11 @@ uint32_t nativeFrameBegin(Core *c) {
 // THE FIELD WAIT IS NOT OPTIONAL, and leaving it out is how this file earned its second half.
 // MEASURED before it existed: the native leg ran 1556 drawn frames and the port PRESENTED NOTHING
 // during any of them (`PSXPORT_DEBUG=rqflush,presentskip`: a continuous run of drawFrame flushes
-// with not one presentskip line between them). Spyro's ONLY per-frame vblank wait lives in this
-// tail, the port's present/pad/vblank-callback all hang off that wait (game/core/vsync.cpp
-// `deliver_field`), and the native leg was skipping the tail — so the composite stayed frozen on
-// the boot logo and the producer's quads, correctly built and correctly queued, were never
-// composited. A producer nobody can see is indistinguishable from a broken one; that is why this is
-// here and not deferred.
+// with not one presentskip line between them). Spyro's retail tail spent display fields here. The
+// native transcription delegates those fields to the title FieldScheduler, which owns present,
+// pad, callback, audio, events, and pacing; skipping this tail left the composite frozen on the
+// boot logo. A producer nobody can see is indistinguishable from a broken one, which is why this is
+// here.
 //
 // RE — the tail of FUN_8007cee4 / FUN_8001ed5c, verbatim (scratch/decomp/title_stage13.c):
 //     DrawSync(0);                                   // 0x8005F764
@@ -281,16 +277,13 @@ uint32_t nativeFrameBegin(Core *c) {
 //     [0x80075950] = VSync(-1);
 // i.e. spend at least one field, then keep spending until at least TWO have passed since the stamp
 // the previous frame left — Spyro's 30 Hz logic rate on a 60 Hz display. Both stamps are the GAME'S
-// OWN globals and are written here exactly as the guest writes them, so the reference leg picks the
-// timebase up unchanged if a run switches legs.
+// OWN globals and are written here exactly as the guest writes them.
 //
 // DrawSync(0) has no native counterpart: it waits for the guest's GPU DMA to drain, and the native
 // leg issues no DMA. Named rather than silently dropped.
 //
-// `deliver_field` IS the port's one definition of "a field happened" (it flushes the queue,
-// services the pad, runs the guest's vblank callback and presents). Calling it — rather than
-// counting fields here — is what keeps the native and reference legs on ONE timebase instead of two
-// that drift.
+// `FieldScheduler::deliver` is the port's one definition of "a field happened". Calling it —
+// rather than counting fields here — keeps counter and services under one title owner.
 //
 // NOTE THE ONE-FRAME OFFSET, because it looks like a bug and is not. Spyro pairs each DRAWENV with
 // the DISPENV of the OTHER buffer (measured: env 0x80076EE0 draws at ofs y=0 and displays y=240;
@@ -300,7 +293,7 @@ uint32_t nativeFrameBegin(Core *c) {
 // inventing a different frame policy while claiming to reproduce this one.
 void nativeFrameEnd(Core *c, uint32_t env, bool fps60CommitPending) {
   // The >= 2-field throttle, on the game's own stamps.
-  spyro_deliver_field(c, "nativeframe", fps60CommitPending);
+  spyro1::deliverNativeField(*c, "nativeframe", fps60CommitPending);
   int32_t now = (int32_t)c->mem_r32(kVblankCounter);
   c->mem_w32(kStampThisFrame, (uint32_t)now);
   int fields = 1;
@@ -317,7 +310,7 @@ void nativeFrameEnd(Core *c, uint32_t env, bool fps60CommitPending) {
                    kStampLastFrame);
       break;
     }
-    spyro_deliver_field(c, "nativeframe", fps60CommitPending);
+    spyro1::deliverNativeField(*c, "nativeframe", fps60CommitPending);
     now = (int32_t)c->mem_r32(kVblankCounter);
     c->mem_w32(kStampThisFrame, (uint32_t)now);
     fields++;

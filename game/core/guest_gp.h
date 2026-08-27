@@ -7,8 +7,8 @@
 // WHY A HEADER. Every gp-relative global the MIPS code touches is `kGp + <the signed 16-bit
 // displacement in the instruction it came from>`; writing it that way keeps each constant checkable
 // against a listing instead of being a bare hex address nobody can re-derive. Two modules need the
-// base — the frame loop (game/core/frame_loop.cpp) and the scene classifier (game/render/scene.cpp)
-// — and a literal copied into each is a second place to get it wrong.
+// base — Spyro1FrameDriver and the scene classifier — and a literal copied into each is a second
+// place to get it wrong.
 #pragma once
 #include <cstdint>
 

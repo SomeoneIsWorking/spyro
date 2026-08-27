@@ -9,8 +9,8 @@ class Core;
 
 void spyro_install_recomp(); // game/core/recomp_register.cpp — installs the generated substrate
 
-// game/core/vsync.cpp — installs the vblank timebase (the libetc wait helper).
-void spyro_register_vsync(Game *g);
+// game/core/vsync.cpp — callback registration + host clock for the title-owned field scheduler.
+void spyro_register_field_scheduler();
 
 // game/core/cd_queue.cpp — observes (and will own) the CD request queue service routine.
 void spyro_register_cd_queue();
@@ -18,8 +18,6 @@ void spyro_register_cd_queue();
 // True only while the guest's boot/logo/loading sequence at 0x800127C0 is executing.  The
 // observer in vsync.cpp uses this lifetime rather than guessing boot from a frame number.
 bool spyro_boot_sequence_active();
-void spyro_boot_skip_begin();
-void spyro_boot_skip_end();
 
 // The first guest function this port OWNS outright (native_rand.cpp) — the recompiled body never
 // runs once installed. Verified per call against that body under PSXPORT_NDIFF.
@@ -94,13 +92,3 @@ void spyro_world_census_finish(Core *c);
 // wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and
 // running the five contributing renderers interpreted (11 sites). Inert at 4:3.
 void spyro_register_wide_clip();
-
-// frame_loop.cpp — the PORT's own per-frame loop, a readable port of the guest's main() 0x80012204.
-// It is UNCONDITIONAL: bootInit runs THIS loop, and never dispatches the guest's main (whose
-// epilogue is unreachable, so the guest's loop is not a path the port can take over later). It is
-// the seam every native-graphics step needs: a per-LOGIC-FRAME point in port code above the guest's
-// renderers. See the file header for why the framework's native_step_frame cannot serve that role
-// here. The loop does not decide where the PICTURE comes from — it calls the render seam
-// (game/render/render.h, `SpyroRenderer::drawFrame`), which picks the reference OT walk or the
-// native producers from the framework's per-Core RenderMode (`PSXPORT_RENDER_PSX=1`).
-[[noreturn]] void spyro_frame_loop_run(Core *c);

@@ -14,6 +14,7 @@ public:
   void destroyContext(void *context) override;
   void registerOverrides(Game &game) override;
   void bootInit(Core &core) override;
+  std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
   RenderCapabilities renderCapabilities() const override {
     return RenderCapabilities::interpolatedNative();
   }

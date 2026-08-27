@@ -54,10 +54,53 @@ class RuntimeStructureTest(unittest.TestCase):
         self.assertNotIn("GameConfig", spyro3_source)
         self.assertNotIn("compatibilityHooks", spyro3_source)
         self.assertIn("guestVramIsPicture(const Game &game) const override", spyro1)
+        self.assertIn("RenderCapabilities::interpolatedNative()", spyro1)
+        self.assertIn(".defaultPath = RenderPath::Gte", lineage)
+        self.assertIn(".nativeRenderPath = false", lineage)
+        self.assertIn(".temporalInterpolation = false", lineage)
         spyro1_source = (ROOT / "titles/spyro1/core/spyro1_runtime.cpp").read_text(
             encoding="utf-8"
         )
+        self.assertIn("std::make_unique<Fps60>(game)", spyro1_source)
+        self.assertIn("spyro_register_wide_clip();", spyro1_source)
+        frame_driver = (
+            ROOT / "titles/spyro1/core/spyro1_frame_driver.cpp"
+        ).read_text(encoding="utf-8")
+        field_scheduler = (
+            ROOT / "titles/spyro1/core/spyro1_field_scheduler.cpp"
+        ).read_text(encoding="utf-8")
+        boot_sequence = (
+            ROOT / "titles/spyro1/core/spyro1_boot_sequence.cpp"
+        ).read_text(encoding="utf-8")
+        vsync_registration = (ROOT / "game/core/vsync.cpp").read_text(
+            encoding="utf-8"
+        )
+        game_config = (ROOT / "game/core/game_config.cpp").read_text(
+            encoding="utf-8"
+        )
+        cmake_sources = (ROOT / "cmake/spyro_port.cmake").read_text(encoding="utf-8")
         self.assertIn("spyro_presentation_owner(game.core)", spyro1_source)
+        self.assertIn("createFrameDriver(Game &game) override", spyro1)
+        self.assertIn("std::make_unique<Spyro1FrameDriver>(game)", spyro1_source)
+        self.assertIn("frameDriver(core).initialize(core)", spyro1_source)
+        self.assertNotIn("for (", spyro1_source)
+        self.assertIn("void Spyro1FrameDriver::stepFrame", frame_driver)
+        self.assertNotIn("Spyro1FrameDriver::run(Core", frame_driver)
+        self.assertIn("boot_.step(core)", frame_driver)
+        self.assertNotIn("rc0(&core, 0x800127C0", frame_driver)
+        self.assertEqual(frame_driver.count("renderer_->drawFrame();"), 1)
+        self.assertIn(".vsyncTrap = 0x8005DBC4u", game_config)
+        self.assertIn(".gpuTimeoutArm = 0x80062090u", game_config)
+        self.assertIn(".gpuTimeoutCheck = 0x800620C4u", game_config)
+        self.assertIn(".gpuTimeoutDeadlineVar = 0x80074B7Cu", game_config)
+        self.assertIn(".gpuTimeoutFlagVar = 0x80074B80u", game_config)
+        self.assertNotIn("platform_hle.register_", vsync_registration)
+        self.assertNotIn("legacyVblankWait", vsync_registration)
+        self.assertNotIn("0x8005DBC4u", boot_sequence)
+        for service in ("pad.serviceFrame", "spu_audio.frame", "gpu_present"):
+            self.assertNotIn(service, vsync_registration)
+            self.assertIn(service, field_scheduler)
+        self.assertNotIn("game/core/frame_loop.cpp", cmake_sources)
         self.assertIn("std::abort();", spyro2_source)
         self.assertIn("std::abort();", spyro3_source)
         self.assertNotRegex(

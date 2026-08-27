@@ -21,7 +21,7 @@ void spriteEmitterOracle(Core *core) {
   if (sCapturing) {
     if (sObserved.size >= sObserved.commands.size()) {
       lucent::error("titleoracle",
-                    "DIVERGES: guest emitted more than {} mode-1 sprite commands",
+                    "DIVERGES: guest emitted more than {} title-menu sprite commands",
                     sObserved.commands.size());
       std::abort();
     }
@@ -35,12 +35,14 @@ void spriteEmitterOracle(Core *core) {
 
 void titleDrawOracle(Core *core) {
   const auto state = spyro::title_menu_state::read(core);
-  if (state.mode != 1u) {
+  if (state.mode != 1u && state.mode != 2u) {
     ov_ov_5b800_gen_8007CEE4(core);
     return;
   }
 
-  const Recipe expected = spyro::title_menu_recipe::buildMode1(state.mode1Input());
+  const Recipe expected = state.mode == 1u
+                              ? spyro::title_menu_recipe::buildMode1(state.mode1Input())
+                              : spyro::title_menu_recipe::buildMode2(state.mode2Input());
   sObserved = {};
   sCapturing = true;
   ov_ov_5b800_gen_8007CEE4(core);
@@ -56,7 +58,7 @@ void titleDrawOracle(Core *core) {
                     "expected_count={} observed_count={} expected=({},{},{},{}) "
                     "observed=({},{},{},{})",
                     sComparedCalls + 1u,
-                    state.page,
+                    state.mode == 1u ? state.page : state.mode2State,
                     state.anim,
                     state.optionSelected,
                     state.cardSelected,
@@ -76,7 +78,7 @@ void titleDrawOracle(Core *core) {
                     "DIVERGES call={} substate={} anim={} option={} card={} after shared "
                     "prefix={} expected_count={} observed_count={}",
                     sComparedCalls + 1u,
-                    state.page,
+                    state.mode == 1u ? state.page : state.mode2State,
                     state.anim,
                     state.optionSelected,
                     state.cardSelected,
@@ -90,7 +92,7 @@ void titleDrawOracle(Core *core) {
   lucent::debug("titleoracle",
                 "PASS call={} substate={} anim={} option={} card={} commands={}",
                 sComparedCalls,
-                state.page,
+                state.mode == 1u ? state.page : state.mode2State,
                 state.anim,
                 state.optionSelected,
                 state.cardSelected,
@@ -106,6 +108,6 @@ void spyro_register_title_menu_oracle() {
   ov_ov_5b800_set_override(0x8007CD38u, spriteEmitterOracle);
   ov_ov_5b800_set_override(0x8007CEE4u, titleDrawOracle);
   lucent::info("titleoracle",
-               "ARMED: retained OV_5B800 0x8007CEE4 mode-1 calls will compare their ordered "
+               "ARMED: retained OV_5B800 0x8007CEE4 mode-1/mode-2 calls will compare their ordered "
                "0x8007CD38 argument stream with the native title-menu recipe");
 }

@@ -95,6 +95,20 @@ the tell; validate a tool by feeding it a case that MUST differ.
 
 **Believe the user over your own inference.** They are observing the running system; you are inferring.
 
+### Native frame ownership
+
+The Dusklight ownership pattern applies at the frame boundary: the framework shell owns iteration,
+and the title owns one finite step plus its services. For Spyro 1, `Spyro1FrameDriver` owns the
+measured logic order, `BootSequence` owns resumable boot `0x800127C0`/`0x8001286C`, and
+`FieldScheduler` owns one 60 Hz field (counter, input, callback root, audio, events, presentation,
+pacing, and host-turn acknowledgement). `game/core/main.cpp` composes those owners; it must not grow
+a second implementation of their service order.
+
+Guest libetc VSync `0x8005DBC4` is a fatal product-contract trap. Do not restore a success override
+at helper `0x8005DD0C`; re-own the caller's wait/query through `FieldScheduler`. Generated bodies stay
+intact as A/B oracles, but any diagnostic that dispatches a retained VSync caller must split that
+tail first or fail fast honestly.
+
 ---
 
 ## Run the gate after a REBASE, not only after your own edits

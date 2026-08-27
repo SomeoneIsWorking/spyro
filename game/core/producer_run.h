@@ -2,11 +2,10 @@
 //
 // WHY A PORT-SIDE FILE EXISTS FOR A FRAMEWORK FEATURE. The DB's two lifecycle calls
 // (external/psxport/runtime/recomp/producer_db.h) used to live inside the framework's own frame
-// loop
-// (`native_boot.cpp` `game_main`), and THIS PORT NEVER REACHES IT: main.cpp calls `dc_boot_init`
-// and never `native_boot_run`, and neither the guest's `main()` (0x80012204, whose epilogue is
-// unreachable) nor the port's own `frame_loop.cpp` `run()` (`[[noreturn]]`, unconditional
-// `for(;;)`) ever returns. So the DB emitted NOTHING here — no report line, no
+// loop (`native_boot.cpp` `game_main`). Spyro's product spine calls `dc_boot_init` and then the
+// framework's finite `dc_step_frame` shell instead of `native_boot_run`; the guest's `main()`
+// (0x80012204, whose epilogue is unreachable) is never dispatched. Before this port took explicit
+// lifecycle ownership, the DB therefore emitted NOTHING here — no report line, no
 // `scratch/producers/`, no claims file — while the census was armed and being fed. Issue #58.
 //
 // THE HARD PART IS NOT `begin`, IT IS `finish`: this port has no "after the last frame".
@@ -15,8 +14,8 @@
 //   * A FRAME CAP (`PSXPORT_NATIVE_FRAMES=<n>`) is the primary path. It creates the missing "after
 //     the last frame" by ENDING the run deterministically at a frame number the caller chose, then
 //     calling `producer_db_finish` on the way out. Same knob, same default (0 = uncapped) and the
-//     same meaning as the framework's own headless cap — one presented frame per count, because in
-//     this port one delivered vblank field is one present (vsync.cpp). Reusing that name rather
+//     same meaning as the framework's own headless cap — one delivered display field per count.
+//     Reusing that name rather
 //     than inventing `PSXPORT_SPYRO_FRAMES` keeps the port from growing a private synonym for a
 //     knob that already exists and is dead code here.
 //   * `atexit` is the SECONDARY path, and it is what makes an interactive session produce a DB: the
@@ -50,7 +49,7 @@ class Core;
 // atexit fallback, and prints what this run's DB can and cannot emit. Call from main().
 void spyro_producer_run_begin(Core *c);
 
-// Once per PRESENTED frame, from the port's real frame boundary (the vblank field in vsync.cpp).
+// Once per delivered display field, from Spyro1 FieldScheduler's native field boundary.
 // Ends the run — report, JSONL, claim append, `exit(0)` — when the frame cap is reached.
 void spyro_producer_run_frame(Core *c);
 

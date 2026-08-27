@@ -162,8 +162,11 @@ bool spyro_actor_submit(Core *c) {
     return false;
   }
   RenderQueue &queue = c->game->rq;
-  const auto plan = spyro::painter_submission::preflight(
-      queue, kProducerKey, recipe.faces.size(), spyro::scene_painter_order::kStage13Domain);
+  const auto plan =
+      spyro::painter_submission::preflight(queue,
+                                           kProducerKey,
+                                           recipe.faces.size(),
+                                           spyro::scene_painter_order::kActorWorldTerrainDomain);
   if (!plan.ready) {
     return false;
   }

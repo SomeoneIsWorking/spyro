@@ -88,8 +88,8 @@
 // example (game/render/perobj_dispatch.cpp:257) needs one because its native draw lives INSIDE a
 // substrate body whose surrounding guest code legitimately writes guest RAM, so the pc_render
 // read-only-overlay invariant has to be armed for just that block. This producer is not inside any
-// `gen_func_*` body: its whole call chain is port code (frame_loop.cpp -> SpyroRenderer::drawFrame
-// -> renderScene -> titleMenuRender -> here), it only READS guest memory (the title state globals,
+// `gen_func_*` body: its whole call chain is port code (Spyro1FrameDriver ->
+// SpyroRenderer::drawFrame -> renderScene -> titleMenuRender -> here), it only READS guest memory,
 // the ease tables, the sprite/style tables), and it writes none. Arming the guard would therefore
 // assert nothing this call chain can violate — and it would ALSO fire on the guest calls the
 // enclosing frame legitimately makes, since the guard is per-Core and this frame's env setup
@@ -284,7 +284,7 @@ bool SpyroRenderer::spriteEmit(int32_t x,
   return true;
 }
 
-// titleMenuRender — the port of 0x8007CEE4's SPRITE half, modes 0 and 1.
+// titleMenuRender — the port of 0x8007CEE4's SPRITE half, modes 0, 1, and 2.
 //
 // Returns false when the frame's mode has no producer, so the seam can abort naming it instead of
 // presenting a screen with its menu missing.
@@ -296,8 +296,9 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                                     int32_t clipY1) const {
   Core *c = mC;
   const auto st = spyro::title_menu_state::read(c);
-  if (st.mode == 1) {
-    const auto recipe = spyro::title_menu_recipe::buildMode1(st.mode1Input());
+  if (st.mode == 1 || st.mode == 2) {
+    const auto recipe = st.mode == 1 ? spyro::title_menu_recipe::buildMode1(st.mode1Input())
+                                     : spyro::title_menu_recipe::buildMode2(st.mode2Input());
     int emitted = 0;
     for (size_t i = 0; i < recipe.size; ++i) {
       const auto &command = recipe.commands[i];
@@ -317,7 +318,7 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
     lucent::debug("titlefx",
                   "mode={} substate={} anim={} option={} card={} recipe={} emitted={}",
                   st.mode,
-                  st.page,
+                  st.mode == 1 ? st.page : st.mode2State,
                   st.anim,
                   st.optionSelected,
                   st.cardSelected,
@@ -327,9 +328,8 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
   }
   if (st.mode != 0) {
     lucent::error("render",
-                  "  stage 13 mode [0x{:08X}] = {} has NO native producer. Modes 0 and 1 "
-                  "(the logo front end and memory-card menus) are ported; mode 2 — the "
-                  "3-slot save screen — remains RE'd but unowned.",
+                  "  stage 13 mode [0x{:08X}] = {} has NO native producer. Modes 0, 1, and 2 "
+                  "(the logo front end, memory-card menus, and 3-slot save screen) are ported.",
                   spyro::title_menu_state::kModeAddress,
                   st.mode);
     return false;

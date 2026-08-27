@@ -42,14 +42,16 @@
   "main_reentry": [],
 
   // Ordinary-instruction checkpoints for the paired-actor local-OT oracle. These PCs also occur
-  // in an overlapping generated body, so owner qualification is required to observe the actual
-  // indirect continuation at 0x80024054 exactly once.
+  // in overlapping generated bodies, so owner qualification is required to observe each actual
+  // continuation exactly once. Cross-fragment dispatch recovery promotes the continuation PCs
+  // below to independently dispatchable fragments; qualify them by those fragment entries rather
+  // than by the older containing-body partition.
   "diagnostic_pcs": [
-    {"owner": "0x80024054", "pc": "0x800257A0"},
-    {"owner": "0x80024054", "pc": "0x800258B0"},
+    {"owner": "0x800240F8", "pc": "0x800257A0"},
+    {"owner": "0x800240F8", "pc": "0x800258B0"},
     {"owner": "0x8004EBA8", "pc": "0x8004ED44"},
-    {"owner": "0x8004EBA8", "pc": "0x8004EE84"},
-    {"owner": "0x8004EBA8", "pc": "0x8004EF68"},
+    {"owner": "0x8004EDA0", "pc": "0x8004EE84"},
+    {"owner": "0x8004EDA0", "pc": "0x8004EF68"},
     {"owner": "0x8004EBA8", "pc": "0x8004EF78"},
     {"owner": "0x8001F158", "pc": "0x8001F4C8"},
     {"owner": "0x8001F158", "pc": "0x8001F710"},

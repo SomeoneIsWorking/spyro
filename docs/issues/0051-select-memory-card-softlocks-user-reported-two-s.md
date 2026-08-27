@@ -124,9 +124,9 @@ load). `rec_irq_poll` services `PW_HOST` via `rec_host_turn`. Nothing in this re
 `rec_host_turn_register`, so the gate was never armed — spider1 does it in one line
 (`game/core/sync_native.cpp:549`).
 
-FIX: `spyro_register_vsync` registers a host turn whose handler is `deliver_field` — the SAME function
-`vblank_wait`'s loop uses, so there is one definition of "a display field happened". No override on
-0x80067628, no bound, no `kMaxVblanksPerCardWait`. The rejected diff
+FIX: the title-owned `FieldScheduler` registers a host turn after native boot and uses its one
+`deliver` operation for asynchronous fields, so there is one definition of "a display field
+happened". No override on 0x80067628, no bound, no `kMaxVblanksPerCardWait`. The rejected diff
 (`coord/patches-gameside/spyro/REJECTED-memcard-sync-override.diff`) is not needed and is not applied.
 
 ## 2. Running the guest's vblank handler at an arbitrary point CRASHES this game (C163)

@@ -4,12 +4,12 @@ kind: claim
 status: holds
 created: 2026-08-06
 tags: frame,re,gpu,architecture
-depends: game/core/frame_loop.cpp
+depends: titles/spyro1/core/spyro1_frame_driver.cpp
 ---
 
 ## Claim
 
-SPYRO CAN OWN ITS FRAME LOOP, and it must do so in GAME code — the framework's native_step_frame is unreachable here and must not be the vehicle. The guest's main() 0x80012204 is a 15-instruction shell that never returns, but nothing in it is hard to reproduce: two init calls then forever { clear the input-latch flag; call the update 0x8003385C; clamp the elapsed-vblank count to [2,4] as the frame step; open the input-latch flag; restart the count; call the render driver 0x8001ED5C unless [0x8007579C] is set }. The port now runs exactly that loop natively (PSXPORT_SPYRO_FRAME_LOOP=1).
+SPYRO CAN OWN ITS FRAME LOOP, and it must do so in GAME code — the framework's native_step_frame is unreachable here and must not be the vehicle. The guest's main() 0x80012204 is a 15-instruction shell that never returns, but nothing in it is hard to reproduce: two init calls then forever { clear the input-latch flag; call the update 0x8003385C; clamp the elapsed-vblank count to [2,4] as the frame step; open the input-latch flag; restart the count; call the render driver 0x8001ED5C unless [0x8007579C] is set }. `Spyro1FrameDriver` now owns that finite native step; the earlier `PSXPORT_SPYRO_FRAME_LOOP=1` runs below established the behavior before it became the sole product path.
 
 ## Evidence
 

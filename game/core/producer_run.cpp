@@ -5,7 +5,8 @@
 #include "cfg.h" // cfg_int — PSXPORT_NATIVE_FRAMES is a run-shape flag, not a diagnostic
 #include "core.h"
 #include "field_environment_oracle.h"
-#include "producer_db.h"  // framework: producer_db_begin / producer_db_finish
+#include "paired_actor_temporal_evidence.h" // shipping fps60 presenter run proof
+#include "producer_db.h"                    // framework: producer_db_begin / producer_db_finish
 #include "render_stats.h" // framework: render_depth_coverage_report — whole-run depth denominator
 #include "spyro_game.h"   // optional sprite-queue census has the same run-end truth boundary
 #include <cstdio>
@@ -36,6 +37,7 @@ void finish_once(const char *why) {
   s_finished = true;
   lucent::info(
       "producers", "run ending after {} presented frame(s) ({}) — writing the DB", s_frames, why);
+  spyro_paired_actor_temporal_finish(s_core);
   spyro_sprite_queue_census_finish();
   spyro_world_census_finish(s_core);
   spyro_world_native_finish();
@@ -87,7 +89,7 @@ void spyro_producer_run_frame(Core *c) {
   ++s_frames;
   // Semantic-state capture shared by BOTH render legs. Fixed PRESENT indices cannot compare this
   // scene: unchanged runs placed timer 171 anywhere from present 3858 to 4094. This hook is after
-  // the real present in vsync.cpp and fires once on the game's own stage/mode/state/timer tuple.
+  // the title field boundary and fires once on the game's own stage/mode/state/timer tuple.
   if (const int shot_timer = cfg_int("PSXPORT_SPRITE_QUEUE_SHOT_TIMER", -1); shot_timer >= 0) {
     static bool shot_done = false;
     const int32_t timer = (int32_t)c->mem_r32(0x80078D80u);

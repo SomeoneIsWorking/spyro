@@ -7,8 +7,8 @@
 //     rq.flush();                                               // …emitted here
 //
 // The two legs differ ONLY in where the picture comes from. Everything else about the frame — the
-// update, the frame step, the input-latch window, present and pace — is the same code either way
-// (game/core/frame_loop.cpp, game/core/vsync.cpp).
+// update, the frame step, the input-latch window, present and pace — is owned once either way by
+// the Spyro 1 FrameDriver and FieldScheduler.
 //
 // THE MODE IS THE FRAMEWORK'S, NOT A SPYRO FLAG. `Core::rsub.mode` (psxport runtime/recomp/
 // render_mode.h) is per-Core and already means exactly this in every consumer of the framework:
@@ -22,9 +22,9 @@
 #include <cstdint>
 class Core;
 
-// The stage-selector value whose arm has a native producer today (game/render/fx_title_menu.cpp).
-// Named here because the seam's dispatch and the producer's own comments both have to agree on it.
+// Stage selectors whose complete reached recipes have native owners.
 constexpr uint32_t kStageFrontEnd = 13u;
+constexpr uint32_t kStageCutscene = 14u;
 
 // The guest's per-frame RENDER DRIVER, called once per drawn frame from its main() 0x80012204 at
 // 0x8001227C. It resets the OT/packet pool, dispatches on the stage selector below, and ends in the
@@ -57,8 +57,8 @@ struct Scene {
 
 // class SpyroRenderer — the render seam for ONE frame on ONE core.
 //
-// Constructed once per Core by the native frame loop; paired producer history therefore survives
-// logic-frame boundaries without file-static or guest memory state.
+// Constructed once per Core by Spyro1FrameDriver; paired producer history therefore survives
+// logic-frame boundaries without file-static or guest-memory state.
 class SpyroRenderer {
 public:
   explicit SpyroRenderer(Core *c) : mC(c) {}
@@ -76,8 +76,9 @@ public:
   Scene classifyScene() const;
 
 private:
-  void referenceOtWalk() const;            // the guest's render driver, unmodified
-  void renderScene(const Scene &sc) const; // the native picture — dispatches producers
+  void referenceOtWalk() const;             // the guest's render driver, unmodified
+  void prepareScene(const Scene &sc) const; // render-only state needed before nativeFrameBegin
+  void renderScene(const Scene &sc) const;  // the native picture — dispatches producers
   [[noreturn]] void abortUnimplemented(const Scene &sc, const char *why) const;
   void reportBacklog(const Scene &sc) const; // scene.cpp — the arm/layer detail
 
@@ -110,4 +111,5 @@ private:
   // The DRAWENV this frame is being drawn with, set by drawFrame()'s call to nativeFrameBegin() on
   // the native leg only. 0 on the reference leg, where the guest's own driver owns the env.
   uint32_t mEnv = 0;
+  bool mVideoModeAnnounced = false;
 };

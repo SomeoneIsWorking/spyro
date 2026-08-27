@@ -23,8 +23,9 @@ void spu_init(void);
 }
 
 void load_exe(const char *path, Core *c); // framework: runtime/recomp/boot.cpp
-void dc_boot_init(Core *c);               // framework: crt0_setup + game_init (-> hooks->bootInit)
-int selftest_run(const char *path);       // framework: runtime/recomp/selftest.cpp
+void dc_boot_init(Core *c); // framework: crt0_setup + finite title boot initialization
+void dc_step_frame(Core *c, uint32_t frame); // framework shell -> one title FrameDriver step
+int selftest_run(const char *path);          // framework: runtime/recomp/selftest.cpp
 
 // Spyro 1 boots straight from SCUS_942.28 — unlike Tomba!2 there is no separate SCEA boot stub that
 // LoadExec's a MAIN.EXE, so there is no stub stage to run and no second image to load. The
@@ -32,7 +33,32 @@ int selftest_run(const char *path);       // framework: runtime/recomp/selftest.
 // exact identity.
 static const char *kDefaultExe = "scratch/bin/spyro/SCUS_942.28";
 
+static bool helpRequested(int argc, char **argv) {
+  for (int index = 1; index < argc; ++index) {
+    if (strcmp(argv[index], "-h") == 0 || strcmp(argv[index], "--help") == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void printUsage(const char *program) {
+  printf("Usage: %s [executable]\n", program);
+  printf("Run the serial-identified Spyro native PC port.\n\n");
+  printf("Arguments:\n");
+  printf("  executable  extracted PSX executable (default: %s)\n\n", kDefaultExe);
+  printf("Options:\n");
+  printf("  -h, --help  show this help and exit\n");
+}
+
 int main(int argc, char **argv) {
+  // Help is a process interface, not a boot mode. Handle it before executable identity selection,
+  // runtime installation, GPU setup, or disc/asset discovery so it works in a bare checkout.
+  if (helpRequested(argc, argv)) {
+    printUsage(argv[0]);
+    return 0;
+  }
+
   const char *path = argc > 1 ? argv[1] : kDefaultExe;
   const spyro::SelectionResult selection =
       spyro::selectExecutableFile(path, spyro::executableCatalog());
@@ -80,11 +106,10 @@ int main(int argc, char **argv) {
   // not silently dropped. Must run before initBuiltins' count is read, and before any guest code
   // touches the CD.
   game->cd.overridesInit();
-  game->platform_hle.initBuiltins(); // HW sync/wait stalls -> native non-stall (VSync/CdSync/MDEC)
-  // Spyro's vblank timebase. Registered AFTER initBuiltins so it is visible in the same table;
-  // hle.vsyncTrap stays 0 (the trap asserts the native frame loop owns timing, which is false
-  // while the guest owns its own loop). See game/core/vsync.cpp.
-  spyro_register_vsync(game);
+  // Native non-stall owners cover the measured CD/MDEC waits. VSync is deliberately different:
+  // initBuiltins installs its fatal product-contract trap.
+  game->platform_hle.initBuiltins();
+  spyro_register_field_scheduler();
   threads_init(c); // native BIOS threads (ucontext); main = slot 0
   threads_register_overrides();
 
@@ -99,20 +124,23 @@ int main(int argc, char **argv) {
     }
   }
 
-  // THE PRODUCER DB'S `begin`, and it must be HERE: before the first frame, and before the boot
-  // that never returns. The framework calls this from its own frame loop, which this port never
-  // enters — so without this line the census ran armed and fed for the whole run and then emitted
-  // nothing at all (issue #58). `finish` cannot go after dc_boot_init because nothing comes after
-  // it; the frame cap in producer_run.cpp is what creates a last frame. See producer_run.h.
+  // THE PRODUCER DB'S `begin`, and it must be HERE before the first native boot field. The
+  // framework calls this from its own frame loop, which this port never enters — so without this
+  // line the census ran armed and fed for the whole run and then emitted nothing at all (issue
+  // #58). An uncapped interactive shell has no natural final frame; the title field scheduler's
+  // cap and producer_run.cpp's exit path create one. See producer_run.h.
   spyro_producer_run_begin(c);
 
   c->r[4] = 1;
   c->r[5] = 0; // a0/a1 as the BIOS would leave them (minimal)
 
-  // Boot: bind the per-core hardware, register overrides (none yet), run crt0, then enter the
-  // port's non-returning frame loop through Spyro1Runtime::bootInit.
+  // Boot returns at the native frame-loop boundary. The framework shell owns iteration and calls
+  // exactly one finite title-owned FrameDriver step; it does not wrap title services around it.
   dc_boot_init(c);
 
-  lucent::info("boot", "guest main() returned");
-  return 0;
+  for (uint32_t frame = 1;; ++frame) {
+    dc_step_frame(c, frame);
+  }
+
+  return 0; // unreachable: gpu_present owns the window-close exit
 }

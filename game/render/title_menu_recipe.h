@@ -22,8 +22,24 @@ struct Mode1Input {
   int32_t cardSelected = 0;
 };
 
+struct Mode2Slot {
+  bool occupied = false;
+  int32_t homeworldSprite = 0;
+  uint32_t dragonCount = 0;
+};
+
+struct Mode2Input {
+  uint32_t state = 0;
+  uint32_t optionSelected = 0;
+  uint32_t subTick = 0;
+  uint32_t secondaryOption = 0;
+  int32_t cardSelected = 0;
+  int32_t slideY = 0;
+  std::array<Mode2Slot, 3> slots{};
+};
+
 struct Recipe {
-  static constexpr size_t kCapacity = 9;
+  static constexpr size_t kCapacity = 18;
 
   std::array<SpriteCommand, kCapacity> commands{};
   size_t size = 0;
@@ -35,6 +51,11 @@ struct Recipe {
 // (0x8007D0C8..0x8007D3F4). The recipe is independent of presentation so the
 // shipping producer and its hermetic falsifiers exercise one implementation.
 Recipe buildMode1(const Mode1Input &input);
+
+// Native transcription of TitlescreenDraw's TSM_Loading arm in OV_5B800
+// (0x8007D7A8..0x8007DC2C). Slot summaries and the slide-table lookup are
+// supplied by the single guest-memory lens, leaving this recipe pure.
+Recipe buildMode2(const Mode2Input &input);
 
 // Exact ordered-command comparator shared by the live retained-body oracle and
 // its hermetic positive/negative controls. On failure, mismatch is the first

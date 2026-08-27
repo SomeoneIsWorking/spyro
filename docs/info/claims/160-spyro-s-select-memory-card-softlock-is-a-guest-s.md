@@ -44,8 +44,8 @@ callback 0x80067CD4 in libetc VBlank slot 7; supplying vblanks inside that wait 
 nothing." The second half is right; the first is not. `tools/recomp/emit.py:1257` emits
 `if (c->pending_work) rec_irq_poll(c);` on every loop BACK-EDGE, and it is present in that very spin —
 `generated/shard_4.c` L_80067684 carries the gate. The port had no way to *arm* the gate, not no way to
-service it: nothing called `rec_host_turn_register`. That is a one-line, class-wide framework
-mechanism, and `spyro_register_vsync` now uses it.
+service it: nothing called `rec_host_turn_register`. The title-owned `FieldScheduler` now arms that
+class-wide framework mechanism at the native boot/gameplay boundary.
 
 **The override this claim was evidence for is GONE** (`coord/patches-gameside/spyro/REJECTED-memcard-sync-override.diff`):
 it was a per-call-site override of ONE address in a class with at least three members, carrying a

@@ -241,7 +241,7 @@ static const GameConfig g_spyro_config = {
     // installs
     // at 0x800751BC..0x800751D0). Pad::serviceFrame writes the packet directly instead, called once
     // per
-    // frame from the vblank wait (vsync.cpp), which is this port's frame boundary.
+    // field from Spyro 1's title-owned FieldScheduler, which is this port's field boundary.
     .padSlot0Buf = 0x800786A0u,
     .padSlot1Buf = 0x80078E50u,
     .padDriverFn = 0u,
@@ -264,14 +264,10 @@ static const GameConfig g_spyro_config = {
     // the
     // shape of the CD timeouts seen at boot (docs/re-frontier.md cd.chokepoints).
     //
-    // vsyncTrap stays 0 and MUST stay 0 for now: the trap encodes the policy "nothing may reach
-    // VSync
-    // because the native frame loop owns all timing", which is only true once that loop drives the
-    // frame. Spyro still runs the guest's own loop on the substrate (see game_hooks.cpp), so VSync
-    // must
-    // be reimplemented faithfully and registered by us — setting the trap instead would abort on
-    // the
-    // game's own legitimate timing.
+    // Spyro1FrameDriver and its FieldScheduler now own timing. The measured libetc VSync entry is
+    // therefore a mandatory fatal trap: a reached call identifies an unported caller instead of
+    // reviving a guest-owned frame wait. Boot 0x800127C0/0x8001286C is a resumable native state
+    // machine; its retained generated body remains available only as an A/B oracle.
     .hle =
         {
             // Window 0 — Spyro's libcd. Deliberately TIGHT: it spans only the region where the
@@ -332,10 +328,16 @@ static const GameConfig g_spyro_config = {
             // primitive
             // whose role the running system itself demonstrates.
             .cdInitHandshake = 0x800653B4u,
-            .gpuTimeoutArm = 0u,
-            .gpuTimeoutCheck = 0u,
-            .gpuTimeoutDeadlineVar = 0u,
-            .gpuTimeoutFlagVar = 0u,
+            // PsyQ libgpu's queue timeout pair. The retained arm body at 0x80062090 reads
+            // VSync(-1), stores counter+240 at 0x80074B7C, and clears 0x80074B80. The check body
+            // at 0x800620C4 reads VSync(-1) before testing that deadline. psxport's GPU executes
+            // the corresponding DMA synchronously, so its shared owners preserve the guest-visible
+            // globals while making the timeout permanently unexpired; neither retained body may
+            // reach the product's fatal VSync trap.
+            .gpuTimeoutArm = 0x80062090u,
+            .gpuTimeoutCheck = 0x800620C4u,
+            .gpuTimeoutDeadlineVar = 0x80074B7Cu,
+            .gpuTimeoutFlagVar = 0x80074B80u,
             .changeThread = 0u,
             // ── libgte SetGeomOffset / SetGeomScreen — Spyro's camera projection
             // ───────────────────────
@@ -395,35 +397,28 @@ static const GameConfig g_spyro_config = {
             // overlays.
             .setGeomOffset = 0x80062618u,
             .setGeomScreen = 0x80062638u,
-            .vsyncTrap = 0u,
+            .vsyncTrap = 0x8005DBC4u,
         },
 
     // ── rendering policy
     // ───────────────────────────────────────────────────────────────────────────
-    // The guest still owns drawing in this port, so its UPLOADED VRAM must stay visible under
-    // whatever
-    // primitives it submits. With the framework default (clear to black) the SCE and Universal logo
-    // screens render BLACK — they are uploads with zero primitives, so the clear discards them
-    // before
-    // anything is drawn on top (C099). Set this back to 0 if and when a native producer owns the
-    // frame.
+    // Legacy fallback only. Upload-only boot screens need guest VRAM preserved, while explicit
+    // native frames do not; Spyro1Runtime::guestVramIsPicture now supplies that per-frame answer.
+    // Keep the compatibility value true so a consumer that has not migrated cannot erase a logo.
     .preserveVramBackdrop = 1u,
 
     // ── windowed frame pacing
     // ──────────────────────────────────────────────────────────────────────
-    // The guest still owns its frame loop: vsync.cpp's vblank_wait presents AND paces once per
-    // vblank
-    // it advances. One vblank is 1/60s, so one pacing call represents 1 vblank — the framework
-    // default
+    // The title FieldScheduler presents and paces once per field. One field is 1/60s, so one pacing
+    // call represents one field. The framework default
     // reads a hardcoded Tomba2 scratchpad field (0x1F800235) as the quota, and Spyro's geometry
     // renderer writes vertex data over that byte, so the windowed run slept its garbage value
     // (2..38)
     // per vblank and the 3D scene dropped to ~2.7fps (root-caused: the pacer's nanosleep is where
     // the
     // blocked CPU profile sits, and a gdb store-watchpoint on the byte names gen_func_8001F798's
-    // mem_w32 as the writer). One pace call = one vblank = 16.67ms, and the guest's own wait
-    // cadence
-    // decides the logic rate; Spyro flips the display every 2 vblanks (30fps, C072).
+    // mem_w32 as the writer). One pace call = one field = 16.67ms; Spyro's native frame tail spends
+    // at least two fields per drawn logic frame (30fps, C072).
     .paceQuota = 1u,
 
     // Window title (framework is game-agnostic; it must not name a game). Declaration order

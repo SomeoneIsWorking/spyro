@@ -10,6 +10,11 @@ constexpr uint32_t kGray = 0;
 constexpr uint32_t kYellow = 1;
 
 constexpr int32_t kMainBorder = 1;
+constexpr int32_t kEmptySave = 8;
+constexpr int32_t kBlankSaveBox = 9;
+constexpr int32_t kOverwriteGame = 10;
+constexpr int32_t kDragonCountZero = 13;
+constexpr int32_t kDragonCountLogo = 23;
 constexpr int32_t kAccessingMemCard = 24;
 constexpr int32_t kNoMemCard = 25;
 constexpr int32_t kMemCardUnavailable = 26;
@@ -31,6 +36,8 @@ constexpr int32_t kCreatingSaveFile = 42;
 constexpr int32_t kIsFullThisGame = 43;
 constexpr int32_t kRequiresOneFreeBlock = 44;
 constexpr int32_t kUnableToCreateSaveFile = 45;
+constexpr int32_t kSelectSlotForNewGame = 46;
+constexpr int32_t kSelectSlotToLoadGame = 47;
 constexpr int32_t kUsingCardInSlot1 = 49;
 constexpr int32_t kSelectMemoryCard = 51;
 constexpr int32_t kStartNewGame = 52;
@@ -39,8 +46,11 @@ constexpr int32_t kCancel = 54;
 constexpr int32_t kFormatCard = 55;
 constexpr int32_t kCreateFile = 56;
 constexpr int32_t kContinue = 57;
+constexpr int32_t kLoadGame = 58;
+constexpr int32_t kNewGame = 59;
 constexpr int32_t kSlot1 = 60;
 constexpr int32_t kSlot2 = 61;
+constexpr int32_t kOverwrite = 62;
 constexpr int32_t kToCreateASaveFile = 63;
 
 bool blinkOn(uint32_t subTick) {
@@ -64,6 +74,31 @@ void appendOptions(Recipe &recipe,
 
 void appendCardFooter(Recipe &recipe, const Mode1Input &input) {
   recipe.append(128, 106, input.cardSelected + kUsingCardInSlot1, kGray);
+}
+
+void appendMode2Slots(Recipe &recipe, const Mode2Input &input) {
+  for (size_t i = 0; i < input.slots.size(); ++i) {
+    const auto &slot = input.slots[i];
+    const int32_t slotX = 140 + static_cast<int32_t>(i) * 80;
+    if (!slot.occupied) {
+      const bool dim = (input.state < 3u && input.optionSelected != static_cast<uint32_t>(i)) ||
+                       (input.state >= 3u && input.state < 5u);
+      recipe.append(slotX, 38, kEmptySave, dim ? 3u : kGray);
+      continue;
+    }
+
+    const bool dim =
+        (input.state < 4u && input.optionSelected != static_cast<uint32_t>(i)) || input.state == 4u;
+    const uint32_t style = dim ? 3u : kGray;
+    recipe.append(slotX, 38, slot.homeworldSprite, style);
+    recipe.append(slotX + 44, 22, kDragonCountLogo, style);
+    recipe.append(
+        slotX + 28, 22, static_cast<int32_t>(slot.dragonCount % 10u) + kDragonCountZero, style);
+    if (slot.dragonCount > 9u) {
+      recipe.append(
+          slotX + 12, 22, static_cast<int32_t>(slot.dragonCount / 10u) + kDragonCountZero, style);
+    }
+  }
 }
 
 } // namespace
@@ -170,6 +205,55 @@ Recipe buildMode1(const Mode1Input &input) {
   default:
     // The guest has no case 14 and no default body. Its decorative borders
     // remain, so an unlisted substate is a valid two-command recipe.
+    break;
+  }
+  return recipe;
+}
+
+Recipe buildMode2(const Mode2Input &input) {
+  Recipe recipe;
+  if (input.state < 5u) {
+    recipe.append(108, 9, kMainBorder, kGray);
+    recipe.append(255, 9, -kMainBorder, kGray);
+    if (input.state > 0u) {
+      appendMode2Slots(recipe, input);
+    }
+  } else {
+    recipe.append(108, input.slideY, kMainBorder, kGray);
+    recipe.append(255, input.slideY, -kMainBorder, kGray);
+  }
+
+  const bool blink = blinkOn(input.subTick);
+  const int32_t selectedSlotX = 140 + static_cast<int32_t>(input.optionSelected) * 80;
+  switch (input.state) {
+  case 1:
+    if (blink) {
+      recipe.append(selectedSlotX, 38, kBlankSaveBox, kGray);
+    }
+    recipe.append(128, 88, kNewGame, kYellow);
+    recipe.append(256, 88, kLoadGame, kGray);
+    recipe.append(128, 106, kSelectSlotForNewGame, kGray);
+    break;
+  case 2:
+    recipe.append(selectedSlotX, 38, kOverwriteGame, kGray);
+    recipe.append(selectedSlotX, 38, kBlankSaveBox, kGray);
+    recipe.append(128, 88, kOverwrite, input.secondaryOption == 0u && blink ? kYellow : kGray);
+    recipe.append(256, 88, kCancel, input.secondaryOption == 1u && blink ? kYellow : kGray);
+    break;
+  case 3:
+    if (blink) {
+      recipe.append(selectedSlotX, 38, kBlankSaveBox, kGray);
+    }
+    recipe.append(128, 88, kNewGame, kGray);
+    recipe.append(256, 88, kLoadGame, kYellow);
+    recipe.append(128, 106, kSelectSlotToLoadGame, kGray);
+    break;
+  case 4:
+    recipe.append(128, 88, kNewGame, input.optionSelected == 0u && blink ? kYellow : kGray);
+    recipe.append(256, 88, kLoadGame, input.optionSelected == 1u && blink ? kYellow : kGray);
+    recipe.append(128, 106, input.cardSelected + kUsingCardInSlot1, kGray);
+    break;
+  default:
     break;
   }
   return recipe;

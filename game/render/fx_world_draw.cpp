@@ -79,7 +79,7 @@ bool spyro_world_submit(Core *core, int32_t selection) {
   }
   RenderQueue &queue = core->game->rq;
   const PainterObjectAdmission admission = queue.preflightPainterObject(
-      kProducerKey, recipe.faces.size(), spyro::scene_painter_order::kStage13Domain);
+      kProducerKey, recipe.faces.size(), spyro::scene_painter_order::kActorWorldTerrainDomain);
   if (!admission.accepted()) {
     return false;
   }

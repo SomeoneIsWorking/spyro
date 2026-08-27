@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import runpy
 import shutil
 import subprocess
 import sys
@@ -316,11 +317,8 @@ def configure_and_build(psxport, compiler_options):
 
 
 def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
-    env = os.environ.copy()
-    if env.get("PSXPORT_NOWINDOW"):
-        env["PSXPORT_VK_HEADLESS"] = "1"
-    else:
-        env["PSXPORT_VK_WINDOW"] = "1"
+    policy = runpy.run_path(str(Path(psxport) / "tools/port/launch_environment.py"))
+    env = policy["player_environment"](os.environ)
     env.setdefault("PSXPORT_ASSET_DIR", str(psxport))
     env.setdefault("PSXPORT_DEBUG_SERVER", "1")
     env["PSXPORT_DISC"] = str(disc)

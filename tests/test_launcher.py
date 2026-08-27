@@ -167,21 +167,29 @@ class LauncherTest(unittest.TestCase):
             ],
         )
 
-    def test_launch_environment_preserves_knobs_and_selects_headless(self):
+    def test_player_launch_environment_strips_ambient_agent_policy(self):
         psxport = ROOT / "external/psxport"
         disc = ROOT / "disc.chd"
         with mock.patch.dict(
             os.environ,
             {
                 "PSXPORT_NOWINDOW": "1",
+                "PSXPORT_VK_HEADLESS": "1",
                 "PSXPORT_NOAUDIO": "1",
+                "PSXPORT_NOPACE": "1",
                 "PSXPORT_DEBUG_SERVER": "0",
             },
             clear=True,
         ):
             env = launcher.launch_environment(psxport, disc)
-        self.assertEqual(env["PSXPORT_VK_HEADLESS"], "1")
-        self.assertEqual(env["PSXPORT_NOAUDIO"], "1")
+        self.assertEqual(env["PSXPORT_VK_WINDOW"], "1")
+        for key in (
+            "PSXPORT_NOWINDOW",
+            "PSXPORT_VK_HEADLESS",
+            "PSXPORT_NOAUDIO",
+            "PSXPORT_NOPACE",
+        ):
+            self.assertNotIn(key, env)
         self.assertEqual(env["PSXPORT_DEBUG_SERVER"], "0")
         self.assertEqual(env["PSXPORT_ASSET_DIR"], str(psxport))
         self.assertEqual(env["PSXPORT_SPYRO_DISC"], str(disc))

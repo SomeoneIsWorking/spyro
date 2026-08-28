@@ -16,6 +16,7 @@
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "gpu_vk.h"     // measured native/wide engine extents for the product-path announcement
 #include "guest_call.h" // rc0 — run a guest function to its `jr ra`
+#include "overlay_router.h"
 #include "presentation_owner.h"
 #include "render.h"
 #include "screen_fade_recipe.h"
@@ -27,6 +28,11 @@
 
 namespace {
 constexpr uint32_t kCamera = 0x80076dd0u;
+constexpr uint32_t kStageSelector = 0x800757D8u;
+constexpr uint32_t kStageSubstate = 0x80078D78u;
+constexpr uint32_t kStageSubSubstate = 0x80078D7Cu;
+constexpr uint32_t kStateSwitch = 0x8007579Cu;
+constexpr uint32_t kLoadStage = 0x80075864u;
 
 bool pairedActorScene(Core *core, const Scene &scene) {
   return scene.stage == kStageFrontEnd && core->mem_r32(0x80078D78u) == 3u &&
@@ -151,6 +157,27 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
 [[noreturn]] void SpyroRenderer::abortUnimplemented(const Scene &sc, const char *why) const {
   lucent::error(
       "render", "NATIVE RENDER NOT IMPLEMENTED — stage selector = {} ({})", sc.stage, why);
+  lucent::error("render",
+                "  fatal boundary: guest pc=0x{:08X} ra=0x{:08X} sp=0x{:08X} "
+                "stage={}/{}/{} load_stage={} state_switch={}",
+                mC->pc,
+                mC->r[31],
+                mC->r[29],
+                mC->mem_r32(kStageSelector),
+                mC->mem_r32(kStageSubstate),
+                mC->mem_r32(kStageSubSubstate),
+                mC->mem_r32(kLoadStage),
+                mC->mem_r32(kStateSwitch));
+  for (const auto &slot : mC->cfg->overlaySlots) {
+    if (slot.base == 0u) {
+      continue;
+    }
+    const char *resident = overlay_router_resident_name(mC, slot.base);
+    lucent::error("render",
+                  "  resident overlay slot 0x{:08X}: {}",
+                  slot.base,
+                  resident != nullptr ? resident : "(outside configured slot)");
+  }
   reportBacklog(sc);
   lucent::error("render",
                 "  no fallback is installed on purpose: a native branch that drew "
@@ -192,7 +219,9 @@ void SpyroRenderer::drawFrame() {
     referenceOtWalk();
     // Unreachable until the retained render-arm tails stop calling guest VSync. Once split, the
     // guest OT walk will have filled the capture and this fence will drain/present it exactly once.
-    temporal.frame_commit(mC, 1);
+    // The same two-field logic-frame quota as the native leg below — the reference leg reproduces
+    // the guest's cadence, not just its pixels.
+    temporal.frame_commit(mC, kFieldsPerLogicFrame);
     spyro1::acknowledgeTemporalCommit(*mC);
     if (pairedOracle && !spyro_paired_actor_oracle_finish(mC)) {
       abort();
@@ -259,9 +288,12 @@ void SpyroRenderer::drawFrame() {
   // single fence for both configs.
   nativeFrameEnd(mC, mEnv, true);
   // THE PER-LOGIC-FRAME FENCE. flush() CAPTURES into Fps60::mNCur in both configs and frame_commit
-  // (present_vk -> presentRotate -> mNCur = 0) is the ONLY drain. guestFields=1: one whole-field
-  // pace for the ordinary frame; present_vk inserts the extra lerped frame only when fps60 is
-  // active (extraFrame = active() && mHavePrev).
-  temporal.frame_commit(mC, 1);
+  // (present_vk -> presentRotate -> mNCur = 0) is the ONLY drain. guestFields=kFieldsPerLogicFrame
+  // (2): the logic frame spends TWO display fields (30 Hz logic, the guest's own measured tail);
+  // present_vk splits that quota across the extra lerped frame only when fps60 is active
+  // (extraFrame = active() && mHavePrev). One field per logic frame ran the game at twice its
+  // retail speed — boot fields paced per-field and were correct, which is exactly why the defect
+  // only showed once gameplay handed pacing to this fence.
+  temporal.frame_commit(mC, kFieldsPerLogicFrame);
   spyro1::acknowledgeTemporalCommit(*mC);
 }

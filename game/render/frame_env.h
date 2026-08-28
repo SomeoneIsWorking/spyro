@@ -4,6 +4,13 @@
 #include <cstdint>
 class Core;
 
+// Spyro 1's measured logic cadence: the guest's own frame tail (frame_env.cpp's RE of
+// FUN_8007cee4/FUN_8001ed5c) spends at least TWO display fields per drawn logic frame — 30 Hz
+// logic on the 60 Hz display. Whatever paces the logic frame must represent the same two fields:
+// pacing one field per logic frame runs the whole game at twice its retail speed (user-reported
+// 2026-08-28: run.sh "runs unbounded speed", measured 115 vblank fields/s = ~57 logic fps).
+inline constexpr int kFieldsPerLogicFrame = 2;
+
 // Flip the game's draw env (0x8001ED5C's own rule) and program the GPU from it: draw area, draw
 // offset, tpage, texture window, and the background fill when the env asks for one. Returns the env
 // now being drawn with — hand it back to nativeFrameEnd.

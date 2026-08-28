@@ -79,6 +79,11 @@ if(BUILD_TESTING)
   target_include_directories(test_paired_actor_decode PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
   target_compile_features(test_paired_actor_decode PRIVATE cxx_std_20)
   add_test(NAME paired_actor_decode COMMAND test_paired_actor_decode)
+  add_executable(test_field_player_actor
+    ${CMAKE_SOURCE_DIR}/tests/test_field_player_actor.cpp)
+  target_include_directories(test_field_player_actor PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_field_player_actor PRIVATE cxx_std_20)
+  add_test(NAME field_player_actor COMMAND test_field_player_actor)
   add_executable(test_paired_actor_temporal_evidence
     ${CMAKE_SOURCE_DIR}/tests/test_paired_actor_temporal_evidence.cpp
     ${CMAKE_SOURCE_DIR}/game/render/paired_actor_temporal_evidence.cpp
@@ -648,6 +653,7 @@ set(GAME_SRC
   game/render/field_particle_type2_submitter.cpp
   game/render/particle_sine_table.h
   game/render/fx_field_particles.cpp
+  game/render/fx_field_player_actor.cpp
   game/render/field_tracers_recipe.cpp
   game/render/fx_field_tracers.cpp
   game/render/field_shaded_queue_recipe.cpp

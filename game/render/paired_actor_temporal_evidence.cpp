@@ -6,6 +6,41 @@
 #include <cstdlib>
 #include <lucent/log.h>
 
+void spyro_paired_actor_log_frame_compatibility(const SpyroPairedFrame &a,
+                                                const SpyroPairedFrame &b,
+                                                bool compatible) {
+  static uint64_t scanned = 0, matched = 0;
+  ++scanned;
+  matched += compatible;
+  const bool identity = a.valid && b.valid && !a.culled && !b.culled && a.epoch == b.epoch;
+  const bool topology = a.topology == b.topology && a.layer_counts == b.layer_counts &&
+                        a.primitives.size() == b.primitives.size();
+  const bool materials = a.materials == b.materials && a.override_control == b.override_control;
+  const bool projection = a.transform.ofx == b.transform.ofx &&
+                          a.transform.ofy == b.transform.ofy && a.transform.h == b.transform.h;
+  const bool ordering = a.transform.depth_origin == b.transform.depth_origin &&
+                        a.transform.ot_shift == b.transform.ot_shift;
+  const bool gpu = a.gpu.da_x0 - a.gpu.off_x == b.gpu.da_x0 - b.gpu.off_x &&
+                   a.gpu.da_y0 - a.gpu.off_y == b.gpu.da_y0 - b.gpu.off_y &&
+                   a.gpu.da_x1 - a.gpu.off_x == b.gpu.da_x1 - b.gpu.off_x &&
+                   a.gpu.da_y1 - a.gpu.off_y == b.gpu.da_y1 - b.gpu.off_y &&
+                   a.gpu.tw_mx == b.gpu.tw_mx && a.gpu.tw_my == b.gpu.tw_my &&
+                   a.gpu.tw_ox == b.gpu.tw_ox && a.gpu.tw_oy == b.gpu.tw_oy;
+  lucent::debug("pairedactor",
+                "temporal recipe census: scanned={} matched={} identity={} topology={} "
+                "materials={} projection={} ordering={} gpu={} prev_faces={} cur_faces={}",
+                scanned,
+                matched,
+                identity,
+                topology,
+                materials,
+                projection,
+                ordering,
+                gpu,
+                a.primitives.size(),
+                b.primitives.size());
+}
+
 bool spyro_paired_temporal_proven(const SpyroPairedTemporalEvidence &evidence) {
   return evidence.eligible_intervals > 0 && evidence.midpoint_calls > 0 &&
          evidence.midpoint_calls == evidence.endpoint_calls &&

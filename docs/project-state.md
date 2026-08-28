@@ -17,10 +17,10 @@ in `docs/re-frontier.md`.
 ## Current focus
 
 S005 is the current focus: held digital input reaches the source-backed movement target and moves Spyro
-after the field handoff. The controlled native route now continues through the wired stage-0 producers,
-including the visible near portal and type-2 particle family, for 1,820 reconciled logic frames with
-zero dropped layers. Player-visible actor coverage, visual parity, independent oracle comparison, and
-broader producer coverage remain open.
+after the field handoff. The controlled native route now renders the visible three-layer Spyro model
+through FIELD's `0x80023AC4` owner and continues through the wired stage-0 producers, including the
+visible near portal and type-2 particle family, for 1,821 reconciled logic frames with zero dropped
+layers. Visual parity, independent oracle comparison, and broader actor-producer coverage remain open.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
@@ -30,10 +30,10 @@ its missing-scene refusal, but C228 is falsified as proof of the complete New Ga
 that run was manually ended before handoff to gameplay. The false recompiler entry that later crashed
 the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
-the completed-gem text branch), regular actors, environment, cyclorama, type-0/type-2 particles, fade,
-border, and tracers. The compiled secondary-actor, shaded-queue, and Spyro-player owners are not yet
-called by FIELD. The complete game remains partial because those actor arms, other scene arms, and live
-producer variants are still unowned.
+the completed-gem text branch), regular actors, the visible normal Spyro model arm, environment,
+cyclorama, type-0/type-2 particles, fade, border, and tracers. The compiled secondary-actor and
+shaded-queue owners, Spyro's shadow/effect arms, other scene arms, and live producer variants remain
+unowned, so the complete game remains partial.
 The environment layer's `active_animation` refusal is resolved: RenderWorldChunks' phase-1 per-sector
 animation is owned natively (`game/render/world_animation.cpp`) and proven byte-exact against the
 retained body on the exact frame that was refusing (C229, instrument I057, issue 0089). The

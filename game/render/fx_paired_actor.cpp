@@ -13,6 +13,7 @@
 #include "proj_params.h"
 #include "proj_vtx.h"
 #include "render_queue.h"
+#include "scene_painter_order.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -1647,10 +1648,10 @@ static uint64_t topology_fingerprint(const std::array<uint32_t, 3> &counts,
 static bool frames_compatible(const SpyroPairedFrame &a, const SpyroPairedFrame &b) {
   return a.valid && b.valid && !a.culled && !b.culled && a.topology == b.topology &&
          a.epoch == b.epoch && a.layer_counts == b.layer_counts &&
-         a.primitives.size() == b.primitives.size() && a.materials == b.materials &&
-         a.override_control == b.override_control && a.transform.ofx == b.transform.ofx &&
-         a.transform.ofy == b.transform.ofy && a.transform.h == b.transform.h &&
-         a.transform.depth_origin == b.transform.depth_origin &&
+         a.authored_replay == b.authored_replay && a.primitives.size() == b.primitives.size() &&
+         a.materials == b.materials && a.override_control == b.override_control &&
+         a.transform.ofx == b.transform.ofx && a.transform.ofy == b.transform.ofy &&
+         a.transform.h == b.transform.h && a.transform.depth_origin == b.transform.depth_origin &&
          a.transform.ot_shift == b.transform.ot_shift &&
          a.gpu.da_x0 - a.gpu.off_x == b.gpu.da_x0 - b.gpu.off_x &&
          a.gpu.da_y0 - a.gpu.off_y == b.gpu.da_y0 - b.gpu.off_y &&
@@ -1676,40 +1677,6 @@ static bool frames_compatible(const SpyroPairedFrame &a, const SpyroPairedFrame 
                       }
                       return true;
                     });
-}
-
-static void
-log_frame_compatibility(const SpyroPairedFrame &a, const SpyroPairedFrame &b, bool compatible) {
-  static uint64_t scanned = 0, matched = 0;
-  ++scanned;
-  matched += compatible;
-  const bool identity = a.valid && b.valid && !a.culled && !b.culled && a.epoch == b.epoch;
-  const bool topology = a.topology == b.topology && a.layer_counts == b.layer_counts &&
-                        a.primitives.size() == b.primitives.size();
-  const bool materials = a.materials == b.materials && a.override_control == b.override_control;
-  const bool projection = a.transform.ofx == b.transform.ofx &&
-                          a.transform.ofy == b.transform.ofy && a.transform.h == b.transform.h;
-  const bool ordering = a.transform.depth_origin == b.transform.depth_origin &&
-                        a.transform.ot_shift == b.transform.ot_shift;
-  const bool gpu = a.gpu.da_x0 - a.gpu.off_x == b.gpu.da_x0 - b.gpu.off_x &&
-                   a.gpu.da_y0 - a.gpu.off_y == b.gpu.da_y0 - b.gpu.off_y &&
-                   a.gpu.da_x1 - a.gpu.off_x == b.gpu.da_x1 - b.gpu.off_x &&
-                   a.gpu.da_y1 - a.gpu.off_y == b.gpu.da_y1 - b.gpu.off_y &&
-                   a.gpu.tw_mx == b.gpu.tw_mx && a.gpu.tw_my == b.gpu.tw_my &&
-                   a.gpu.tw_ox == b.gpu.tw_ox && a.gpu.tw_oy == b.gpu.tw_oy;
-  lucent::debug("pairedactor",
-                "temporal recipe census: scanned={} matched={} identity={} topology={} "
-                "materials={} projection={} ordering={} gpu={} prev_faces={} cur_faces={}",
-                scanned,
-                matched,
-                identity,
-                topology,
-                materials,
-                projection,
-                ordering,
-                gpu,
-                a.primitives.size(),
-                b.primitives.size());
 }
 
 static bool rebuild_recipe_eligible(const SpyroPairedFrame &frame, bool duplicate) {
@@ -1769,7 +1736,8 @@ static SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
   }
   ProducerScope producer(&c->rsub.producerScope, kProducerKey, "pairedactor:normal");
   RenderQueue::PainterObjectScope painter(rq, kProducerKey);
-  for (const auto &face : faces) {
+  for (uint32_t faceOrdinal = 0; faceOrdinal < faces.size(); ++faceOrdinal) {
+    const auto &face = faces[faceOrdinal];
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xsf[4]{}, ysf[4]{};
     unsigned char rs[4]{}, gs[4]{}, bs[4]{};
@@ -1823,7 +1791,12 @@ static SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
                    (tpage >> 5) & 3u,
                    nullptr,
                    -1,
-                   0.0f);
+                   0.0f,
+                   0,
+                   0,
+                   frame.authored_replay
+                       ? spyro::scene_painter_order::pairedActor((uint16_t)face.ot_bin, faceOrdinal)
+                       : PainterReplayOrder{});
   }
   return SpyroPairedRebuildResult::Emitted;
 }
@@ -1999,12 +1972,18 @@ static SpyroPairedRebuildResult emit_interpolated(
                    (tpage >> 5) & 3,
                    nullptr,
                    -1,
-                   0.0f);
+                   0.0f,
+                   0,
+                   0,
+                   cur.authored_replay
+                       ? spyro::scene_painter_order::pairedActor((uint16_t)face.ot_bin,
+                                                                 (uint32_t)(&face - faces.data()))
+                       : PainterReplayOrder{});
   }
   return SpyroPairedRebuildResult::Emitted;
 }
 
-static bool submit_native(Core *c, SpyroPairedActorFrameState &state) {
+static bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredReplay) {
   if (++state.invocations != 1) {
     return refuse_shipping(state, "second invocation in one drawn frame");
   }
@@ -2144,6 +2123,7 @@ static bool submit_native(Core *c, SpyroPairedActorFrameState &state) {
   captured.valid = true;
   captured.epoch = state.stage2_epoch;
   captured.layer_counts = decoded;
+  captured.authored_replay = authoredReplay;
   captured.transform = transform;
   captured.primitives = primitives.primitives;
   captured.materials = base;
@@ -2159,7 +2139,8 @@ static bool submit_native(Core *c, SpyroPairedActorFrameState &state) {
   if (faces.faces.empty()) {
     state.current = std::move(captured);
     state.endpoints_compatible = frames_compatible(state.previous, state.current);
-    log_frame_compatibility(state.previous, state.current, state.endpoints_compatible);
+    spyro_paired_actor_log_frame_compatibility(
+        state.previous, state.current, state.endpoints_compatible);
     lucent::debug("pairedactor",
                   "native joined zero-output invocation: candidates={} faces=0 vertices={}",
                   state.candidates,
@@ -2213,7 +2194,8 @@ static bool submit_native(Core *c, SpyroPairedActorFrameState &state) {
   }
   state.current = std::move(captured);
   state.endpoints_compatible = frames_compatible(state.previous, state.current);
-  log_frame_compatibility(state.previous, state.current, state.endpoints_compatible);
+  spyro_paired_actor_log_frame_compatibility(
+      state.previous, state.current, state.endpoints_compatible);
   uint32_t grouped = 0;
   for (int i = 0; i < rq.n; ++i) {
     if (rq.items[i].painter_object == 0x80023AC4u) {
@@ -2283,7 +2265,11 @@ bool spyro_paired_actor_decode_pose(Core *c) {
 }
 
 bool spyro_paired_actor_submit(Core *c, SpyroPairedActorFrameState &state) {
-  return submit_native(c, state);
+  return submit_native(c, state, false);
+}
+
+bool spyro_paired_actor_submit_field(Core *c, SpyroPairedActorFrameState &state) {
+  return submit_native(c, state, true);
 }
 
 SpyroPairedRebuildResult

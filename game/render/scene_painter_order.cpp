@@ -8,10 +8,11 @@ constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 
 enum class LinkPhase : uint32_t {
   Cyclorama = 0,
-  SecondaryActor = 1,
-  Actor = 2,
-  QueuedWorld = 3,
-  World = 4
+  PairedActor = 1,
+  SecondaryActor = 2,
+  Actor = 3,
+  QueuedWorld = 4,
+  World = 5
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -56,6 +57,16 @@ PainterReplayOrder secondaryActor(uint16_t otBin, uint32_t recordOrdinal, uint32
   return {
       kActorWorldTerrainDomain,
       {otBin, linkOrdinal(LinkPhase::SecondaryActor, kOrdinalMask - recordOrdinal), chainOrdinal}};
+}
+
+PainterReplayOrder pairedActor(uint16_t otBin, uint32_t faceOrdinal) {
+  if (faceOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // ComposeFrameScene emits Spyro after regular and secondary actors. Keep
+  // that position in the shared authored replay domain so FIELD can combine
+  // the model with the other world producers in one queue.
+  return {kActorWorldTerrainDomain, {otBin, linkOrdinal(LinkPhase::PairedActor, 0u), faceOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

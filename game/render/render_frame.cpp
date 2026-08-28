@@ -14,6 +14,7 @@
 #include "fx_field_cyclorama.h"
 #include "fx_field_environment.h"
 #include "fx_field_particles.h"
+#include "fx_field_player_actor.h"
 #include "fx_field_tracers.h"
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
@@ -42,8 +43,9 @@ constexpr uint32_t kStateSwitch = 0x8007579Cu;
 constexpr uint32_t kLoadStage = 0x80075864u;
 
 bool pairedActorScene(Core *core, const Scene &scene) {
-  return scene.stage == kStageFrontEnd && core->mem_r32(0x80078D78u) == 3u &&
-         core->mem_r32(0x80078D7Cu) == 2u;
+  const bool frontend = scene.stage == kStageFrontEnd && core->mem_r32(0x80078D78u) == 3u &&
+                        core->mem_r32(0x80078D7Cu) == 2u;
+  return frontend || (scene.stage == kStageField && spyro_field_player_visible(core));
 }
 } // namespace
 
@@ -140,6 +142,9 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     }
     if (!spyro_actor_submit(mC)) {
       abortUnimplemented(sc, "actor producer 0x80019698 refused its atomic recipe");
+    }
+    if (!spyro_field_player_submit(mC, spyro_paired_actor_state(mC))) {
+      abortUnimplemented(sc, "Spyro actor producer 0x80023AC4 refused its atomic recipe");
     }
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");

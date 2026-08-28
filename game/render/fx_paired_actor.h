@@ -32,6 +32,7 @@ struct SpyroPairedFrame {
   uint64_t epoch = 0;
   uint64_t topology = 0;
   std::array<uint32_t, 3> layer_counts{};
+  bool authored_replay = false;
   SpyroPairedActorTransform transform{};
   std::vector<std::array<int32_t, 3>> pose;
   std::vector<spyro::paired_actor::Primitive> primitives;
@@ -64,6 +65,10 @@ bool spyro_paired_actor_build_transform(Core *c, SpyroPairedActorTransform &out)
 // Production normal opaque/textured arm of guest renderer 0x80023AC4.
 bool spyro_paired_actor_decode_pose(Core *c);
 bool spyro_paired_actor_submit(Core *c, SpyroPairedActorFrameState &state);
+void spyro_paired_actor_log_frame_compatibility(const SpyroPairedFrame &previous,
+                                                const SpyroPairedFrame &current,
+                                                bool compatible);
+bool spyro_paired_actor_submit_field(Core *c, SpyroPairedActorFrameState &state);
 enum class SpyroPairedRebuildResult : uint8_t { Refused, NoOutput, Emitted };
 SpyroPairedRebuildResult
 spyro_paired_actor_rebuild_endpoint(Core *c, RenderQueue &target, const SpyroPairedFrame &frame);

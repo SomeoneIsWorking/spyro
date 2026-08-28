@@ -245,6 +245,14 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap: BOOT COMPLETE, BROADER STEP PARTIAL. Boot uses a fresh edge to advance only its exact 0xD2 presentation clock. Title/attract keeps its legitimate guest transition. Stage mode 14 is now classified as recorded/demo playback and ALREADY handles Start/Cross in guest `0x800331AC` by accelerating its cursor toward the natural completion writer `0x8002D440`; adding a native transition would duplicate it. The level-transition owner now consumes a fresh Start edge to hide the tally at the exact guest boundary 417 while preserving CD loading and guest transition state; it does not skip portal traversal. Observed stage13/sub3 phases are required streaming/I/O, not a presentation hold, and remain unmodified. NEXT: find an independently timed post-load overlay or another scripted-sequence family, then trace its natural completion writer. Never pulse Start across modes 0/2 gameplay, where it means UI/pause.
 - notes: `skipmap` has a negative denominator every 600 fields and reports every edge/state transition uncapped. Boot classification uses the dynamic lifetime of `0x800127C0`, not a frame threshold.
 
+### input.controllable-gameplay — Hold digital input and move Spyro in a live field
+- status: re-partial
+- deps: input.pad, frame.native-loop
+- evidence: Issue 0089; real SCUS_942.28; Clang product, PSXPORT_GAMEPLAY_PROBE=1, controlled idle-vs-Left replay. The live pad reached g_ActivePad with m_Held=0x8000 and m_Down=0x8000; the native owner produced target speed 0x400/rotation 0x800, and the same 3400-step route ended at (0x14C1B,0x0B602,0x25C3) versus idle (0x14C00,0x0B845,0x2554). Normal native field rendering still refuses at the unowned stage-0 cyclorama boundary.
+- where: game/core/native_gameplay.{h,cpp}; titles/spyro1/core/spyro1_runtime.cpp; titles/spyro1/core/spyro1_frame_driver.cpp; tests/test_native_gameplay.cpp
+- gap: The diagnosed digital hold path is now owned and moves the live player state in the render-independent probe. Faithful oracle comparison and ordinary player-visible movement remain pending until the normal stage-0 renderer runs without its separate cyclorama refusal.
+- notes: The native override super-calls gen_func_8003D3B8, preserves analog/release behavior, and only corrects the source-defined digital target selection from m_Held. PSXPORT_GAMEPLAY_PROBE is diagnostic-only and presents the previous frame while retaining real logic, collision, input, and field delivery. Portal traversal is intentionally untouched.
+
 ## gpu
 
 ### gpu.ot-crash — Port aborts at frame 3781 — runaway OT linked-list DMA

@@ -492,6 +492,12 @@ if(BUILD_TESTING)
   target_compile_features(test_spyro1_transition_skip PRIVATE cxx_std_20)
   target_link_libraries(test_spyro1_transition_skip PRIVATE psxport)
   add_test(NAME spyro1_transition_skip COMMAND test_spyro1_transition_skip)
+  add_executable(test_native_gameplay
+    ${CMAKE_SOURCE_DIR}/tests/test_native_gameplay.cpp)
+  target_include_directories(test_native_gameplay PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_native_gameplay PRIVATE cxx_std_20)
+  add_test(NAME native_gameplay COMMAND test_native_gameplay)
   add_test(
     NAME computed_jumps_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
@@ -655,6 +661,7 @@ set(GAME_SRC
   game/core/native_text_sprites.cpp
   game/core/native_memcard_event_stack.cpp
   game/core/native_memcard_operations.cpp
+  game/core/native_gameplay.cpp
   game/core/native_render.cpp
   game/core/wide_clip.cpp
   game/core/native_terrain.cpp

@@ -32,9 +32,10 @@ struct Recipe {
   std::vector<Point> points;
 };
 
-// Decode the reached type-0 emit-list arm. The list pointers and 0x20-byte record stride are the
-// guest's own state; no guessed particle count or fixed world position is accepted here. Other
-// particle types refuse as one atomic scene layer until their retained ASM has been ported.
+// Decode the reached type-0 emit-list arm. The guest renderer scans the 256-slot array from its
+// base to the first type -1 terminator; g_ParticleAllocPtr is a recyclable allocation cursor, not
+// the list end. Type -2 slots are free holes. Other particle types refuse as one atomic scene layer
+// until their retained ASM has been ported.
 Recipe derive(const world_chunk_codec::RamView &ram);
 const char *statusName(Status status);
 

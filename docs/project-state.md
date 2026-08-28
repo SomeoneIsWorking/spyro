@@ -12,10 +12,16 @@ in `docs/re-frontier.md`.
 | S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | verified | S001 | — |
 | S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | partial | S002, S004 | — |
 | S006 | Spyro 2 has an identity-derived resident substrate and a title-local native boot owner through the pre-display boundary | partial | — | — |
+| S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | partial | S004 | — |
 
 ## Current focus
 
-S005 is the current focus: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
+S007 is the current focus: held digital input now reaches the source-backed movement target and moves
+Spyro in a render-independent live-field probe. The normal native path still stops at the separate
+stage-0 cyclorama refusal, so player-visible gameplay and oracle comparison remain open. Portal
+traversal work is deferred until that boundary is cleared.
+
+S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
 cyclorama producers plus its measured clear-colour, culling-distance, and fade responsibilities.
 The stage-14 owner was observed presenting at 16:9 under the same host-owned frame loop, resolving

@@ -10,7 +10,6 @@
 namespace {
 
 constexpr uint32_t kBase = 0x80010000u;
-constexpr uint32_t kCursor = kBase + 0x40u;
 
 void put32(std::array<uint8_t, 0x200000> &ram, uint32_t address, uint32_t value) {
   std::memcpy(ram.data() + (address - 0x80000000u), &value, sizeof(value));
@@ -26,13 +25,14 @@ void require(bool condition, const char *what) {
 void testTypeZeroDecode() {
   std::array<uint8_t, 0x200000> bytes{};
   put32(bytes, 0x80075824u, kBase);
-  put32(bytes, 0x80075738u, kCursor);
+  put32(bytes, 0x80075738u, kBase + 0x1FE0u);
   put32(bytes, kBase + 4u, 0x00160000u);
   put32(bytes, kBase + 8u, 0x00020002u);
   put32(bytes, kBase + 0xcu, 0x030affffu);
   put32(bytes, kBase + 0x20u + 4u, 0xfffe0000u);
   put32(bytes, kBase + 0x20u + 8u, 0x00000002u);
   put32(bytes, kBase + 0x20u + 0xcu, 0x00112233u);
+  bytes[kBase - 0x80000000u + 0x40u + 1u] = 0xffu;
 
   const auto recipe = spyro::field_particles_recipe::derive(
       spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
@@ -53,6 +53,24 @@ void testTypeZeroDecode() {
   require(recipe.points[1].b == 0x11u, "second blue");
 }
 
+void testCursorIsNotListEnd() {
+  std::array<uint8_t, 0x200000> bytes{};
+  put32(bytes, 0x80075824u, kBase);
+  put32(bytes, 0x80075738u, kBase + 0x20u);
+  bytes[kBase - 0x80000000u + 1u] = 0xfeu;
+  put32(bytes, kBase + 0x20u + 4u, 0x00010000u);
+  put32(bytes, kBase + 0x20u + 8u, 0x00020002u);
+  put32(bytes, kBase + 0x20u + 0xcu, 0x00030201u);
+  bytes[kBase - 0x80000000u + 0x40u + 1u] = 0xffu;
+
+  const auto recipe = spyro::field_particles_recipe::derive(
+      spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
+  require(recipe.status == spyro::field_particles_recipe::Status::Ready,
+          "cursor-independent status");
+  require(recipe.records == 2u, "cursor-independent record count");
+  require(recipe.points.size() == 1u, "free hole skipped");
+}
+
 void testUnsupportedTypeRefusal() {
   std::array<uint8_t, 0x200000> bytes{};
   put32(bytes, 0x80075824u, kBase);
@@ -70,6 +88,7 @@ void testUnsupportedTypeRefusal() {
 
 int main() {
   testTypeZeroDecode();
+  testCursorIsNotListEnd();
   testUnsupportedTypeRefusal();
   std::cout << "field_particles_recipe: PASS (type-0 decode + atomic unsupported-type refusal)\n";
   return 0;

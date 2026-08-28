@@ -313,6 +313,39 @@ non-silent and duration-correct but reports XA ring-full back-pressure because t
 draining CD audio. Issue #89 stays open until controllable gameplay and these fidelity boundaries
 are verified.
 
+## Control milestone: digital movement is now live
+
+The collision false-fragment fix and the particle-array ownership fix moved the route far enough to
+test control instead of another portal or renderer hypothesis. The guest pad path is live: after the
+New Game handoff, `g_ActivePad` contains the guest's active-high Left bit (`m_Held=0x8000`). The
+recompiled `func_8003D3B8` nevertheless reads `m_Released`, which is zero during a held input, so its
+digital target speed remains zero. That is the actual control defect; the pad transport itself is
+not missing.
+
+`game/core/native_gameplay.cpp` installs a runtime override for `0x8003D3B8`. It super-calls the
+generated body, preserves its analog and release-edge branches, and supplies the source-defined
+digital target from `m_Held`, the guest direction table at `0x8006C5D0`, and camera rotation. The
+focused test passes. A real Clang product comparison over the same 3400-step route, using the
+diagnostic-only `PSXPORT_GAMEPLAY_PROBE=1` field path, produced:
+
+```text
+idle: 0x80078A58 = 00014C00 0000B845 00002554
+Left: 0x80078A58 = 00014C1B 0000B602 000025C3
+```
+
+The Left run also exposed the corrected nonzero target (`speed=0x400`, `rotation=0x800`) and the
+pad/target state was inspected at the live gameplay boundary. The probe suppresses only the
+incomplete picture producer while retaining the real input, logic, collision, and host field
+scheduler; the normal native product path is unchanged.
+
+## Current acceptance boundary
+
+Controllable player state is unlocked in the live field probe, but issue 0089 remains open. The
+ordinary native path still refuses at stage 0 because the cyclorama/sky producer has no complete
+stage-0 submission contract. That renderer gap is separate from the control fix. Portal traversal
+and visible portal-mask ownership are intentionally deferred until normal player-visible gameplay
+is running.
+
 ### Tooling closed this session
 
 The render-refusal fatal wrote no RAM dump, so every unowned stage-0 layer had to be re-driven live

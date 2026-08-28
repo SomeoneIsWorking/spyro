@@ -1,5 +1,6 @@
 #include "spyro1_frame_driver.h"
 
+#include "cfg.h"
 #include "core.h"
 #include "game.h"
 #include "guest_call.h"
@@ -86,9 +87,15 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
   state.setFrameStep(std::clamp(state.elapsedFields(), kFrameStepMin, kFrameStepMax));
   const bool suppressed = state.renderSuppressed();
   state.restartFieldCount();
-  if (!suppressed) {
+  // Gameplay probes intentionally keep the logic/field path alive while the native picture is still
+  // missing a stage-0 producer. This does not alter the product default: it presents the previous
+  // guest VRAM frame, preserves the one-field contract, and makes control-state measurements
+  // independent of the rendering backlog.
+  const bool gameplayProbe = cfg_on("PSXPORT_GAMEPLAY_PROBE") != 0;
+  if (!suppressed && !gameplayProbe) {
     renderer_->drawFrame();
-  } else if (!deliverNativeField(core, "render-suppressed", false)) {
+  } else if (!deliverNativeField(
+                 core, gameplayProbe ? "gameplay-probe" : "render-suppressed", false)) {
     lucent::error("frameloop",
                   "render-suppressed product step could not deliver its visible field");
     std::abort();

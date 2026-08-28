@@ -7,7 +7,6 @@ namespace spyro::field_particles_recipe {
 namespace {
 
 constexpr uint32_t kParticlePointer = 0x80075824u;
-constexpr uint32_t kParticleCursor = 0x80075738u;
 constexpr uint32_t kRecordSize = 0x20u;
 constexpr uint32_t kRecordCapacity = 256u;
 
@@ -22,27 +21,32 @@ Recipe refuse(Recipe out, Status status, const char *why) {
 
 Recipe derive(const world_chunk_codec::RamView &ram) {
   Recipe out{};
-  if (!ram.contains(kParticlePointer, 4u) || !ram.contains(kParticleCursor, 4u)) {
+  if (!ram.contains(kParticlePointer, 4u)) {
     return refuse(std::move(out), Status::InvalidPointers, "pointer_globals");
   }
   const uint32_t base = ram.r32(kParticlePointer);
-  const uint32_t cursor = ram.r32(kParticleCursor);
-  if (!ram.contains(base, 0u) || !ram.contains(cursor, 0u) || cursor < base ||
-      (cursor - base) % kRecordSize != 0u) {
+  // The guest renderer does not use g_ParticleAllocPtr as a list end. The allocator moves that
+  // cursor through reusable slots and may wrap it; func_800573C8 instead scans from g_Particles
+  // until the first type -1 terminator (skipping type -2 free slots). The extra four bytes cover
+  // the sentinel written at g_Particles[256] during level initialization.
+  if (!ram.contains(base, kRecordCapacity * kRecordSize + 4u)) {
     return refuse(std::move(out), Status::InvalidPointers, "list_bounds");
   }
-  out.records = (cursor - base) / kRecordSize;
-  if (out.records > kRecordCapacity || !ram.contains(base, out.records * kRecordSize)) {
-    return refuse(std::move(out), Status::InvalidPointers, "record_capacity");
-  }
-  out.points.reserve(out.records);
-  for (uint32_t i = 0; i < out.records; ++i) {
+  out.points.reserve(kRecordCapacity);
+  for (uint32_t i = 0; i <= kRecordCapacity; ++i) {
     const uint32_t address = base + i * kRecordSize;
-    const uint8_t type = ram.r8(address + 1u);
-    if (type == 0xffu) {
+    const int8_t type = static_cast<int8_t>(ram.r8(address + 1u));
+    if (type == -1) {
+      break;
+    }
+    if (i == kRecordCapacity) {
+      return refuse(std::move(out), Status::InvalidPointers, "missing_terminator");
+    }
+    ++out.records;
+    if (type == -2) {
       continue;
     }
-    if (type != 0u) {
+    if (type != 0) {
       return refuse(std::move(out), Status::UnsupportedType, "particle_type");
     }
     const uint32_t xy = ram.r32(address + 4u);

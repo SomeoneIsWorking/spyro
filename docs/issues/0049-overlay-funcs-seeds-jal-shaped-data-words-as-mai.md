@@ -1,11 +1,11 @@
 ---
 id: 49
-title: overlay_funcs() seeds jal-shaped DATA words as MAIN function entries — 44 of 223 spyro seeds are not function entries, one is a nop in a j's delay slot
-status: open
+title: overlay_funcs() seeds jal-shaped DATA words as MAIN function entries — 36 of 215 current candidates were not function entries
+status: resolved
 symptom: an emitted 'function' starts mid-body (gen_func_80023384 begins at a delay-slot nop); a guest function is split into two C functions and its prologue store is invisible to its epilogue load
 tags: recomp,psxport,partition,debt,measured
 created: 2026-08-06
-updated: 2026-08-06
+updated: 2026-08-28
 ---
 
 ## Root cause
@@ -38,7 +38,20 @@ runtime, i.e. the same fatality in the other direction. docs/issues/0040 already
 partition repairs on this game move sites in BOTH directions, which is the signature of a rule that
 is not converging on the truth.
 
-## What a fix would have to show
+## Resolution
 
-The 44 rejects re-classified by hand or by a second proof, and a full gate run proving no new
-`recomp-MISS`. Do not land it on the count alone.
+`overlay_funcs()` now requires every overlay-derived MAIN target to pass `is_func_entry()` before
+it can seed a new resident function. The module-wide data scan remains available as a graph edge for
+reaching-constant analysis; it no longer splits an existing MAIN body merely because a data word
+decodes as `jal`.
+
+On the current Spyro overlay set the old rule produced 215 unique candidates, of which 36 failed
+`is_func_entry()`. The exact collision false entry `0x8004C3FC` came from
+`OV_20F800.BIN + 0x109c4` word `0x0C0130FF`; it is an `mtc2` in the middle of the
+`0x8004BE4C` collision body, not a function entry. After the filter, the regenerated substrate has
+one `gen_func_8004BE4C` containing the `0x8004D030` selector case, and no `gen_func_8004C3FC`.
+
+The framework emitter suite passes 64/64, the synthetic data-word regression passes, and the exact
+Clang Spyro product reaches the stage-0 branch without the former `0x8004D030` dispatch miss. The
+live New Game route then reaches the separate native-render cyclorama refusal; issue 0089 tracks that
+remaining scene boundary.

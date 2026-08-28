@@ -204,6 +204,47 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
   previousBootActive_ = bootActive;
 }
 
+void FieldScheduler::serviceIntroSkip(bool startEdge) {
+  // USER 2026-08-28: "make it so start button can skip these". The intro attract card ("IN THE
+  // WORLD OF DRAGONS...") and the THE ADVENTURE BEGINS... hold are the SAME guest predicate:
+  // g_TitlescreenState.m_Tick (0x80078D78+8, the struct the skipmap above already reads at +0/+4)
+  // reaching 384. The attract card auto-starts the intro cutscene at tick >= 384 once
+  // g_LoadStage (0x80075864, the skipmap's boot_phase) reaches 7 (external/spyro-1
+  // src/gamestates/update.c GamestateCutsceneTransition), and the post-card hold ends the same
+  // way: issue 0089 measured [0x80078D80] counted to 384, then 0x80033158 fires and stage 13
+  // becomes stage 0. Retail has NO Start handler in this state machine at all — the replay of the
+  // user's own pad_session showed Start ignored at fields 372/466/546 and 1137/1165 — so the port
+  // does not invent a transition: a fresh Start edge lifts the tick to the exact threshold the
+  // guest already tests, and the guest's own path does the rest (loads still gate it). The intro
+  // cutscene that follows carries the guest's own Start/Cross clamp
+  // (update.c GamestateCutsceneUpdate) and needs no port help.
+  if (!startEdge) {
+    return;
+  }
+  Core &core = game_.core;
+  constexpr std::uint32_t kGamestate = 0x800757D8u;   // g_Gamestate (serviceSkipMap's kStage)
+  constexpr std::uint32_t kTitlescreen = 0x80078D78u; // +0 m_Mode, +4 m_State, +8 m_Tick
+  constexpr std::int32_t kCardTicks = 384;
+  if (core.mem_r32(kGamestate) != 13u) {
+    return;
+  }
+  const std::uint32_t mode = core.mem_r32(kTitlescreen);
+  const std::uint32_t state = core.mem_r32(kTitlescreen + 4u);
+  const std::uint32_t tickAddr = kTitlescreen + 8u;
+  const std::int32_t tick = static_cast<std::int32_t>(core.mem_r32(tickAddr));
+  // TSM_Demo (3) + TSS_Active (2): the attract card and the post-card hold both live here.
+  if (mode != 3u || state != 2u || tick < 0 || tick >= kCardTicks) {
+    return;
+  }
+  core.mem_w32(tickAddr, static_cast<std::uint32_t>(kCardTicks));
+  static const lucent::Channel channel{"skips"};
+  lucent::info(channel,
+               "Start skipped the intro card: g_TitlescreenState.m_Tick {} -> {} (the guest's own "
+               ">=384 predicate takes over)",
+               tick,
+               kCardTicks);
+}
+
 void FieldScheduler::serviceInspection() {
   Core &core = game_.core;
   snapshot_tick(&core);
@@ -290,6 +331,7 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   }
   cadence_.delivered();
   serviceSkipMap(startEdge);
+  serviceIntroSkip(startEdge);
   serviceInspection();
 
   if (request.present) {

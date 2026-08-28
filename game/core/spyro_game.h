@@ -62,6 +62,10 @@ void spyro_register_native_text_sprites();
 // native_memcard_event_stack.cpp — owns libmcrd's 0x80068F44 event-stack push. Its printf child
 // is already owned; the retained generated parent is its per-call oracle.
 void spyro_register_native_memcard_event_stack();
+
+// native_memcard_operations.cpp — owns the reached libmcrd request starters 0x8006635C and
+// 0x800665B8; both retain their generated bodies as NDIFF oracles.
+void spyro_register_native_memcard_operations();
 // native_terrain.cpp — BRING-UP, installs nothing unless PSXPORT_NATIVE_TERRAIN=1: a full native
 // body for the terrain renderer 0x8004EBA8, under per-call differential verification (issue 0037).
 void spyro_register_native_terrain();

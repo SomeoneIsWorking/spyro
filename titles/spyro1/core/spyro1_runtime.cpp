@@ -79,6 +79,7 @@ void Spyro1Runtime::registerOverrides(Game &) {
     spyro_register_native_spu_hardware_init();
     spyro_register_native_text_sprites();
     spyro_register_native_memcard_event_stack();
+    spyro_register_native_memcard_operations();
     spyro_register_native_terrain();
     spyro_register_native_world();
     spyro_register_wide_clip();

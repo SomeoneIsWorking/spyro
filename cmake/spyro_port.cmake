@@ -619,6 +619,7 @@ set(GAME_SRC
   game/core/native_spu_hardware_init.cpp
   game/core/native_text_sprites.cpp
   game/core/native_memcard_event_stack.cpp
+  game/core/native_memcard_operations.cpp
   game/core/native_render.cpp
   game/core/wide_clip.cpp
   game/core/native_terrain.cpp

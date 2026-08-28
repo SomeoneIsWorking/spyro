@@ -13,6 +13,7 @@
 // The generated MAIN-module override setter, declared with the exact signature the recompiler
 // emits.
 extern void shard_set_override(uint32_t, void (*)(Core *)); // generated/shard_disp.c
+extern RecOverrideFn shard_get_override(uint32_t);          // generated/shard_disp.c
 
 static const RecompRegistry g_spyro_recomp = {
     /* main_dispatch        */ main_dispatch,
@@ -31,6 +32,7 @@ static const RecompRegistry g_spyro_recomp = {
     // The guest-memset gen body is a Tomba address (gen_func_8009A420) used as a fast path. Spyro's
     // equivalent has not been RE'd, so leave it null and let the guest's own memset run recompiled.
     /* guestMemset_gen      */ nullptr,
+    /* shard_get_override   */ shard_get_override,
 };
 
 void spyro_install_recomp() {

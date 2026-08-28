@@ -1,4 +1,5 @@
 #include "memcard_event_stack.h"
+#include "memcard_operations.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +16,18 @@ void require(bool condition, const char *what) {
 } // namespace
 
 int main() {
+  constexpr spyro::MemcardOperationPlan exist =
+      spyro::memcardOperationPlan(spyro::MemcardOperation::Exist);
+  require(static_cast<uint32_t>(exist.operation) == 1u &&
+              exist.callback == spyro::kMemcardExistCallback,
+          "MemCardExist setup facts changed");
+
+  constexpr spyro::MemcardOperationPlan accept =
+      spyro::memcardOperationPlan(spyro::MemcardOperation::Accept);
+  require(static_cast<uint32_t>(accept.operation) == 2u &&
+              accept.callback == spyro::kMemcardAcceptCallback,
+          "MemCardAccept setup facts changed");
+
   constexpr spyro::MemcardEventPushPlan first = spyro::memcardEventPushPlan(0xFFFFFFFFu);
   require(first.index == 0u && first.hasCapacity, "reset index did not select the first entry");
   require(first.stateBase == 0x80075C08u && first.handlerSlot == 0x80075C48u,

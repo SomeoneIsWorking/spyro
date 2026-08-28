@@ -434,3 +434,25 @@ gap, not a reason to alter movement or pursue portal traversal.
 The render-refusal fatal wrote no RAM dump, so every unowned stage-0 layer had to be re-driven live
 to be looked at once. It now calls `snapshot_now` unconditionally on that path — the same reasoning
 as the recomp-MISS dump — which is how this session's corpus was captured at all.
+
+## Retained shadow consumer capture (2026-08-29)
+
+The first FIELD frame of the source-backed gate route was run with the diagnostic-only
+`PSXPORT_SHADOW_ORACLE=1` capture. It snapshots RAM, scratchpad, GTE, and CPU state, dispatches the
+retained Moby-shadow consumer `0x80059F8C` and Spyro-shadow consumer `0x80059A48`, then restores that
+state before the native FIELD picture continues. The retained consumers were not used as a shipping
+fallback and the native renderer produced no shadow from this probe.
+
+The measured packet ranges were:
+
+```text
+[shadoworacle] call 1 moby: packet range 0x80187BB0->0x80187BB0, packets=0 gate=0x00000000 shadow_cursor=0x800724F4
+[shadoworacle] call 1 spyro: packet range 0x80187BB0->0x80187E30, packets=16 gate=0x00000000 shadow_cursor=0x800724F4
+```
+
+The first Spyro packet words retained the source format: `E1000640` draw-mode setup,
+`0x32608080` flat Gouraud colour, and `0x06000000` G3 commands in 0x28-byte packet slots. The
+probe run later reached the existing explicit pause-menu native-render refusal, so its exit code is
+not evidence about shadow capture; the packet ranges were recorded before that unrelated refusal.
+This narrows the next faithful owner to Spyro-shadow packet geometry and queue submission. A guessed
+ellipse or a portal workaround would not be source-grounded.

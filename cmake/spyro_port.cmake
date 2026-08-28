@@ -657,6 +657,7 @@ set(GAME_SRC
   game/render/fx_field_player_actor.cpp
   game/render/field_tracers_recipe.cpp
   game/render/fx_field_tracers.cpp
+  game/render/shadow_oracle.cpp
   game/render/field_shaded_queue_recipe.cpp
   game/render/field_shaded_queue_scene.cpp
   game/render/field_shaded_queue_submitter.cpp

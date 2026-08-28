@@ -29,6 +29,7 @@
 #include "presentation_owner.h"
 #include "render.h"
 #include "screen_fade_recipe.h"
+#include "shadow_oracle.h"
 #include "snapshot.h" // snapshot_now — a refusal fatal must leave the corpus its fix needs
 #include "spyro1_field_scheduler.h"
 #include "spyro_game.h"
@@ -180,6 +181,7 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     if (!spyro_field_tracers_submit(mC)) {
       abortUnimplemented(sc, "tracers producer 0x800189F0 refused its atomic recipe");
     }
+    spyro_shadow_oracle_capture(mC);
     return;
   }
   if (sc.stage != kStageFrontEnd && sc.stage != kStageCutscene) {

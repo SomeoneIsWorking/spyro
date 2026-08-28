@@ -256,7 +256,9 @@ static const GameConfig g_spyro_config = {
     // than
     // left to trailing zero-init, because a zero here is a CLAIM about Spyro and should be visible
     // as
-    // one. RE'd so far: cdDataSync, cdInitHandshake, and the two libgte projection setters below.
+    // one. RE'd so far: cdDataSync, cdInitHandshake, DrawSync, and the two libgte projection
+    // setters
+    // below.
     //
     // Consequence, stated plainly: an un-RE'd entry installs nothing, so the guest spins in the
     // REAL
@@ -397,6 +399,7 @@ static const GameConfig g_spyro_config = {
             // overlays.
             .setGeomOffset = 0x80062618u,
             .setGeomScreen = 0x80062638u,
+            .drawSync = 0x8005F764u,
             .vsyncTrap = 0x8005DBC4u,
         },
 

@@ -75,11 +75,10 @@ void test_disarmed_and_negative_counts_are_empty() {
   CHECK_EQ(recipe.spriteCount, 0u);
 }
 
-void test_unowned_text_and_impossible_counts_refuse_atomically() {
+void test_completed_text_and_impossible_counts_are_classified_atomically() {
   State completed{};
   completed.gemDisplay = 4;
-  CHECK(spyro::field_collectables_recipe::derive(completed).status ==
-        Status::CompletedGemTextUnowned);
+  CHECK(spyro::field_collectables_recipe::derive(completed).status == Status::CompletedGemText);
   State overflow{};
   overflow.lifeDisplay = 1;
   overflow.lifeOrbCount = 21;
@@ -93,6 +92,6 @@ int main() {
   RUN(life_orb_and_egg_ft4_recipes);
   RUN(life_phase_uses_floor_of_fractional_step);
   RUN(disarmed_and_negative_counts_are_empty);
-  RUN(unowned_text_and_impossible_counts_refuse_atomically);
+  RUN(completed_text_and_impossible_counts_are_classified_atomically);
   return pt_summary();
 }

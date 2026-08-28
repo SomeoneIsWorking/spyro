@@ -8,6 +8,7 @@
 #include "game.h"
 #include "platform_hle.h"
 #include "producer_run.h" // the graphics-producer DB's lifecycle — this port owns it (issue #58)
+#include "sbs.h"          // class Sbs — the PSXPORT_SBS live-two-core divergence debugger
 #include "spyro_game.h"
 #include "title_runtime_registry.h"
 #include "title_selection.h"
@@ -122,6 +123,13 @@ int main(int argc, char **argv) {
     if (*which) {
       return selftest_run(path);
     }
+  }
+
+  // PSXPORT_SBS: LIVE side-by-side two-core divergence debugger (sbs.cpp). It owns its own Game
+  // instances, so the primary machine above is deliberately not registered or driven on this path.
+  if (cfg_on("PSXPORT_SBS") || cfg_str("PSXPORT_SBS_MODE")) {
+    Sbs::run(path);
+    return 0;
   }
 
   // THE PRODUCER DB'S `begin`, and it must be HERE before the first native boot field. The

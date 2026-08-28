@@ -13,7 +13,10 @@
 #include "fx_field_collectables.h"
 #include "fx_field_cyclorama.h"
 #include "fx_field_environment.h"
+#include "fx_field_particles.h"
+#include "fx_field_tracers.h"
 #include "fx_paired_actor.h"
+#include "fx_screen_border.h"
 #include "fx_screen_fade.h"
 #include "fx_world_draw.h"
 #include "game.h"       // Game::rq — the render queue the native producers emit into
@@ -116,14 +119,20 @@ void SpyroRenderer::prepareScene(const Scene &sc) const {
 // cyclorama clear colour; collectables unless a flight level (0x80019300, g_IsFlightLevel
 // 0x80075690); the moby chains (0x80019698); the environment and world chunks (0x8002B9CC ->
 // 0x800258F0); the cyclorama wrapper (0x80050BD0); particles (0x800573C8); the screen fade; the
-// screen border (0x80018F30); tracers (0x800189F0). Particles and tracers have no complete native
-// owner yet, so the branch refuses at the first one it reaches — the crash the user hits when the
-// first level starts IS that refusal, and it moves down this list as each layer lands.
+// screen border (0x80018F30); tracers (0x800189F0). Each layer now has an atomic native recipe; a
+// refusal remains fail-fast at the first incomplete input rather than silently dropping it.
 void SpyroRenderer::renderScene(const Scene &sc) const {
+  const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
+  const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
+  const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
   if (sc.stage == kStageField) {
     const auto background = spyro::cutscene_scene_recipe::read(mC);
     spyro::cutscene_scene_recipe::prepareFrame(mC, background);
     constexpr uint32_t kIsFlightLevel = 0x80075690u;
+    // Retail clears g_SonyImage.m_ShadedMobys immediately before func_80019300. The native actor
+    // producer does not consume that guest pointer list, so reproduce the lifecycle boundary here
+    // instead of letting a prior screen's stale entries consume the field HUD capacity.
+    mC->mem_w32(0x800720F4u, 0u);
     if (mC->mem_r32(kIsFlightLevel) == 0u) {
       if (!spyro_field_collectables_submit(mC)) {
         abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
@@ -138,19 +147,26 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     if (!spyro_field_cyclorama_submit(mC)) {
       abortUnimplemented(sc, "cyclorama producer 0x80050BD0 refused its atomic recipe");
     }
-    abortUnimplemented(
-        sc,
-        "particles producer 0x800573C8 has no native owner (843-instruction asm renderer, "
-        "asm/renderers/r_particles.s); screen fade, border and tracers follow it in the draw "
-        "order");
+    if (!spyro_field_particles_submit(mC)) {
+      abortUnimplemented(sc, "particles producer 0x800573C8 refused its atomic type-0 recipe");
+    }
+    const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+    const auto fade =
+        spyro::screen_fade_recipe::field(mC->mem_r32(0x80075918u), ofsX, ofsY, renderWidth);
+    if (!spyro_screen_fade_submit(mC, fade)) {
+      abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
+    }
+    if (!spyro_screen_border_submit(mC, ofsX, ofsY, renderWidth)) {
+      abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+    }
+    if (!spyro_field_tracers_submit(mC)) {
+      abortUnimplemented(sc, "tracers producer 0x800189F0 refused its atomic recipe");
+    }
     return;
   }
   if (sc.stage != kStageFrontEnd && sc.stage != kStageCutscene) {
     abortUnimplemented(sc, "no producer is registered for this stage");
   }
-  const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
-  const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
-  const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
   if (sc.stage == kStageFrontEnd) {
     const uint32_t titleMode = mC->mem_r32(0x80078D78u);
     if (!spyro::stage13_scene_recipe::hasSharedBackdrop(titleMode)) {

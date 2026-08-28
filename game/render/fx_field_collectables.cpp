@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <lucent/log.h>
+#include <string>
 
 namespace {
 
@@ -24,6 +25,9 @@ constexpr uint32_t kShadedMobyQueue = 0x800720f4u;
 constexpr uint32_t kShadedMobyCapacity = 256u;
 constexpr uint32_t kSpecularTime = 0x800770f4u;
 constexpr uint32_t kCosine = 0x8006cc78u;
+constexpr uint32_t kHudMobyCursor = 0x80075710u;
+constexpr uint32_t kMobySize = 0x58u;
+constexpr uint32_t kMaxCompletedTextCount = 15u; // source text buffer is char text[16]
 
 State readState(Core *core) {
   State state{};
@@ -58,15 +62,34 @@ State readState(Core *core) {
   return state;
 }
 
+std::string completedGemText(Core *core) {
+  const int32_t gemCount = (int32_t)core->mem_r32(kHud + 0x20u);
+  return std::to_string(gemCount) + "/" + std::to_string(gemCount);
+}
+
+bool validMobyCursor(uint32_t cursor, uint32_t count) {
+  constexpr uint32_t kRamBegin = 0x80010000u;
+  constexpr uint32_t kRamEnd = 0x80200000u;
+  const uint64_t bytes = (uint64_t)count * kMobySize;
+  return cursor >= kRamBegin && cursor < kRamEnd && bytes <= cursor - kRamBegin;
+}
+
 bool preflight(Core *core, const Recipe &recipe, uint32_t &queueEnd) {
-  if (recipe.status != Status::Ready) {
+  if (recipe.status != Status::Ready && recipe.status != Status::CompletedGemText) {
     return false;
   }
   queueEnd = 0;
   while (queueEnd < kShadedMobyCapacity && core->mem_r32(kShadedMobyQueue + queueEnd * 4u)) {
     ++queueEnd;
   }
-  if (recipe.shadedCount >= kShadedMobyCapacity - queueEnd) {
+  const uint32_t completedText =
+      recipe.status == Status::CompletedGemText ? (uint32_t)completedGemText(core).size() : 0u;
+  if (recipe.shadedCount + completedText >= kShadedMobyCapacity - queueEnd) {
+    return false;
+  }
+  if (recipe.status == Status::CompletedGemText &&
+      (completedText == 0u || completedText > kMaxCompletedTextCount ||
+       !validMobyCursor(core->mem_r32(kHudMobyCursor), completedText))) {
     return false;
   }
   const RenderQueue &queue = core->game->rq;
@@ -81,6 +104,33 @@ bool preflight(Core *core, const Recipe &recipe, uint32_t &queueEnd) {
     }
   }
   return true;
+}
+
+void appendCompletedGemText(Core *core, uint32_t &queueEnd) {
+  const std::string text = completedGemText(core);
+  uint32_t cursor = core->mem_r32(kHudMobyCursor);
+  for (const char ch : text) {
+    cursor -= kMobySize;
+    for (uint32_t offset = 0; offset < kMobySize; offset += 4u) {
+      core->mem_w32(cursor + offset, 0u);
+    }
+    core->mem_w32(cursor + 0x0cu, 90u);
+    core->mem_w32(cursor + 0x10u, 36u);
+    core->mem_w32(cursor + 0x14u, 2880u);
+    uint32_t mobyClass = 327u; // func_80017FE4's fallback period class
+    if (ch >= '0' && ch <= '9') {
+      mobyClass = 260u + (uint32_t)(ch - '0');
+    } else if (ch == '/') {
+      mobyClass = 277u;
+    }
+    core->mem_w16(cursor + 0x36u, (uint16_t)mobyClass);
+    core->mem_w8(cursor + 0x47u, 0x7Fu);
+    core->mem_w8(cursor + 0x4Fu, 11u);
+    core->mem_w8(cursor + 0x50u, 0xFFu);
+    core->mem_w32(0x80075710u, cursor);
+    core->mem_w32(0x800720F4u + queueEnd * 4u, cursor);
+    ++queueEnd;
+  }
 }
 
 void emitSprite(Core *core, const spyro::field_collectables_recipe::Sprite &sprite) {
@@ -140,7 +190,11 @@ bool spyro_field_collectables_submit(Core *core) {
   for (uint32_t i = 0; i < recipe.shadedCount; ++i) {
     core->mem_w32(kShadedMobyQueue + (queueEnd + i) * 4u, recipe.shadedMobys[i]);
   }
-  core->mem_w32(kShadedMobyQueue + (queueEnd + recipe.shadedCount) * 4u, 0u);
+  queueEnd += recipe.shadedCount;
+  if (recipe.status == Status::CompletedGemText) {
+    appendCompletedGemText(core, queueEnd);
+  }
+  core->mem_w32(kShadedMobyQueue + queueEnd * 4u, 0u);
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "fieldhud:collectables");
   for (uint32_t i = 0; i < recipe.spriteCount; ++i) {
     emitSprite(core, recipe.sprites[i]);

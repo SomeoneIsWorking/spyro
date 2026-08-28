@@ -22,13 +22,16 @@ The stage-14 owner was observed presenting at 16:9 under the same host-owned fra
 its missing-scene refusal, but C228 is falsified as proof of the complete New Game transition because
 that run was manually ended before handoff to gameplay. The false recompiler entry that later crashed
 the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
-FIELD has source-owned scene sequencing, Moby-list, collectables, and secondary-actor units, but the
-complete scene remains deliberately unwired; that and the remaining scene arms keep S005 partial.
+FIELD now has a wired stage-0 composition for the reached Artisans frame: collectables (including the
+completed-gem text branch), regular and secondary actors, environment, cyclorama, type-0 particles,
+fade, border, and tracers. The complete game remains partial because other scene arms and live
+producer variants are still unowned.
 The environment layer's `active_animation` refusal is resolved: RenderWorldChunks' phase-1 per-sector
 animation is owned natively (`game/render/world_animation.cpp`) and proven byte-exact against the
-retained body on the exact frame that was refusing (C229, instrument I057, issue 0089). The FIELD
-environment now passes on the shipping New Game route with 86 sectors and 746 faces, and the stage-0
-refusal has advanced one layer to particles `0x800573C8`, then tracers `0x800189F0`. The animation's
+retained body on the exact frame that was refusing (C229, instrument I057, issue 0089). The
+post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.log` then ran through
+the recorded user input and 10,000 presented fields with rc=0, 5,057 reconciled frames, zero dropped layers, and no native
+render refusal. That is a route-continuity result, not visual or full-oracle parity. The animation's
 BLENDED (GTE-interpolated) form is covered hermetically only; no live frame has exercised it yet.
 
 ## Capability details
@@ -122,7 +125,7 @@ world, and cyclorama producers derive clip/projection/draw extents from the live
 lineage base explicitly declares GTE/no-native/no-temporal, so the non-runnable Spyro 2/3 substrates
 cannot inherit Spyro 1's capability claims merely because they share the engine repository.
 
-State remains partial because native FIELD and the other scene arms remain unowned; temporal
+State remains partial because other scene arms and live producer variants remain unowned; temporal
 eligibility is limited to the compatible paired-actor path. The post-migration live configuration is
 verified: the 800-field product run enabled the temporal presenter and announced
 `aspect=1`, `wide_engine=1`, `native_width=512`, `render_width=684`. Its present-600 capture is a real
@@ -148,10 +151,10 @@ early cutscene frames. The operator ended it through the REPL before transition 
 therefore falsified as whole-route evidence and cannot prove gameplay after the card; it remains only
 an observation of the reached early stage-14 picture. A later exact run exposed the collision crash
 recorded in issue 0089; after its recompiler root fix, the route reaches stage 0 and truthfully refuses
-the still-incomplete FIELD scene. The latest source-owned field unit is the separate `0x80022A2C`
+the previously incomplete FIELD scene. The latest source-owned field unit is the separate `0x80022A2C`
 world/shaded queue: its stage-0 snapshot preserves 93 total records, 52 valid meshes / 936 source
 primitives, and 3 visible records / 54 candidates, with both observed mesh and lighting-table classes;
-the recipe resolves 23 Gouraud faces but remains deliberately unwired. The regular actor owner is
+the recipe resolves 23 Gouraud faces and is now called by the stage-0 seam. The regular actor owner is
 also Ready on that snapshot after issue 0094's Plain descriptor-pair correction: 175 Mobys scanned,
 14 records, 423 candidates, 211 rejects, and 212 faces. Its following secondary actor owner is Ready
 with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces. The next authored
@@ -167,8 +170,13 @@ records but every projected aperture has zero screen-crossing edges, so all five
 the cyclorama recipe is Ready for that frame. A production-compiled read-only `0x80050240` recipe
 decodes the real portal-2 asset under a positive aperture for future visible frames, while any actual
 visible portal still refuses until issue 0093's mask/near-family/painter submission contract is
-owned. These incomplete scene responsibilities are the current acceptance boundary keeping S005
-partial.
+owned. The current replay reaches this complete stage-0 composition without a native-render refusal;
+the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
+variants. A normal paced audio run (`scratch/logs/spyro-boot-paced-after-spu-20260828.log`) produces
+20.02 seconds of non-silent stereo 44.1 kHz WAV for 1,200 VBlanks, but also reports XA ring-full
+back-pressure because the SPU pull is not draining CD audio. SBS oracle boot remains limited evidence:
+the 120-field run exits cleanly but retains five stack-only differing bytes and leaves one owned
+address unreached.
 
 ### S006 — Spyro 2 resident boot substrate
 

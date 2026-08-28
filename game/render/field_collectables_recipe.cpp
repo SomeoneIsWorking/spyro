@@ -17,7 +17,7 @@ Recipe derive(const State &state) {
   Recipe recipe{};
   if (!state.flightLevel) {
     if (state.gemDisplay == 4u) {
-      recipe.status = Status::CompletedGemTextUnowned;
+      recipe.status = Status::CompletedGemText;
       return recipe;
     }
     if (state.gemDisplay != 0u) {

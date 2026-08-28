@@ -298,12 +298,20 @@ forms). A real frame with a nonzero keyframe blend factor has not yet been compa
 
 ### Current boundary
 
-The shipping New Game route now renders the FIELD environment natively — `[fieldenv] PASS
-selection=5 distance=0x28000 sectors=86 low=23 high=31 candidates=1564 rejected=1016 faces=746` —
-and the stage-0 refusal has advanced one layer, to particles `0x800573C8` (an 843-instruction
-hand-written assembly renderer that calls nothing), with tracers `0x800189F0` behind it. The fade
-and border producers after those are already owned and wait only on the layers ahead. Issue #89
-stays open until the route reaches coherent controllable gameplay.
+The stage-0 seam now composes the reached Artisans FIELD layers in authored order: collectables,
+regular and secondary actors, world/shaded queue, environment, cyclorama, type-0 particles, fade,
+border, and tracers. The post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.log`
+ran through the recorded interaction and continued to the 10,000-present cap with rc=0, 5,057
+reconciled frames, zero dropped layers, and no native-render refusal; its producer DB records
+18,951 type-0 particle lines. This proves route continuity,
+not that the image matches the disc or that every FIELD variant is owned.
+
+The remaining acceptance boundary is now visual/oracle comparison and the unowned variants: actor
+shadows, nonzero world primitive variants, visible cyclorama portals, blended world animation,
+non-type-0 particles, tracer variants, and the retained guest-renderer tail. A paced audio run is
+non-silent and duration-correct but reports XA ring-full back-pressure because the SPU pull is not
+draining CD audio. Issue #89 stays open until controllable gameplay and these fidelity boundaries
+are verified.
 
 ### Tooling closed this session
 

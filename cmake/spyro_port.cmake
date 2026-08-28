@@ -208,6 +208,20 @@ if(BUILD_TESTING)
   target_compile_features(test_field_collectables_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_field_collectables_recipe PRIVATE psxport)
   add_test(NAME field_collectables_recipe COMMAND test_field_collectables_recipe)
+  add_executable(test_field_particles_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_particles_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_particles_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp)
+  target_include_directories(test_field_particles_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_field_particles_recipe PRIVATE cxx_std_20)
+  add_test(NAME field_particles_recipe COMMAND test_field_particles_recipe)
+  add_executable(test_field_tracers_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_tracers_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_tracers_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp)
+  target_include_directories(test_field_tracers_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_field_tracers_recipe PRIVATE cxx_std_20)
+  add_test(NAME field_tracers_recipe COMMAND test_field_tracers_recipe)
   add_executable(test_field_shaded_queue_recipe
     ${CMAKE_SOURCE_DIR}/tests/test_field_shaded_queue_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/field_shaded_queue_recipe.cpp)
@@ -576,6 +590,10 @@ set(GAME_SRC
   game/render/field_moby_lists.cpp
   game/render/field_collectables_recipe.cpp
   game/render/fx_field_collectables.cpp
+  game/render/field_particles_recipe.cpp
+  game/render/fx_field_particles.cpp
+  game/render/field_tracers_recipe.cpp
+  game/render/fx_field_tracers.cpp
   game/render/field_shaded_queue_recipe.cpp
   game/render/field_shaded_queue_scene.cpp
   game/render/field_shaded_queue_submitter.cpp

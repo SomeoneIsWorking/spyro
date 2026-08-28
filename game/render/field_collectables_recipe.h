@@ -8,7 +8,7 @@ namespace spyro::field_collectables_recipe {
 constexpr uint32_t kMaxShadedMobys = 12u;
 constexpr uint32_t kMaxSprites = 32u;
 
-enum class Status : uint8_t { Ready, CompletedGemTextUnowned, InvalidCount };
+enum class Status : uint8_t { Ready, CompletedGemText, InvalidCount };
 
 struct Rect {
   int16_t x = 0;
@@ -57,9 +57,8 @@ struct Recipe {
   uint32_t spriteCount = 0;
 };
 
-// Exact non-text branches of retail FIELD collectables producer 0x80019300.
-// Gem-display state 4 also constructs formatted text mobys; that branch stays
-// an atomic refusal until its no-cap text state owner is connected.
+// Exact state branches of retail FIELD collectables producer 0x80019300. Gem-display state 4
+// carries a separate title-owned text-Moby generation step in fx_field_collectables.cpp.
 Recipe derive(const State &state);
 
 } // namespace spyro::field_collectables_recipe

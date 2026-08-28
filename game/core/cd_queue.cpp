@@ -20,7 +20,8 @@
 #include "core.h"
 #include "game.h"
 #include "overlay_router.h" // overlay_note_load — give the arena slot a load-time identity
-#include "rec_decls.h"      // generated: gen_func_8002BBE0 — the body we super-call
+#include "override_registry.h"
+#include "rec_decls.h" // generated: gen_func_8002BBE0 — the body we super-call
 #include "recomp_iface.h"
 #include "spyro1_field_scheduler.h"
 #include "spyro_game.h"
@@ -485,8 +486,23 @@ void spyro_register_cd_queue() {
   psxport_recomp()->shard_set_override(0x8005BB78u, probe_8005BB78);
   psxport_recomp()->shard_set_override(0x8005DB84u, probe_8005DB84);
   psxport_recomp()->shard_set_override(0x8005CBB0u, probe_8005CBB0);
-  psxport_recomp()->shard_set_override(0x80016500u, cd_loader);
-  psxport_recomp()->shard_set_override(0x80016698u, cd_stream_read);
+  // The interpreter oracle does not execute generated wrappers, so raw shard overrides would be
+  // invisible on core B. These two measured archive-read boundaries are synchronous disc I/O HLE:
+  // they copy the requested sectors and publish the guest loader state, without approximating game
+  // logic. Registering the same owner as both native and oracle keeps the oracle's hardware/data
+  // boundary explicit while retaining the generated bodies for standalone NDIFF/research.
+  overrides::install(0x80016500u,
+                     "Spyro::WadLoader",
+                     cd_loader,
+                     cd_loader,
+                     psxport_recomp()->shard_set_override,
+                     true);
+  overrides::install(0x80016698u,
+                     "Spyro::WadStreamRead",
+                     cd_stream_read,
+                     cd_stream_read,
+                     psxport_recomp()->shard_set_override,
+                     true);
   psxport_recomp()->shard_set_override(0x8001250Cu, lp_8001250C);
   psxport_recomp()->shard_set_override(0x80012480u, lp_80012480);
   psxport_recomp()->shard_set_override(0x800127C0u, lp_800127C0);

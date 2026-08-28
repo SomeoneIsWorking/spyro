@@ -170,10 +170,11 @@ corrected medium-quad texture rule still needs issue 0077's retained-world oracl
 `0x80050BD0` cyclorama owner now covers the exact main-sky class with inactive or projected-empty
 portals and atomically reuses owned `0x8004EBA8`. The Artisans snapshot has five logically active
 records but every projected aperture has zero screen-crossing edges, so all five are valid-empty and
-the cyclorama recipe is Ready for that frame. A production-compiled read-only `0x80050240` recipe
-decodes the real portal-2 asset under a positive aperture for future visible frames, while any actual
-visible portal still refuses until issue 0093's mask/near-family/painter submission contract is
-owned. The current replay reaches this complete stage-0 composition without a native-render refusal;
+the cyclorama recipe is Ready for that frame. Gate-0 teleport reaches a visible aperture whose
+near-family recipe produces 94 clipped triangles, but the runtime still refuses until issue 0093's
+`0x8004FEA0` mask and queue/painter submission contract are owned. A production-compiled read-only
+`0x80050240` recipe decodes the real portal-2 asset under a positive aperture for future visible
+frames. The current replay reaches this complete stage-0 composition without a native-render refusal;
 the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
 variants. A normal paced audio run after the shared CDC filter fix (`scratch/logs/spyro-xa-after-filter-20260828.log`)
 produces 20.02 seconds of non-silent stereo 44.1 kHz WAV for 1,200 VBlanks, with 239 selected XA

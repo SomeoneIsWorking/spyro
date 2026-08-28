@@ -21,7 +21,7 @@ constexpr uint32_t kSpyro = 0x80078a58u;
 
 constexpr uint32_t kPortalPathMoby = 0x18u;
 constexpr uint32_t kPortalLevelId = 0x1cu;
-constexpr uint32_t kPortalCenter = 0x20u;
+constexpr uint32_t kPortalFirstPoint = 0x20u;
 constexpr uint32_t kMobyStride = 0x58u;
 constexpr uint32_t kMobyProps = 0x00u;
 constexpr uint32_t kPathData = 0x00u;
@@ -54,7 +54,7 @@ Position readPosition(Core &core, uint32_t address) {
 }
 
 bool readGatePath(Core &core, uint32_t portal, GateInfo &out) {
-  if (!validPointer(portal) || !validAddress(portal + kPortalCenter, 12u)) {
+  if (!validPointer(portal) || !validAddress(portal + kPortalFirstPoint, 12u)) {
     return false;
   }
   const int32_t pathMoby = static_cast<int32_t>(core.mem_r32(portal + kPortalPathMoby));
@@ -85,7 +85,7 @@ bool readGatePath(Core &core, uint32_t portal, GateInfo &out) {
   out.portalAddress = portal;
   out.pathMoby = pathMoby;
   out.levelId = static_cast<int32_t>(core.mem_r32(portal + kPortalLevelId));
-  out.center = readPosition(core, portal + kPortalCenter);
+  out.firstPoint = readPosition(core, portal + kPortalFirstPoint);
   out.nodeCount = nodeCount;
   for (uint32_t i = 0; i < nodeCount; ++i) {
     out.nodes[i] = readPosition(core, path + kPathNodes + i * kPathNodeStride);
@@ -182,13 +182,13 @@ bool replCommand(Core *core, const char *command, const char *line) {
       continue;
     }
     lucent::info("spyro-gate",
-                 "gate={} targetLevel={} pathMoby={} center=({}, {}, {}) nodes={}",
+                 "gate={} targetLevel={} pathMoby={} firstPoint=({}, {}, {}) nodes={}",
                  i,
                  gate.levelId,
                  gate.pathMoby,
-                 gate.center.x,
-                 gate.center.y,
-                 gate.center.z,
+                 gate.firstPoint.x,
+                 gate.firstPoint.y,
+                 gate.firstPoint.z,
                  gate.nodeCount);
     for (uint32_t node = 0; node < gate.nodeCount; ++node) {
       lucent::info("spyro-gate",

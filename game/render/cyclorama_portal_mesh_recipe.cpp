@@ -27,7 +27,6 @@ using world_chunk_codec::RamView;
 constexpr uint32_t kPortalAsset = 0x00u;
 constexpr uint32_t kPortalPointCount = 0x04u;
 constexpr uint32_t kPortalNormal = 0x08u;
-constexpr uint32_t kPortalCenter = 0x20u;
 constexpr uint32_t kPortalPoints = 0x20u;
 constexpr uint32_t kNearDistanceEnd = 0x3000u;
 constexpr uint32_t kPortalDistanceEnd = 0x4000u;
@@ -299,9 +298,10 @@ PortalFrame prepareFrame(
   }
 
   const Point3 cameraPosition = point(ram, kCamera + 0x28u);
-  const Point3 center = point(ram, portal + kPortalCenter);
-  Point3 delta{
-      center.x - cameraPosition.x, center.y - cameraPosition.y, center.z - cameraPosition.z};
+  const Point3 firstPoint = point(ram, portal + kPortalPoints);
+  Point3 delta{firstPoint.x - cameraPosition.x,
+               firstPoint.y - cameraPosition.y,
+               firstPoint.z - cameraPosition.z};
   frame.distanceShift = distanceShift(delta);
   Point3 scaled{delta.x >> frame.distanceShift,
                 delta.y >> frame.distanceShift,
@@ -384,7 +384,11 @@ PortalFrame prepareFrame(
     return frame;
   }
   if (frame.distance <= kNearDistanceEnd) {
-    return refuse(std::move(frame), Status::NearFamilyUnsupported, "near_portal_family");
+    // The near renderer consumes the same aperture half-planes as the mid/far
+    // path. Preserve them so its native queue recipe can be built below.
+    frame.status = Status::NearFamilyUnsupported;
+    frame.refusal = "near_portal_family";
+    return frame;
   }
 
   frame.fadeFactor = frame.distance - kNearDistanceEnd;
@@ -411,7 +415,8 @@ Recipe build(Core *core, const PortalFrame &frame) {
     out.refusal = "none";
     return out;
   }
-  if (frame.status != Status::Ready || frame.edges.empty()) {
+  if ((frame.status != Status::Ready && frame.status != Status::NearFamilyUnsupported) ||
+      frame.edges.empty()) {
     return refuse(std::move(out), Status::InvalidClipRegion, "portal_frame");
   }
   const RamView ram(std::span<const uint8_t>(core->ram, sizeof(core->ram)));
@@ -465,9 +470,11 @@ Recipe build(Core *core, const PortalFrame &frame) {
         (int32_t)((frame.tintColor >> 16) & 0xffu) << 4,
     };
     for (uint32_t offset = 0; offset < colorBytes; offset += 4u) {
-      colors.push_back(actor_model_codec::depthCueRgb(
-                           ram.r32(colorBase + offset), far, (int16_t)frame.fadeFactor)
-                           .rgb);
+      const uint32_t source = ram.r32(colorBase + offset);
+      colors.push_back(
+          frame.status == Status::NearFamilyUnsupported
+              ? source
+              : actor_model_codec::depthCueRgb(source, far, (int16_t)frame.fadeFactor).rgb);
     }
     const uint32_t originXY = ram.r32(object + 8u);
     const int32_t originY = (int16_t)originXY;

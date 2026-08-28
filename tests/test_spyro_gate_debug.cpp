@@ -47,6 +47,8 @@ void testInspectionAndTeleport() {
   spyro::gate_debug::GateInfo gate;
   require(spyro::gate_debug::inspectGate(*core, 0u, gate), "valid gate inspection");
   require(gate.levelId == 14 && gate.pathMoby == 40 && gate.nodeCount == 2u, "gate metadata");
+  require(gate.firstPoint.x == 100 && gate.firstPoint.y == 200 && gate.firstPoint.z == 300,
+          "portal first-point decode");
   require(gate.nodes[1].x == -1000 && gate.nodes[1].z == -1200, "path node decode");
   require(spyro::gate_debug::teleportToGate(*core, 0u, 1u), "teleport accepted in field");
   require(static_cast<int32_t>(core->mem_r32(0x80078a58u)) == -1000, "position x");

@@ -17,7 +17,7 @@ struct GateInfo {
   uint32_t portalAddress = 0;
   int32_t pathMoby = -1;
   int32_t levelId = -1;
-  Position center;
+  Position firstPoint;
   uint32_t nodeCount = 0;
   Position nodes[16]{};
 };

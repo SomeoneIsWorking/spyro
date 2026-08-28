@@ -66,6 +66,7 @@ void inspectSnapshotIfRequested() {
     nextPitch = 0x80;
   }
   PortalFrame frame{};
+  PortalFrame nearFrame{};
   for (uint32_t i = 0; i < 5u; ++i) {
     const uint32_t portal = h.core->mem_r32(0x80078640u + i * 4u);
     const PortalFrame observed =
@@ -93,12 +94,33 @@ void inspectSnapshotIfRequested() {
     if (i == 2u) {
       frame = observed;
     }
+    if (i == 0u) {
+      nearFrame = observed;
+    }
   }
   CHECK(frame.status == Status::ValidEmpty);
   CHECK_EQ(frame.portal, 0x800fb980u);
   CHECK_EQ(frame.asset, 0x800fb9dcu);
   CHECK_EQ(frame.pointCount, 5u);
   CHECK(!frame.maskVisible);
+
+  const Recipe nearRecipe = spyro::cyclorama_portal_mesh::build(h.core.get(), nearFrame);
+  std::printf("portal0 near mesh: status=%s objects=%u survivors=%u vertices=%u authored=%u "
+              "candidates=%u box_reject=%u aperture_reject=%u accepted=%u triangles=%u reason=%s\n",
+              spyro::cyclorama_portal_mesh::statusName(nearRecipe.status),
+              nearRecipe.assetObjects,
+              nearRecipe.survivingObjects,
+              nearRecipe.projectedVertices,
+              nearRecipe.authoredCandidates,
+              nearRecipe.candidates,
+              nearRecipe.boxRejected,
+              nearRecipe.apertureRejected,
+              nearRecipe.sourceAccepted,
+              nearRecipe.emittedTriangles,
+              nearRecipe.refusal);
+  CHECK(nearFrame.status == spyro::cyclorama_portal_mesh::Status::NearFamilyUnsupported);
+  CHECK(nearRecipe.status == Status::Ready);
+  CHECK(!nearRecipe.faces.empty());
 
   // This frame does not actually invoke 0x80050240. Keep the asset decoder
   // independently observable with a positive aperture; do not relabel the

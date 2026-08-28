@@ -70,6 +70,20 @@ retail exit predicate. The next bounded discriminator is the transition at count
 become 0 and the product must show coherent, controllable Artisans gameplay. Until that happens,
 issue #89 remains open even though the earlier collision fatal did not recur.
 
+## Regular shadow-list feeder is now staged (2026-08-29)
+
+The native regular actor owner now prepares the shadow side effect from the same source-backed
+`0x8001F158` culling pass that builds its actor records. It resets the staged cursor to the retail
+list start `0x800724F4`, derives the descriptor-relative model byte at `+0x2A + moby[0x3E]*8`,
+and commits the entries plus `0x80075F00` only after actor queue admission succeeds. A focused test
+proves that a prepared empty frame publishes the fixed list start and does not mutate guest state
+during preparation.
+
+The bounded real route built and presented 1,200 native frames with no refusal or fatal. Its live
+regular actor frames reported `shadows=0`, so this is feeder ownership and ordering evidence, not
+proof that the shadow renderer is visible. The Moby shadow packet consumer `0x80059F8C`, Spyro's
+shadow `0x80059A48`, and the flame/glow/sparkle arms remain separate unowned renderers.
+
 ## Counter-384 transition reproduces the collision fatal
 
 PID 3581368 reached `[0x80078D80]=384` with stage 13, then the next two-field step wrote stage 0 and

@@ -183,8 +183,11 @@ the recipe resolves 23 Gouraud faces and is now called by the stage-0 seam. The 
 also Ready on that snapshot after issue 0094's Plain descriptor-pair correction: 175 Mobys scanned,
 14 records, 423 candidates, 211 rejects, and 212 faces. Its following secondary actor owner is Ready
 with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces. The next authored
-actor-pass gap is Moby shadows: the retained list starts at `0x800724F4` and ends at the shared
-cursor `0x80075F00`; the native actor builders/renderers do not yet own the complete shadow result.
+actor-pass gap is Moby shadows: the regular native builder now stages the source-backed list entries
+from fixed start `0x800724F4` and commits the shared cursor at `0x80075F00` after actor admission,
+but the native actor builders/renderers do not yet own the complete shadow result. The retained Moby
+shadow consumer `0x80059F8C`, Spyro shadow `0x80059A48`, and flame/glow/sparkle effects remain
+unowned.
 The separate `0x8002B9CC`
 environment/world owner is also compiled but unwired: on the same snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

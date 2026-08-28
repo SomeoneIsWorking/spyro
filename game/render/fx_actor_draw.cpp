@@ -26,9 +26,10 @@ bool spyro_actor_submit(Core *c) {
   if (oracleStatus == spyro::actor_scene_oracle::Status::Refused) {
     return false;
   }
-  std::vector<spyro::actor_recipe_capture::Record> records;
-  spyro::actor_scene::Census census{};
-  const auto sceneStatus = spyro::actor_scene::build_records(c, records, census);
+  spyro::actor_scene::Frame sceneFrame{};
+  const auto sceneStatus = spyro::actor_scene::build_frame(c, sceneFrame);
+  auto &records = sceneFrame.records;
+  const auto &census = sceneFrame.census;
   if (sceneStatus != spyro::actor_scene::Status::Ready) {
     lucent::debug(
         "actordirect",
@@ -114,12 +115,14 @@ bool spyro_actor_submit(Core *c) {
   ProducerScope producer(&c->rsub.producerScope, kProducerKey, "actor:opaque");
   spyro::actor_face_submitter::submit(
       c, queue, kProducerKey, spyro::actor_face_submitter::Layer::Regular, recipe.faces, plan);
+  spyro::actor_scene::commit(c, sceneFrame);
   lucent::debug("actordirect",
-                "PASS records={} candidates={} rejected={} faces={} painters_before={}",
+                "PASS records={} candidates={} rejected={} faces={} shadows={} painters_before={}",
                 recipe.records,
                 recipe.candidates,
                 recipe.rejectedCandidates,
                 recipe.faces.size(),
+                sceneFrame.shadows.size(),
                 plan.admission.existingObjects);
   lucent::debug("actordirect",
                 "source scanned={} queued={} culled={}",

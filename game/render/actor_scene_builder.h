@@ -15,6 +15,7 @@ enum class Status : uint8_t {
   UnterminatedMobyArray,
   RecordCapacityExceeded,
   RecordCaptureRefused,
+  InvalidShadowCursor,
 };
 
 struct Census {
@@ -26,6 +27,18 @@ struct Census {
   uint32_t invalidModel = 0;
 };
 
+struct Shadow {
+  uint32_t moby = 0;
+  uint32_t modelByte = 0;
+};
+
+struct Frame {
+  std::vector<actor_recipe_capture::Record> records;
+  std::vector<Shadow> shadows;
+  Census census{};
+  uint32_t shadowCursor = 0;
+};
+
 // Shared semantic half of the two retail Moby builders. Both 0x8001F158 and
 // 0x800208FC transform the same Moby/model state into the same 0x38-byte
 // record shape; their source-list ownership is different. Keeping this one
@@ -34,6 +47,11 @@ bool build_source_record(Core *c,
                          uint32_t moby,
                          actor_recipe_capture::SourceRecord &source,
                          Census &census);
+
+// Builds the regular-actor records and the shadow-list entries produced by the same retail
+// culling pass. The frame is inert until commit succeeds in the owning submitter.
+Status build_frame(Core *c, Frame &frame);
+void commit(Core *c, const Frame &frame);
 
 // Builds the regular-actor semantic records directly from the level Moby array, camera, model
 // table, and animation state. It replaces 0x800521C0 + 0x8001F158 without running either guest body

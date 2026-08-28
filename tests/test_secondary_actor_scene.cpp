@@ -12,7 +12,9 @@
 namespace {
 
 constexpr uint32_t kSourceList = 0x80071ef4u;
+constexpr uint32_t kLevelMobys = 0x80075828u;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
+constexpr uint32_t kShadowListStart = 0x800724f4u;
 
 std::unique_ptr<Core> empty_core() {
   auto core = std::make_unique<Core>();
@@ -67,6 +69,24 @@ void test_regular_descriptor_material_arms_preserve_binary_pairs() {
   CHECK_EQ(negative.commandOffset, 28u);
   CHECK_EQ(negative.colorOffset, 32u);
   CHECK(negative.writesScratchColors);
+}
+
+void test_regular_frame_resets_shadow_cursor_at_retail_list_start() {
+  auto core = empty_core();
+  constexpr uint32_t moby = 0x80076000u;
+  core->mem_w32(kLevelMobys, moby);
+  core->mem_w32(moby + 0x48u, 0xffffffffu);
+  core->mem_w32(kShadowCursor, 0x80072500u);
+
+  spyro::actor_scene::Frame frame{};
+  CHECK(spyro::actor_scene::build_frame(core.get(), frame) == spyro::actor_scene::Status::Ready);
+  CHECK_EQ(frame.shadowCursor, kShadowListStart);
+  CHECK(frame.records.empty());
+  CHECK(frame.shadows.empty());
+  CHECK_EQ(core->mem_r32(kShadowCursor), 0x80072500u);
+
+  spyro::actor_scene::commit(core.get(), frame);
+  CHECK_EQ(core->mem_r32(kShadowCursor), kShadowListStart);
 }
 
 void inspect_snapshot_if_requested() {
@@ -173,6 +193,7 @@ int main() {
   RUN(empty_list_is_a_complete_atomic_frame);
   RUN(invalid_source_refuses_without_side_effects);
   RUN(regular_descriptor_material_arms_preserve_binary_pairs);
+  RUN(regular_frame_resets_shadow_cursor_at_retail_list_start);
   inspect_snapshot_if_requested();
   return pt_summary();
 }

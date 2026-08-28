@@ -6,6 +6,7 @@
 #include "game_iface.h"
 #include "legacy_game_interface.h"
 #include "spyro_game.h"
+#include "spyro_gate_debug.h"
 #include <cstring>
 #include <lucent/log.h>
 
@@ -107,6 +108,7 @@ static int spyro_selftestGame(const char *which, const char *) {
 // made that old defect visible. Unlisted hooks are value-initialised to null, so this is also the
 // exact inventory of framework callbacks Spyro has actually stood up.
 static const GameHooks g_spyro_compatibility_hooks = {
+    .replCommand = spyro::gate_debug::replCommand,
     .fps60WorldPass = spyro_paired_actor_fps60_world_pass,
     .fps60TemporalRotate = spyro_paired_actor_fps60_rotate,
     .selftestGame = spyro_selftestGame,

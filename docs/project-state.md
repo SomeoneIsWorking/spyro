@@ -33,6 +33,9 @@ post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.l
 the recorded user input and 10,000 presented fields with rc=0, 5,057 reconciled frames, zero dropped layers, and no native
 render refusal. That is a route-continuity result, not visual or full-oracle parity. The animation's
 BLENDED (GTE-interpolated) form is covered hermetically only; no live frame has exercised it yet.
+The field scheduler also skips the level-transition tally on a fresh Start edge by advancing
+`g_LevelTransTicks` at `0x800756AC` to the guest's exact hidden boundary `417`; the CD load and guest
+transition state remain active, and the portal traversal is intentionally not bypassed.
 
 ## Capability details
 
@@ -172,9 +175,11 @@ decodes the real portal-2 asset under a positive aperture for future visible fra
 visible portal still refuses until issue 0093's mask/near-family/painter submission contract is
 owned. The current replay reaches this complete stage-0 composition without a native-render refusal;
 the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
-variants. A normal paced audio run (`scratch/logs/spyro-boot-paced-after-spu-20260828.log`) produces
-20.02 seconds of non-silent stereo 44.1 kHz WAV for 1,200 VBlanks, but also reports XA ring-full
-back-pressure because the SPU pull is not draining CD audio. SBS oracle boot remains limited evidence:
+variants. A normal paced audio run after the shared CDC filter fix (`scratch/logs/spyro-xa-after-filter-20260828.log`)
+produces 20.02 seconds of non-silent stereo 44.1 kHz WAV for 1,200 VBlanks, with 239 selected XA
+sectors on file 1/channel 4 and zero ring-full reports; the prior back-pressure came from decoding
+interleaved unselected channels. The same run reports 60.0 paced VBlanks/s and 735/736 SPU frames per
+field. SBS oracle boot remains limited evidence:
 the 120-field run exits cleanly but retains five stack-only differing bytes and leaves one owned
 address unreached.
 

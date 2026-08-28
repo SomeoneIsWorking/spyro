@@ -477,6 +477,21 @@ if(BUILD_TESTING)
     ${CMAKE_SOURCE_DIR}/titles/spyro1/core)
   target_compile_features(test_spyro1_frame_policy PRIVATE cxx_std_20)
   add_test(NAME spyro1_frame_policy COMMAND test_spyro1_frame_policy)
+  add_executable(test_spyro_gate_debug
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro_gate_debug.cpp
+    ${CMAKE_SOURCE_DIR}/game/core/spyro_gate_debug.cpp)
+  target_include_directories(test_spyro_gate_debug PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_spyro_gate_debug PRIVATE cxx_std_20)
+  target_link_libraries(test_spyro_gate_debug PRIVATE psxport)
+  add_test(NAME spyro_gate_debug COMMAND test_spyro_gate_debug)
+  add_executable(test_spyro1_transition_skip
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro1_transition_skip.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro1/core/spyro1_transition_skip.cpp)
+  target_include_directories(test_spyro1_transition_skip PRIVATE
+    ${CMAKE_SOURCE_DIR}/titles/spyro1/core)
+  target_compile_features(test_spyro1_transition_skip PRIVATE cxx_std_20)
+  target_link_libraries(test_spyro1_transition_skip PRIVATE psxport)
+  add_test(NAME spyro1_transition_skip COMMAND test_spyro1_transition_skip)
   add_test(
     NAME computed_jumps_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/computed_jumps.py --selftest)
@@ -542,6 +557,7 @@ set(GAME_SRC
   game/core/main.cpp
   game/core/game_config.cpp
   game/core/game_hooks.cpp
+  game/core/spyro_gate_debug.cpp
   game/core/spyro_context.cpp
   game/core/spyro_runtime.cpp
   game/core/title_runtime_registry.cpp
@@ -553,6 +569,7 @@ set(GAME_SRC
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
   titles/spyro1/core/spyro1_field_scheduler.cpp
+  titles/spyro1/core/spyro1_transition_skip.cpp
   titles/spyro1/core/spyro1_boot_sequence.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp

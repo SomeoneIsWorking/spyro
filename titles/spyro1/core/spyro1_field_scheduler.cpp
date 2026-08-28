@@ -10,6 +10,7 @@
 #include "repl.h"
 #include "snapshot.h"
 #include "spyro1_frame_driver.h"
+#include "spyro1_transition_skip.h"
 #include "spyro_game.h"
 
 #include <cstdlib>
@@ -332,6 +333,7 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   cadence_.delivered();
   serviceSkipMap(startEdge);
   serviceIntroSkip(startEdge);
+  (void)skipLevelTransition(core, startEdge);
   serviceInspection();
 
   if (request.present) {

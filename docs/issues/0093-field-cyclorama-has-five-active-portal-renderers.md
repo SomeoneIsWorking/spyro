@@ -47,3 +47,19 @@ to that frame's cyclorama readiness. A later genuinely visible portal must still
 prepared `0x80050240` faces before the owner can accept it. Do not infer those contracts from the
 synthetic positive aperture, call retained guest renderers, or suppress a visible mask because its
 distance-selected mesh is empty.
+
+## Gate teleport experiment
+
+The field's live portal table is inspectable through the title-owned diagnostic REPL command
+`gates`. It decodes the portal's `m_PathMoby` at `portal+0x18`, the level target at `portal+0x1c`,
+the center at `portal+0x20`, and the two-node `PathData` reached through the level Moby's `0x58`
+byte stride. On a real Artisans run, gate 0 targets level 14, path Moby 40, and its nodes are
+`(132301,82883,6799)` and `(136387,82975,6799)`.
+
+`gate-teleport 0 0` writes only the source-backed node position to `g_Spyro.m_Position` and
+`m_previousPosition` while the game is in active field state. The next native frame refuses at
+`0x80050BD0` because the moved camera exposes a visible portal and its mask/near-family/painter
+submission contract is not owned. This is evidence that the coordinate path is valid and that the
+remaining transition blocker is visible portal rendering; it is not evidence of a completed level
+transition. The command remains diagnostic-only and does not write `g_NextLevelId`, load state, or
+transition state.

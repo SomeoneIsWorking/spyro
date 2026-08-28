@@ -145,7 +145,13 @@ class RuntimeStructureTest(unittest.TestCase):
         )
         self.assertEqual(
             set(re.findall(r"\.(\w+)\s*=", hooks)),
-            {"fps60WorldPass", "fps60TemporalRotate", "selftestGame", "fps60ReadSceneCam"},
+            {
+                "replCommand",
+                "fps60WorldPass",
+                "fps60TemporalRotate",
+                "selftestGame",
+                "fps60ReadSceneCam",
+            },
         )
         self.assertLess(
             render_frame.index("beginGuestFrame"), render_frame.index("referenceOtWalk();")

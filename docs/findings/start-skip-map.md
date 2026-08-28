@@ -58,6 +58,20 @@ Repeated synthetic Start pulses are not a shipping skip mechanism: once the sequ
 gameplay, another pulse opens the pause screen. A shipping implementation must consume one host edge
 inside a positively identified skippable state and release it before the next state reads input.
 
+## Level-transition tally
+
+The level-transition owner is `func_8002DF9C` (`GS_LevelTransition = 1`). Its guest HUD/tally uses
+`g_LevelTransTicks` at `0x800756AC` and hides itself once the counter exceeds `416`; loading remains
+independent and continues through `LoadLevel(1)` while the HUD is inactive. The shipping field
+scheduler now consumes a fresh Start edge only in this gamestate while the HUD is active, writes the
+exact hidden boundary `417`, and leaves `g_Gamestate` plus the current `g_LoadStage` untouched. This
+skips the tally, not the CD load or the portal traversal. The behavior is covered by
+`test_spyro1_transition_skip`.
+
+The portal traversal remains a separate blocker: the type-6 collision surface writes the transition
+globals, and a visible portal still reaches the unowned `0x80050BD0` mask/near-family/painter path.
+No Start shortcut writes those transition globals or substitutes for that renderer.
+
 ## Still unclassified
 
 Stage mode 14 is now classified: it is recorded/demo playback, and Start handling is already guest

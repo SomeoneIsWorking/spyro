@@ -378,6 +378,17 @@ PortalFrame prepareFrame(
   frame.clipBottom = std::clamp(frame.clipBottom, 0, 240);
   frame.maskVisible =
       !frame.edges.empty() && frame.clipLeft < frame.clipRight && frame.clipTop < frame.clipBottom;
+  const uint32_t baseColor = ram.r32(frame.asset + 0x10u);
+  const uint32_t phase = (uint32_t)std::abs(cosine(
+                             ram, (int32_t)(ram.r32(kLevelTicks) * 16u + portalOrdinal * 512u))) >>
+                         1;
+  const uint32_t animated = colorLerp(baseColor, 0x00ffffffu, (int16_t)phase);
+  frame.tintColor =
+      frame.distance <= kNearDistanceEnd
+          ? baseColor
+          : (frame.distance >= kPortalDistanceEnd
+                 ? animated
+                 : colorLerp(baseColor, animated, (int16_t)(frame.distance - kNearDistanceEnd)));
   if (!frame.maskVisible || frame.distance >= kPortalDistanceEnd) {
     frame.status = Status::ValidEmpty;
     frame.refusal = "none";
@@ -392,12 +403,6 @@ PortalFrame prepareFrame(
   }
 
   frame.fadeFactor = frame.distance - kNearDistanceEnd;
-  const uint32_t baseColor = ram.r32(frame.asset + 0x10u);
-  const uint32_t phase = (uint32_t)std::abs(cosine(
-                             ram, (int32_t)(ram.r32(kLevelTicks) * 16u + portalOrdinal * 512u))) >>
-                         1;
-  const uint32_t animated = colorLerp(baseColor, 0x00ffffffu, (int16_t)phase);
-  frame.tintColor = colorLerp(baseColor, animated, (int16_t)frame.fadeFactor);
   frame.status = Status::Ready;
   frame.refusal = "none";
   return frame;

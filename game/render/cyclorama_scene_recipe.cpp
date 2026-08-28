@@ -34,14 +34,15 @@ Status classifyPortalFrame(const cyclorama_portal_mesh::PortalFrame &frame) {
   // distance-selected mesh family is empty. Do not let a far portal's
   // ValidEmpty mesh result suppress its visible mask.
   if (frame.maskVisible) {
-    return Status::ActivePortalDrawUnsupported;
+    if (frame.status == cyclorama_portal_mesh::Status::ValidEmpty ||
+        frame.status == cyclorama_portal_mesh::Status::Ready ||
+        frame.status == cyclorama_portal_mesh::Status::NearFamilyUnsupported) {
+      return Status::Ready;
+    }
+    return Status::InvalidPortalRecipe;
   }
   if (frame.status == cyclorama_portal_mesh::Status::ValidEmpty) {
     return Status::Ready;
-  }
-  if (frame.status == cyclorama_portal_mesh::Status::Ready ||
-      frame.status == cyclorama_portal_mesh::Status::NearFamilyUnsupported) {
-    return Status::ActivePortalDrawUnsupported;
   }
   return Status::InvalidPortalRecipe;
 }

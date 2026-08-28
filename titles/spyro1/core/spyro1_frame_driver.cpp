@@ -95,6 +95,14 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
   const bool gameplayProbe = cfg_on("PSXPORT_GAMEPLAY_PROBE") != 0;
   if (!suppressed && !gameplayProbe) {
     renderer_->drawFrame();
+    // The update-side host turn has already delivered the first display field. The native
+    // renderer's commit owns the single visible fence, but it does not itself run the field
+    // scheduler. Deliver the retail tail explicitly without presenting a second picture.
+    if (fields_.fieldsThisLogicFrame() < kFieldsPerLogicFrame &&
+        !deliverNativeField(core, "native-frame-tail", true)) {
+      lucent::error("frameloop", "native frame tail could not deliver its second field");
+      std::abort();
+    }
   } else {
     const char *site = gameplayProbe ? "gameplay-probe" : "render-suppressed";
     for (std::uint32_t field = 0; field < kFieldsPerLogicFrame; ++field) {

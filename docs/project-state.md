@@ -17,10 +17,10 @@ in `docs/re-frontier.md`.
 ## Current focus
 
 S007 is the current focus: held digital input now reaches the source-backed movement target and moves
-Spyro in a render-independent live-field probe. The normal native path renders a coherent portal-empty
-Artisans frame and continues for 10,000 presented fields, but a controlled Left/Right route exposes a
-visible portal and still stops at the separate stage-0 cyclorama refusal. Player-visible movement and
-oracle comparison remain open; the visible portal is now the next rendering boundary.
+Spyro in a render-independent live-field probe. The normal native path now renders through the visible
+portal mask on a controlled route and runs 6,000 presented fields without a portal refusal. A source-
+backed gate teleport reaches the same portal path; its next refusal is the live non-type-0 particle
+family, not cyclorama. Player-visible movement and oracle comparison remain open.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
@@ -178,11 +178,11 @@ corrected medium-quad texture rule still needs issue 0077's retained-world oracl
 portals and atomically reuses owned `0x8004EBA8`. The Artisans snapshot has five logically active
 records but every projected aperture has zero screen-crossing edges, so all five are valid-empty and
 the cyclorama recipe is Ready for that frame. Gate-0 teleport reaches a visible aperture whose
-near-family recipe produces 94 clipped triangles, but the runtime still refuses until issue 0093's
-`0x8004FEA0` mask and final composition are owned. A production-compiled read-only `0x80050240`
-recipe decodes the real portal-2 asset under a positive aperture, and its batched native submitter
-now has focused atomic-admission/publication coverage for future visible frames. The submitter is
-not wired into stage 0 while the mask producer remains unowned. The current replay reaches this complete
+near-family recipe produces 94 clipped triangles. The source-backed `0x8004FEA0` mask now emits its
+two clipped full-screen triangles through a dedicated painter object; a controlled Left route runs
+through the visible-portal path, and the gate-teleport route advances to the non-type-0 particle
+refusal. The production-compiled `0x80050240` recipe and family submitter remain ready for a future
+mid-distance portal frame. The current replay reaches this complete
 stage-0 composition without a native-render refusal;
 the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
 variants. A normal paced audio run after the shared CDC filter fix (`scratch/logs/spyro-xa-after-filter-20260828.log`)

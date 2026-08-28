@@ -73,4 +73,16 @@ PainterReplayOrder cycloramaPortal(uint16_t otBin, uint32_t portalOrdinal, uint3
           {otBin, linkOrdinal(LinkPhase::Cyclorama, kOrdinalMask - portalOrdinal), faceOrdinal}};
 }
 
+PainterReplayOrder cycloramaMask(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal) {
+  if (portalOrdinal >= kOrdinalMask - 1u || faceOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x8004FEA0 is called immediately before each portal mesh family. The
+  // mask must replay first at a tied OT bin, so reserve the link immediately
+  // ahead of that portal's mesh link (the comparator walks links descending).
+  return {
+      kActorWorldTerrainDomain,
+      {otBin, linkOrdinal(LinkPhase::Cyclorama, kOrdinalMask - portalOrdinal + 1u), faceOrdinal}};
+}
+
 } // namespace spyro::scene_painter_order

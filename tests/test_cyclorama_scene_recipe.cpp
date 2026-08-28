@@ -96,17 +96,15 @@ void test_portal_frame_classification_preserves_mask_ownership() {
   CHECK(spyro::cyclorama_scene_recipe::classifyPortalFrame(offscreen) == Status::Ready);
 
   // A far portal has no 0x80050240 mesh, but an on-screen aperture still calls
-  // the separate 0x8004FEA0 mask family and must refuse the incomplete owner.
+  // the separate 0x8004FEA0 mask family and is now represented by its mask recipe.
   spyro::cyclorama_portal_mesh::PortalFrame visibleFar = offscreen;
   visibleFar.maskVisible = true;
-  CHECK(spyro::cyclorama_scene_recipe::classifyPortalFrame(visibleFar) ==
-        Status::ActivePortalDrawUnsupported);
+  CHECK(spyro::cyclorama_scene_recipe::classifyPortalFrame(visibleFar) == Status::Ready);
 
   spyro::cyclorama_portal_mesh::PortalFrame visibleMid{};
   visibleMid.status = spyro::cyclorama_portal_mesh::Status::Ready;
   visibleMid.maskVisible = true;
-  CHECK(spyro::cyclorama_scene_recipe::classifyPortalFrame(visibleMid) ==
-        Status::ActivePortalDrawUnsupported);
+  CHECK(spyro::cyclorama_scene_recipe::classifyPortalFrame(visibleMid) == Status::Ready);
 }
 
 void inspectSnapshotIfRequested() {

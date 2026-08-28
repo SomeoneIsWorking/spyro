@@ -25,9 +25,9 @@ selection, culling distance, all 7,168 zeroed work bytes, and one world call eac
 calls remained outside the joined corpus. The complete gate reported 13 PASS and zero failures against
 the recorded framework pin `ad5cf802`.
 
-This resolves the missing caller-contract owner. A later batch compiled a cohesive, still-unwired
-FIELD environment/world owner around the same invocation and the existing semantic world recipe. On
+This resolves the missing caller-contract owner. A later batch compiled a cohesive FIELD
+environment/world owner around the same invocation and the existing semantic world recipe. On
 `scratch/raw/miss_ram.bin` it prepares selection 17, distance `0x28000`, 86 sectors, 1,376 candidates,
 1,039 rejected candidates, and 413 final faces without mutating the culling word or the 7,168-byte
-edge-work area. Stage 0 remains unwired until issue 0077's corrected material path passes its later
-serialized retained-world oracle.
+edge-work area. Stage 0 now calls this owner; issue 0077's corrected material path and the later
+serialized retained-world oracle remain required for full visual/oracle parity.

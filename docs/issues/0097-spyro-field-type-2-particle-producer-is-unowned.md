@@ -23,7 +23,8 @@ ordering facts and uses the source `D_8006CBF8` Q12 orientation table.
 
 Verification: a real native REPL gate route reached `gate-teleport 0 0`, reported `particles` with
 `type2=2`, and continued through the wired stage-0 sequence without a particle refusal. The route's
-next coverage boundary is the FIELD actor orchestration; no type-2 refusal occurred.
+next coverage boundary is the actor shadow/effect families; the secondary/shaded actor composition
+now runs before that boundary, and no type-2 refusal occurred.
 
 ## Proper next step
 

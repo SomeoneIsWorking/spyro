@@ -361,14 +361,15 @@ proof of 223/223 eligible intervals, 223/223 midpoint and endpoint eligibility, 
 emissions with zero empty output. The log contains no native-render refusal or fatal. This proves
 controllable route continuity through the currently wired producers, including the visible portal
 mask/near family and type-2 particles; it is not proof of complete actor coverage, visual parity,
-or an independent reference-oracle match. The compiled secondary-actor, shaded-queue, and
-Spyro-player owners are still not called by FIELD.
+or an independent reference-oracle match. The secondary-actor, shaded-queue, and Spyro-player
+owners are now called by FIELD; Moby/Spyro shadow packets, flame/glow/sparkle effects, and full
+visual/oracle parity remain open.
 
 ## Current acceptance boundary
 
 Controllable player state and the reached native FIELD route are unlocked, but issue 0089 remains
-open for FIELD actor orchestration (including player, shadow, and variants), visual/oracle parity,
-and the remaining producer coverage. Level-transition portal traversal remains separate from this
+open for actor shadow/effect families, variants, visual/oracle parity, and the remaining producer
+coverage. Level-transition portal traversal remains separate from this
 control milestone.
 
 ### Tooling closed this session

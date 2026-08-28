@@ -37,6 +37,6 @@ eligible on all 223 eligible intervals, with 446/446 callback emissions.
 
 ## Remaining scope
 
-This resolves only the player model arm. Secondary/shaded actors, Moby and Spyro shadows, flame/trail
-effects, glows/sparkles, alternate/status-plane and semi-transparent variants, whole-batch atomic
-composition, and independent visual/oracle parity remain separate issues.
+This resolves only the player model arm. Secondary/shaded actor composition is now owned by issue
+0099, but Moby and Spyro shadows, flame/trail effects, glows/sparkles, alternate/status-plane and
+semi-transparent variants, and independent visual/oracle parity remain separate work.

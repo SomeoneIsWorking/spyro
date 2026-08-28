@@ -30,10 +30,12 @@ its missing-scene refusal, but C228 is falsified as proof of the complete New Ga
 that run was manually ended before handoff to gameplay. The false recompiler entry that later crashed
 the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
-the completed-gem text branch), regular actors, the visible normal Spyro model arm, environment,
-cyclorama, type-0/type-2 particles, fade, border, and tracers. The compiled secondary-actor and
-shaded-queue owners, Spyro's shadow/effect arms, other scene arms, and live producer variants remain
-unowned, so the complete game remains partial.
+the completed-gem text branch), regular actors, the visible normal Spyro model arm, the composed
+secondary/shaded actor pass, environment, cyclorama, type-0/type-2 particles, fade, border, and
+tracers. The Moby/Spyro shadow packets, flame/glow/sparkle effect arms, other scene arms, and live
+producer variants remain unowned, so the complete game remains partial. The actor composition's first
+live route ran 3,700 presented fields with 1,910 reconciled logic frames and no render refusal; that
+route had a valid-empty secondary list and emitted roughly 110–120 shaded faces per FIELD frame.
 The environment layer's `active_animation` refusal is resolved: RenderWorldChunks' phase-1 per-sector
 animation is owned natively (`game/render/world_animation.cpp`) and proven byte-exact against the
 retained body on the exact frame that was refusing (C229, instrument I057, issue 0089). The
@@ -41,7 +43,10 @@ post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.l
 the recorded user input and 10,000 presented fields with rc=0, 5,057 reconciled frames, zero dropped layers, and no native
 render refusal. That is a route-continuity result, not visual or full-oracle parity. The animation's
 BLENDED (GTE-interpolated) form is covered hermetically only; no live frame has exercised it yet.
-The field scheduler also skips the level-transition tally on a fresh Start edge by advancing
+The current audio-field trace also ran 1,200 NTSC fields with 882,882 expected and queued samples,
+every field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. This proves the current
+cadence and non-silent sink path, not PCM equality against the reference. The field scheduler also
+skips the level-transition tally on a fresh Start edge by advancing
 `g_LevelTransTicks` at `0x800756AC` to the guest's exact hidden boundary `417`; the CD load and guest
 transition state remain active, and the portal traversal is intentionally not bypassed.
 

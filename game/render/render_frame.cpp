@@ -7,9 +7,11 @@
 #include "cfg.h" // cfg_on — PSXPORT_RENDER_PSX is a feature flag, not a diagnostic
 #include "core.h"
 #include "cutscene_scene_recipe.h"
+#include "field_moby_lists.h"
 #include "fps60.h"     // checked access to Spyro 1's title-owned temporal presentation product
 #include "frame_env.h" // nativeFrameBegin/End — the frame the native producers draw into
 #include "fx_actor_draw.h"
+#include "fx_field_actor_composition.h"
 #include "fx_field_collectables.h"
 #include "fx_field_cyclorama.h"
 #include "fx_field_environment.h"
@@ -135,6 +137,11 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     // producer does not consume that guest pointer list, so reproduce the lifecycle boundary here
     // instead of letting a prior screen's stale entries consume the field HUD capacity.
     mC->mem_w32(0x800720F4u, 0u);
+    // Retail builds the three actor lists before the regular, secondary, and shaded passes. The
+    // regular native owner reads the level array directly, but the secondary owner consumes the
+    // negative-state list produced here; omitting this state-only arm leaves its source pointers
+    // uninitialized at the first FIELD frame.
+    spyro_field_build_moby_lists(mC);
     if (mC->mem_r32(kIsFlightLevel) == 0u) {
       if (!spyro_field_collectables_submit(mC)) {
         abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
@@ -142,6 +149,11 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     }
     if (!spyro_actor_submit(mC)) {
       abortUnimplemented(sc, "actor producer 0x80019698 refused its atomic recipe");
+    }
+    if (!spyro_field_actor_composition_submit(mC)) {
+      abortUnimplemented(sc,
+                         "secondary/shaded actor producers 0x80020F34/0x80022A2C refused their "
+                         "combined atomic recipe");
     }
     if (!spyro_field_player_submit(mC, spyro_paired_actor_state(mC))) {
       abortUnimplemented(sc, "Spyro actor producer 0x80023AC4 refused its atomic recipe");

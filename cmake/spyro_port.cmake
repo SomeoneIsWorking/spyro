@@ -653,6 +653,7 @@ set(GAME_SRC
   game/render/field_particle_type2_submitter.cpp
   game/render/particle_sine_table.h
   game/render/fx_field_particles.cpp
+  game/render/fx_field_actor_composition.cpp
   game/render/fx_field_player_actor.cpp
   game/render/field_tracers_recipe.cpp
   game/render/fx_field_tracers.cpp

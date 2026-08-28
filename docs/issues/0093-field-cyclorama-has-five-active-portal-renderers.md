@@ -1,11 +1,11 @@
 ---
 id: 93
 title: FIELD DrawActors portal aperture path is unowned on the gate route
-status: investigating
-symptom: gate teleport reaches a visible aperture; the mask is now native-owned, but the route still reaches an unowned type-2 particle family
+status: resolved
+symptom: gate teleport reached a visible aperture whose mask and near portal family were unowned
 tags: render,field,cyclorama,portal,re,ownership
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-08-29
 ---
 
 ## Binary-grounded boundary
@@ -30,8 +30,8 @@ The compiled pure scene owner now distinguishes logical activity from an on-scre
 accepts all five as `ValidEmpty`, derives selection 17 and spin `0x3E2 -> 0x3E4` / `0x80 -> 0x80`,
 and remains read-only until the existing main-sky producer succeeds. The source-backed
 `0x8004FEA0` mask now emits its two full-screen triangles clipped by the aperture edges through a
-dedicated painter path; the controlled gate route passes this boundary. The next live refusal is
-the separate type-2 particle producer at `0x800573C8`.
+dedicated painter path; the controlled gate route passes this boundary. The next live refusal was
+the separate type-2 particle producer at `0x800573C8`; issue 0097 now owns that family as well.
 
 The production-compiled `cyclorama_portal_mesh_recipe` now transcribes both dynamic mesh families'
 shared asset walk. It preserves the aperture edges for the near `0x8004F4BC` branch and uses the
@@ -46,13 +46,12 @@ at a time: it preserves the guest producer key (`0x8004F4BC` or `0x80050240`), p
 call order, and per-face Gouraud/depth state. It is independently tested but deliberately not wired
 into stage 0, because a visible frame still requires the separate `0x8004FEA0` mask owner first.
 
-## Proper next step
+## Resolution
 
-The retained Artisans frame needs no portal draw before its main sky, so it is no longer the blocker
-to that frame's cyclorama readiness. The visible gate route now owns the `0x8004FEA0` mask and reaches
-the next unowned type-2 particle family at `0x800573C8`; that family must be grounded from its
-dispatcher and packet writes before implementation. The tested near-family `0x8004F4BC` and
-fade-family `0x80050240` submitters remain ready for a frame that selects them. The 5-bit actor scissor outcode is distinct from
+The retained Artisans frame needs no portal draw before its main sky, and the visible gate route now
+owns the `0x8004FEA0` mask and near-family `0x8004F4BC` submission. The subsequent type-2 particle
+family is also source-owned and admitted. The tested fade-family `0x80050240` submitter remains
+ready for a frame that selects it. The 5-bit actor scissor outcode is distinct from
 portal visibility: mesh-level rejection uses `AND(mask)&0x0F`, while triangle clipping uses
 `AND(mask)&0x1F`; the edge table is ten `0x18`-byte records plus a zero sentinel at `0x80077EA0`.
 Do not infer the mask pass from the synthetic positive aperture, call retained guest renderers, or
@@ -68,7 +67,7 @@ the first aperture point at `portal+0x20`, and the two-node `PathData` reached t
 
 `gate-teleport 0 0` writes only the source-backed node position to `g_Spyro.m_Position` and
 `m_previousPosition` while the game is in active field state. The next native frame passes the
-visible `0x8004FEA0` mask and portal-mesh work, then refuses at `0x800573C8` because the live list
-selects particle type 2. This proves that the coordinate path and mask boundary are valid; it is
-not evidence of a completed level transition. The command remains diagnostic-only and does not
-write `g_NextLevelId`, load state, or transition state.
+visible `0x8004FEA0` mask, near portal mesh, and type-2 particle work. The command remains
+diagnostic-only and does not write `g_NextLevelId`, load state, or transition state. The final gate
+route continues through the wired stage-0 producer sequence; visual and independent-oracle parity
+remain separate project work.

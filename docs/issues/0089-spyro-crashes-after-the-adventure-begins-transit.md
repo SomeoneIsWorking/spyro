@@ -344,14 +344,32 @@ defers presentation on the first field and presents once on the second, preservi
 contract while matching the retail 30 Hz logic cadence. A Clang smoke run completed with 600
 presents, 1,020 delivered fields, and 362 reconciled logic frames under the corrected path.
 
+## Stage-0 continuity after actor and painter fixes (2026-08-29)
+
+The empty regular-actor scene adapter now distinguishes a known-empty live frame from an absent
+diagnostic corpus, so the reached FIELD route no longer refuses merely because that frame has no
+regular actor records. Framework painter ownership also admits trailing ordinary world primitives
+after authored painter groups; the old rule only admitted a trailing two-vertex line and rejected the
+type-2 particle/tracer-shaped quad that the live route actually emits. The focused framework test
+keeps the real refusal for an ordinary primitive before authored painter order and covers the valid
+trailing case.
+
+The final controlled gate run (`scratch/logs/gate-after-painter-fix.log`) teleported to the
+source-backed gate-0 node and continued through the wired stage-0 sequence with exit code 0: 3,520
+presented fields, 1,820 reconciled logic frames, zero dropped layers, and paired-actor temporal
+proof of 223/223 eligible intervals, 223/223 midpoint and endpoint eligibility, and 446/446
+emissions with zero empty output. The log contains no native-render refusal or fatal. This proves
+controllable route continuity through the currently wired producers, including the visible portal
+mask/near family and type-2 particles; it is not proof of complete actor coverage, visual parity,
+or an independent reference-oracle match. The compiled secondary-actor, shaded-queue, and
+Spyro-player owners are still not called by FIELD.
+
 ## Current acceptance boundary
 
-Controllable player state is unlocked in the live field probe, but issue 0089 remains open. The
-ordinary native path renders portal-empty Artisans gameplay continuously, but the controlled
-Left/Right route exposes a visible portal and still refuses at stage 0 because the cyclorama/sky
-producer has no complete visible-portal submission contract. That renderer gap is separate from the
-control fix. Controllable field logic is now unlocked; visible portal-mask ownership is the next
-rendering milestone.
+Controllable player state and the reached native FIELD route are unlocked, but issue 0089 remains
+open for FIELD actor orchestration (including player, shadow, and variants), visual/oracle parity,
+and the remaining producer coverage. Level-transition portal traversal remains separate from this
+control milestone.
 
 ### Tooling closed this session
 

@@ -258,7 +258,14 @@ actor_draw_recipe::Recipe compose_records(std::span<const Record> records,
   for (const auto &record : records) {
     outputs.push_back(record.expected);
   }
-  return actor_draw_recipe::compose(outputs);
+  // The live census has already established ownership before this adapter is
+  // called. An empty list therefore means a known-empty scene, while the
+  // pure corpus API's empty span still means that no capture was supplied.
+  auto recipe = actor_draw_recipe::compose(outputs);
+  if (records.empty() && recipe.status == actor_draw_recipe::Status::NoCorpus) {
+    recipe.status = actor_draw_recipe::Status::ValidEmpty;
+  }
+  return recipe;
 }
 
 } // namespace spyro::actor_recipe_capture

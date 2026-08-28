@@ -31,6 +31,12 @@ void test_empty_list_is_a_complete_atomic_frame() {
   CHECK_EQ(frame.visitedMobys.size(), 0u);
   CHECK_EQ(frame.records.size(), 0u);
   CHECK_EQ(frame.shadows.size(), 0u);
+
+  std::vector<spyro::actor_recipe_capture::Record> records;
+  std::vector<spyro::actor_prefix::Output> outputs;
+  const auto recipe = spyro::actor_recipe_capture::compose_records(records, outputs);
+  CHECK(recipe.status == spyro::actor_draw_recipe::Status::ValidEmpty);
+  CHECK(outputs.empty());
 }
 
 void test_invalid_source_refuses_without_side_effects() {

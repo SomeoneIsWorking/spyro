@@ -19,8 +19,9 @@ in `docs/re-frontier.md`.
 S007 is the current focus: held digital input now reaches the source-backed movement target and moves
 Spyro in a render-independent live-field probe. The normal native path now renders through the visible
 portal mask on a controlled route and runs 6,000 presented fields without a portal refusal. A source-
-backed gate teleport reaches the same portal path; its next refusal is the live non-type-0 particle
-family, not cyclorama. Player-visible movement and oracle comparison remain open.
+backed gate teleport reaches the same portal path, and the live type-2 particle family now submits
+without refusal; its next refusal is the actor pass. Player-visible movement and oracle comparison
+remain open.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
@@ -30,7 +31,7 @@ its missing-scene refusal, but C228 is falsified as proof of the complete New Ga
 that run was manually ended before handoff to gameplay. The false recompiler entry that later crashed
 the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
 FIELD now has a wired stage-0 composition for the reached Artisans frame: collectables (including the
-completed-gem text branch), regular and secondary actors, environment, cyclorama, type-0 particles,
+completed-gem text branch), regular and secondary actors, environment, cyclorama, type-0/type-2 particles,
 fade, border, and tracers. The complete game remains partial because other scene arms and live
 producer variants are still unowned.
 The environment layer's `active_animation` refusal is resolved: RenderWorldChunks' phase-1 per-sector

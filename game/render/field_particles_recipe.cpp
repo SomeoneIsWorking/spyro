@@ -7,6 +7,7 @@ namespace spyro::field_particles_recipe {
 namespace {
 
 constexpr uint32_t kParticlePointer = 0x80075824u;
+constexpr uint32_t kParticleTextures = 0x80076278u;
 constexpr uint32_t kRecordSize = 0x20u;
 constexpr uint32_t kRecordCapacity = 256u;
 
@@ -14,6 +15,7 @@ Recipe refuse(Recipe out, Status status, const char *why) {
   out.status = status;
   out.refusal = why;
   out.points.clear();
+  out.texturedQuads.clear();
   return out;
 }
 
@@ -46,6 +48,32 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
     if (type == -2) {
       continue;
     }
+    if (type == 2) {
+      const uint32_t textureTableAddress = kParticleTextures + (uint32_t)ram.r8(address) * 4u;
+      if (!ram.contains(textureTableAddress, 4u)) {
+        return refuse(std::move(out), Status::InvalidPointers, "texture_table_pointer");
+      }
+      const uint32_t textureTable = ram.r32(textureTableAddress);
+      const uint16_t textureIndex = ram.r16(address + 0x10u);
+      const uint32_t textureAddress = textureTable + (uint32_t)(textureIndex & 0xffu) * 8u;
+      if (!ram.contains(textureAddress, 12u)) {
+        return refuse(std::move(out), Status::InvalidPointers, "texture_entry");
+      }
+      const uint32_t xy = ram.r32(address + 4u);
+      const uint32_t zAndSizeAngle = ram.r32(address + 8u);
+      out.texturedQuads.push_back(TexturedQuad{address,
+                                               ram.r8(address),
+                                               (int16_t)xy,
+                                               (int16_t)(xy >> 16),
+                                               (int16_t)zAndSizeAngle,
+                                               (uint8_t)(zAndSizeAngle >> 16),
+                                               (uint16_t)(((zAndSizeAngle >> 23) + 0x40u) & 0x1feu),
+                                               (uint8_t)(textureIndex >> 8),
+                                               ram.r32(address + 0xcu),
+                                               ram.r32(textureAddress + 4u),
+                                               ram.r32(textureAddress + 8u)});
+      continue;
+    }
     if (type != 0) {
       return refuse(std::move(out), Status::UnsupportedType, "particle_type");
     }
@@ -61,7 +89,8 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
                                (uint8_t)(color >> 8),
                                (uint8_t)(color >> 16)});
   }
-  out.status = out.points.empty() ? Status::ValidEmpty : Status::Ready;
+  out.status =
+      (out.points.empty() && out.texturedQuads.empty()) ? Status::ValidEmpty : Status::Ready;
   return out;
 }
 

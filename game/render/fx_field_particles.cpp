@@ -1,6 +1,7 @@
 #include "fx_field_particles.h"
 
 #include "core.h"
+#include "field_particle_type2_submitter.h"
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
@@ -25,7 +26,7 @@ bool preflight(Core *core, const spyro::field_particles_recipe::Recipe &recipe) 
   }
   const RenderQueue &queue = core->game->rq;
   const uint32_t queued = queue.consumed ? 0u : (uint32_t)queue.n;
-  return recipe.points.size() <= RQ_MAX - queued;
+  return recipe.points.size() + recipe.texturedQuads.size() <= RQ_MAX - queued;
 }
 
 psxport::native_projection::ProjectionParams projection(Core *core, int clipRight) {
@@ -122,6 +123,15 @@ bool spyro_field_particles_submit(Core *core) {
                       gpu.s_da_y1,
                       0);
   }
-  lucent::debug("particles", "PASS records={} points={}", recipe.records, recipe.points.size());
+  for (unsigned ordinal = 0; ordinal < recipe.texturedQuads.size(); ++ordinal) {
+    if (!spyro_field_particle_type2_submit(core, recipe.texturedQuads[ordinal], ordinal)) {
+      return false;
+    }
+  }
+  lucent::debug("particles",
+                "PASS records={} points={} type2={}",
+                recipe.records,
+                recipe.points.size(),
+                recipe.texturedQuads.size());
   return true;
 }

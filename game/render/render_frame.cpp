@@ -148,7 +148,8 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
       abortUnimplemented(sc, "cyclorama producer 0x80050BD0 refused its atomic recipe");
     }
     if (!spyro_field_particles_submit(mC)) {
-      abortUnimplemented(sc, "particles producer 0x800573C8 refused its atomic type-0 recipe");
+      abortUnimplemented(sc,
+                         "particles producer 0x800573C8 refused its atomic type-0/type-2 recipe");
     }
     const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
     const auto fade =

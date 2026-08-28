@@ -4,12 +4,14 @@
 
 namespace spyro1 {
 
-// Count fields delivered during one logic iteration. The renderer owns the retail >=2-field
-// throttle against the previous frame's guest stamp; a host turn can advance that stamp during
-// update, and the first gameplay frame begins after hundreds of boot fields. The driver therefore
-// validates that every product step reached a field boundary, rather than inventing a second,
-// per-iteration two-call rule. A guest-suppressed render still needs one host-owned visible field;
-// suppression means reuse the previous picture, not omit the product presentation fence.
+// The retained Spyro frame tail spends at least two display fields per gameplay logic iteration.
+// Native rendering supplies those fields through frame_commit; render-suppressed diagnostics must
+// use the same quota instead of accidentally running gameplay at twice its retail logic rate.
+inline constexpr std::uint32_t kFieldsPerLogicFrame = 2;
+
+// Count fields delivered during one logic iteration. The guest's own frame tail compares the
+// previous field stamp and has the same two-field minimum; the host scheduler validates that
+// native and diagnostic paths preserve it.
 class FieldCadence {
 public:
   void beginLogicFrame() {
@@ -28,7 +30,7 @@ public:
     return fields_ >= kMinimumFieldsPerProductStep;
   }
 
-  static constexpr std::uint32_t kMinimumFieldsPerProductStep = 1;
+  static constexpr std::uint32_t kMinimumFieldsPerProductStep = kFieldsPerLogicFrame;
 
 private:
   std::uint32_t fields_ = 0;

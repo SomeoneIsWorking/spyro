@@ -39,15 +39,18 @@ candidates, 12 surviving objects, and 94 clipped near triangles. The retained fr
 invoke that path. With a deliberately positive full-screen aperture around the snapshot's real
 portal-2 asset, the mid/far `0x80050240` path parses 35 objects / 2,897 authored candidates; 10
 objects survive, 584 vertices project, 822 candidates reach the face loop, and 553 sources yield
-597 clipped triangles. Refusal clears the complete face result, so preparation is atomic. Neither
-dynamic mesh family nor the separate `0x8004FEA0` mask is wired to the stage-0 queue yet.
+597 clipped triangles. Refusal clears the complete face result, so preparation is atomic. A new
+batched native submitter now owns queue admission and publication for one dynamic producer family
+at a time: it preserves the guest producer key (`0x8004F4BC` or `0x80050240`), portal OT bin, portal
+call order, and per-face Gouraud/depth state. It is independently tested but deliberately not wired
+into stage 0, because a visible frame still requires the separate `0x8004FEA0` mask owner first.
 
 ## Proper next step
 
 The retained Artisans frame needs no portal draw before its main sky, so it is no longer the blocker
 to that frame's cyclorama readiness. A later genuinely visible portal must still ground and own the
-`0x8004FEA0` mask, then submit the near-family `0x8004F4BC` and fade-family `0x80050240` faces with
-the exact painter/preflight and capacity contracts. The 5-bit actor scissor outcode is distinct from
+`0x8004FEA0` mask, then wire the tested near-family `0x8004F4BC` and fade-family `0x80050240` submitter
+with the exact mask/painter/preflight and capacity contracts. The 5-bit actor scissor outcode is distinct from
 portal visibility: mesh-level rejection uses `AND(mask)&0x0F`, while triangle clipping uses
 `AND(mask)&0x1F`; the edge table is ten `0x18`-byte records plus a zero sentinel at `0x80077EA0`.
 Do not infer the mask pass from the synthetic positive aperture, call retained guest renderers, or

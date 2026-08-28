@@ -308,10 +308,12 @@ not that the image matches the disc or that every FIELD variant is owned.
 
 The remaining acceptance boundary is now visual/oracle comparison and the unowned variants: actor
 shadows, nonzero world primitive variants, visible cyclorama portals, blended world animation,
-non-type-0 particles, tracer variants, and the retained guest-renderer tail. A paced audio run is
-non-silent and duration-correct but reports XA ring-full back-pressure because the SPU pull is not
-draining CD audio. Issue #89 stays open until controllable gameplay and these fidelity boundaries
-are verified.
+non-type-0 particles, tracer variants, and the retained guest-renderer tail. A current paced audio
+run is non-silent and duration-correct: 1,200 VBlanks span about 20.115 seconds, the WAV contains
+882,882 samples with exact 735/736 NTSC field cadence, 239 selected file-1/channel-4 XA sectors
+decode, and no ring-full event occurs. This proves product timing/routing but not speaker delivery or
+independent-oracle PCM parity. Issue #89 stays open until the controlled route renders its visible
+portal and the remaining fidelity boundaries are verified.
 
 ## Control milestone: digital movement is now live
 
@@ -336,15 +338,20 @@ Left: 0x80078A58 = 00014C1B 0000B602 000025C3
 The Left run also exposed the corrected nonzero target (`speed=0x400`, `rotation=0x800`) and the
 pad/target state was inspected at the live gameplay boundary. The probe suppresses only the
 incomplete picture producer while retaining the real input, logic, collision, and host field
-scheduler; the normal native product path is unchanged.
+scheduler; the normal native product path is unchanged. A speed audit then found that the probe was
+delivering one field per logic iteration, unlike the retail two-field frame tail. The probe now
+defers presentation on the first field and presents once on the second, preserving the one-fence
+contract while matching the retail 30 Hz logic cadence. A Clang smoke run completed with 600
+presents, 1,020 delivered fields, and 362 reconciled logic frames under the corrected path.
 
 ## Current acceptance boundary
 
 Controllable player state is unlocked in the live field probe, but issue 0089 remains open. The
-ordinary native path still refuses at stage 0 because the cyclorama/sky producer has no complete
-stage-0 submission contract. That renderer gap is separate from the control fix. Portal traversal
-and visible portal-mask ownership are intentionally deferred until normal player-visible gameplay
-is running.
+ordinary native path renders portal-empty Artisans gameplay continuously, but the controlled
+Left/Right route exposes a visible portal and still refuses at stage 0 because the cyclorama/sky
+producer has no complete visible-portal submission contract. That renderer gap is separate from the
+control fix. Controllable field logic is now unlocked; visible portal-mask ownership is the next
+rendering milestone.
 
 ### Tooling closed this session
 

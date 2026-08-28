@@ -191,6 +191,16 @@ if(BUILD_TESTING)
   target_compile_features(test_cyclorama_portal_mesh_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_cyclorama_portal_mesh_recipe PRIVATE psxport)
   add_test(NAME cyclorama_portal_mesh_recipe COMMAND test_cyclorama_portal_mesh_recipe)
+  add_executable(test_cyclorama_portal_submitter
+    ${CMAKE_SOURCE_DIR}/tests/test_cyclorama_portal_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/cyclorama_portal_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/scene_painter_order.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/painter_submission_preflight.cpp)
+  target_include_directories(test_cyclorama_portal_submitter PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_cyclorama_portal_submitter PRIVATE cxx_std_20)
+  target_link_libraries(test_cyclorama_portal_submitter PRIVATE psxport)
+  add_test(NAME cyclorama_portal_submitter COMMAND test_cyclorama_portal_submitter)
   add_executable(test_field_scene_recipe
     ${CMAKE_SOURCE_DIR}/tests/test_field_scene_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/field_scene_recipe.cpp
@@ -608,6 +618,7 @@ set(GAME_SRC
   game/render/fx_field_environment.cpp
   game/render/cyclorama_scene_recipe.cpp
   game/render/cyclorama_portal_mesh_recipe.cpp
+  game/render/cyclorama_portal_submitter.cpp
   game/render/fx_field_cyclorama.cpp
   game/render/field_scene_recipe.cpp
   game/render/field_moby_lists.cpp

@@ -62,4 +62,15 @@ PainterReplayOrder cyclorama(uint32_t chainOrdinal) {
   return {kActorWorldTerrainDomain, {2047u, linkOrdinal(LinkPhase::Cyclorama, 0u), chainOrdinal}};
 }
 
+PainterReplayOrder cycloramaPortal(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal) {
+  if (portalOrdinal >= kOrdinalMask || faceOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x80050BD0 submits each portal renderer before the final 0x8004EBA8 sky call. The queue's
+  // cyclorama phase replays higher link ordinals first, so reserve the descending link range for
+  // portal calls and keep face order in the chain suborder.
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::Cyclorama, kOrdinalMask - portalOrdinal), faceOrdinal}};
+}
+
 } // namespace spyro::scene_painter_order

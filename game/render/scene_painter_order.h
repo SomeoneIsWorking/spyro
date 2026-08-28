@@ -18,5 +18,6 @@ PainterReplayOrder queuedWorld(uint16_t otBin, uint32_t paintGroup);
 PainterReplayOrder actor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
 PainterReplayOrder secondaryActor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
 PainterReplayOrder cyclorama(uint32_t chainOrdinal);
+PainterReplayOrder cycloramaPortal(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);
 
 } // namespace spyro::scene_painter_order

@@ -9,12 +9,12 @@ int main() {
     return 1;
   }
   cadence.delivered();
-  if (cadence.fields() != FieldCadence::kMinimumFieldsPerProductStep ||
-      !cadence.completesLogicFrame()) {
+  if (cadence.fields() != 1 || cadence.completesLogicFrame()) {
     return 2;
   }
   cadence.delivered();
-  if (cadence.fields() != 2 || !cadence.completesLogicFrame()) {
+  if (cadence.fields() != FieldCadence::kMinimumFieldsPerProductStep ||
+      !cadence.completesLogicFrame()) {
     return 3;
   }
   cadence.beginLogicFrame();

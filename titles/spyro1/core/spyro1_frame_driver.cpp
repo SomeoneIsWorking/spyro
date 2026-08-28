@@ -2,6 +2,7 @@
 
 #include "cfg.h"
 #include "core.h"
+#include "frame_env.h"
 #include "game.h"
 #include "guest_call.h"
 #include "guest_gp.h"
@@ -89,16 +90,27 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
   state.restartFieldCount();
   // Gameplay probes intentionally keep the logic/field path alive while the native picture is still
   // missing a stage-0 producer. This does not alter the product default: it presents the previous
-  // guest VRAM frame, preserves the one-field contract, and makes control-state measurements
-  // independent of the rendering backlog.
+  // guest VRAM frame, preserves the retail two-field logic quota, and makes control-state
+  // measurements independent of the rendering backlog.
   const bool gameplayProbe = cfg_on("PSXPORT_GAMEPLAY_PROBE") != 0;
   if (!suppressed && !gameplayProbe) {
     renderer_->drawFrame();
-  } else if (!deliverNativeField(
-                 core, gameplayProbe ? "gameplay-probe" : "render-suppressed", false)) {
-    lucent::error("frameloop",
-                  "render-suppressed product step could not deliver its visible field");
-    std::abort();
+  } else {
+    const char *site = gameplayProbe ? "gameplay-probe" : "render-suppressed";
+    for (std::uint32_t field = 0; field < kFieldsPerLogicFrame; ++field) {
+      // Match frame_commit's two-field fence: the first field advances the guest/audio clock
+      // without presenting, and the second owns the single visible presentation for this logic
+      // iteration. Presenting both fields would violate FrameDriver's one-fence-per-step contract.
+      const bool deferPresentation = field + 1u < kFieldsPerLogicFrame;
+      if (!deliverNativeField(core, site, deferPresentation)) {
+        lucent::error("frameloop",
+                      "{} product step could not deliver its field {} of {}",
+                      site,
+                      field + 1,
+                      kFieldsPerLogicFrame);
+        std::abort();
+      }
+    }
   }
 
   if (!fields_.finishLogicFrame()) {

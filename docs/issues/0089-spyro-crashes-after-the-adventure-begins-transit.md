@@ -372,6 +372,49 @@ open for actor shadow/effect families, variants, visual/oracle parity, and the r
 coverage. Level-transition portal traversal remains separate from this
 control milestone.
 
+## Fresh control-path witness (2026-08-29)
+
+The current pushed build (`4fde3df` against framework `e84865b4`) was rerun with the existing idle
+and Left replays through the native FIELD route. Both runs exited 0 at the 4,255-present cap with
+no native-render refusal or fatal. At replay frame 3000 the captured Spyro state was:
+
+```text
+idle: position=(0x14C00,0x0B800,0x023E0), target=(0,0x0400)
+Left: position=(0x1497B,0x0B9CE,0x02514), target=(0x0109C,0x00995)
+```
+
+The captured shadow input block was live and enabled in both runs (`0x8007AA10+0x24 == 0`), so the
+missing shadow picture is not explained by a disabled player-shadow state. The native FIELD
+sequence still ends after the player model; `0x80059A48` is not called. The next implementation
+step therefore requires translating or bridging that renderer's source-defined packet production,
+not another movement or portal workaround.
+
+## Controllable-action matrix (2026-08-29)
+
+The replay masks were corrected before this matrix: `.pad` files carry PSX active-low bits, so the
+framework mapping is `Up=0x0010`, `Right=0x0020`, `Down=0x0040`, `Left=0x0080`, `Start=0x0008`,
+`Select=0x0001`, `Cross=0x4000`, `Circle=0x2000`, and `Square=0x8000`. Each action was held for
+replay fields 3000--3007 on the same New Game route and capped at 3020 presented frames. The
+seven gameplay-action runs (four directions plus Cross, Circle, and Square) all exited 0 with no
+native-render refusal or fatal. The live RAM witnesses at replay field 3002/3004 were:
+
+```text
+Up:     m_Held=0x1000, m_Down=0x1000, target=(0x12C2,0x0400), position changes
+Right:  m_Held=0x2000, target=(0x12C2,0x0000), position changes
+Down:   m_Held=0x4000, target=(0x12C2,0x0C00), position changes
+Left:   m_Held=0x8000, target=(0x12C2,0x0800), position changes
+Cross:  m_State=5, then m_airTime=1 (jump path)
+Square: m_State=0xB (charge path)
+Circle: g_SpyroFlame+0x98=1 (flame-active path)
+```
+
+This proves the retained guest update and the one diagnosed native digital-movement correction
+provide controllable gameplay; it does not claim that the unowned flame/shadow effect packets are
+visible yet. Start (`0xFFF7`) and Select (`0xFFFE`) were also isolated. They reach the expected
+pause (`stage=2`) and inventory (`stage=3`) handlers, then fail at the explicit native-render
+refusal because those menu picture owners are not implemented. That is a separate menu-rendering
+gap, not a reason to alter movement or pursue portal traversal.
+
 ### Tooling closed this session
 
 The render-refusal fatal wrote no RAM dump, so every unowned stage-0 layer had to be re-driven live

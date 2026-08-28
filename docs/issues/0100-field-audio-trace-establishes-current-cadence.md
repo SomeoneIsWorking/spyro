@@ -31,3 +31,12 @@ advanced and rendered exactly 735 or 736 samples; the expected and queued totals
 The captured file is valid 44.1 kHz stereo 16-bit PCM, 3,531,572 bytes including its header, and the
 records are non-silent. This proves current field cadence and sink activity, not PCM equality against
 the retained/reference leg; clock alignment and a reference audio comparator remain future work.
+
+## SBS boundary confirmed (2026-08-29)
+
+A 120-field SBS run using the current build reached the dual-core lockstep path, but diverged at
+the boot/load boundary before FIELD. The `audiofield` records from the two cores are interleaved
+without a core identity or scheduler-frame identity, and the run has no comparator that can pair
+their PCM summaries. It is therefore evidence that the existing capture is reachable in SBS, not an
+oracle speed/audio verdict. The remaining work is a framework-owned per-core field report and
+comparator; no audio timing policy was changed here.

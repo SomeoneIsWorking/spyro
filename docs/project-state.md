@@ -16,11 +16,20 @@ in `docs/re-frontier.md`.
 
 ## Current focus
 
-S005 is the current focus: held digital input reaches the source-backed movement target and moves Spyro
-after the field handoff. The controlled native route now renders the visible three-layer Spyro model
-through FIELD's `0x80023AC4` owner and continues through the wired stage-0 producers, including the
-visible near portal and type-2 particle family, for 1,821 reconciled logic frames with zero dropped
-layers. Visual parity, independent oracle comparison, and broader actor-producer coverage remain open.
+S007 is verified: held digital input reaches the source-backed movement target and moves Spyro after
+the field handoff, and the retained guest update also responds to jump, charge, and flame input. The
+next focus is the actor/effect coverage that makes those actions visible. The controlled native route
+now renders the visible three-layer Spyro model through FIELD's `0x80023AC4` owner and continues
+through the wired stage-0 producers, including the visible near portal and type-2 particle family,
+for 1,821 reconciled logic frames with zero dropped layers. Visual parity, independent oracle
+comparison, and broader actor-producer coverage remain open; portal traversal stays outside this
+control milestone.
+
+The fresh current-build idle-vs-Left replay pair also exited 0 at 4,255 presents with no native-render
+refusal or fatal. At replay frame 3000, idle was `(0x14C00,0x0B800,0x023E0)` while Left was
+`(0x1497B,0x0B9CE,0x02514)` and carried a nonzero movement target. The live player-shadow gate
+`0x8007AA10+0x24` was zero in both captures; the missing shadow is therefore an uncalled renderer
+boundary, not a disabled gameplay state.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
@@ -174,8 +183,9 @@ the recipe resolves 23 Gouraud faces and is now called by the stage-0 seam. The 
 also Ready on that snapshot after issue 0094's Plain descriptor-pair correction: 175 Mobys scanned,
 14 records, 423 candidates, 211 rejects, and 212 faces. Its following secondary actor owner is Ready
 with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces. The next authored
-actor-pass gap is Moby shadows: the retained cursor is `0x8007250C`, not the empty `0x800724F4`, and
-the native actor builders/renderers do not yet own the complete shadow result. The separate `0x8002B9CC`
+actor-pass gap is Moby shadows: the retained list starts at `0x800724F4` and ends at the shared
+cursor `0x80075F00`; the native actor builders/renderers do not yet own the complete shadow result.
+The separate `0x8002B9CC`
 environment/world owner is also compiled but unwired: on the same snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final
 faces without mutating the culling word or any of the 7,168 edge-work bytes during preparation. Its

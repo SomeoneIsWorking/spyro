@@ -97,7 +97,7 @@ constexpr uint32_t kVblankCounter = 0x800749E0u;
 constexpr uint32_t kStampLastFrame = 0x80075950u; // the field count when the PREVIOUS frame ended
 constexpr uint32_t kStampThisFrame = 0x80075954u; // …and this one's, written as the loop spins
 constexpr int32_t kMinFieldsPerFrame = kFieldsPerLogicFrame; // the guest's own `< 2` test
-constexpr int kMaxFieldsPerFrame = 8;             // this port's bound; the guest has none
+constexpr int kMaxFieldsPerFrame = 8; // this port's bound; the guest has none
 
 } // namespace
 

@@ -10,6 +10,9 @@
 #include "fps60.h"     // checked access to Spyro 1's title-owned temporal presentation product
 #include "frame_env.h" // nativeFrameBegin/End — the frame the native producers draw into
 #include "fx_actor_draw.h"
+#include "fx_field_collectables.h"
+#include "fx_field_cyclorama.h"
+#include "fx_field_environment.h"
 #include "fx_paired_actor.h"
 #include "fx_screen_fade.h"
 #include "fx_world_draw.h"
@@ -106,7 +109,41 @@ void SpyroRenderer::prepareScene(const Scene &sc) const {
 // their authored order. Stage 13 adds its front-end sprites before those owners. Stage 14 copies
 // its clear colour before nativeFrameBegin and adds its conditional screen fade afterward. Every
 // producer refuses before partial submission when its semantic input cannot be represented.
+//
+// STAGE 0 (GS_Playing) composes the field-snapshot owners issue 0089 captured, in the guest's
+// authored draw order (external/spyro-1 src/gamestates/draw.c GamestateDraw, GS_Playing branch):
+// cyclorama clear colour; collectables unless a flight level (0x80019300, g_IsFlightLevel
+// 0x80075690); the moby chains (0x80019698); the environment and world chunks (0x8002B9CC ->
+// 0x800258F0); the cyclorama wrapper (0x80050BD0); particles (0x800573C8); the screen fade; the
+// screen border (0x80018F30); tracers (0x800189F0). Particles and tracers have no complete native
+// owner yet, so the branch refuses at the first one it reaches — the crash the user hits when the
+// first level starts IS that refusal, and it moves down this list as each layer lands.
 void SpyroRenderer::renderScene(const Scene &sc) const {
+  if (sc.stage == kStageField) {
+    const auto background = spyro::cutscene_scene_recipe::read(mC);
+    spyro::cutscene_scene_recipe::prepareFrame(mC, background);
+    constexpr uint32_t kIsFlightLevel = 0x80075690u;
+    if (mC->mem_r32(kIsFlightLevel) == 0u) {
+      if (!spyro_field_collectables_submit(mC)) {
+        abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
+      }
+    }
+    if (!spyro_actor_submit(mC)) {
+      abortUnimplemented(sc, "actor producer 0x80019698 refused its atomic recipe");
+    }
+    if (!spyro_field_environment_submit(mC)) {
+      abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");
+    }
+    if (!spyro_field_cyclorama_submit(mC)) {
+      abortUnimplemented(sc, "cyclorama producer 0x80050BD0 refused its atomic recipe");
+    }
+    abortUnimplemented(
+        sc,
+        "particles producer 0x800573C8 has no native owner (843-instruction asm renderer, "
+        "asm/renderers/r_particles.s); screen fade, border and tracers follow it in the draw "
+        "order");
+    return;
+  }
   if (sc.stage != kStageFrontEnd && sc.stage != kStageCutscene) {
     abortUnimplemented(sc, "no producer is registered for this stage");
   }

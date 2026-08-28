@@ -58,6 +58,11 @@ add_custom_command(
 add_custom_target(spyro_title_catalog DEPENDS ${SPYRO_TITLE_CATALOG})
 
 if(BUILD_TESTING)
+  add_executable(test_archive_transfer_contract
+    ${CMAKE_SOURCE_DIR}/tests/test_archive_transfer_contract.cpp)
+  target_include_directories(test_archive_transfer_contract PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
+  target_compile_features(test_archive_transfer_contract PRIVATE cxx_std_20)
+  add_test(NAME archive_transfer_contract COMMAND test_archive_transfer_contract)
   add_executable(test_wide_clip_plan ${CMAKE_SOURCE_DIR}/tests/test_wide_clip_plan.cpp)
   target_include_directories(test_wide_clip_plan PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
   target_compile_features(test_wide_clip_plan PRIVATE cxx_std_20)
@@ -149,12 +154,162 @@ if(BUILD_TESTING)
   target_compile_features(test_screen_fade_recipe PRIVATE cxx_std_20)
   target_link_libraries(test_screen_fade_recipe PRIVATE psxport)
   add_test(NAME screen_fade_recipe COMMAND test_screen_fade_recipe)
+  add_executable(test_screen_border_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_screen_border_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/screen_border_recipe.cpp)
+  target_include_directories(test_screen_border_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${PSXPORT_DIR}/tests)
+  target_compile_features(test_screen_border_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_screen_border_recipe PRIVATE psxport)
+  add_test(NAME screen_border_recipe COMMAND test_screen_border_recipe)
   add_executable(test_field_environment_recipe
     ${CMAKE_SOURCE_DIR}/tests/test_field_environment_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/field_environment_recipe.cpp)
   target_include_directories(test_field_environment_recipe PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
   target_compile_features(test_field_environment_recipe PRIVATE cxx_std_20)
   add_test(NAME field_environment_recipe COMMAND test_field_environment_recipe)
+  add_executable(test_cyclorama_scene_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_cyclorama_scene_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/cyclorama_scene_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/cyclorama_portal_mesh_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp)
+  target_include_directories(test_cyclorama_scene_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_cyclorama_scene_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_cyclorama_scene_recipe PRIVATE psxport)
+  add_test(NAME cyclorama_scene_recipe COMMAND test_cyclorama_scene_recipe)
+  add_executable(test_cyclorama_portal_mesh_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_cyclorama_portal_mesh_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/cyclorama_portal_mesh_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp)
+  target_include_directories(test_cyclorama_portal_mesh_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_cyclorama_portal_mesh_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_cyclorama_portal_mesh_recipe PRIVATE psxport)
+  add_test(NAME cyclorama_portal_mesh_recipe COMMAND test_cyclorama_portal_mesh_recipe)
+  add_executable(test_field_scene_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_scene_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_scene_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_environment_recipe.cpp)
+  target_include_directories(test_field_scene_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_scene_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_field_scene_recipe PRIVATE psxport)
+  add_test(NAME field_scene_recipe COMMAND test_field_scene_recipe)
+  add_executable(test_field_collectables_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_collectables_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_collectables_recipe.cpp)
+  target_include_directories(test_field_collectables_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_collectables_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_field_collectables_recipe PRIVATE psxport)
+  add_test(NAME field_collectables_recipe COMMAND test_field_collectables_recipe)
+  add_executable(test_field_shaded_queue_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_shaded_queue_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_shaded_queue_recipe.cpp)
+  target_include_directories(test_field_shaded_queue_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_shaded_queue_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_field_shaded_queue_recipe PRIVATE psxport)
+  add_test(NAME field_shaded_queue_recipe COMMAND test_field_shaded_queue_recipe)
+  add_executable(test_field_shaded_queue_scene
+    ${CMAKE_SOURCE_DIR}/tests/test_field_shaded_queue_scene.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_shaded_queue_scene.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_shaded_queue_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_transform_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_recipe_capture.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_draw_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_field_shaded_queue_scene PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_shaded_queue_scene PRIVATE cxx_std_20)
+  target_link_libraries(test_field_shaded_queue_scene PRIVATE psxport)
+  add_test(NAME field_shaded_queue_scene COMMAND test_field_shaded_queue_scene)
+  add_executable(test_field_shaded_queue_submitter
+    ${CMAKE_SOURCE_DIR}/tests/test_field_shaded_queue_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_shaded_queue_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/painter_submission_preflight.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/scene_painter_order.cpp)
+  target_include_directories(test_field_shaded_queue_submitter PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_shaded_queue_submitter PRIVATE cxx_std_20)
+  target_link_libraries(test_field_shaded_queue_submitter PRIVATE psxport)
+  add_test(NAME field_shaded_queue_submitter COMMAND test_field_shaded_queue_submitter)
+  add_executable(test_field_environment_scene
+    ${CMAKE_SOURCE_DIR}/tests/test_field_environment_scene.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_environment_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_environment_scene.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_scene_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_scene_prepare.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_lq_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_hq_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_hq_refinement.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_material_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_field_environment_scene PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_environment_scene PRIVATE cxx_std_20)
+  target_link_libraries(test_field_environment_scene PRIVATE psxport)
+  add_test(NAME field_environment_scene COMMAND test_field_environment_scene)
+  add_executable(test_world_scene_submitter
+    ${CMAKE_SOURCE_DIR}/tests/test_world_scene_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_scene_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/painter_submission_preflight.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/scene_painter_order.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_recipe.cpp)
+  target_include_directories(test_world_scene_submitter PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_world_scene_submitter PRIVATE cxx_std_20)
+  target_link_libraries(test_world_scene_submitter PRIVATE psxport)
+  add_test(NAME world_scene_submitter COMMAND test_world_scene_submitter)
+  add_executable(test_secondary_actor_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_secondary_actor_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/secondary_actor_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_draw_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_secondary_actor_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_secondary_actor_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_secondary_actor_recipe PRIVATE psxport)
+  add_test(NAME secondary_actor_recipe COMMAND test_secondary_actor_recipe)
+  add_executable(test_secondary_actor_scene
+    ${CMAKE_SOURCE_DIR}/tests/test_secondary_actor_scene.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/secondary_actor_scene.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/secondary_actor_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_scene_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_transform_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_recipe_capture.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_draw_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp)
+  target_include_directories(test_secondary_actor_scene PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_secondary_actor_scene PRIVATE cxx_std_20)
+  target_link_libraries(test_secondary_actor_scene PRIVATE psxport)
+  add_test(NAME secondary_actor_scene COMMAND test_secondary_actor_scene)
+  add_executable(test_actor_face_submitter
+    ${CMAKE_SOURCE_DIR}/tests/test_actor_face_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_face_submitter.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_global_order.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_draw_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_prefix_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_model_codec.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/painter_submission_preflight.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/scene_painter_order.cpp)
+  target_include_directories(test_actor_face_submitter PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_actor_face_submitter PRIVATE cxx_std_20)
+  target_link_libraries(test_actor_face_submitter PRIVATE psxport)
+  add_test(NAME actor_face_submitter COMMAND test_actor_face_submitter)
   add_executable(test_actor_mesh_scratch
     ${CMAKE_SOURCE_DIR}/tests/test_actor_mesh_scratch.cpp)
   target_include_directories(test_actor_mesh_scratch PRIVATE ${CMAKE_SOURCE_DIR}/game/core)
@@ -253,12 +408,29 @@ if(BUILD_TESTING)
   add_executable(test_spyro2_runtime
     ${CMAKE_SOURCE_DIR}/tests/test_spyro2_runtime.cpp
     ${CMAKE_SOURCE_DIR}/game/core/spyro_runtime.cpp
-    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_runtime.cpp)
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_frame_driver.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_display_bootstrap.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_gpu_sync.cpp)
   target_include_directories(test_spyro2_runtime PRIVATE
     ${CMAKE_SOURCE_DIR}/game/core ${CMAKE_SOURCE_DIR}/titles/spyro2/core)
   target_compile_features(test_spyro2_runtime PRIVATE cxx_std_20)
   target_link_libraries(test_spyro2_runtime PRIVATE psxport)
   add_test(NAME spyro2_runtime COMMAND test_spyro2_runtime)
+  add_executable(test_spyro2_gpu_sync
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro2_gpu_sync.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_gpu_sync.cpp)
+  target_include_directories(test_spyro2_gpu_sync PRIVATE
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core)
+  target_compile_features(test_spyro2_gpu_sync PRIVATE cxx_std_20)
+  target_link_libraries(test_spyro2_gpu_sync PRIVATE psxport)
+  add_test(NAME spyro2_gpu_sync COMMAND test_spyro2_gpu_sync)
+  add_executable(test_spyro2_loaded_bootstrap_timing
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/tests/test_spyro2_loaded_bootstrap_timing.cpp)
+  target_include_directories(test_spyro2_loaded_bootstrap_timing PRIVATE
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core)
+  target_compile_features(test_spyro2_loaded_bootstrap_timing PRIVATE cxx_std_20)
+  add_test(NAME spyro2_loaded_bootstrap_timing COMMAND test_spyro2_loaded_bootstrap_timing)
   add_executable(test_spyro3_runtime
     ${CMAKE_SOURCE_DIR}/tests/test_spyro3_runtime.cpp
     ${CMAKE_SOURCE_DIR}/game/core/spyro_runtime.cpp
@@ -287,6 +459,52 @@ if(BUILD_TESTING)
   add_test(NAME cpp_policy COMMAND ${SPYRO_CPP_POLICY_COMMAND})
 endif()
 
+# Spyro 2 has a title-local substrate and product binary. Keeping it in a separate link prevents
+# SCUS_944.25's generated `func_*` namespace from colliding with Spyro 1's different bodies at the
+# same guest addresses. The launcher emits this ignored manifest before configuring the selected
+# title; a generic Spyro 1 build therefore has no hidden dependency on Spyro 2's restricted bytes.
+set(SPYRO2_REC_DIR ${CMAKE_SOURCE_DIR}/scratch/generated/spyro2)
+set(SPYRO2_REC_MANIFEST ${SPYRO2_REC_DIR}/rec_sources.cmake)
+if(PSXPORT_BUILD_PORT AND EXISTS ${SPYRO2_REC_MANIFEST})
+  include(${SPYRO2_REC_MANIFEST})
+  set(SPYRO2_REC_SRCS ${GEN_REC_SRCS})
+  list(TRANSFORM SPYRO2_REC_SRCS PREPEND ${SPYRO2_REC_DIR}/)
+  set_source_files_properties(${SPYRO2_REC_SRCS}
+    PROPERTIES LANGUAGE CXX
+    COMPILE_OPTIONS "-w;-O1;-foptimize-sibling-calls;-fno-strict-aliasing;-fwrapv")
+
+  add_executable(spyro2_port
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/main.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_frame_driver.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_display_bootstrap.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_gpu_sync.cpp
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core/spyro2_recomp_register.cpp
+    ${CMAKE_SOURCE_DIR}/game/core/spyro_runtime.cpp
+    ${SPYRO2_REC_SRCS})
+  add_dependencies(spyro2_port gen_gpu_shaders spyro_title_catalog)
+  target_include_directories(spyro2_port PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/core
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/core
+    ${SPYRO2_REC_DIR}
+    ${SPYRO_TITLE_CATALOG_DIR})
+  target_compile_features(spyro2_port PRIVATE cxx_std_20)
+  target_compile_options(spyro2_port PRIVATE -O2 -g
+    ${SDL3_CFLAGS_OTHER} ${FREETYPE_CFLAGS_OTHER})
+  target_link_libraries(spyro2_port PRIVATE spyro_title_selection psxport)
+  set_target_properties(spyro2_port PROPERTIES
+    ENABLE_EXPORTS ON
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/scratch/bin)
+
+  if(BUILD_TESTING)
+    add_test(NAME spyro2_executable_help COMMAND $<TARGET_FILE:spyro2_port> --help)
+    set_tests_properties(spyro2_executable_help PROPERTIES
+      PASS_REGULAR_EXPRESSION "Usage: .*spyro2_port")
+  endif()
+elseif(PSXPORT_BUILD_PORT)
+  message(STATUS "Spyro 2 substrate absent: run tools/ensure_spyro2_substrate.py before building spyro2_port")
+endif()
+
 if(NOT PSXPORT_BUILD_PORT)
   return()
 endif()
@@ -304,6 +522,9 @@ set(GAME_SRC
   game/core/spyro_runtime.cpp
   game/core/title_runtime_registry.cpp
   titles/spyro2/core/spyro2_runtime.cpp
+  titles/spyro2/core/spyro2_frame_driver.cpp
+  titles/spyro2/core/spyro2_display_bootstrap.cpp
+  titles/spyro2/core/spyro2_gpu_sync.cpp
   titles/spyro3/core/spyro3_runtime.cpp
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
@@ -325,16 +546,36 @@ set(GAME_SRC
   game/render/actor_model_codec.cpp
   game/render/actor_prefix_builder.cpp
   game/render/actor_draw_recipe.cpp
+  game/render/actor_face_submitter.cpp
   game/render/actor_global_order.cpp
   game/render/scene_painter_order.cpp
   game/render/stage13_scene_recipe.cpp
   game/render/cutscene_scene_recipe.cpp
   game/render/screen_fade_recipe.cpp
   game/render/fx_screen_fade.cpp
+  game/render/screen_border_recipe.cpp
+  game/render/fx_screen_border.cpp
   game/render/field_environment_recipe.cpp
   game/render/field_environment_oracle.cpp
+  game/render/field_environment_scene.cpp
+  game/render/fx_field_environment.cpp
+  game/render/cyclorama_scene_recipe.cpp
+  game/render/cyclorama_portal_mesh_recipe.cpp
+  game/render/fx_field_cyclorama.cpp
+  game/render/field_scene_recipe.cpp
+  game/render/field_moby_lists.cpp
+  game/render/field_collectables_recipe.cpp
+  game/render/fx_field_collectables.cpp
+  game/render/field_shaded_queue_recipe.cpp
+  game/render/field_shaded_queue_scene.cpp
+  game/render/field_shaded_queue_submitter.cpp
+  game/render/fx_field_shaded_queue.cpp
+  game/render/secondary_actor_scene.cpp
+  game/render/secondary_actor_recipe.cpp
+  game/render/fx_secondary_actor.cpp
   game/render/actor_recipe_capture.cpp
   game/render/actor_scene_builder.cpp
+  game/render/actor_transform_math.cpp
   game/render/actor_scene_oracle.cpp
   game/render/painter_submission_preflight.cpp
   game/render/fx_actor_draw.cpp
@@ -347,6 +588,7 @@ set(GAME_SRC
   game/render/world_hq_recipe.cpp
   game/render/world_hq_refinement.cpp
   game/render/world_scene_builder.cpp
+  game/render/world_scene_submitter.cpp
   game/render/world_scene_oracle.cpp
   game/render/world_scene_capture.cpp
   game/render/fx_world_draw.cpp

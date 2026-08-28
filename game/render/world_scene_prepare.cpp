@@ -39,7 +39,11 @@ bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius) {
 
 } // namespace
 
-bool prepare(const RamView &ram, int32_t selection, Prepared &out, const char *&why) {
+bool prepare(const RamView &ram,
+             int32_t selection,
+             Prepared &out,
+             const char *&why,
+             world_animation::Plan *animation) {
   out = {};
   if (!mapped(ram, kEnvironment, 44u) || !mapped(ram, kCamera, 52u)) {
     why = "global_bounds";
@@ -129,6 +133,12 @@ bool prepare(const RamView &ram, int32_t selection, Prepared &out, const char *&
     const uint32_t activeMask =
         low ? (high ? 0u : 0xffff0000u) : (high ? 0x0000ffffu : 0xffffffffu);
     const uint32_t active = dirty | activeMask;
+    if (animation != nullptr) {
+      if (!world_animation::appendSector(ram, sector, active, *animation, why)) {
+        return false;
+      }
+      continue;
+    }
     for (uint32_t channel = 0; channel < 4; ++channel) {
       if ((uint8_t)(active >> (channel * 8u)) < 0x80u) {
         why = "active_animation";

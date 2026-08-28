@@ -37,6 +37,29 @@ struct SourceRecord {
   std::array<uint32_t, 5> matrixWords{};
 };
 
+struct DescriptorMaterial {
+  uint32_t commandOffset = 20u;
+  uint32_t colorOffset = 24u;
+  bool writesScratchColors = false;
+};
+
+// Exact descriptor branch in regular renderer 0x8001F798 after vertex
+// projection. Non-positive CR30 selects the secondary command/colour pair;
+// only the two depth-cued arms materialize colours in scratch.
+constexpr DescriptorMaterial descriptorMaterial(actor_prefix::ColorArm arm) {
+  switch (arm) {
+  case actor_prefix::ColorArm::High:
+    return {};
+  case actor_prefix::ColorArm::PositiveBlend:
+    return {.commandOffset = 20u, .colorOffset = 24u, .writesScratchColors = true};
+  case actor_prefix::ColorArm::Plain:
+    return {.commandOffset = 28u, .colorOffset = 32u, .writesScratchColors = false};
+  case actor_prefix::ColorArm::NegativeBlend:
+    return {.commandOffset = 28u, .colorOffset = 32u, .writesScratchColors = true};
+  }
+  return {};
+}
+
 constexpr bool physical_span(uint32_t address, uint32_t bytes) {
   const uint32_t physical = address & 0x1fffffffu;
   return (address & 3u) == 0u && bytes >= 4u && bytes <= 0x200000u && physical <= 0x200000u - bytes;
@@ -70,6 +93,12 @@ bool copy_primitive_words(Read read,
 
 bool capture_record(Core *c, uint32_t record, Record &capture);
 bool capture_source(Core *c, const SourceRecord &source, Record &capture);
+
+// 0x80020F34 switches to the descriptor's secondary command/material stream
+// when CR30 is non-positive. This preserves the shared geometry capture while
+// keeping that renderer-specific material ownership out of the regular actor
+// path. Returns false for the distinct far-colour arm that is not yet owned.
+bool capture_secondary_source(Core *c, const SourceRecord &source, Record &capture);
 bool capture_records(Core *c, std::vector<Record> &records);
 
 actor_draw_recipe::Recipe compose_records(std::span<const Record> records,

@@ -4,7 +4,9 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: actor-chain,native-producer,composition
-depends: game/render/actor_draw_recipe.cpp#compose, game/core/actor_chain_oracle.cpp#actor_chain_oracle, game/core/actor_chain_oracle.cpp#actor_chain_ot_oracle
+depends: game/render/actor_draw_recipe.cpp#compose
+reconfirmed: 2026-08-28 04:08:50
+verified_at: 2026-08-28 04:08:50
 ---
 
 ## Claim
@@ -18,3 +20,7 @@ scratch/logs/actorchain_recipe_payload.log: 32/32 PASS, 6464/6464 candidate sema
 ## What would falsify it
 
 any fresh payload or OT recipe join reports an input/order/payload/bin/splice mismatch; a reached FT4/semi/raw branch appears; or composition begins reading guest scratch/Core state
+
+## Re-confirmed 2026-08-28 04:08:50
+
+2026-08-28: focused actor_draw_recipe 13/13 checks pass after the prefix status cleanup; Unsupported remains exercised with NegativeBlend and atomic composition semantics are unchanged.

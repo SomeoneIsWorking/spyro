@@ -63,8 +63,10 @@ void testEvaluatorFamiliesAndNegatives() {
           "outcode rejection mismatch");
   auto semi = triangle();
   semi.words[1] = 1;
-  require(evaluate(semi).supported && evaluate(semi).emitted,
-          "guest acceptance evaluator changed semi behavior");
+  const auto semiResult = evaluate(semi);
+  require(semiResult.supported && semiResult.emitted &&
+              semiResult.payload[1] == g3.payload[1] + 0x02000000u,
+          "guest semitransparent command bit was not transcribed");
   auto corrupt = g3;
   corrupt.payload[2] ^= 1u;
   require(corrupt.payload != g3.payload, "payload corruption discriminator failed");
@@ -104,10 +106,10 @@ void testAtomicComposition() {
   require(compose({}).status == Status::NoCorpus, "empty corpus was not distinguished");
 
   auto unsupported = visible;
-  unsupported.primitiveWords[1] = 1u;
+  unsupported.status = actor_prefix::Status::NegativeBlend;
   const std::array mixed{visible, unsupported};
   const Recipe refused = compose(mixed);
-  require(refused.status == Status::Unsupported && refused.firstReason == Reason::Semi &&
+  require(refused.status == Status::Unsupported && refused.firstReason == Reason::Prefix &&
               refused.faces.empty(),
           "unsupported record did not atomically clear prior faces");
 

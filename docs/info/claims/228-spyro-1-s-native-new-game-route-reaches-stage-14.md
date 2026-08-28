@@ -1,10 +1,11 @@
 ---
 id: C228
 kind: claim
-status: holds
+status: falsified
 created: 2026-08-27
 tags: render,cutscene,runtime,widescreen,vsync
 depends: game/render/render_frame.cpp#SpyroRenderer::drawFrame, titles/spyro1/core/spyro1_frame_driver.cpp, titles/spyro1/core/spyro1_field_scheduler.cpp, game/render/cutscene_scene_recipe.cpp, game/render/fx_screen_fade.cpp
+falsified_on: 2026-08-27
 ---
 
 ## Claim
@@ -18,3 +19,9 @@ Isolated real SCUS_942.28 run scratch/logs/spyro-new-game-isolated-wide-3c342ec3
 ## What would falsify it
 
 Any isolated native New Game run fails before or within stage 14, reaches the guest-VSync trap, reports a dropped layer or unsatisfied frame-loop contract, fails to emit a reached binary-required cutscene producer, resolves aspect=1 without a 684-wide picture, or produces a flat, corrupt, black-sided, or missing-layer stage-14 capture.
+
+## FALSIFIED 2026-08-27
+
+User-observed current product renders THE ADVENTURE BEGINS transition card and then crashes. The prior agent run was ended manually after early stage-14 presentation and did not cover transition completion; it cannot support gameplay-after-cutscene.
+
+> Anything that cited this claim as proof must be re-checked. Grep the repo for it.

@@ -40,6 +40,7 @@ void finish_once(const char *why) {
   spyro_paired_actor_temporal_finish(s_core);
   spyro_sprite_queue_census_finish();
   spyro_world_census_finish(s_core);
+  spyro_world_animation_oracle_finish();
   spyro_world_native_finish();
   spyro_field_environment_oracle_finish();
   // Whole-run depth coverage, with its denominator (framework render_stats.h). This is THE number
@@ -63,6 +64,7 @@ void finish_atexit() {
 
 void spyro_producer_run_begin(Core *c) {
   s_core = c;
+  spyro_world_animation_oracle_snapshot(c);
   producer_db_begin(c);
   s_cap = cfg_int("PSXPORT_NATIVE_FRAMES", 0);
   atexit(&finish_atexit);

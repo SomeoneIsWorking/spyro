@@ -20,6 +20,21 @@ class RuntimeStructureTest(unittest.TestCase):
         spyro2_source = (ROOT / "titles/spyro2/core/spyro2_runtime.cpp").read_text(
             encoding="utf-8"
         )
+        spyro2_frame = (
+            ROOT / "titles/spyro2/core/spyro2_frame_driver.cpp"
+        ).read_text(encoding="utf-8")
+        spyro2_display = (
+            ROOT / "titles/spyro2/core/spyro2_display_bootstrap.cpp"
+        ).read_text(encoding="utf-8")
+        spyro2_gpu_sync = (
+            ROOT / "titles/spyro2/core/spyro2_gpu_sync.cpp"
+        ).read_text(encoding="utf-8")
+        spyro2_register = (
+            ROOT / "titles/spyro2/core/spyro2_recomp_register.cpp"
+        ).read_text(encoding="utf-8")
+        spyro2_main = (ROOT / "titles/spyro2/core/main.cpp").read_text(
+            encoding="utf-8"
+        )
         spyro3 = (ROOT / "titles/spyro3/core/spyro3_runtime.h").read_text(
             encoding="utf-8"
         )
@@ -101,7 +116,28 @@ class RuntimeStructureTest(unittest.TestCase):
             self.assertNotIn(service, vsync_registration)
             self.assertIn(service, field_scheduler)
         self.assertNotIn("game/core/frame_loop.cpp", cmake_sources)
-        self.assertIn("std::abort();", spyro2_source)
+        self.assertIn("return true;", spyro2_source)
+        self.assertIn("std::make_unique<Spyro2FrameDriver>(game)", spyro2_source)
+        self.assertIn("kStaticConstructors", spyro2_frame)
+        self.assertIn("kBootPrefixFirstLeaf", spyro2_frame)
+        self.assertIn("kDisplayBootstrap", spyro2_frame)
+        self.assertNotIn("call(core, kDisplayBootstrap", spyro2_frame)
+        self.assertNotIn("0x80058EDC", spyro2_frame)
+        self.assertNotIn("0x80058EDC", spyro2_display)
+        self.assertNotIn("call(core, 0x8004C484", spyro2_display)
+        self.assertEqual(spyro2_display.count("game_.presentation.commit(&core, 1);"), 1)
+        self.assertIn("kClearFrameBytes", spyro2_display)
+        self.assertIn("phase_ = Phase::Complete", spyro2_display)
+        self.assertNotIn("kDrawSync", spyro2_display)
+        self.assertEqual(spyro2_display.count("completeDrawSync(core);"), 2)
+        self.assertIn("core.r[2] = 0u;", spyro2_gpu_sync)
+        self.assertIn("gen_func_800557E4", spyro2_register)
+        self.assertIn("gen_func_80057880", spyro2_register)
+        self.assertIn("gen_func_800578B4", spyro2_register)
+        self.assertIn("shard_set_override", spyro2_register)
+        self.assertIn("std::make_unique<Game>()", spyro2_main)
+        self.assertIn("dc_step_frame(&core, frame);", spyro2_main)
+        self.assertNotIn("GameConfig", spyro2_main)
         self.assertIn("std::abort();", spyro3_source)
         self.assertNotRegex(
             hooks,

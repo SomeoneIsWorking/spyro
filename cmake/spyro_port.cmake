@@ -245,6 +245,7 @@ if(BUILD_TESTING)
     ${CMAKE_SOURCE_DIR}/game/render/field_environment_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/field_environment_scene.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_scene_builder.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_animation.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_scene_prepare.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_lq_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_hq_recipe.cpp
@@ -357,8 +358,17 @@ if(BUILD_TESTING)
   target_compile_features(test_world_material_codec PRIVATE cxx_std_20)
   target_link_libraries(test_world_material_codec PRIVATE psxport)
   add_test(NAME world_material_codec COMMAND test_world_material_codec)
+  add_executable(test_world_animation
+    ${CMAKE_SOURCE_DIR}/tests/test_world_animation.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_animation.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp)
+  target_include_directories(test_world_animation PRIVATE ${CMAKE_SOURCE_DIR}/game/render)
+  target_compile_features(test_world_animation PRIVATE cxx_std_20)
+  target_link_libraries(test_world_animation PRIVATE psxport)
+  add_test(NAME world_animation COMMAND test_world_animation)
   add_executable(test_world_scene_prepare
     ${CMAKE_SOURCE_DIR}/tests/test_world_scene_prepare.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_animation.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_scene_prepare.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp
     ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp
@@ -583,6 +593,8 @@ set(GAME_SRC
   game/render/world_chunk_codec.cpp
   game/render/world_material_codec.cpp
   game/render/world_projection_math.cpp
+  game/core/world_animation_oracle.cpp
+  game/render/world_animation.cpp
   game/render/world_scene_prepare.cpp
   game/render/world_lq_recipe.cpp
   game/render/world_hq_recipe.cpp

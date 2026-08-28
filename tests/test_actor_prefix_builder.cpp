@@ -89,10 +89,15 @@ void testPositiveBlendAndRefusals() {
               blended.fog == 0x01000000u,
           "reached PositiveBlend input refused or not blended");
 
-  input.optionalExpansion = true;
-  require(build(input).status == Status::OptionalExpansion,
-          "optional expansion was silently accepted");
-  input.optionalExpansion = false;
+  input.primitivePatches = {{1u, {0xCAFEBABEu}}};
+  const Output expanded = build(input);
+  require(expanded.status == Status::Ok && expanded.primitiveWords[0] == 4u &&
+              expanded.primitiveWords[1] == 0xCAFEBABEu,
+          "binary-authored primitive expansion was not applied to the immutable copy");
+  input.primitivePatches = {{2u, {0xBADu}}};
+  require(build(input).status == Status::Expansion,
+          "out-of-range primitive expansion was silently accepted");
+  input.primitivePatches.clear();
   input.header |= 1;
   require(build(input).status == Status::TransformBlend,
           "uncovered transform blend was silently accepted");
@@ -123,15 +128,25 @@ void testPositiveBlendAndRefusals() {
           "empty call did not refuse as no corpus");
   input.header &= ~0x80000000u;
   input.colorArm = ColorArm::Plain;
+  input.primaryColors = {0x00ABCDEFu};
+  input.primitiveWords = {4u, 0x87654321u};
   const Output plain = build(input);
-  require(plain.status == Status::PlainColor, "Plain arm was silently accepted");
-  const std::array unsupportedRecords{blended, plain};
+  require(plain.status == Status::Ok && plain.colors == input.primaryColors &&
+              plain.primitiveWords == input.primitiveWords && plain.fog == 0u,
+          "Plain direct material arm did not preserve selected colours and command");
+  const std::array plainOwnedRecords{blended, plain};
+  const CallBoundary plainOwned = classifyCall(plainOwnedRecords);
+  require(plainOwned.status == CallStatus::Owned && plainOwned.visibleRecords == 2 &&
+              plainOwned.unsupportedRecords == 0,
+          "Plain direct material arm did not become call-owned");
+  input.colorArm = ColorArm::NegativeBlend;
+  const Output negative = build(input);
+  require(negative.status == Status::NegativeBlend, "NegativeBlend arm was silently accepted");
+  const std::array unsupportedRecords{blended, negative};
   const CallBoundary unsupported = classifyCall(unsupportedRecords);
   require(unsupported.status == CallStatus::Unsupported && unsupported.records == 2 &&
               unsupported.visibleRecords == 1 && unsupported.unsupportedRecords == 1,
-          "unsupported record did not refuse the whole call");
-  input.colorArm = ColorArm::NegativeBlend;
-  require(build(input).status == Status::NegativeBlend, "NegativeBlend arm was silently accepted");
+          "unsupported negative record did not refuse the whole call");
 }
 
 } // namespace

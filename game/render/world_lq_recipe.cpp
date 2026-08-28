@@ -182,6 +182,7 @@ bool append(const world_chunk_codec::RamView &ram,
             const world_scene_prepare::Prepared &prepared,
             const ProjectionParams &projection,
             int clipRight,
+            uint32_t farLimit,
             Recipe &out,
             const char *&why) {
   if (ram.r32(kSkipLow)) {
@@ -192,7 +193,6 @@ bool append(const world_chunk_codec::RamView &ram,
   const int32_t cameraX = (int32_t)ram.r32(kCamera + 0x28u) >> 4;
   const int32_t cameraY = (int32_t)ram.r32(kCamera + 0x2cu) >> 4;
   const int32_t cameraZ = (int32_t)ram.r32(kCamera + 0x30u) >> 4;
-  const uint32_t farLimit = ram.r32(kEnvironment + 0x28u) >> 7;
   const uint32_t lodBase = (ram.r32(kEnvironment + 0x24u) >> 7) - 32u;
   uint32_t ordinal = 0;
   std::vector<Vertex> vertices;

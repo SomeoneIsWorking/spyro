@@ -87,8 +87,8 @@ class LauncherTest(unittest.TestCase):
                 ("provision", spec.slug, media, framework, tool)
             )
             or launcher.EXE,
-            build_step=lambda framework, compiler_options: events.append(
-                ("build", framework, compiler_options)
+            build_step=lambda framework, compiler_options, spec: events.append(
+                ("build", framework, compiler_options, spec.slug)
             ),
             launch_step=lambda framework, media, spec, executable: events.append(
                 ("launch", framework, media, spec.slug, executable)
@@ -152,7 +152,7 @@ class LauncherTest(unittest.TestCase):
                 ("provision", selected.slug)
             )
             or executable,
-            build_step=lambda *_args: None,
+            build_step=lambda *_args: events.append(("build", spec.slug)),
             launch_step=lambda _framework, _media, selected, selected_executable: events.append(
                 ("launch", selected.slug, selected_executable)
             ),
@@ -163,6 +163,7 @@ class LauncherTest(unittest.TestCase):
             [
                 ("resolve", "spyro3", str(disc)),
                 ("provision", "spyro3"),
+                ("build", "spyro3"),
                 ("launch", "spyro3", executable),
             ],
         )
@@ -294,6 +295,26 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(launcher.PLAYER_BUILD, ROOT / "scratch/build/player")
         flattened = [str(value) for command in commands for value in command]
         self.assertNotIn("ctest", [Path(value).name for value in flattened])
+
+    def test_spyro2_build_selects_only_its_title_local_product(self):
+        commands = []
+        with mock.patch.object(
+            launcher,
+            "configure",
+            side_effect=lambda *args: commands.append(["configure", *args]),
+        ), mock.patch.object(
+            launcher,
+            "command",
+            side_effect=lambda args, **_kwargs: commands.append(args),
+        ), mock.patch.object(launcher.os, "access", return_value=True):
+            launcher.configure_and_build(
+                ROOT / "external/psxport", [], launcher.provision_title.SPECS["spyro2"]
+            )
+
+        self.assertEqual(
+            commands[1][0:5],
+            ["cmake", "--build", launcher.PLAYER_BUILD, "--target", "spyro2_port"],
+        )
 
     def test_shell_and_locked_project_are_the_stable_entry_contract(self):
         self.assertEqual(

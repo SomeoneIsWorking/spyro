@@ -11,14 +11,25 @@ in `docs/re-frontier.md`.
 | S003 | Stage-13 title mode 2 presents the three-slot save screen natively | verified | S002 | — |
 | S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | verified | S001 | — |
 | S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | partial | S002, S004 | — |
+| S006 | Spyro 2 has an identity-derived resident substrate and a title-local native boot owner through the pre-display boundary | partial | — | — |
 
 ## Current focus
 
 S005 is the current focus: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
 cyclorama producers plus its measured clear-colour, culling-distance, and fade responsibilities.
-An isolated real-disc run now verifies that route at 16:9 under the same host-owned frame loop;
-issue 0088 is resolved. Native FIELD and the remaining scene arms keep S005 partial.
+The stage-14 owner was observed presenting at 16:9 under the same host-owned frame loop, resolving
+its missing-scene refusal, but C228 is falsified as proof of the complete New Game transition because
+that run was manually ended before handoff to gameplay. The false recompiler entry that later crashed
+the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
+FIELD has source-owned scene sequencing, Moby-list, collectables, and secondary-actor units, but the
+complete scene remains deliberately unwired; that and the remaining scene arms keep S005 partial.
+The environment layer's `active_animation` refusal is resolved: RenderWorldChunks' phase-1 per-sector
+animation is owned natively (`game/render/world_animation.cpp`) and proven byte-exact against the
+retained body on the exact frame that was refusing (C229, instrument I057, issue 0089). The FIELD
+environment now passes on the shipping New Game route with 86 sectors and 746 faces, and the stage-0
+refusal has advanced one layer to particles `0x800573C8`, then tracers `0x800189F0`. The animation's
+BLENDED (GTE-interpolated) form is covered hermetically only; no live frame has exercised it yet.
 
 ## Capability details
 
@@ -131,12 +142,57 @@ reuses the owned actor, world, and cyclorama producers in their authored order, 
 clear colour, `0x14000` world distance, and conditional fade producer `0x800190D4`. Those
 responsibilities now have separate shipping modules and focused Clang tests.
 
-That isolated check now exists at framework `3c342ec3`. The real `SCUS_942.28` New Game route
-reached selector 14, resolved `aspect=1` to `512 -> 684`, and exited 0 after a clean REPL `end`.
-The framework reconciled 1,962 logic frames with zero dropped layers, reported its frame-loop
-contract satisfied, and re-earned the actor/world/cyclorama rows plus first-earned native fade
-`0x800190D4` on seven frames; no guest-VSync violation appeared. Visual inspection of the 684x240
-capture and six consecutive presents shows coherent animated cutscene geometry across the widened
-scene, without black side bars, corruption, or a missing layer. C228 and resolved issue 0088 retain
-the exact falsifier and evidence. This verifies the reached stage-14 cutscene, not the remaining
-unowned native scenes that keep S005 partial.
+At framework `3c342ec3`, an isolated `SCUS_942.28` run reached selector 14, resolved `aspect=1` to
+`512 -> 684`, exercised the actor/world/cyclorama/fade composition, and produced visually coherent
+early cutscene frames. The operator ended it through the REPL before transition completion. C228 is
+therefore falsified as whole-route evidence and cannot prove gameplay after the card; it remains only
+an observation of the reached early stage-14 picture. A later exact run exposed the collision crash
+recorded in issue 0089; after its recompiler root fix, the route reaches stage 0 and truthfully refuses
+the still-incomplete FIELD scene. The latest source-owned field unit is the separate `0x80022A2C`
+world/shaded queue: its stage-0 snapshot preserves 93 total records, 52 valid meshes / 936 source
+primitives, and 3 visible records / 54 candidates, with both observed mesh and lighting-table classes;
+the recipe resolves 23 Gouraud faces but remains deliberately unwired. The regular actor owner is
+also Ready on that snapshot after issue 0094's Plain descriptor-pair correction: 175 Mobys scanned,
+14 records, 423 candidates, 211 rejects, and 212 faces. Its following secondary actor owner is Ready
+with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces. The next authored
+actor-pass gap is Moby shadows: the retained cursor is `0x8007250C`, not the empty `0x800724F4`, and
+the native actor builders/renderers do not yet own the complete shadow result. The separate `0x8002B9CC`
+environment/world owner is also compiled but unwired: on the same snapshot it derives selection 17,
+distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final
+faces without mutating the culling word or any of the 7,168 edge-work bytes during preparation. Its
+corrected medium-quad texture rule still needs issue 0077's retained-world oracle. The compiled
+`0x80050BD0` cyclorama owner now covers the exact main-sky class with inactive or projected-empty
+portals and atomically reuses owned `0x8004EBA8`. The Artisans snapshot has five logically active
+records but every projected aperture has zero screen-crossing edges, so all five are valid-empty and
+the cyclorama recipe is Ready for that frame. A production-compiled read-only `0x80050240` recipe
+decodes the real portal-2 asset under a positive aperture for future visible frames, while any actual
+visible portal still refuses until issue 0093's mask/near-family/painter submission contract is
+owned. These incomplete scene responsibilities are the current acceptance boundary keeping S005
+partial.
+
+### S006 — Spyro 2 resident boot substrate
+
+The exact manifest-matched `SCUS_944.25` executable emits 683 resident functions in nine generated
+translation units with no foreign-title or overlay seeds. A dedicated `spyro2_port` links that
+substrate separately from Spyro 1, selects only the Spyro 2 executable identity, and installs a
+direct `Spyro2Runtime` with no legacy config or hooks. The title-owned finite boot driver reproduces
+the binary's persistent game-main and boot-prefix stack frames, calls constructors `0x80054834`
+and first leaf `0x800548A4`, then enters a title-owned display-bootstrap state machine instead of
+dispatching either the non-returning guest main or the retained bootstrap. That owner preserves the
+exact nested stack/register state and non-timing effects around three measured field waits: two
+direct calls from `0x80011BBC` and a third inside clear helper `0x8004C484`. DrawSync `0x800557E4`
+and GPU timeout arm/check `0x80057880`/`0x800578B4` are title-owned synchronous overrides with their
+generated bodies retained as A/B supers; none spends a display field.
+The Clang product and focused runtime, launcher, structure, provisioning, and executable-help gates
+pass. An isolated real-executable run passed shared boot initialization, audited crt0 10/10, and
+reached the title-owned `0x80011BBC` boundary with fatal VSync registration intact.
+
+Live PID `3564943` presented all three finite fields, each captured and visually verified as the
+expected uniform black clear picture. It completed display bootstrap, selected NTSC 59.940 Hz,
+returned to `0x80011EB4`, and deliberately stopped at later binary-owned boot-prefix leaf
+`0x80011B1C`; no guest VSync violation occurred.
+
+Gap: issue 0092 owns the post-display initialization and loader chain. The later loader reaches
+`0x80077374` outside resident executable text and needs source/base/payload evidence before dispatch.
+First gameplay frame, native renderer, widescreen, and temporal interpolation are not yet owned or
+verified.

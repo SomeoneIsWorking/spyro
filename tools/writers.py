@@ -36,7 +36,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(REPO, "scratch", "bin", "spyro", "SCUS_942.28")
 OVDIR = os.path.join(REPO, "scratch", "bin", "overlays")
-ARENA_BASE = 0x8007AA38          # every Spyro overlay loads here — see CLAUDE.md / the router
+ARENA_BASE = 0x8007AA38          # every Spyro overlay loads here — see AGENTS.md / the router
 
 REG = ["zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
        "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"]

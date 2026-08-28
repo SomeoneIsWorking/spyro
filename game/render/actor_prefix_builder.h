@@ -18,6 +18,11 @@ struct OwnedStream {
   std::vector<int16_t> deltaWords;
 };
 
+struct PrimitivePatch {
+  uint32_t wordOffset = 0;
+  std::vector<uint32_t> words;
+};
+
 struct Input {
   uint32_t header = 0;
   int32_t tx = 0;
@@ -28,7 +33,6 @@ struct Input {
   int16_t cr30 = 0;
   uint8_t transformShift = 0;
   uint8_t streamShift = 0;
-  bool optionalExpansion = false;
   uint32_t vertexCount = 0;
   OwnedStream primary;
   OwnedStream alternate;
@@ -36,16 +40,16 @@ struct Input {
   std::vector<uint32_t> primaryColors;
   std::vector<uint32_t> secondaryColors;
   std::vector<uint32_t> primitiveWords;
+  std::vector<PrimitivePatch> primitivePatches;
   psxport::native_projection::ProjectionParams projection;
 };
 
 enum class Status : uint8_t {
   Ok,
-  OptionalExpansion,
+  Expansion,
   TransformBlend,
   CountZero,
   Stream,
-  PlainColor,
   NegativeBlend,
   ColorCount,
   VisibilityRejected,
@@ -92,8 +96,9 @@ struct CompareResult {
 
 // Pure reached-prefix builder. Input is an immutable semantic deep copy: no
 // Core, guest addresses, scratch products, GTE state, or opcodes. Optional
-// expansion and unreached color arms are explicit refusals; negative-header
-// status output is represented exactly, including whole-record rejection.
+// expansion and the negative-blend color arm are explicit refusals;
+// negative-header status output is represented exactly, including
+// whole-record rejection.
 Output build(const Input &input);
 
 // Pure call-level preflight. A future owner must obtain Owned before mutating

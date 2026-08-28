@@ -5,14 +5,22 @@ namespace {
 
 void test_actor_world_terrain_splice_order() {
   const auto world = spyro::scene_painter_order::world(2047, 4, 0);
+  const auto queued0 = spyro::scene_painter_order::queuedWorld(2047, 0);
+  const auto queued1 = spyro::scene_painter_order::queuedWorld(2047, 1);
   const auto actor0 = spyro::scene_painter_order::actor(2047, 0, 0);
   const auto actor1 = spyro::scene_painter_order::actor(2047, 1, 0);
+  const auto secondary0 = spyro::scene_painter_order::secondaryActor(2047, 0, 0);
+  const auto secondary1 = spyro::scene_painter_order::secondaryActor(2047, 1, 0);
   const auto terrain0 = spyro::scene_painter_order::cyclorama(0);
   const auto terrain1 = spyro::scene_painter_order::cyclorama(1);
   CHECK_EQ(world.domain, spyro::scene_painter_order::kActorWorldTerrainDomain);
-  CHECK(painterReplayBefore(world, actor0));
+  CHECK(painterReplayBefore(world, queued1));
+  CHECK(painterReplayBefore(queued1, queued0));
+  CHECK(painterReplayBefore(queued0, actor0));
   CHECK(painterReplayBefore(actor0, actor1));
-  CHECK(painterReplayBefore(actor1, terrain0));
+  CHECK(painterReplayBefore(actor1, secondary0));
+  CHECK(painterReplayBefore(secondary0, secondary1));
+  CHECK(painterReplayBefore(secondary1, terrain0));
   CHECK(painterReplayBefore(terrain0, terrain1));
 }
 

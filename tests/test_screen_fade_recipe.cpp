@@ -26,11 +26,24 @@ void test_guest_byte_colour_wrap_is_preserved() {
   CHECK_EQ(recipe.r, 0x20u);
 }
 
+void test_field_fade_uses_half_the_cutscene_colour_scale() {
+  const auto recipe = spyro::screen_fade_recipe::field(7u, 0, 240, 684);
+  CHECK(recipe.visible);
+  CHECK_EQ(recipe.r, 0x38u);
+  CHECK_EQ(recipe.g, 0x38u);
+  CHECK_EQ(recipe.b, 0x38u);
+  CHECK_EQ(recipe.x1, 684);
+  CHECK_EQ(recipe.y0, 248);
+  CHECK_EQ(recipe.y1, 472);
+  CHECK_EQ(recipe.blendMode, 2u);
+}
+
 } // namespace
 
 int main() {
   RUN(absent_fade_is_valid_empty);
   RUN(cutscene_fade_uses_guest_colour_and_wide_extent);
   RUN(guest_byte_colour_wrap_is_preserved);
+  RUN(field_fade_uses_half_the_cutscene_colour_scale);
   return pt_summary();
 }

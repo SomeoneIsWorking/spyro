@@ -8,18 +8,24 @@ namespace spyro2 {
 // Spyro 1 compatibility config, context, hooks, or generated substrate.
 class Spyro2Runtime final : public spyro::SpyroRuntime {
 public:
-  Spyro2Runtime();
+  using SubstrateInstaller = void (*)();
+
+  explicit Spyro2Runtime(SubstrateInstaller substrateInstaller = nullptr);
 
   void *createContext(Core &core) override;
   void destroyContext(void *context) override;
   void registerOverrides(Game &game) override;
   void bootInit(Core &core) override;
+  std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
+  const PlatformHlePlan *platformHlePlan() const override;
   bool guestVramIsPicture(const Game &game) const override;
   bool installSubstrate() override;
   std::string_view substrateRefusal() const override;
 
 private:
   static const GuestProgramImage programImage_;
+  static const PlatformHlePlan platformHlePlan_;
+  SubstrateInstaller substrateInstaller_ = nullptr;
 };
 
 } // namespace spyro2

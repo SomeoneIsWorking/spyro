@@ -19,6 +19,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 import ensure_recomp  # noqa: E402
+import ensure_spyro2_substrate  # noqa: E402
 import provision_title  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,6 +28,10 @@ FRAMEWORK_BUILD = ROOT / "scratch/build/player-tools"
 MAINTAINER_BUILD = ROOT / "build"
 EXE = ROOT / "scratch/bin/spyro/SCUS_942.28"
 PORT = ROOT / "scratch/bin/spyro_port"
+PORTS = {
+    "spyro1": PORT,
+    "spyro2": ROOT / "scratch/bin/spyro2_port",
+}
 
 
 class Refusal(RuntimeError):
@@ -295,9 +300,15 @@ def build_discdump(psxport, compiler_options):
 def provision(spec, disc, psxport, discdump):
     if spec.slug != "spyro1":
         try:
-            return provision_title.provision(spec, disc, discdump)
+            executable = provision_title.provision(spec, disc, discdump)
         except provision_title.Refused as error:
             raise Refusal(str(error)) from error
+        if spec.slug == "spyro2":
+            try:
+                ensure_spyro2_substrate.ensure(executable, psxport)
+            except ensure_spyro2_substrate.Refused as error:
+                raise Refusal(str(error)) from error
+        return executable
     env = os.environ.copy()
     env["PSXPORT_DIR"] = str(psxport)
     env["PSXPORT_DISCDUMP"] = str(discdump)
@@ -307,13 +318,17 @@ def provision(spec, disc, psxport, discdump):
     return EXE
 
 
-def configure_and_build(psxport, compiler_options):
+def configure_and_build(psxport, compiler_options, spec=provision_title.SPECS["spyro1"]):
     jobs = str(os.cpu_count() or 4)
     say(f"building the native port (CMake -j{jobs})…")
     configure(ROOT, PLAYER_BUILD, compiler_options, f"-DPSXPORT_DIR={psxport}")
-    command(["cmake", "--build", PLAYER_BUILD, "--target", "spyro_port", "-j", jobs])
-    if not os.access(PORT, os.X_OK):
-        raise Refusal(f"build produced no executable at {PORT.relative_to(ROOT)}")
+    target = "spyro2_port" if spec.slug == "spyro2" else "spyro_port"
+    product = PORTS.get(spec.slug)
+    if product is None:
+        raise Refusal(f"{spec.title} has no product target yet")
+    command(["cmake", "--build", PLAYER_BUILD, "--target", target, "-j", jobs])
+    if not os.access(product, os.X_OK):
+        raise Refusal(f"build produced no executable at {product.relative_to(ROOT)}")
 
 
 def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
@@ -328,10 +343,13 @@ def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
 
 
 def launch(psxport, disc, spec, executable):
+    product = PORTS.get(spec.slug)
+    if product is None:
+        raise Refusal(f"{spec.title} has no product target yet")
     say(f"launching {spec.title} (native PC port)…")
     os.execve(
-        PORT,
-        [str(PORT), str(executable)],
+        product,
+        [str(product), str(executable)],
         launch_environment(psxport, disc, spec),
     )
 
@@ -359,7 +377,7 @@ def execute(
     say(f"disc: {resolved_disc}")
     discdump = discdump_step(psxport, compiler_options)
     executable = provision_step(spec, resolved_disc, psxport, discdump)
-    build_step(psxport, compiler_options)
+    build_step(psxport, compiler_options, spec)
     if prepare_only:
         say(f"{spec.title} is built and ready.")
         return

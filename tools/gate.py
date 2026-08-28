@@ -351,6 +351,7 @@ def run_static_checks(rep: Report, disc: str) -> None:
     env = dict(os.environ)
     env.update({
         'PSXPORT_NATIVE_FRAMES': '3000',
+        'PSXPORT_VK_HEADLESS': '1',
         'PSXPORT_NOPACE': '1',
         'PSXPORT_NOAUDIO': '1',
         'PSXPORT_ASSET_DIR': os.path.join(REPO, 'external', 'psxport'),
@@ -460,6 +461,7 @@ def cmd_boot(args) -> int:
 
     env = dict(os.environ)
     env['PSXPORT_SPYRO_DISC'] = disc
+    env['PSXPORT_VK_HEADLESS'] = '1'
     env['PSXPORT_NOAUDIO'] = '1'
     env['PSXPORT_NOPACE'] = '1'          # the ONLY switch that means "frames, not real time"
     env['PSXPORT_WATCHDOG'] = str(args.watchdog)

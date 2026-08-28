@@ -41,4 +41,6 @@ The candidate now shares that executable-derived adjustment rule between medium 
 and near (15x15 default) refinement, while retaining each face's authored texture-pair address for
 future oracle diagnostics. A production-path Clang regression covers both extents and the exact
 attribute-`0x68` words. The issue remains investigating until one later serialized runtime oracle
-passes the FIELD corpus; do not submit the FIELD layer before that result.
+passes the FIELD corpus. The compiled, stage-0-unwired owner now prepares the real snapshot as Ready
+with 413 faces, but that static evidence does not replace the retained-world comparison; do not wire
+the FIELD layer before the oracle passes.

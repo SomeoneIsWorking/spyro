@@ -252,3 +252,61 @@ Also fixed this session (user-reported "run.sh runs unbounded speed"): the frame
 paced ONE field per logic frame while the guest's own tail spends TWO (30 Hz logic on 60 Hz
 display) — the game ran at 2x. `frame_commit` now paces `kFieldsPerLogicFrame` = 2, measured
 windowless at 59.6 fields/s / 29.8 logic fps against retail 59.94/30.
+
+## Animated world chunks are now owned; the refusal moved to particles
+
+The environment layer's `active_animation` refusal is resolved by owning phase 1's per-sector
+animation rather than by tolerating it. `RenderWorldChunks` does not only select and cull sectors:
+for each one it keeps, it advances up to four channels that write back into that sector's own vertex
+and colour arrays (`0x80025BAC..0x800261A0`), and phase 2 then projects exactly what they wrote. A
+producer that skipped them would draw last-frame geometry; the one that refused was blind instead.
+Both are wrong, so `game/render/world_animation.cpp` owns the step.
+
+Each channel is gated by one of the sector's four stamp bytes at `+0x18`, ORed with the mask naming
+which quality halves were emitted; it runs when its byte is below `0x80` and the guest retires it by
+stamping `0xFF` back. The four differ only in destination, and each has a direct-copy and a
+GTE-interpolated form:
+
+| channel | set slot | destination | interpolated by |
+|---|---|---|---|
+| 0 | `g_EnvironmentAnimations+0x14` | `sector+28` | INTPL, packed 11/11/10 |
+| 1 | `+0x1C` | `sector+28 + [sector+16]*4`, walked by each word's top byte | DPCS |
+| 2 | `+0x24` | `sector+28 + [sector+23]*4` | INTPL, packed 11/11/10 |
+| 3 | `+0x2C` | two streams from the `[sector+20]` layout word | DPCS |
+
+The decode is pure and yields a plan; `world_scene::animate` is the single place that commits it,
+and it re-walks the selection in the refusing form afterwards so a surviving channel is reported
+rather than assumed away. The read-only recipe producers keep their contract unchanged.
+
+### Verified against the retained body, not declared
+
+The guest's animation retires itself, which gives an exact A/B with no address exclusion list: run
+`gen_func_800258F0` twice from the same captured RAM — once as the guest (animate + render), once
+after the native animation has retired the channels (render only). If the native animation is the
+guest's, both legs leave byte-identical guest RAM. That comparison is instrument I057.
+
+On `scratch/raw/stage0_artisans_refusal.bin` — the exact frame that was refusing, captured by the
+new RAM dump on the render-refusal fatal — the two legs are identical across the whole 2 MB after 2
+channels and 28 writes. The shipped negative control (`PSXPORT_WORLD_ANIMATION_ORACLE_MUTATE=1`)
+flips one byte the animation itself wrote and the same comparison reports 80 differing bytes, so the
+instrument is sensitive to what it claims to measure. C229 records the claim and its falsifier.
+
+**Coverage gap, stated rather than papered over:** that frame's two channels are both the DIRECT
+form. The live corpus exercises ZERO blended channels, so the INTPL/DPCS transcriptions are covered
+only by `tests/test_world_animation.cpp` (46 hermetic checks across all four channels and both
+forms). A real frame with a nonzero keyframe blend factor has not yet been compared.
+
+### Current boundary
+
+The shipping New Game route now renders the FIELD environment natively — `[fieldenv] PASS
+selection=5 distance=0x28000 sectors=86 low=23 high=31 candidates=1564 rejected=1016 faces=746` —
+and the stage-0 refusal has advanced one layer, to particles `0x800573C8` (an 843-instruction
+hand-written assembly renderer that calls nothing), with tracers `0x800189F0` behind it. The fade
+and border producers after those are already owned and wait only on the layers ahead. Issue #89
+stays open until the route reaches coherent controllable gameplay.
+
+### Tooling closed this session
+
+The render-refusal fatal wrote no RAM dump, so every unowned stage-0 layer had to be re-driven live
+to be looked at once. It now calls `snapshot_now` unconditionally on that path — the same reasoning
+as the recomp-MISS dump — which is how this session's corpus was captured at all.

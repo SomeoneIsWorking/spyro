@@ -23,6 +23,7 @@
 #include "presentation_owner.h"
 #include "render.h"
 #include "screen_fade_recipe.h"
+#include "snapshot.h" // snapshot_now — a refusal fatal must leave the corpus its fix needs
 #include "spyro1_field_scheduler.h"
 #include "spyro_game.h"
 #include "stage13_scene_recipe.h"
@@ -216,6 +217,11 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
                   resident != nullptr ? resident : "(outside configured slot)");
   }
   reportBacklog(sc);
+  // The recomp-MISS path already dumps 2 MB of guest RAM because that image is what every
+  // follow-up question gets answered from. A refusal fatal is the same kind of event and had no
+  // dump, so each unowned stage-0 layer had to be re-driven live to be looked at once. Write it
+  // here unconditionally: this path ends the run anyway, so there is no cost to weigh.
+  snapshot_now(mC, "native-render-refusal");
   lucent::error("render",
                 "  no fallback is installed on purpose: a native branch that drew "
                 "something plausible would make this gap invisible. Port the scene above, "

@@ -19,7 +19,6 @@ enum class Reason : uint8_t {
   Nclip,
   ZeroArea,
   Depth,
-  Semi,
   Ft4,
   Malformed,
   BinRange,
@@ -78,6 +77,9 @@ struct Recipe {
   uint32_t rejectedRecords = 0;
   uint32_t candidates = 0;
   uint32_t rejectedCandidates = 0;
+  uint32_t firstUnsupportedRecord = 0;
+  uint32_t firstUnsupportedSourceWord = 0;
+  std::array<uint32_t, 2> firstUnsupportedWords{};
   std::vector<Candidate> candidateOrder;
   std::vector<Face> faces;
 };

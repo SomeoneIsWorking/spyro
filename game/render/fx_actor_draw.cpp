@@ -1,19 +1,15 @@
 #include "fx_actor_draw.h"
 
-#include "actor_global_order.h"
+#include "actor_face_submitter.h"
 #include "actor_recipe_capture.h"
 #include "actor_scene_builder.h"
 #include "actor_scene_oracle.h"
 #include "core.h"
 #include "game.h"
 #include "gpu_vk.h"
-#include "painter_submission_preflight.h"
 #include "producer_scope.h"
 #include "render_queue.h"
-#include "scene_painter_order.h"
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
 #include <lucent/log.h>
 #include <vector>
@@ -21,64 +17,6 @@
 namespace {
 
 constexpr uint32_t kProducerKey = 0x8001F798u;
-
-struct Material {
-  bool textured = false;
-  uint16_t clut = 0;
-  uint16_t tpage = 0;
-  std::array<uint32_t, 4> attributes{};
-};
-
-uint32_t vertex_count(spyro::actor_draw_recipe::Family family) {
-  using Family = spyro::actor_draw_recipe::Family;
-  return family == Family::G4 || family == Family::GT4 ? 4u : 3u;
-}
-
-std::array<uint32_t, 4> vertex_order(const spyro::actor_draw_recipe::Face &face) {
-  std::array<uint32_t, 4> order{0, 1, 2, 3};
-  if (face.origin == spyro::actor_draw_recipe::Origin::QuadSecond) {
-    order[0] = 3;
-  }
-  return order;
-}
-
-Material material_for(const spyro::actor_draw_recipe::Face &face) {
-  using Family = spyro::actor_draw_recipe::Family;
-  using Origin = spyro::actor_draw_recipe::Origin;
-  Material material{};
-  material.textured = face.family == Family::GT3 || face.family == Family::GT4;
-  if (!material.textured) {
-    return material;
-  }
-  const auto &input = face.input;
-  const bool sourceQuad = (int32_t)input.words[0] < 0;
-  if (face.family == Family::GT4) {
-    material.attributes = {
-        input.words[3] + input.fog, input.words[4], input.words[5], input.words[5] >> 16};
-  } else if (!sourceQuad) {
-    material.attributes = {input.words[2] + input.fog, input.words[3], input.words[4], 0};
-  } else if (face.origin == Origin::QuadSecond) {
-    material.attributes = {(input.words[3] + input.fog) & 0xffff0000u | (input.words[5] >> 16),
-                           input.words[4],
-                           input.words[5],
-                           0};
-  } else {
-    material.attributes = {input.words[3] + input.fog, input.words[4], input.words[5], 0};
-  }
-  material.clut = (uint16_t)(material.attributes[0] >> 16);
-  material.tpage = (uint16_t)(material.attributes[1] >> 16);
-  return material;
-}
-
-bool preflight_materials(const spyro::actor_draw_recipe::Recipe &recipe) {
-  for (const auto &face : recipe.faces) {
-    const Material material = material_for(face);
-    if (material.textured && ((material.tpage >> 7) & 3u) > 2u) {
-      return false;
-    }
-  }
-  return true;
-}
 
 } // namespace
 
@@ -138,12 +76,22 @@ bool spyro_actor_submit(Core *c) {
     return true;
   }
   if (recipe.status != spyro::actor_draw_recipe::Status::Ready) {
+    const uint32_t firstPrefixStatus =
+        outputs.empty() ? UINT32_MAX : (uint32_t)outputs.front().status;
     lucent::debug(
         "actordirect",
-        "REFUSED recipe={} records={} source_scanned={} source_queued={} source_culled={} "
-        "coarse={} view={} invalid_model={}",
+        "REFUSED recipe={} reason={} prefix_status={} record={} source_word={} words={:08X},{:08X} "
+        "records={} candidates={} source_scanned={} source_queued={} source_culled={} coarse={} "
+        "view={} invalid_model={}",
         (uint32_t)recipe.status,
+        (uint32_t)recipe.firstReason,
+        firstPrefixStatus,
+        recipe.firstUnsupportedRecord,
+        recipe.firstUnsupportedSourceWord,
+        recipe.firstUnsupportedWords[0],
+        recipe.firstUnsupportedWords[1],
         records.size(),
+        recipe.candidates,
         census.scanned,
         census.queued,
         census.culled,
@@ -152,102 +100,27 @@ bool spyro_actor_submit(Core *c) {
         census.invalidModel);
     return false;
   }
-  if (!preflight_materials(recipe)) {
-    lucent::debug("actordirect", "REFUSED unsupported texture mode");
-    return false;
-  }
-  const auto replay = spyro::actor_global_order::build(outputs, recipe.faces);
-  if (replay.status != spyro::actor_global_order::Status::Ready) {
-    lucent::debug("actordirect", "REFUSED global replay order={}", replay.refusal);
-    return false;
-  }
   RenderQueue &queue = c->game->rq;
   const auto plan =
-      spyro::painter_submission::preflight(queue,
-                                           kProducerKey,
-                                           recipe.faces.size(),
-                                           spyro::scene_painter_order::kActorWorldTerrainDomain);
-  if (!plan.ready) {
+      spyro::actor_face_submitter::prepare(queue, kProducerKey, outputs, recipe.faces);
+  if (plan.status != spyro::actor_face_submitter::Status::Ready) {
+    lucent::debug("actordirect", "REFUSED submission={}", (uint32_t)plan.status);
     return false;
   }
   const GpuState gpu = c->game->gpu;
   if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
     return false;
   }
-  int drawRight = gpu.s_da_x1;
-  if (gpu_vk_wide_engine(c)) {
-    drawRight = std::max(drawRight, gpu_vk_wide_engine_w(c) - 1);
-  }
   ProducerScope producer(&c->rsub.producerScope, kProducerKey, "actor:opaque");
-  RenderQueue::PainterObjectScope painter(queue, kProducerKey);
-  for (const auto &replayFace : replay.faces) {
-    const auto &face = recipe.faces[replayFace.faceIndex];
-    const uint32_t count = vertex_count(face.family);
-    const auto order = vertex_order(face);
-    const Material material = material_for(face);
-    int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
-    float screenX[4]{}, screenY[4]{}, depth[4]{};
-    unsigned char red[4]{}, green[4]{}, blue[4]{};
-    for (uint32_t i = 0; i < count; ++i) {
-      const uint32_t source = order[i];
-      xs[i] = (int16_t)face.input.xy[source] + gpu.s_off_x;
-      ys[i] = (int16_t)(face.input.xy[source] >> 16) + gpu.s_off_y;
-      screenX[i] = face.input.screenX[source] + (float)gpu.s_off_x;
-      screenY[i] = face.input.screenY[source] + (float)gpu.s_off_y;
-      us[i] = material.attributes[i] & 0xffu;
-      vs[i] = (material.attributes[i] >> 8) & 0xffu;
-      const uint32_t rgb = face.input.color[source];
-      red[i] = rgb;
-      green[i] = rgb >> 8;
-      blue[i] = rgb >> 16;
-      depth[i] = c->rsub.projParams.pzToOrd(face.input.viewZ[source]);
-    }
-    queue.emitOrQueue(c,
-                      1,
-                      RQ_WORLD,
-                      RQ_OM_DEPTH,
-                      (int)count,
-                      0,
-                      0,
-                      xs,
-                      ys,
-                      screenX,
-                      screenY,
-                      us,
-                      vs,
-                      red,
-                      green,
-                      blue,
-                      depth,
-                      material.textured ? (material.tpage >> 7) & 3u : 3u,
-                      material.textured ? (material.tpage & 0x0fu) * 64 : 0,
-                      material.textured ? ((material.tpage >> 4) & 1u) * 256 : 0,
-                      material.textured ? (material.clut & 0x3fu) * 16 : 0,
-                      material.textured ? (material.clut >> 6) & 0x1ffu : 0,
-                      gpu.s_tw_mx,
-                      gpu.s_tw_my,
-                      gpu.s_tw_ox,
-                      gpu.s_tw_oy,
-                      gpu.s_da_x0,
-                      gpu.s_da_y0,
-                      drawRight,
-                      gpu.s_da_y1,
-                      material.textured ? (material.tpage >> 5) & 3u : 0,
-                      nullptr,
-                      -1,
-                      0.0f,
-                      1,
-                      material.textured ? (material.tpage >> 9) & 1u : gpu.s_tp_dither,
-                      spyro::scene_painter_order::actor(
-                          replayFace.otBin, replayFace.recordOrdinal, replayFace.chainOrdinal));
-  }
+  spyro::actor_face_submitter::submit(
+      c, queue, kProducerKey, spyro::actor_face_submitter::Layer::Regular, recipe.faces, plan);
   lucent::debug("actordirect",
                 "PASS records={} candidates={} rejected={} faces={} painters_before={}",
                 recipe.records,
                 recipe.candidates,
                 recipe.rejectedCandidates,
                 recipe.faces.size(),
-                plan.existingObjects);
+                plan.admission.existingObjects);
   lucent::debug("actordirect",
                 "source scanned={} queued={} culled={}",
                 census.scanned,

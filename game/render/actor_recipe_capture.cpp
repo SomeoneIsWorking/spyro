@@ -3,6 +3,7 @@
 #include "core.h"
 
 #include <algorithm>
+#include <lucent/log.h>
 
 namespace spyro::actor_recipe_capture {
 namespace {
@@ -43,6 +44,70 @@ bool copy_model_stream(Core *c, uint32_t model, uint32_t count, actor_prefix::Ow
   return true;
 }
 
+bool copy_primitive_patches(Core *c,
+                            uint32_t model,
+                            uint32_t modelMeta,
+                            uint32_t primitiveBytes,
+                            std::vector<actor_prefix::PrimitivePatch> &patches) {
+  patches.clear();
+  const uint32_t tableOffset = (modelMeta & 0xffffu) << 2;
+  if (tableOffset == 0u) {
+    return true;
+  }
+  uint32_t cursor = model + tableOffset;
+  constexpr uint32_t kMaxPatchGroups = 1024u;
+  for (uint32_t group = 0; group < kMaxPatchGroups; ++group) {
+    if (!physical_span(cursor, 4u)) {
+      lucent::debug("actordirect",
+                    "REFUSED expansion table header group={} cursor=0x{:08X}: outside guest RAM",
+                    group,
+                    cursor);
+      return false;
+    }
+    const uint32_t header = c->mem_r32(kseg(cursor));
+    cursor += 4u;
+    const uint32_t byteOffset = header & 0xffffu;
+    const uint32_t wordCount = (header >> 24) & 0x7fu;
+    const bool aligned = (byteOffset & 3u) == 0u;
+    const bool afterLengthWord = byteOffset >= 4u;
+    const bool beginsInCommand = byteOffset <= primitiveBytes + 4u;
+    const bool fitsCommand =
+        beginsInCommand && wordCount <= (primitiveBytes + 4u - byteOffset) / 4u;
+    const bool tableReadable = physical_span(cursor, std::max(1u, wordCount) * 4u);
+    lucent::debug("actordirect",
+                  "expansion group={} header={:08X} offset={} count={} primitive_bytes={} "
+                  "continue={} predicates(aligned={},after_length={},begins={},fits={},table={})",
+                  group,
+                  header,
+                  byteOffset,
+                  wordCount,
+                  primitiveBytes,
+                  (int32_t)header > 0,
+                  aligned,
+                  afterLengthWord,
+                  beginsInCommand,
+                  fitsCommand,
+                  tableReadable);
+    if (!aligned || !afterLengthWord || !fitsCommand || !tableReadable) {
+      patches.clear();
+      return false;
+    }
+    actor_prefix::PrimitivePatch patch{};
+    patch.wordOffset = byteOffset / 4u - 1u;
+    patch.words.reserve(wordCount);
+    for (uint32_t word = 0; word < wordCount; ++word) {
+      patch.words.push_back(c->mem_r32(kseg(cursor)));
+      cursor += 4u;
+    }
+    patches.push_back(std::move(patch));
+    if ((int32_t)header <= 0) {
+      return true;
+    }
+  }
+  patches.clear();
+  return false;
+}
+
 } // namespace
 
 bool capture_source(Core *c, const SourceRecord &source, Record &capture) {
@@ -68,7 +133,6 @@ bool capture_source(Core *c, const SourceRecord &source, Record &capture) {
   input.streamShift = (uint8_t)(c->mem_r8(kseg(descriptor + 6u)) + 1u);
   input.vertexCount = c->mem_r8(kseg(descriptor + 8u));
   const uint32_t modelMeta = c->mem_r32(kseg(model + 4u));
-  input.optionalExpansion = input.cr30 > 0 && (((modelMeta << 16) >> 14) != 0);
   const uint16_t blend = (uint16_t)((input.header & 0xff00u) >> 2);
   if (input.vertexCount != 0 && !copy_model_stream(c, model, input.vertexCount, input.primary)) {
     return false;
@@ -90,14 +154,15 @@ bool capture_source(Core *c, const SourceRecord &source, Record &capture) {
     input.colorArm = actor_prefix::ColorArm::NegativeBlend;
   }
   const uint32_t colorCount = c->mem_r16(kseg(descriptor + 2u));
-  const uint32_t primaryColors = c->mem_r32(kseg(descriptor + 24u));
+  const DescriptorMaterial material = descriptorMaterial(input.colorArm);
+  const uint32_t directColors = c->mem_r32(kseg(descriptor + material.colorOffset));
   const uint32_t secondaryColors = c->mem_r32(kseg(descriptor + 32u));
-  if (!physical_span(primaryColors, std::max(1u, colorCount) * 4u)) {
+  if (!physical_span(directColors, std::max(1u, colorCount) * 4u)) {
     return false;
   }
   input.primaryColors.reserve(colorCount);
   for (uint32_t i = 0; i < colorCount; ++i) {
-    input.primaryColors.push_back(c->mem_r32(kseg(primaryColors + i * 4u)));
+    input.primaryColors.push_back(c->mem_r32(kseg(directColors + i * 4u)));
   }
   if (input.colorArm == actor_prefix::ColorArm::PositiveBlend) {
     if (!physical_span(secondaryColors, std::max(1u, colorCount) * 4u)) {
@@ -108,7 +173,7 @@ bool capture_source(Core *c, const SourceRecord &source, Record &capture) {
       input.secondaryColors.push_back(c->mem_r32(kseg(secondaryColors + i * 4u)));
     }
   }
-  const uint32_t command = c->mem_r32(kseg(descriptor + 20u));
+  const uint32_t command = c->mem_r32(kseg(descriptor + material.commandOffset));
   uint32_t primitiveBytes = 0;
   if (!copy_primitive_words(
           [&](uint32_t address) {
@@ -119,12 +184,33 @@ bool capture_source(Core *c, const SourceRecord &source, Record &capture) {
           primitiveBytes)) {
     return false;
   }
+  if (input.cr30 > 0 &&
+      !copy_primitive_patches(c, model, modelMeta, primitiveBytes, input.primitivePatches)) {
+    return false;
+  }
   capture.descriptor = kseg(descriptor);
   capture.command = kseg(command);
-  capture.colorBase =
-      input.colorArm == actor_prefix::ColorArm::High ? kseg(primaryColors) : 0x80070DF4u;
+  capture.colorBase = material.writesScratchColors ? 0x80070DF4u : kseg(directColors);
   capture.expected = actor_prefix::build(input);
   capture.fog = capture.expected.fog;
+  return true;
+}
+
+bool capture_secondary_source(Core *c, const SourceRecord &source, Record &capture) {
+  if (!capture_source(c, source, capture)) {
+    return false;
+  }
+  auto &input = capture.input;
+  if (input.cr30 > 0) {
+    return true;
+  }
+  // Both regular 0x8001F798 and secondary 0x80020F34 select descriptor
+  // offsets +28/+32 when CR30 is non-positive. capture_source already owns
+  // that direct material arm. Only the deeper global-far-colour program
+  // remains distinct and unsupported here.
+  if (input.colorArm == actor_prefix::ColorArm::NegativeBlend) {
+    return false;
+  }
   return true;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "world_animation.h"
 #include "world_chunk_codec.h"
 
 #include <array>
@@ -22,11 +23,19 @@ struct Prepared {
 };
 
 // Builds RenderWorldChunks' phase-1 sector lists from an immutable RAM view.
-// No guest state is changed; unsupported active animations reject the whole
-// preparation before a caller can submit a partial scene.
+// No guest state is changed here in either form.
+//
+// With `animation` null this is the read-only producers' entry: a sector with a live animation
+// channel refuses the whole preparation, because its arrays hold geometry the frame has not
+// applied yet and drawing them would silently ship stale world.
+//
+// With `animation` supplied the same walk instead DECODES those channels into the plan the guest
+// would have written. Nothing is committed; `world_scene::animate` is the one place that does
+// that, and it re-runs this in the refusing form afterwards to prove the state really advanced.
 bool prepare(const world_chunk_codec::RamView &ram,
              int32_t selection,
              Prepared &out,
-             const char *&why);
+             const char *&why,
+             world_animation::Plan *animation = nullptr);
 
 } // namespace spyro::world_scene_prepare

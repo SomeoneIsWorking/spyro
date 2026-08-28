@@ -62,20 +62,12 @@ uint32_t packedSxy(const psxport::native_projection::NativeProjectedVertex &proj
 
 Output build(const Input &input) {
   Output out{};
-  if (input.optionalExpansion) {
-    out.status = Status::OptionalExpansion;
-    return out;
-  }
   if (input.vertexCount == 0) {
     out.status = Status::CountZero;
     return out;
   }
   if ((input.header & 0xffu) != 0) {
     out.status = Status::TransformBlend;
-    return out;
-  }
-  if (input.colorArm == ColorArm::Plain) {
-    out.status = Status::PlainColor;
     return out;
   }
   if (input.colorArm == ColorArm::NegativeBlend) {
@@ -139,7 +131,7 @@ Output build(const Input &input) {
     return out;
   }
 
-  if (input.colorArm == ColorArm::High) {
+  if (input.colorArm == ColorArm::High || input.colorArm == ColorArm::Plain) {
     out.colors = input.primaryColors;
   } else {
     if (input.primaryColors.size() != input.secondaryColors.size()) {
@@ -157,6 +149,16 @@ Output build(const Input &input) {
     }
   }
   out.primitiveWords = input.primitiveWords;
+  for (const PrimitivePatch &patch : input.primitivePatches) {
+    if (patch.wordOffset > out.primitiveWords.size() ||
+        patch.words.size() > out.primitiveWords.size() - patch.wordOffset) {
+      out.status = Status::Expansion;
+      out.primitiveWords.clear();
+      return out;
+    }
+    std::copy(
+        patch.words.begin(), patch.words.end(), out.primitiveWords.begin() + patch.wordOffset);
+  }
   out.status = Status::Ok;
   return out;
 }

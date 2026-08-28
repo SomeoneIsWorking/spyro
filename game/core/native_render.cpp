@@ -756,6 +756,7 @@ void spyro_register_native_render() {
                  kSpriteRenderer,
                  kQueueCapacity);
   }
+  spyro_world_animation_oracle_install();
   // PSXPORT_WORLD_CENSUS=1 — measure RenderWorldChunks 0x800258F0's game-state inputs at every live
   // call, then run the unchanged guest body. The run-end report (spyro_world_census_finish) prints
   // calls/chunks/pool-bytes even when the run never reached the field — zero is a loud answer, not

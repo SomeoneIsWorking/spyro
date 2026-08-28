@@ -96,7 +96,7 @@ verification suite.
 provisioning, build, or launch discovery. The built `spyro_port` executable accepts the same help
 spellings before it inspects its executable argument.
 
-Useful knobs: `PSXPORT_NOAUDIO=1`, `PSXPORT_NOWINDOW=1` (headless), `PSXPORT_FORCE_RECOMP=1`,
+Useful knobs for direct diagnostic runs: `PSXPORT_NOAUDIO=1`, `PSXPORT_FORCE_RECOMP=1`,
 `PSXPORT_DEBUG=cd` (channel-gated diagnostics; see psxport's `docs/config.md`).
 
 ---
@@ -146,7 +146,7 @@ reached*.
 
 ## Contributing
 
-The working rules are in [`CLAUDE.md`](CLAUDE.md). In short: reverse-engineer before reimplementing;
+The working rules are in [`AGENTS.md`](AGENTS.md). In short: reverse-engineer before reimplementing;
 no bandaids (no magic constants, no guessed addresses, no swallowed errors); gate native code
 byte-exact against the substrate it replaces, and never trust a green gate without proving it
 actually exercised the code; and record what you prove *and* what you rule out.

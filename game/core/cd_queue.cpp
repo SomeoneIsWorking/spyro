@@ -16,6 +16,7 @@
 // Nothing here writes guest memory — in particular it does NOT set the status bit the wait loop
 // wants. That bit has a known producer now, and faking it would discard the understanding that
 // decoding the queue bought.
+#include "archive_transfer_contract.h"
 #include "core.h"
 #include "game.h"
 #include "overlay_router.h" // overlay_note_load — give the arena slot a load-time identity
@@ -337,14 +338,17 @@ void cd_loader(Core *c) {
 void cd_stream_read(Core *c) {
   const ArchiveRead read = archiveReadFromRegisters(*c);
   const uint32_t moved = copyArchiveRead(*c, read);
+  const auto transfer = spyro::archive_transfer::evidence(read.length, moved);
   lucent::debug("cdq",
-                "stream: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> moved {} bytes",
+                "stream: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> "
+                "coverage=[0,{}) complete={}",
                 read.baseLba,
                 read.destination,
                 read.length,
                 read.byteOffset,
                 read.token,
-                moved);
+                transfer.coveredEnd(),
+                transfer.complete() ? 1 : 0);
   // Same load-time identity the sync loader records, for the same reason: an overlay's signature
   // only matches its slot before the game mutates the image header.
   if (moved) {

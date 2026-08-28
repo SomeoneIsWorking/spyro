@@ -15,6 +15,7 @@ bool append(const world_chunk_codec::RamView &ram,
             const world_scene_prepare::Prepared &prepared,
             const psxport::native_projection::ProjectionParams &projection,
             int clipRight,
+            uint32_t farLimit,
             world_recipe::Recipe &out,
             const char *&why);
 

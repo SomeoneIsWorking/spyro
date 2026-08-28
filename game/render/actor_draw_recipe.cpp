@@ -92,10 +92,11 @@ bool populate(const actor_prefix::Output &record,
 }
 
 std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool second) {
+  const uint32_t semiCommandBit = (s.words[1] & 1u) << 25;
   switch (family) {
   case Family::G4:
     return {0x08000000u,
-            s.color[0] + 0x38000000u,
+            s.color[0] + 0x38000000u + semiCommandBit,
             s.xy[0],
             s.color[1],
             s.xy[1],
@@ -105,7 +106,7 @@ std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool secon
             s.xy[3]};
   case Family::GT4:
     return {0x0c000000u,
-            s.color[0] + 0x3c000000u,
+            s.color[0] + 0x3c000000u + semiCommandBit,
             s.xy[0],
             s.words[3] + s.fog,
             s.color[1],
@@ -120,7 +121,7 @@ std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool secon
   case Family::G3: {
     const unsigned a = second ? 3u : 0u;
     return {0x06000000u,
-            (s.color[a] & 0x00ffffffu) + 0x30000000u,
+            (s.color[a] & 0x00ffffffu) + 0x30000000u + semiCommandBit,
             s.xy[a],
             s.color[1],
             s.xy[1],
@@ -137,7 +138,7 @@ std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool secon
     }
     const unsigned a = second ? 3u : 0u;
     return {0x09000000u,
-            (s.color[a] & 0x00ffffffu) + 0x34000000u,
+            (s.color[a] & 0x00ffffffu) + 0x34000000u + semiCommandBit,
             s.xy[a],
             uv0,
             s.color[1],
@@ -258,12 +259,8 @@ Recipe compose(std::span<const actor_prefix::Output> records) {
       if (!populate(record, source, input, malformed)) {
         recipe.status = Status::Unsupported;
         recipe.firstReason = malformed;
-        recipe.faces.clear();
-        return recipe;
-      }
-      if (input.words[1] & 1u) {
-        recipe.status = Status::Unsupported;
-        recipe.firstReason = Reason::Semi;
+        recipe.firstUnsupportedRecord = recordIndex;
+        recipe.firstUnsupportedSourceWord = source;
         recipe.faces.clear();
         return recipe;
       }
@@ -277,6 +274,9 @@ Recipe compose(std::span<const actor_prefix::Output> records) {
         recipe.firstReason = !result.supported                           ? result.reason
                              : result.emitted && result.localBin >= 288u ? Reason::BinRange
                                                                          : Reason::Malformed;
+        recipe.firstUnsupportedRecord = recordIndex;
+        recipe.firstUnsupportedSourceWord = source;
+        recipe.firstUnsupportedWords = {input.words[0], input.words[1]};
         recipe.faces.clear();
         return recipe;
       }

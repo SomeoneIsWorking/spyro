@@ -199,6 +199,110 @@ PRODUCERS = [
             ),
         ),
     },
+    {
+        "label": "screen:fade",
+        "src": "game/render/fx_screen_fade.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The cutscene fade entry starts with its 0x800190D4 stack frame and g_Fade colour setup.
+        # This exact entry sequence occurs once in the retail MAIN image.
+        "entry_sequence": (
+            "0x800190D4 fade prologue + g_Fade colour setup (15 words)",
+            (
+                0x27BDFFD0, 0xAFB1001C, 0x00A08821, 0xAFB20020, 0x00C09021,
+                0xAFB30024, 0x00E09821, 0x00043940, 0x24050001, 0xAFB00018,
+                0x3C108007, 0x8E1057B0, 0x00003021, 0xAFBF0028, 0xAFA00010,
+            ),
+        ),
+    },
+    {
+        "label": "fieldhud:collectables",
+        "src": "game/render/fx_field_collectables.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The FIELD collectables entry starts with the flight-level guard, shaded-moby queue walk,
+        # and HUD root setup. This exact entry sequence occurs once in the retail MAIN image.
+        "entry_sequence": (
+            "0x80019300 collectables flight guard + queue/HUD setup (16 words)",
+            (
+                0x3C028007, 0x8C425690, 0x27BDFFA8, 0xAFBF0050, 0xAFB3004C,
+                0xAFB20048, 0xAFB10044, 0x14400082, 0xAFB00040, 0x3C118007,
+                0x263120F4, 0x8E220000, 0x00000000, 0x10400007, 0x00000000,
+                0x26310004,
+            ),
+        ),
+    },
+    {
+        "label": "screen:border",
+        "src": "game/render/fx_screen_border.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The field border entry starts with the enabled/height/delta-time reads and its two
+        # stack-frame branches. This exact entry sequence occurs once in the retail MAIN image.
+        "entry_sequence": (
+            "0x80018F30 border enabled/height/delta-time setup (18 words)",
+            (
+                0x3C028007, 0x8C42570C, 0x27BDFFD8, 0xAFBF0020, 0xAFB3001C,
+                0xAFB20018, 0xAFB10014, 0x10400018, 0xAFB00010, 0x3C038007,
+                0x8C6356C0, 0x00000000, 0x28620016, 0x10400007, 0x00000000,
+                0x3C028007, 0x8C4256CC, 0x00000000,
+            ),
+        ),
+    },
+    {
+        "label": "spriteq:world-shaded",
+        "src": "game/render/fx_field_shaded_queue.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The shaded queue's retained entry uses the common renderer save block followed by the
+        # queue's local stack setup. This exact entry sequence occurs once in the retail MAIN image.
+        "entry_sequence": (
+            "0x80022A2C shaded queue renderer save + stack setup (18 words)",
+            (
+                0x3C018007, 0x24217DD8, 0xAC300000, 0xAC310004, 0xAC320008,
+                0xAC33000C, 0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+                0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C, 0x3C1F8007,
+                0x27FFFCF4, 0x23FF2400, 0x3C1D8007,
+            ),
+        ),
+    },
+    {
+        "label": "actor:secondary",
+        "src": "game/render/fx_secondary_actor.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The secondary actor renderer shares the regular actor prefix, then takes its distinct
+        # list-empty branch. The full 28-word entry sequence occurs once in the retail image.
+        "entry_sequence": (
+            "0x80020F34 secondary actor save/list-empty prefix (28 words)",
+            (
+                0x3C018007, 0x24217DD8, 0xAC300000, 0xAC310004, 0xAC320008,
+                0xAC33000C, 0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+                0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C, 0x3C018007,
+                0x242157B0,
+                0x8C210000, 0x3C1C8007, 0x279CFCF4, 0x239C1600, 0x3C028007,
+                0x2442591C, 0x8C420000, 0x00200011, 0x48C2E800, 0x8F930000,
+                0x8F9F0004, 0x1260068E, 0x3274FF00,
+            ),
+        ),
+    },
+    {
+        "label": "field:environment",
+        "src": "game/render/fx_field_environment.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The FIELD environment path enters the shared world renderer with a camera-relative
+        # selector load. This exact entry sequence occurs once in the retail MAIN image.
+        "entry_sequence": (
+            "0x800258F0 world renderer + camera-relative selector load (18 words)",
+            (
+                0x3C018007, 0x24217DD8, 0xAC300000, 0xAC310004, 0xAC320008,
+                0xAC33000C, 0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C,
+                0xAC3C0020, 0xAC3D0024, 0xAC3E0028, 0xAC3F002C, 0x209F0000,
+                0x3C018007, 0x24216DD0, 0x8C2A0014,
+            ),
+        ),
+    },
 ]
 
 

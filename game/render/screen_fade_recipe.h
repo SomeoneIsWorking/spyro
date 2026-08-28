@@ -21,4 +21,7 @@ struct Recipe {
 // the live render width while retaining the authored 8..232 vertical extent.
 Recipe cutscene(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth);
 
+// Stage 0 calls the same producer as (mode=2, r=g=b=g_Fade*8).
+Recipe field(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth);
+
 } // namespace spyro::screen_fade_recipe

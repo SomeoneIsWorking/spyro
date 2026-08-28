@@ -450,7 +450,6 @@ static CheckpointCensus::Prediction evaluate_candidate(const SourceSnapshot &s) 
              : result.reason == AR::Skip     ? "skip"
              : result.reason == AR::Depth    ? "depth"
              : result.reason == AR::Ft4      ? "ft4"
-             : result.reason == AR::Semi     ? "semi"
                                              : "none";
   return p;
 }

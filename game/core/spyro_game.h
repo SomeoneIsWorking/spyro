@@ -89,6 +89,12 @@ void spyro_sprite_queue_census_finish();
 // …and for the RenderWorldChunks 0x800258F0 input census (the frontier step after C198).
 void spyro_world_census_finish(Core *c);
 
+// world_animation_oracle.cpp — PSXPORT_WORLD_ANIMATION_ORACLE=1 checks the native phase-1 world
+// animation against the retained body by requiring identical guest RAM after both legs.
+void spyro_world_animation_oracle_install();
+void spyro_world_animation_oracle_snapshot(Core *c);
+void spyro_world_animation_oracle_finish();
+
 // wide_clip.cpp — widescreen by moving the guest's own clip-bound immediates in guest RAM and
 // running the five contributing renderers interpreted (11 sites). Inert at 4:3.
 void spyro_register_wide_clip();

@@ -22,7 +22,8 @@
 #include <cstdint>
 class Core;
 
-// Stage selectors whose complete reached recipes have native owners.
+// Stage selectors whose reached recipes have native owners.
+constexpr uint32_t kStageField = 0u;
 constexpr uint32_t kStageFrontEnd = 13u;
 constexpr uint32_t kStageCutscene = 14u;
 

@@ -14,7 +14,9 @@ namespace spyro::scene_painter_order {
 constexpr PainterReplayDomainId kActorWorldTerrainDomain = 0x8001e9c8u;
 
 PainterReplayOrder world(uint16_t otBin, uint32_t paintGroup, uint32_t paintSuborder);
+PainterReplayOrder queuedWorld(uint16_t otBin, uint32_t paintGroup);
 PainterReplayOrder actor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
+PainterReplayOrder secondaryActor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
 PainterReplayOrder cyclorama(uint32_t chainOrdinal);
 
 } // namespace spyro::scene_painter_order

@@ -43,6 +43,25 @@ void restoreCpu(Core *core,
   core->pc = pc;
 }
 
+void logPacket(
+    Core *core, const char *name, std::uint32_t call, std::uint32_t packet, std::uint32_t base) {
+  lucent::debug("shadoworacle",
+                "call {} {} packet={} base=0x{:08X} tag={:08X} setup={:08X} zero={:08X} "
+                "command={:08X} colour={:08X} anchor={:08X} point={:08X} point_next={:08X}",
+                call,
+                name,
+                packet,
+                base,
+                core->mem_r32(base + 0x00u),
+                core->mem_r32(base + 0x04u),
+                core->mem_r32(base + 0x08u),
+                core->mem_r32(base + 0x0cu),
+                core->mem_r32(base + 0x10u),
+                core->mem_r32(base + 0x14u),
+                core->mem_r32(base + 0x1cu),
+                core->mem_r32(base + 0x24u));
+}
+
 void captureConsumer(Core *core, std::uint32_t address, const char *name) {
   const std::uint32_t before = core->mem_r32(kPacketCursor);
   if (!guestSpan(before, 0u)) {
@@ -94,24 +113,9 @@ void captureConsumer(Core *core, std::uint32_t address, const char *name) {
                  packets,
                  core->mem_r32(0x8007aa34u),
                  core->mem_r32(0x80075f00u));
-    for (std::uint32_t packet = 0; packet < packets && packet < 4u; ++packet) {
+    for (std::uint32_t packet = 0; packet < packets; ++packet) {
       const std::uint32_t base = before + packet * 0x28u;
-      lucent::debug("shadoworacle",
-                    "call {} {} packet={} words={:08X},{:08X},{:08X},{:08X},{:08X},{:08X},"
-                    "{:08X},{:08X},{:08X},{:08X}",
-                    s.calls,
-                    name,
-                    packet,
-                    core->mem_r32(base + 0x00u),
-                    core->mem_r32(base + 0x04u),
-                    core->mem_r32(base + 0x08u),
-                    core->mem_r32(base + 0x0cu),
-                    core->mem_r32(base + 0x10u),
-                    core->mem_r32(base + 0x14u),
-                    core->mem_r32(base + 0x18u),
-                    core->mem_r32(base + 0x1cu),
-                    core->mem_r32(base + 0x20u),
-                    core->mem_r32(base + 0x24u));
+      logPacket(core, name, s.calls, packet, base);
     }
   }
 

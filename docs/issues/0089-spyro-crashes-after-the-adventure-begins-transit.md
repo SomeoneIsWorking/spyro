@@ -450,9 +450,34 @@ The measured packet ranges were:
 [shadoworacle] call 1 spyro: packet range 0x80187BB0->0x80187E30, packets=16 gate=0x00000000 shadow_cursor=0x800724F4
 ```
 
-The first Spyro packet words retained the source format: `E1000640` draw-mode setup,
-`0x32608080` flat Gouraud colour, and `0x06000000` G3 commands in 0x28-byte packet slots. The
-probe run later reached the existing explicit pause-menu native-render refusal, so its exit code is
-not evidence about shadow capture; the packet ranges were recorded before that unrelated refusal.
-This narrows the next faithful owner to Spyro-shadow packet geometry and queue submission. A guessed
-ellipse or a portal workaround would not be source-grounded.
+All 16 accepted Spyro packets were then logged. Every packet has the source's `E1000640` draw-mode
+setup, `0x32608080` flat Gouraud colour, and a 0x28-byte slot. The packet's projected anchor is
+`00A70064` in every slot; the packet points form a closed fan from `009A0064` through the sequence
+below and back to the first point. The command word's low 24 bits are the next packet link for the
+linked slots; `06000000` terminates the corresponding link.
+
+| packet | guest base | command/link word | anchor SXY | point SXY | next point SXY |
+|---:|---:|---:|---:|---:|---:|
+| 0 | `80187BB0` | `06187BD8` | `00A70064` | `009A0064` | `009E0055` |
+| 1 | `80187BD8` | `06187C00` | `00A70064` | `009E0055` | `00A3004C` |
+| 2 | `80187C00` | `06187DB8` | `00A70064` | `00A3004C` | `00A40044` |
+| 3 | `80187C28` | `06187C50` | `00A70064` | `00A40044` | `00A70040` |
+| 4 | `80187C50` | `06187D68` | `00A70064` | `00A70040` | `00AC0037` |
+| 5 | `80187C78` | `06187CA0` | `00A70064` | `00AC0037` | `00B30037` |
+| 6 | `80187CA0` | `06187D40` | `00A70064` | `00B30037` | `00C60037` |
+| 7 | `80187CC8` | `06187CF0` | `00A70064` | `00C60037` | `00DD0064` |
+| 8 | `80187CF0` | `06000000` | `00A70064` | `00DD0064` | `00C70092` |
+| 9 | `80187D18` | `06000000` | `00A70064` | `00C70092` | `00B50096` |
+| 10 | `80187D40` | `06000000` | `00A70064` | `00B50096` | `00AC0094` |
+| 11 | `80187D68` | `06187D90` | `00A70064` | `00AC0094` | `00A70089` |
+| 12 | `80187D90` | `06000000` | `00A70064` | `00A70089` | `00A30084` |
+| 13 | `80187DB8` | `06187DE0` | `00A70064` | `00A30084` | `00A0007C` |
+| 14 | `80187DE0` | `06187E08` | `00A70064` | `00A0007C` | `009D0072` |
+| 15 | `80187E08` | `06000000` | `00A70064` | `009D0072` | `009A0064` |
+
+The diagnostic currently records SXY and raw link words, not the GTE `SZ` values or the ordering
+bucket that the retained body inserts into the guest ordering table. Those depth/provenance values
+must be captured before a native queue owner can be justified. The probe run later reached the
+existing explicit pause-menu native-render refusal, so its exit code is not evidence about shadow
+capture; the packet ranges were recorded before that unrelated refusal. A guessed ellipse or a portal
+workaround would not be source-grounded.

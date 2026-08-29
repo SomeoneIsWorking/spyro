@@ -495,3 +495,10 @@ the final guest ordering-table links to prove their replay order. The probe run 
 existing explicit pause-menu native-render refusal, so its exit code is not evidence about shadow
 capture; the packet ranges were recorded before that unrelated refusal. A guessed ellipse or a portal
 workaround would not be source-grounded.
+
+The link resolver then walked the captured command links. On the same frame it found five complete
+chains, with no cycle or missing head: bucket 10 was packets `0,1,2,13,14,15`; bucket 9 was
+`3,4,11,12`; bucket 8 was `5,6,10`; bucket 7 was `9`; and bucket 6 was `7,8`. An eight-capture
+controlled-route run produced 128 packets with the same complete graph property and no diagnostic
+refusals. The anchor moved from `SXY=00A70064/SZ=065E` to `SXY=009F0064/SZ=081A` across the route,
+so the producer is not a static overlay; its projected fan and depth must be rebuilt from live state.

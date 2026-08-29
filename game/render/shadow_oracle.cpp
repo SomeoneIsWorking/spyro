@@ -173,6 +173,8 @@ void captureConsumer(Core *core, std::uint32_t address, const char *name) {
                     pointSz[point]);
     }
     const std::int32_t otBias = static_cast<std::int32_t>(core->mem_r32(kShadowOtBias));
+    std::array<std::int32_t, kMaxPackets> packetBuckets;
+    packetBuckets.fill(-1);
     for (std::uint32_t packet = 0; packet < packets; ++packet) {
       const std::uint32_t base = before + packet * kPacketStride;
       const std::uint32_t pointSxyA = core->mem_r32(base + 0x1cu);
@@ -200,6 +202,7 @@ void captureConsumer(Core *core, std::uint32_t address, const char *name) {
       const std::uint32_t pairSz = pointSz[pointA] + pointSz[pointB];
       const std::int32_t bucket =
           static_cast<std::int32_t>((pairSz + (pairSz >> 1u) + anchor.sz) >> 9u) - otBias;
+      packetBuckets[packet] = bucket;
       lucent::debug("shadoworacle",
                     "call {} {} depth-packet={} point_a={} sz_a={:04X} point_b={} sz_b={:04X} "
                     "anchor_sz={:04X} bucket={} admitted={}",
@@ -213,6 +216,91 @@ void captureConsumer(Core *core, std::uint32_t address, const char *name) {
                     anchor.sz,
                     bucket,
                     bucket >= 0 ? 1 : 0);
+    }
+    std::array<std::int32_t, kMaxPackets> nextPacket;
+    std::array<bool, kMaxPackets> hasIncoming;
+    nextPacket.fill(-1);
+    hasIncoming.fill(false);
+    for (std::uint32_t packet = 0; packet < packets; ++packet) {
+      const std::uint32_t base = before + packet * kPacketStride;
+      const std::uint32_t link = core->mem_r32(base + 0x0cu) & 0x00ffffffu;
+      if (link == 0u) {
+        lucent::debug("shadoworacle",
+                      "call {} {} link packet={} raw=00000000 next=end bucket={}",
+                      s.calls,
+                      name,
+                      packet,
+                      packetBuckets[packet]);
+        continue;
+      }
+      const std::uint32_t target = 0x80000000u | link;
+      std::int32_t targetPacket = -1;
+      for (std::uint32_t candidate = 0; candidate < packets; ++candidate) {
+        if (before + candidate * kPacketStride == target) {
+          targetPacket = static_cast<std::int32_t>(candidate);
+          break;
+        }
+      }
+      if (targetPacket >= 0) {
+        nextPacket[packet] = targetPacket;
+        hasIncoming[static_cast<std::size_t>(targetPacket)] = true;
+      } else {
+        lucent::error("shadoworacle",
+                      "call {} {} link packet={} has missing target raw={:06X}",
+                      s.calls,
+                      name,
+                      packet,
+                      link);
+      }
+      lucent::debug("shadoworacle",
+                    "call {} {} link packet={} raw={:06X} next={} bucket={}",
+                    s.calls,
+                    name,
+                    packet,
+                    link,
+                    targetPacket,
+                    packetBuckets[packet]);
+    }
+    std::array<bool, kMaxPackets> walked;
+    walked.fill(false);
+    std::uint32_t chain = 0;
+    for (std::uint32_t head = 0; head < packets; ++head) {
+      if (hasIncoming[head] || walked[head]) {
+        continue;
+      }
+      std::int32_t packet = static_cast<std::int32_t>(head);
+      for (std::uint32_t step = 0; packet >= 0 && step < packets; ++step) {
+        if (walked[static_cast<std::size_t>(packet)]) {
+          lucent::error("shadoworacle",
+                        "call {} {} link-chain={} repeats packet={} (cycle)",
+                        s.calls,
+                        name,
+                        chain,
+                        packet);
+          break;
+        }
+        walked[static_cast<std::size_t>(packet)] = true;
+        lucent::debug("shadoworacle",
+                      "call {} {} link-chain={} step={} packet={} bucket={} next={}",
+                      s.calls,
+                      name,
+                      chain,
+                      step,
+                      packet,
+                      packetBuckets[static_cast<std::size_t>(packet)],
+                      nextPacket[static_cast<std::size_t>(packet)]);
+        packet = nextPacket[static_cast<std::size_t>(packet)];
+      }
+      ++chain;
+    }
+    for (std::uint32_t packet = 0; packet < packets; ++packet) {
+      if (!walked[packet]) {
+        lucent::error("shadoworacle",
+                      "call {} {} link graph has an unwalked packet={} (cycle or missing head)",
+                      s.calls,
+                      name,
+                      packet);
+      }
     }
   }
 

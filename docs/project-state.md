@@ -39,9 +39,11 @@ projected anchor, and a closed projected-point fan. The capture also recovered t
 and exact OT buckets: anchor `SZ=0x065E`, bias `3`, and packet buckets
 `10,10,10,9,9,8,8,6,6,7,8,9,9,10,10,10`, all admitted. The diagnostic body runs from a full
 RAM/scratchpad/GTE/CPU snapshot and restores it before native presentation, so this is a producer
-measurement rather than a shipping fallback. Final guest ordering-table link traversal remains
-uncaptured; the next faithful actor owner remains Spyro-shadow geometry and queue submission, and no
-guessed ellipse is justified.
+measurement rather than a shipping fallback. The captured links resolve to complete guest replay
+chains, and an eight-capture controlled route produced 128 packets with no cycle or missing head;
+the anchor depth changed from `0x065E` to `0x081A` as gameplay advanced. Final native submission
+remains unimplemented; the next faithful actor owner is Spyro-shadow geometry and queue submission,
+and no guessed ellipse is justified.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and

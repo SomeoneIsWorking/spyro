@@ -18,6 +18,7 @@ PainterReplayOrder queuedWorld(uint16_t otBin, uint32_t paintGroup);
 PainterReplayOrder actor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
 PainterReplayOrder secondaryActor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
 PainterReplayOrder pairedActor(uint16_t otBin, uint32_t faceOrdinal);
+PainterReplayOrder spyroShadow(uint16_t otBin, uint32_t fanOrdinal);
 PainterReplayOrder cyclorama(uint32_t chainOrdinal);
 PainterReplayOrder cycloramaPortal(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);
 PainterReplayOrder cycloramaMask(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);

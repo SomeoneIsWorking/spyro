@@ -135,6 +135,17 @@ if(BUILD_TESTING)
   target_compile_features(test_scene_painter_order PRIVATE cxx_std_20)
   target_link_libraries(test_scene_painter_order PRIVATE psxport)
   add_test(NAME scene_painter_order COMMAND test_scene_painter_order)
+  add_executable(test_field_shadow_recipe
+    ${CMAKE_SOURCE_DIR}/tests/test_field_shadow_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/field_shadow_recipe.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/actor_transform_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_projection_math.cpp
+    ${CMAKE_SOURCE_DIR}/game/render/world_chunk_codec.cpp)
+  target_include_directories(test_field_shadow_recipe PRIVATE
+    ${CMAKE_SOURCE_DIR}/game/render ${CMAKE_SOURCE_DIR}/game/core ${PSXPORT_DIR}/tests)
+  target_compile_features(test_field_shadow_recipe PRIVATE cxx_std_20)
+  target_link_libraries(test_field_shadow_recipe PRIVATE psxport)
+  add_test(NAME field_shadow_recipe COMMAND test_field_shadow_recipe)
   add_executable(test_stage13_scene_recipe
     ${CMAKE_SOURCE_DIR}/tests/test_stage13_scene_recipe.cpp
     ${CMAKE_SOURCE_DIR}/game/render/stage13_scene_recipe.cpp)
@@ -655,6 +666,9 @@ set(GAME_SRC
   game/render/fx_field_particles.cpp
   game/render/fx_field_actor_composition.cpp
   game/render/fx_field_player_actor.cpp
+  game/render/field_shadow_recipe.cpp
+  game/render/field_shadow_submitter.cpp
+  game/render/fx_field_shadow.cpp
   game/render/field_tracers_recipe.cpp
   game/render/fx_field_tracers.cpp
   game/render/shadow_oracle.cpp

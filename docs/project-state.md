@@ -41,9 +41,14 @@ and exact OT buckets: anchor `SZ=0x065E`, bias `3`, and packet buckets
 RAM/scratchpad/GTE/CPU snapshot and restores it before native presentation, so this is a producer
 measurement rather than a shipping fallback. The captured links resolve to complete guest replay
 chains, and an eight-capture controlled route produced 128 packets with no cycle or missing head;
-the anchor depth changed from `0x065E` to `0x081A` as gameplay advanced. Final native submission
-remains unimplemented; the next faithful actor owner is Spyro-shadow geometry and queue submission,
-and no guessed ellipse is justified.
+the anchor depth changed from `0x065E` to `0x081A` as gameplay advanced. The source-grounded native
+owner now derives the live 16-point fan, exact GTE projection/depth inputs, OT buckets, and linked
+painter order in `game/render/field_shadow_recipe.*` / `field_shadow_submitter.*`, and FIELD calls
+it after the player model. The first native face matches the retained source capture exactly
+(anchor `00A70064/065E`, points `009A0064/0742` and `009E0055/0713`, bucket 10); the recipe and
+focused painter-order tests pass. This is geometry/queue evidence, not complete visual or full
+packet-byte parity. Moby shadows and flame/glow/sparkle effects remain unowned, and portal
+traversal remains outside this control milestone.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and
@@ -54,8 +59,8 @@ that run was manually ended before handoff to gameplay. The false recompiler ent
 the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
 the completed-gem text branch), regular actors, the visible normal Spyro model arm, the composed
-secondary/shaded actor pass, environment, cyclorama, type-0/type-2 particles, fade, border, and
-tracers. The Moby/Spyro shadow packets, flame/glow/sparkle effect arms, other scene arms, and live
+secondary/shaded actor pass, the source-grounded Spyro shadow fan, environment, cyclorama, type-0/type-2
+particles, fade, border, and tracers. Moby shadow packets, flame/glow/sparkle effect arms, other scene arms, and live
 producer variants remain unowned, so the complete game remains partial. The actor composition's first
 live route ran 3,700 presented fields with 1,910 reconciled logic frames and no render refusal; that
 route had a valid-empty secondary list and emitted roughly 110–120 shaded faces per FIELD frame.
@@ -201,9 +206,9 @@ also Ready on that snapshot after issue 0094's Plain descriptor-pair correction:
 with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces. The next authored
 actor-pass gap is Moby shadows: the regular native builder now stages the source-backed list entries
 from fixed start `0x800724F4` and commits the shared cursor at `0x80075F00` after actor admission,
-but the native actor builders/renderers do not yet own the complete shadow result. The retained Moby
-shadow consumer `0x80059F8C`, Spyro shadow `0x80059A48`, and flame/glow/sparkle effects remain
-unowned.
+but the native actor builders/renderers do not yet own the complete Moby shadow result. The retained
+Moby shadow consumer `0x80059F8C` and flame/glow/sparkle effects remain unowned; Spyro shadow
+`0x80059A48` is now owned by the separate native fan recipe and submitter.
 The separate `0x8002B9CC`
 environment/world owner is also compiled but unwired: on the same snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

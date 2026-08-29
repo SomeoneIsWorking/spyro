@@ -303,6 +303,83 @@ PRODUCERS = [
             ),
         ),
     },
+    {
+        "label": "tracers",
+        "src": "game/render/fx_field_tracers.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The tracer body has a unique prologue followed by its level/camera state load.
+        "entry_sequence": (
+            "0x800189F0 tracer prologue + tracer-count load (4 words)",
+            (0x3C028007, 0x8C425684, 0x27BDFF10, 0xAFBF00EC),
+        ),
+    },
+    {
+        "label": "cyclorama:portal-near",
+        "src": "game/render/cyclorama_portal_submitter.cpp",
+        "const_src": "game/render/cyclorama_portal_mesh_recipe.h",
+        "const": "kNearProducerKey",
+        "image": "MAIN",
+        # Near and mid/far portal mesh entries share the save/projection prefix. Their terminal
+        # branch targets distinguish the two source renderer families.
+        "entry_sequence": (
+            "0x8004F4BC near portal mesh renderer entry (57 words)",
+            (0x3C018007, 0x24217DD8, 0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+             0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C, 0xAC3C0020, 0xAC3D0024,
+             0xAC3E0028, 0xAC3F002C, 0x8CAB0000, 0x8CAC0004, 0x8CAD0008, 0x8CAE000C,
+             0x8CAF0010, 0x48CB0000, 0x48CC0800, 0x48CD1000, 0x48CE1800, 0x48CF2000,
+             0x48C02800, 0x48C03000, 0x48C03800, 0x8C8B0004, 0x8C810000, 0x3C0D8007,
+             0x25ADFCF4, 0x21AD0000, 0x00010880, 0x01616020, 0x116C0017, 0x8D6E0000,
+             0x216B0004, 0x8DC10000, 0x8DC20004, 0x48810000, 0x00020C03, 0x48810800,
+             0x00020C00, 0x00010C03, 0x4A180001, 0x8DC30014, 0x48029800, 0x00000000,
+             0x4802D800, 0x00000000, 0x00411022, 0x1840FFEE, 0x20640001, 0xADAE0000,
+             0x1080FFEB, 0x21AD0004, 0x08013D51),
+        ),
+    },
+    {
+        "label": "cyclorama:mask",
+        "src": "game/render/cyclorama_mask_submitter.cpp",
+        "const_src": "game/render/cyclorama_mask_recipe.h",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        "entry_sequence": (
+            "0x8004FEA0 portal mask renderer save + mask setup (15 words)",
+            (0x3C018007, 0x24217DD8, 0xAC300000, 0xAC310004, 0xAC320008, 0xAC33000C,
+             0xAC340010, 0xAC350014, 0xAC360018, 0xAC37001C, 0xAC3C0020, 0xAC3D0024,
+             0xAC3E0028, 0xAC3F002C, 0x8C890000),
+        ),
+    },
+    {
+        "label": "particles:type2",
+        "src": "game/render/field_particle_type2_submitter.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        "entry_sequence": (
+            "0x800573C8 particle renderer scratchpad prologue (4 words)",
+            (0x3C011F80, 0xAC300000, 0xAC310004, 0xAC320008),
+        ),
+    },
+    {
+        "label": "particles:type0",
+        "src": "game/render/fx_field_particles.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        "entry_sequence": (
+            "0x800573C8 particle renderer scratchpad prologue (4 words)",
+            (0x3C011F80, 0xAC300000, 0xAC310004, 0xAC320008),
+        ),
+    },
+    {
+        "label": "fieldshadow",
+        "src": "game/render/field_shadow_submitter.cpp",
+        "const": "kProducerKey",
+        "image": "MAIN",
+        # The shadow body starts with a unique Spyro-state/camera load prefix in the retained image.
+        "entry_sequence": (
+            "0x80059A48 shadow-state/Spyro load prefix (4 words)",
+            (0x3C188008, 0x27188A58, 0x3C198007, 0x27396DD0),
+        ),
+    },
 ]
 
 
@@ -311,20 +388,25 @@ def read_shipped(prod, src_override=None):
     actually handed to a ProducerScope in that file — a constant nothing passes to a scope would be a
     value this tool verifies and the port does not use."""
     path = src_override or os.path.join(REPO, prod["src"])
+    const_path = (path if src_override and "const_src" not in prod else
+                  os.path.join(REPO, prod.get("const_src", prod["src"])))
     if not os.path.isfile(path):
         raise Refuse(f"{prod['label']}: shipping file {path} does not exist — verified NOTHING")
-    text = open(path, encoding="utf-8").read()
-    m = re.search(r"constexpr\s+uint32_t\s+" + re.escape(prod["const"]) + r"\s*=\s*(0x[0-9A-Fa-f]+)",
-                  text)
+    if not os.path.isfile(const_path):
+        raise Refuse(f"{prod['label']}: constant file {const_path} does not exist — verified NOTHING")
+    scope_text = open(path, encoding="utf-8").read()
+    const_text = open(const_path, encoding="utf-8").read()
+    m = re.search(r"constexpr\s+(?:std::)?uint32_t\s+" + re.escape(prod["const"]) +
+                  r"\s*=\s*(0x[0-9A-Fa-f]+)", const_text)
     if not m:
         raise Refuse(f"{prod['label']}: no `constexpr uint32_t {prod['const']} = 0x…` in "
-                     f"{os.path.relpath(path, REPO)} ({len(text.splitlines())} lines scanned) — the "
+                     f"{os.path.relpath(const_path, REPO)} ({len(const_text.splitlines())} lines scanned) — the "
                      f"shipped value could not be read, so nothing was compared")
     # STRIP COMMENTS FIRST. Measured while sabotage-testing this tool: with the scope line COMMENTED OUT
     # the raw text still matched, and the static half reported OK for a producer that no longer declares
     # itself. This file's banner is 100 lines of prose naming the scope, so scanning raw text is scanning
     # documentation. Comments are stripped in the same order a compiler sees them (block, then line).
-    code = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    code = re.sub(r"/\*.*?\*/", " ", scope_text, flags=re.S)
     code = re.sub(r"//[^\n]*", "", code)
     scopes = re.findall(r"ProducerScope\s+\w+\s*\(([^;]*?)\)\s*;", code, re.S)
     used = [s for s in scopes if prod["const"] in s]

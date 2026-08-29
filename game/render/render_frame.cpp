@@ -17,6 +17,7 @@
 #include "fx_field_environment.h"
 #include "fx_field_particles.h"
 #include "fx_field_player_actor.h"
+#include "fx_field_shadow.h"
 #include "fx_field_tracers.h"
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
@@ -158,6 +159,9 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     }
     if (!spyro_field_player_submit(mC, spyro_paired_actor_state(mC))) {
       abortUnimplemented(sc, "Spyro actor producer 0x80023AC4 refused its atomic recipe");
+    }
+    if (!spyro_field_shadow_submit(mC)) {
+      abortUnimplemented(sc, "Spyro shadow producer 0x80059A48 refused its atomic recipe");
     }
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");

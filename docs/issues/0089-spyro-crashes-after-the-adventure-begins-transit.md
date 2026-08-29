@@ -502,3 +502,21 @@ chains, with no cycle or missing head: bucket 10 was packets `0,1,2,13,14,15`; b
 controlled-route run produced 128 packets with the same complete graph property and no diagnostic
 refusals. The anchor moved from `SXY=00A70064/SZ=065E` to `SXY=009F0064/SZ=081A` across the route,
 so the producer is not a static overlay; its projected fan and depth must be rebuilt from live state.
+
+## Native Spyro-shadow owner (2026-08-29)
+
+The retained source and the captured live state now support a shipping native owner for
+`0x80059A48`, split into `game/render/field_shadow_recipe.*`,
+`game/render/field_shadow_submitter.*`, and `game/render/fx_field_shadow.*`. The recipe consumes the
+state published by `func_80049FAC`: current/next model-frame radius bytes through the retained
+`g_Models` branch-delay dereference, the exact GPF/GPL fixed-point blend, 8-to-16 radius and signed
+ground-lift expansion, the retained yaw/camera matrix, live OFX/OFY/H GTE controls, the projected
+anchor translation, fan projection, and OT bucket formula. The submitter emits the source material
+(untextured flat Gouraud `0x32608080`, semi-transparent mode, 0x28-byte triangle-equivalent queue
+records) through one atomic painter object with the captured fan ordinal/order.
+
+On the controlled field route the native owner reaches `PASS faces=16`. Its first face matches the
+retained source capture exactly: anchor `00A70064/065E`, point 0 `009A0064/0742`, point 1
+`009E0055/0713`, and OT bucket 10. This is source-formula and queue-boundary evidence, not a claim
+of full packet-byte or visual equality. The Moby-shadow consumer `0x80059F8C`, flame/glow/sparkle
+effect arms, unreached variants, and portal traversal remain separate open work.

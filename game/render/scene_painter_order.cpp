@@ -8,11 +8,12 @@ constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 
 enum class LinkPhase : uint32_t {
   Cyclorama = 0,
-  PairedActor = 1,
-  SecondaryActor = 2,
-  Actor = 3,
-  QueuedWorld = 4,
-  World = 5
+  SpyroShadow = 1,
+  PairedActor = 2,
+  SecondaryActor = 3,
+  Actor = 4,
+  QueuedWorld = 5,
+  World = 6
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -67,6 +68,16 @@ PainterReplayOrder pairedActor(uint16_t otBin, uint32_t faceOrdinal) {
   // that position in the shared authored replay domain so FIELD can combine
   // the model with the other world producers in one queue.
   return {kActorWorldTerrainDomain, {otBin, linkOrdinal(LinkPhase::PairedActor, 0u), faceOrdinal}};
+}
+
+PainterReplayOrder spyroShadow(uint16_t otBin, uint32_t fanOrdinal) {
+  if (fanOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x80059A48 is called after Spyro's model. Its linked fan is observed in ascending packet
+  // order within each OT bin, so the fan ordinal is the chain suborder rather than an inverted
+  // allocation index.
+  return {kActorWorldTerrainDomain, {otBin, linkOrdinal(LinkPhase::SpyroShadow, 0u), fanOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

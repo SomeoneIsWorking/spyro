@@ -20,23 +20,26 @@ current build's field ordinal or PCM activity.
 ## Fix
 
 The framework `SpuAudio::frameEx` path now emits an opt-in `audiofield` record for every advanced
-field. Each record includes expected clocks/samples, rendered and queued samples, a deterministic PCM
-summary, output mode, and XA state/deltas. The instrumentation does not change scheduling, resampling,
-or XA policy; it makes the existing path falsifiable.
+field. Each record includes expected clocks/samples, rendered and queued samples, the exact stereo PCM
+samples, a deterministic PCM summary, output mode, and XA state/deltas. SBS owns a separate comparator
+that pairs those reports after each lockstep frame. The instrumentation and comparator do not change
+scheduling, resampling, or XA policy; they make the existing path falsifiable.
 
 ## Verification
 
 The current Clang Spyro build ran 1,200 NTSC fields with 1,200 `audiofield` records. Every field
 advanced and rendered exactly 735 or 736 samples; the expected and queued totals were both 882,882.
 The captured file is valid 44.1 kHz stereo 16-bit PCM, 3,531,572 bytes including its header, and the
-records are non-silent. This proves current field cadence and sink activity, not PCM equality against
-the retained/reference leg; clock alignment and a reference audio comparator remain future work.
+records are non-silent. This proves current field cadence and sink activity. The later real SBS oracle
+run reached 120 lockstep frames, emitted 240 paired `audiofield` records, and produced no
+`[sbs-audio:error]`; the control run with identical game logic also matched on every observed field.
 
 ## SBS boundary confirmed (2026-08-29)
 
-A 120-field SBS run using the current build reached the dual-core lockstep path, but diverged at
-the boot/load boundary before FIELD. The `audiofield` records from the two cores are interleaved
-without a core identity or scheduler-frame identity, and the run has no comparator that can pair
-their PCM summaries. It is therefore evidence that the existing capture is reachable in SBS, not an
-oracle speed/audio verdict. The remaining work is a framework-owned per-core field report and
-comparator; no audio timing policy was changed here.
+A 120-field SBS run using the current build reached the dual-core lockstep path. Before the fix, the
+per-core SPU output ring was process-global and SBS did not rebind the active SPU before each core
+step, so even the same-logic control run produced different A/B PCM fields. The fix moves the ring and
+cursor into each Beetle `SpuState` and rebinds the owning `SpuDevice` at every core step. The oracle
+run now pairs exact per-field PCM reports and shows no audio mismatch for all 120 frames. The run
+still has known non-audio boot/state divergence, so this is an audio-field parity result, not a claim
+of complete oracle, visual, or transition parity; no audio timing policy was changed.

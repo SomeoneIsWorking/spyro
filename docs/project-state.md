@@ -60,10 +60,12 @@ post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.l
 the recorded user input and 10,000 presented fields with rc=0, 5,057 reconciled frames, zero dropped layers, and no native
 render refusal. That is a route-continuity result, not visual or full-oracle parity. The animation's
 BLENDED (GTE-interpolated) form is covered hermetically only; no live frame has exercised it yet.
-The current audio-field trace also ran 1,200 NTSC fields with 882,882 expected and queued samples,
-every field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. This proves the current
-cadence and non-silent sink path, not PCM equality against the reference. The field scheduler also
-skips the level-transition tally on a fresh Start edge by advancing
+The current audio-field trace ran 1,200 NTSC fields with 882,882 expected and queued samples, every
+field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. SBS now compares exact per-field
+PCM reports after rebinding each core's isolated SPU output state: a 120-frame oracle run produced
+240 reports with no audio mismatch. This is audio-field parity only; the run still has known
+non-audio boot/state divergence, and complete visual/oracle parity remains open. The field scheduler
+also skips the level-transition tally on a fresh Start edge by advancing
 `g_LevelTransTicks` at `0x800756AC` to the guest's exact hidden boundary `417`; the CD load and guest
 transition state remain active, and the portal traversal is intentionally not bypassed.
 

@@ -35,11 +35,13 @@ The retained shadow boundary is now measured without changing the native picture
 FIELD frame after the gate route, `0x80059F8C` produced zero Moby-shadow packets while `0x80059A48`
 produced 16 Spyro-shadow packets over `0x80187BB0..0x80187E30`. All accepted packets retain the
 source's 0x28-byte layout, `E1000640` draw-mode setup, flat Gouraud colour `0x32608080`, a shared
-projected anchor, and a closed projected-point fan. The diagnostic body runs from a full
+projected anchor, and a closed projected-point fan. The capture also recovered the source `SZ` values
+and exact OT buckets: anchor `SZ=0x065E`, bias `3`, and packet buckets
+`10,10,10,9,9,8,8,6,6,7,8,9,9,10,10,10`, all admitted. The diagnostic body runs from a full
 RAM/scratchpad/GTE/CPU snapshot and restores it before native presentation, so this is a producer
-measurement rather than a shipping fallback. GTE depth values and guest ordering-table provenance
-are not yet captured; the next faithful actor owner remains Spyro-shadow geometry and queue
-submission, and no guessed ellipse is justified.
+measurement rather than a shipping fallback. Final guest ordering-table link traversal remains
+uncaptured; the next faithful actor owner remains Spyro-shadow geometry and queue submission, and no
+guessed ellipse is justified.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
 `GS_Cutscene` recipe named by the first New Game transition now composes the owned actor, world, and

@@ -475,9 +475,23 @@ linked slots; `06000000` terminates the corresponding link.
 | 14 | `80187DE0` | `06187E08` | `00A70064` | `00A0007C` | `009D0072` |
 | 15 | `80187E08` | `06000000` | `00A70064` | `009D0072` | `009A0064` |
 
-The diagnostic currently records SXY and raw link words, not the GTE `SZ` values or the ordering
-bucket that the retained body inserts into the guest ordering table. Those depth/provenance values
-must be captured before a native queue owner can be justified. The probe run later reached the
+The same capture also recovered the source's depth provenance. The generated body performs the anchor
+projection at `0x80059ADC`; the observer saw `anchor SXY=00A70064`, `anchor SZ=065E`, and 25 GTE
+operations. Its scratch table contains the 16 fan-point `(SXY,SZ)` pairs below:
+
+```text
+009A0064/0742  009E0055/0713  00A3004C/06D6  00A40044/069E
+00A70040/065E  00AC0037/060D  00B30037/05A5  00C60037/04DD
+00DD0064/0423  00C70092/04CF  00B50096/058F  00AC0094/0604
+00A70089/065E  00A30084/069E  00A0007C/06D6  009D0072/0714
+```
+
+With the retained formula
+`(((SZ[a]+SZ[b]) + ((SZ[a]+SZ[b]) >> 1) + anchor_SZ) >> 9) - OT_bias`,
+and `OT_bias=3`, the packet buckets are, in packet order,
+`10,10,10,9,9,8,8,6,6,7,8,9,9,10,10,10`; all 16 are non-negative and therefore admitted.
+The diagnostic now records these values without changing the native picture. It still does not walk
+the final guest ordering-table links to prove their replay order. The probe run later reached the
 existing explicit pause-menu native-render refusal, so its exit code is not evidence about shadow
 capture; the packet ranges were recorded before that unrelated refusal. A guessed ellipse or a portal
 workaround would not be source-grounded.

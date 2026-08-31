@@ -21,6 +21,7 @@ namespace spyro1 {
 namespace {
 
 constexpr std::uint16_t kPadStart = 0x0008u;
+constexpr std::uint16_t kPadCross = 0x4000u;
 constexpr std::uint32_t kVblankCounter = 0x800749E0u;
 constexpr std::uint32_t kRootHandlers = 0x80073928u;
 constexpr std::uint32_t kHandlerStackTop = 0x8000E000u;
@@ -328,6 +329,10 @@ void FieldScheduler::fps60CommitDelivered() {
                 paces_,
                 presents_,
                 acknowledgements_);
+}
+
+bool FieldScheduler::bootPresentationSkipPressed() const {
+  return game_.pad.pressedButton(kPadStart | kPadCross);
 }
 
 FieldScheduler &fieldScheduler(Core &core) {

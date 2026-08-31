@@ -112,6 +112,10 @@ class RuntimeStructureTest(unittest.TestCase):
         self.assertNotIn("platform_hle.register_", vsync_registration)
         self.assertNotIn("legacyVblankWait", vsync_registration)
         self.assertNotIn("0x8005DBC4u", boot_sequence)
+        self.assertIn("fields_.bootPresentationSkipPressed()", boot_sequence)
+        self.assertIn("leaveFirstPresentationHold(core)", boot_sequence)
+        self.assertIn("leaveSecondPresentationHold()", boot_sequence)
+        self.assertIn("pressedButton(kPadStart | kPadCross)", field_scheduler)
         for service in ("pad.serviceFrame", "spu_audio.frame", "gpu_present"):
             self.assertNotIn(service, vsync_registration)
             self.assertIn(service, field_scheduler)

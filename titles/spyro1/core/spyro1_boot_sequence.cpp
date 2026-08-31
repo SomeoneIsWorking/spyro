@@ -162,6 +162,19 @@ void BootSequence::finalize(Core &core) {
   lucent::info("boot-native", "native boot reached the gameplay frame boundary");
 }
 
+void BootSequence::leaveFirstPresentationHold(Core &core) {
+  // This is the same cleanup and fade route the natural hold expiry takes. The hold starts only
+  // after the synchronous boot assets have loaded, so a Start/Cross edge cannot bypass loading.
+  call(core, 0x80016914u, core.mem_r32(0x800785D8u), 0u, kLogoBytes);
+  phase_ = Phase::FadeFirstOut;
+}
+
+void BootSequence::leaveSecondPresentationHold() {
+  // The second hold begins only after the binary's phase-3-to-10 loader has completed. Its normal
+  // exit goes directly to the existing fade-out state.
+  phase_ = Phase::FadeSecondOut;
+}
+
 bool BootSequence::step(Core &core) {
   if (!initialized_) {
     lucent::error("boot-native", "boot step called before initialization");
@@ -188,12 +201,16 @@ bool BootSequence::step(Core &core) {
       phase_ = Phase::HoldFirst;
       break;
     case Phase::HoldFirst:
+      if (fields_.bootPresentationSkipPressed()) {
+        lucent::info("boot-native", "Start/Cross ends Spyro 1's first presentation hold");
+        leaveFirstPresentationHold(core);
+        break;
+      }
       if (static_cast<std::uint32_t>(fields_.counter()) - firstHoldStart_ < kLogoHoldFields) {
         deliverField(core, "boot-first-hold");
         return false;
       }
-      call(core, 0x80016914u, core.mem_r32(0x800785D8u), 0u, kLogoBytes);
-      phase_ = Phase::FadeFirstOut;
+      leaveFirstPresentationHold(core);
       break;
     case Phase::FadeFirstOut:
       drawLogoField(core, 0x8006FCF4u, core.mem_r32(0x800785D8u), -(iteration_ + 1) * 0x20);
@@ -222,11 +239,16 @@ bool BootSequence::step(Core &core) {
       phase_ = Phase::HoldSecond;
       break;
     case Phase::HoldSecond:
+      if (fields_.bootPresentationSkipPressed()) {
+        lucent::info("boot-native", "Start/Cross ends Spyro 1's second presentation hold");
+        leaveSecondPresentationHold();
+        break;
+      }
       if (static_cast<std::uint32_t>(fields_.counter()) - secondHoldStart_ < kLogoHoldFields) {
         deliverField(core, "boot-second-hold");
         return false;
       }
-      phase_ = Phase::FadeSecondOut;
+      leaveSecondPresentationHold();
       break;
     case Phase::FadeSecondOut:
       drawLogoField(core, logoSource_, logoDestination_, -(iteration_ + 1) * 0x20);

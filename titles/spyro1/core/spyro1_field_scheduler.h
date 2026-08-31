@@ -33,6 +33,10 @@ public:
   void observeVblankCallback(std::uint32_t function);
   void fps60CommitDelivered();
 
+  // BootSequence alone decides whether this edge transitions a presentation-only hold. The pad
+  // subsystem continues to expose the input to later title states unchanged.
+  bool bootPresentationSkipPressed() const;
+
   std::int32_t counter() const;
 
 private:

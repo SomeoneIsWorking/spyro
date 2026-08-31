@@ -17,12 +17,21 @@ in `scratch/decomp/frameown.c`; the emitted body is `generated/shard_6.c`. In or
 6. another VBlank hold until `now - stamp >= 210`;
 7. eight fade-out iterations, then the display/frame-loop setup.
 
-There is no pad read or Start test in `0x800127C0`. Therefore boot-logo skipping would be a PC
-enhancement, not a dormant guest branch. The safe semantic boundary is also narrower than "leave
-boot": the 3→10 loop is required loading work and may not be bypassed. No complete title-owned
-cancellation/transition route is recovered for the two presentation holds, so boot-logo skipping is
-not offered. Advancing the VBlank clock, bypassing lifecycle callbacks, or writing boot state to
-make a hold expire is not a skip route.
+There is no pad read or Start test in `0x800127C0`. Boot-logo skipping is therefore a PC
+enhancement, not a dormant guest branch. The safe semantic boundary is narrower than "leave boot":
+the 3→10 loop is required loading work and may not be bypassed.
+
+`titles/spyro1/core/spyro1_boot_sequence.cpp` now owns the enhancement at the only two
+presentation-only holds. After `loadAssets()` has completed, a Start or Cross press takes the same
+first-hold cleanup (`0x80016914`) and fade-out route that natural expiry takes. After the 3→10 loader
+has completed, a Start or Cross press takes the existing second-logo fade-out route. The title-owned
+`FieldScheduler` supplies the final effective pad edge; `BootSequence` alone decides whether it is a
+valid skip, and it does not suppress that input for later game states. Neither route advances the
+VBlank clock, bypasses callbacks, writes a guest timer/phase/scene, or skips loading.
+
+Both input shapes were exercised in a real 320-present headless run on 2026-08-31: `FFF7` (Start)
+and `BFFF` (Cross) each logged both hold transitions and `native boot reached the gameplay frame
+boundary` with no frame-contract failure.
 
 `PSXPORT_DEBUG=skipmap` measures this live. The observer wraps `0x800127C0`, so `region=boot` is
 derived from the function's actual dynamic lifetime rather than a guessed frame range. Each Start

@@ -38,6 +38,8 @@ private:
   void drawLogoField(Core &core, std::uint32_t source, std::uint32_t destination, int offset);
   void loadAssets(Core &core);
   void finalize(Core &core);
+  void leaveFirstPresentationHold(Core &core);
+  void leaveSecondPresentationHold();
 
   FieldScheduler &fields_;
   Phase phase_ = Phase::FadeFirstIn;

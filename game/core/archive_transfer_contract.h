@@ -21,8 +21,24 @@ struct Evidence {
   }
 };
 
-constexpr Evidence evidence(std::uint32_t requestedBytes, std::uint32_t movedBytes) {
-  return {.requestedBytes = requestedBytes, .movedBytes = movedBytes};
+struct Decision {
+  Evidence transfer;
+
+  constexpr bool accepted() const {
+    return transfer.complete();
+  }
+
+  constexpr bool completionPending() const {
+    return accepted();
+  }
+
+  constexpr std::uint32_t returnValue() const {
+    return accepted() ? 1u : 0u;
+  }
+};
+
+constexpr Decision decide(std::uint32_t requestedBytes, std::uint32_t movedBytes) {
+  return {.transfer = {.requestedBytes = requestedBytes, .movedBytes = movedBytes}};
 }
 
 } // namespace spyro::archive_transfer

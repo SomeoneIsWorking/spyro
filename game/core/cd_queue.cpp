@@ -339,25 +339,32 @@ void cd_loader(Core *c) {
 void cd_stream_read(Core *c) {
   const ArchiveRead read = archiveReadFromRegisters(*c);
   const uint32_t moved = copyArchiveRead(*c, read);
-  const auto transfer = spyro::archive_transfer::evidence(read.length, moved);
+  const auto decision = spyro::archive_transfer::decide(read.length, moved);
   lucent::debug("cdq",
                 "stream: a0={} dest=0x{:08X} len={} a3=0x{:08X} arg5=0x{:08X} -> "
-                "coverage=[0,{}) complete={}",
+                "coverage=[0,{}) complete={} accepted={}",
                 read.baseLba,
                 read.destination,
                 read.length,
                 read.byteOffset,
                 read.token,
-                transfer.coveredEnd(),
-                transfer.complete() ? 1 : 0);
+                decision.transfer.coveredEnd(),
+                decision.transfer.complete() ? 1 : 0,
+                decision.accepted() ? 1 : 0);
+  if (!decision.accepted()) {
+    publishTransferState(*c, read, false);
+    cd_completion_pending = false;
+    c->r[2] = decision.returnValue();
+    return;
+  }
   // Same load-time identity the sync loader records, for the same reason: an overlay's signature
   // only matches its slot before the game mutates the image header.
   if (moved) {
     overlay_note_load(c, read.destination);
   }
   publishTransferState(*c, read, true);
-  cd_completion_pending = true;
-  c->r[2] = 1u; // CdRead accepted; completion is delivered at the title's next polling point
+  cd_completion_pending = decision.completionPending();
+  c->r[2] = decision.returnValue();
 }
 
 // ── loader-hunt probes ───────────────────────────────────────────────────────────────────────────

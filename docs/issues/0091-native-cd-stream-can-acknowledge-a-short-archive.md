@@ -1,11 +1,11 @@
 ---
 id: 91
 title: Native CD stream can acknowledge a short archive copy as successful
-status: open
+status: resolved
 symptom: cd_stream_read publishes success and arms completion even when copyArchiveRead moves fewer bytes than requested
 tags: spyro1,cd,streaming,contract,latent
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-08-31
 ---
 
 ## Grounded contract defect
@@ -27,3 +27,6 @@ investigation.
 Exercise the production decision seam with an intentionally truncated archive and prove that it
 refuses completion without publishing a successful transfer. Preserve the complete-read behavior and
 the asynchronous queue contract.
+
+### Resolution (2026-08-31)
+The shipping cd_stream_read path now derives acceptance, completion arming, and v0 from archive_transfer::decide: a short copy publishes non-pending guest state, clears any host completion latch, returns v0=0, and never identifies the partial buffer as a loaded overlay. The release-build-safe focused test proves a complete 0x14800-byte transfer is accepted and a one-sector-short 0x14000-byte transfer is refused with no completion pending; Clang rebuilt the shipping spyro_port target.

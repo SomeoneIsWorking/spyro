@@ -521,6 +521,12 @@ if(BUILD_TESTING)
     ${CMAKE_SOURCE_DIR}/titles/spyro1/core)
   target_compile_features(test_spyro1_frame_policy PRIVATE cxx_std_20)
   add_test(NAME spyro1_frame_policy COMMAND test_spyro1_frame_policy)
+  add_executable(test_spyro1_vblank_irq
+    ${CMAKE_SOURCE_DIR}/tests/test_spyro1_vblank_irq.cpp)
+  target_include_directories(test_spyro1_vblank_irq PRIVATE
+    ${CMAKE_SOURCE_DIR}/titles/spyro1/core)
+  target_compile_features(test_spyro1_vblank_irq PRIVATE cxx_std_20)
+  add_test(NAME spyro1_vblank_irq COMMAND test_spyro1_vblank_irq)
   add_executable(test_spyro_gate_debug
     ${CMAKE_SOURCE_DIR}/tests/test_spyro_gate_debug.cpp
     ${CMAKE_SOURCE_DIR}/game/core/spyro_gate_debug.cpp)

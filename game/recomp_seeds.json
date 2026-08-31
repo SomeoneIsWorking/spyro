@@ -27,7 +27,7 @@
     "0x80024054"
   ],
 
-  // Runtime-computed mid-function re-entry points. None PROVEN yet — see docs/issues/0020.
+  // Runtime-computed mid-function re-entry points.
   //
   // A fail-fast at 0x8004C4EC (reached once the first level overlay loaded) looked like a re-entry
   // case: 0x8004C4E4 is `add s2,s2,s1 ; jr s2`, a COMPUTED jump into GTE case bodies. Six case labels
@@ -38,8 +38,13 @@
   // discovery does not model, and neither "main" nor "main_reentry" is the right lever yet.
   //
   // Seeding a guessed entry here would split a real function at an arbitrary offset and silently
-  // corrupt the recomp — the exact failure this file exists to prevent. Left EMPTY deliberately.
-  "main_reentry": [],
+  // corrupt the recomp — the exact failure this file exists to prevent.
+  //
+  // 0x8005DFC8 is different: 0x8005DFC0 saves it as the return address in the 0x8007395C setjmp
+  // context. The B0:0x19 custom interrupt exit restores that context and returns here with v0!=0,
+  // continuing 0x8005DF60's active frame into the interrupt dispatcher. It is a measured continuation,
+  // not an independently callable function, so main_reentry alone owns it.
+  "main_reentry": ["0x8005DFC8"],
 
   // Ordinary-instruction checkpoints for the paired-actor local-OT oracle. These PCs also occur
   // in overlapping generated bodies, so owner qualification is required to observe each actual

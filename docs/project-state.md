@@ -25,6 +25,12 @@ for 1,821 reconciled logic frames with zero dropped layers. Visual parity, indep
 comparison, and broader actor-producer coverage remain open; portal traversal stays outside this
 control milestone.
 
+The measured HookEntryInt continuation at `0x8005DFC8` now crosses the scheduler's pending-VBlank
+boundary exactly once instead of advancing its root counter twice. The formerly failing 4,255-frame
+route therefore reaches a later, intentional refusal at frame 3,652: stage selector 2 / `GS_PauseMenu`
+has no native scene owner (retained renderer `0x8001A40C`). That stage is the next render frontier;
+the product does not substitute a plausible guest or generic pause picture.
+
 The fresh current-build idle-vs-Left replay pair also exited 0 at 4,255 presents with no native-render
 refusal or fatal. At replay frame 3000, idle was `(0x14C00,0x0B800,0x023E0)` while Left was
 `(0x1497B,0x0B9CE,0x02514)` and carried a nonzero movement target. The live player-shadow gate

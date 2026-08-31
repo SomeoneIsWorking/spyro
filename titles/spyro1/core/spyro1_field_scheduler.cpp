@@ -11,6 +11,7 @@
 #include "snapshot.h"
 #include "spyro1_frame_driver.h"
 #include "spyro1_transition_skip.h"
+#include "spyro1_vblank_irq.h"
 #include "spyro_game.h"
 
 #include <cstdlib>
@@ -123,7 +124,20 @@ bool FieldScheduler::dispatchCallbacks() {
   const std::int32_t before = counter();
   R3000 saved = static_cast<R3000 &>(core);
   core.r[29] = kHandlerStackTop;
-  rc0(&core, target);
+  if (shouldDispatchVblankThroughIrq(
+          core.irqStatLatch(), game_.hle.i_mask, game_.hle.exception_exit_buf)) {
+    // A real display edge owns this dispatch. The guest's HookEntryInt context is a saved
+    // continuation, not the root handler itself, so direct rc0(root) would run both the resumed
+    // IRQ path and the root once rec_irq_poll reaches the latched edge. Re-arm the gate from the
+    // same I_STAT fact it represents, then let Hle restore and unwind that continuation exactly
+    // once. Other IRQ sources remain Hle's responsibility; they never select this branch alone.
+    core.pending_work |= Core::PW_IRQ;
+    rec_irq_poll(&core);
+  } else {
+    // Host-owned fields have no hardware VBlank edge to dispatch. Keep the measured root fallback
+    // for that case only.
+    rc0(&core, target);
+  }
   static_cast<R3000 &>(core) = saved;
 
   if (core.mem_r32(kHandlerStackFloor) != kStackPoison) {

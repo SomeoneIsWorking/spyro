@@ -20,7 +20,6 @@
 namespace spyro1 {
 namespace {
 
-constexpr std::uint32_t kBootLogoHoldFields = 0xD2u;
 constexpr std::uint16_t kPadStart = 0x0008u;
 constexpr std::uint32_t kVblankCounter = 0x800749E0u;
 constexpr std::uint32_t kRootHandlers = 0x80073928u;
@@ -69,18 +68,17 @@ std::int32_t FieldScheduler::counter() const {
   return static_cast<std::int32_t>(game_.core.mem_r32(kVblankCounter));
 }
 
-void FieldScheduler::bootSkipBegin() {
-  boot_skip_begin(bootSkip_);
-  lucent::debug("bootskip", "armed for guest boot function 0x800127C0");
+void FieldScheduler::bootSequenceBegin() {
+  if (bootSequenceActive_) {
+    lucent::error("skipmap", "boot sequence observation armed twice");
+    std::abort();
+  }
+  bootSequenceActive_ = true;
+  lucent::debug("skipmap", "observing Start edges during guest boot function 0x800127C0");
 }
 
-void FieldScheduler::bootSkipEnd() {
-  lucent::debug("bootskip",
-                "disarmed: scanned {} boot fields, saw {} fresh edge(s), advanced {} time(s)",
-                bootSkip_.fields,
-                bootSkip_.edges,
-                bootSkip_.advances);
-  bootSkip_.active = false;
+void FieldScheduler::bootSequenceEnd() {
+  bootSequenceActive_ = false;
 }
 
 void FieldScheduler::armHostClock() {
@@ -178,7 +176,7 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
   Core &core = game_.core;
 
   ++skipMapFields_;
-  const bool bootActive = bootSkip_.active;
+  const bool bootActive = bootSequenceActive_;
   bootActive ? ++skipMapBootFields_ : ++skipMapStageFields_;
   if (startEdge) {
     ++skipMapStartEdges_;
@@ -283,21 +281,6 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   const bool startDown = (game_.pad.buttons & kPadStart) == 0;
   const bool startEdge = startDown && (previousButtons_ & kPadStart) != 0;
   previousButtons_ = game_.pad.buttons;
-  const BootSkipAction skip = boot_skip_sample(bootSkip_, startDown);
-  if (skip == BootSkipAction::Baseline) {
-    lucent::debug("bootskip",
-                  "baseline: Start is {} on first boot field; held entry is suppressed",
-                  startDown ? "DOWN" : "up");
-  } else if (skip == BootSkipAction::AdvancePresentation) {
-    const std::uint32_t before = core.mem_r32(kVblankCounter);
-    core.mem_w32(kVblankCounter, before + kBootLogoHoldFields);
-    lucent::info("bootskip",
-                 "fresh Start edge: presentation clock {} -> {} (+{})",
-                 before,
-                 before + kBootLogoHoldFields,
-                 kBootLogoHoldFields);
-  }
-
   const bool guestRootAdvanced = dispatchCallbacks();
   if (!guestRootAdvanced) {
     core.mem_w32(kVblankCounter, core.mem_r32(kVblankCounter) + 1u);
@@ -366,12 +349,12 @@ void acknowledgeTemporalCommit(Core &core) {
   fieldScheduler(core).fps60CommitDelivered();
 }
 
-void beginBootSkip(Core &core) {
-  fieldScheduler(core).bootSkipBegin();
+void beginBootSequence(Core &core) {
+  fieldScheduler(core).bootSequenceBegin();
 }
 
-void endBootSkip(Core &core) {
-  fieldScheduler(core).bootSkipEnd();
+void endBootSequence(Core &core) {
+  fieldScheduler(core).bootSequenceEnd();
 }
 
 void observeVblankCallback(Core &core, std::uint32_t function) {

@@ -394,8 +394,9 @@ LOADER_PROBE(80012480, 0x80012480u)
 #undef LOADER_PROBE
 
 // 0x800127C0 owns the complete two-logo boot sequence and its intervening overlay load.  Keep an
-// exact dynamic lifetime for the title FieldScheduler's Start/skip mapper. A frame-number threshold
-// would turn headless speed, CD latency, or a future boot change into a silent misclassification.
+// exact dynamic lifetime for the title FieldScheduler's Start-edge observer. A frame-number
+// threshold would turn headless speed, CD latency, or a future boot change into a silent
+// misclassification.
 bool g_boot_sequence_active = false;
 
 void lp_800127C0(Core *c) {
@@ -406,7 +407,7 @@ void lp_800127C0(Core *c) {
         "skipmap", "boot sequence re-entered at call {} — classification is invalid", calls);
   }
   g_boot_sequence_active = true;
-  spyro1::beginBootSkip(*c);
+  spyro1::beginBootSequence(*c);
   lucent::debug("skipmap",
                 "boot sequence ENTER call={} phase={} vblank={}",
                 calls,
@@ -418,7 +419,7 @@ void lp_800127C0(Core *c) {
                 calls,
                 c->mem_r32(0x80075864u),
                 c->mem_r32(0x800749E0u));
-  spyro1::endBootSkip(*c);
+  spyro1::endBootSequence(*c);
   g_boot_sequence_active = false;
 }
 

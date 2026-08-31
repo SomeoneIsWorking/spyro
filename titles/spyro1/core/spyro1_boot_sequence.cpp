@@ -53,7 +53,7 @@ void BootSequence::initialize(Core &core) {
   initialized_ = true;
   originalStack_ = core.r[29];
   core.r[29] -= kBootStackBytes;
-  fields_.bootSkipBegin();
+  fields_.bootSequenceBegin();
 
   call(core, 0x800122A8u);
   call(core, 0x80012460u);
@@ -156,7 +156,7 @@ void BootSequence::finalize(Core &core) {
   core.mem_w32(0x800756CCu, 2u);
   core.mem_w32(0x80075760u, 0u);
   core.mem_w32(0x800785CCu, 0x8000u);
-  fields_.bootSkipEnd();
+  fields_.bootSequenceEnd();
   core.r[29] = originalStack_;
   fields_.armHostClock();
   lucent::info("boot-native", "native boot reached the gameplay frame boundary");

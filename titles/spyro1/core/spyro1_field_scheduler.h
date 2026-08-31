@@ -1,6 +1,5 @@
 #pragma once
 
-#include "boot_skip.h"
 #include "spyro1_frame_policy.h"
 
 #include <cstdint>
@@ -28,8 +27,8 @@ public:
   bool finishLogicFrame() const;
   std::uint32_t fieldsThisLogicFrame() const;
 
-  void bootSkipBegin();
-  void bootSkipEnd();
+  void bootSequenceBegin();
+  void bootSequenceEnd();
   void armHostClock();
   void observeVblankCallback(std::uint32_t function);
   void fps60CommitDelivered();
@@ -43,7 +42,7 @@ private:
   void reportField(const FieldRequest &request, int queueSize, bool queueWasUnconsumed);
 
   Game &game_;
-  BootSkipState bootSkip_{};
+  bool bootSequenceActive_ = false;
   FieldCadence cadence_{};
   bool inField_ = false;
   bool handlerStackArmed_ = false;
@@ -75,8 +74,8 @@ const FieldScheduler &fieldScheduler(const Core &core);
 
 bool deliverNativeField(Core &core, const char *site, bool fps60CommitPending);
 void acknowledgeTemporalCommit(Core &core);
-void beginBootSkip(Core &core);
-void endBootSkip(Core &core);
+void beginBootSequence(Core &core);
+void endBootSequence(Core &core);
 void observeVblankCallback(Core &core, std::uint32_t function);
 void hostTurn(Core *core);
 

@@ -1,7 +1,7 @@
 ---
 id: C179
 kind: claim
-status: holds
+status: falsified
 created: 2026-08-14
 tags: 
 depends: game/core/vsync.cpp#deliver_field, game/core/cd_queue.cpp#lp_800127C0
@@ -9,12 +9,12 @@ depends: game/core/vsync.cpp#deliver_field, game/core/cd_queue.cpp#lp_800127C0
 
 ## Claim
 
-Spyro boot-logo Start skipping advances presentation time without bypassing loading or final setup
+Boot-logo Start clock advancement is not a valid skip route
 
 ## Evidence
 
-Shipping path brackets exact guest boot function 0x800127C0 and advances guest VBlank counter by its two holds' own 0xD2 threshold only on a post-baseline Start edge. scratch/logs/bootskip-positive.log: first-field DOWN suppressed; 2 later edges/advances; loading phase still 0->4->8->10; clean boot exit after 74 fields. scratch/logs/bootskip-negative.log: 437 fields, 0 edges, 0 advances, clean exit. PSXPORT_SELFTEST=bootskip passes 9 checks.
+The removed shipping path bracketed `0x800127C0` and advanced the guest VBlank counter by `0xD2` on a host Start edge. Although it preserved the observed loading phases and final setup, it fast-forwarded the simulation clock rather than taking a recovered title-owned cancellation/transition route. No such route is currently known, so the enhancement and its selftest were removed; only passive `skipmap` observation remains.
 
 ## What would falsify it
 
-A run where held-at-entry advances; Start bypasses phase 4/8/10 or boot final setup; an idle run advances; or a post-baseline fresh edge does not shorten a boot hold.
+The route is reinstated without a complete title-owned cancellation/transition routine, or Start changes a boot timer, phase, scene, or callback lifetime.

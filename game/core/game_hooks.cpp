@@ -1,6 +1,5 @@
 // Residual compatibility callbacks for framework operations that do not yet have typed runtime
 // methods. Context lifecycle, boot, and override registration belong to Spyro1Runtime.
-#include "boot_skip.h"
 #include "core.h"
 #include "fx_paired_actor.h"
 #include "game_iface.h"
@@ -62,9 +61,6 @@ static int spyro_selftestGame(const char *which, const char *) {
   }
   if (std::strcmp(which, "actorchainrecipe") == 0) {
     return spyro_actor_chain_oracle_selftest();
-  }
-  if (std::strcmp(which, "bootskip") == 0) {
-    return spyro_boot_skip_selftest();
   }
   if (std::strcmp(which, "scenecam") != 0) {
     return 2;

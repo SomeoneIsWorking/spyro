@@ -40,7 +40,6 @@ private:
   bool dispatchCallbacks();
   void serviceInspection();
   void serviceSkipMap(bool startEdge);
-  void serviceIntroSkip(bool startEdge);
   void reportField(const FieldRequest &request, int queueSize, bool queueWasUnconsumed);
 
   Game &game_;

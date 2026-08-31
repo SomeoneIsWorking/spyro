@@ -534,14 +534,6 @@ if(BUILD_TESTING)
   target_compile_features(test_spyro_gate_debug PRIVATE cxx_std_20)
   target_link_libraries(test_spyro_gate_debug PRIVATE psxport)
   add_test(NAME spyro_gate_debug COMMAND test_spyro_gate_debug)
-  add_executable(test_spyro1_transition_skip
-    ${CMAKE_SOURCE_DIR}/tests/test_spyro1_transition_skip.cpp
-    ${CMAKE_SOURCE_DIR}/titles/spyro1/core/spyro1_transition_skip.cpp)
-  target_include_directories(test_spyro1_transition_skip PRIVATE
-    ${CMAKE_SOURCE_DIR}/titles/spyro1/core)
-  target_compile_features(test_spyro1_transition_skip PRIVATE cxx_std_20)
-  target_link_libraries(test_spyro1_transition_skip PRIVATE psxport)
-  add_test(NAME spyro1_transition_skip COMMAND test_spyro1_transition_skip)
   add_executable(test_native_gameplay
     ${CMAKE_SOURCE_DIR}/tests/test_native_gameplay.cpp)
   target_include_directories(test_native_gameplay PRIVATE
@@ -625,7 +617,6 @@ set(GAME_SRC
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
   titles/spyro1/core/spyro1_field_scheduler.cpp
-  titles/spyro1/core/spyro1_transition_skip.cpp
   titles/spyro1/core/spyro1_boot_sequence.cpp
   game/core/recomp_register.cpp
   game/core/vsync.cpp

@@ -249,8 +249,9 @@ mask/near-family/painter submission contract is owned.
 The shipping route is now deterministically reproducible windowless: replaying the user's own
 auto-recorded pad session (`scratch/bin/pad_session.1.pad`, captured 14:03) drives boot -> intro
 card -> menu -> New Game -> stage-14 card -> the 384 hold -> the crash, ending rc=139 at the
-render refusal. The same replay proves the intro skip (previous commit): the user's field-1137
-Start edge lifted `g_TitlescreenState.m_Tick` 73 -> 384 and stage 14 began immediately.
+render refusal. The same replay previously exposed a host timer shortcut: the user's field-1137
+Start edge lifted `g_TitlescreenState.m_Tick` 73 -> 384 and stage 14 began immediately. That shortcut
+is removed because it did not take a title-owned cancellation/transition route.
 
 The stage-0 branch is now registered (`renderScene`), composing the field-snapshot owners in
 GamestateDraw's authored order, and the crash is a NAMED backlog: the branch refuses at the first

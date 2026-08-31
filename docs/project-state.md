@@ -81,10 +81,10 @@ The current audio-field trace ran 1,200 NTSC fields with 882,882 expected and qu
 field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. SBS now compares exact per-field
 PCM reports after rebinding each core's isolated SPU output state: a 120-frame oracle run produced
 240 reports with no audio mismatch. This is audio-field parity only; the run still has known
-non-audio boot/state divergence, and complete visual/oracle parity remains open. The field scheduler
-also skips the level-transition tally on a fresh Start edge by advancing
-`g_LevelTransTicks` at `0x800756AC` to the guest's exact hidden boundary `417`; the CD load and guest
-transition state remain active, and the portal traversal is intentionally not bypassed.
+non-audio boot/state divergence, and complete visual/oracle parity remains open. The former title-card
+and level-transition tally shortcuts wrote guest timer/state values directly. They are removed; the
+product now exposes only existing guest-owned Start routes while a complete title-owned
+cancellation/transition path remains unimplemented.
 
 ## Capability details
 

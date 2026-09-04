@@ -29,13 +29,53 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ## boot
 
-### boot.provision — Extract SCUS_942.28 from the disc + recompile it to C
+### boot.provision — Authenticate SCUS_942.28 as a runtime image
 - status: re-verified
 - deps:
-- evidence: tools/ensure_recomp.py first stages SYSTEM.CNF + SCUS_942.28 through the serial manifest publisher, then runs discdump + emit.py end to end; 621 functions emitted and hash-checked against exe + recompiler sources + seed file. Real Spyro 1 media matched 11/11 identity facts.
-- where: tools/provision_title.py, tools/title_identity.py, tools/ensure_recomp.py, game/recomp_seeds.json
+- evidence: The title provisioner stages SYSTEM.CNF and SCUS_942.28 through the serial manifest publisher; real Spyro 1 media matched 11/11 executable-identity facts before cache publication.
+- where: tools/provision_title.py; tools/title_identity.py; titles/spyro1/executable.json; target runtime-image provisioner in docs/migration.md
 - gap:
-- notes: Spyro 1 is a single boot executable; its code overlays are ranges inside WAD.WAD rather than root-directory executable files. The title-aware publisher closes issue 0078 before recomp cache reuse.
+- notes: Spyro 1 is a single boot executable; its code images are ranges inside WAD.WAD rather than root-directory executable files. This step proves identity and bytes only, not Lightrec execution. The old emitted-function count is not part of the target product contract.
+
+### dynarec.executor — Integrate per-Core Lightrec execution in psxport
+- status: todo
+- deps: boot.provision
+- evidence: The portfolio audit selected maintained pinned Lightrec for PSX and requires a resident override plus two address-reusing images before title migration.
+- where: target external/psxport runtime executor
+- gap: No Spyro gameplay product currently executes guest instructions through Lightrec. The separate test interpreter must be absent from the gameplay link and selector surface.
+- notes: Lightrec owns translation/cache memory; psxport owns Core synchronization, bounded exits, image-aware dispatch, original calls, and invalidation.
+
+### dynarec.dispatch — Route Spyro calls and WAD invalidation through the runtime executor
+- status: todo
+- deps: dynarec.executor, recomp.overlays
+- evidence: The overlay census proves many WAD images reuse the same guest load address, so address-only cache and override keys are invalid.
+- where: target psxport executor dispatch plus Spyro1Runtime registration
+- gap: Replace generated-symbol registration with image-generation plus address identity; prove one native override, one scoped original call, and positive/controlled-negative invalidation across two resident images.
+- notes:
+
+### dynarec.stage13 — Reach the 800/900 stage-13 routes through Lightrec
+- status: todo
+- deps: dynarec.dispatch, frame.native-loop, frame.own-render-driver
+- evidence: C225/issue 0087 record an 800-field boot/title route; C227/issue 0086 record a 900-field forced-input mode-2 save-picker route. Both used the native frame/field owners and one-fence contract on the retired generated-code product.
+- where: Spyro1Runtime; Spyro1FrameDriver; FieldScheduler; target psxport executor
+- gap: Reproduce both routes with nonzero Lightrec blocks, native scene owners active, exactly one presentation fence per host step, and guest VSync 0x8005DBC4 still fatal.
+- notes: This is the first implementation discriminator, not representative gameplay or static-path deletion authority.
+
+### dynarec.world-resume — Replace the generated world body with resumable guest execution
+- status: todo
+- deps: dynarec.stage13
+- evidence: game/core/world_body.inc and its callers encode the current generated-body boundary; existing world/native-owner evidence identifies the state and host-service responsibilities that must survive replacement.
+- where: target Lightrec executor-exit integration replacing game/core/world_body.inc
+- gap: Execute the unchanged retail world body through Lightrec, suspend at explicit host-owned boundaries, and resume the same CPU state. Remove every emitted-body call without transcription, a generated super-call, or interpreter fallback.
+- notes:
+
+### dynarec.gameplay-retirement — Representative gameplay and offline-pipeline retirement
+- status: todo
+- deps: dynarec.world-resume
+- evidence: docs/migration.md defines the bounded acceptance surface; the portfolio plan explicitly excludes boot, logos, menus, attract, and FMV as representative gameplay.
+- where: product launcher/build, runtime verification, and deletion set in docs/migration.md
+- gap: Prove an interactive route with independent-oracle state comparison, native/original dispatch, WAD invalidation, host correctness/performance, and no interpreter in the gameplay product. Then delete the generator, corpus, emission-only seeds, generated dispatch/tests, world_body.inc, and obsolete build/provisioning documentation atomically.
+- notes: No compatibility selector, interpreter fallback, or required pre-populated cache may remain.
 
 ### boot.crt0 — GameConfig crt0/boot group from the real crt0
 - status: re-verified
@@ -45,10 +85,10 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap:
 - notes:
 
-### boot.guest-main — Reach the guest's own main() as recompiled code
+### boot.guest-main — Reach the guest's own main() at 0x80012204
 - status: re-verified
 - deps: boot.crt0
-- evidence: See claim C002: headless backtrace shows main -> gen_func_80012204 -> ...800127C0 -> ...8001250C -> ...80016500 -> ...800163E4.
+- evidence: See claim C002: a headless backtrace from the retired product establishes the binary route main 0x80012204 -> 0x800127C0 -> 0x8001250C -> 0x80016500 -> 0x800163E4.
 - where: titles/spyro1/core/spyro1_runtime.cpp Spyro1Runtime::bootInit
 - gap:
 - notes:
@@ -111,7 +151,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: C068,C069,C073,C150,C151; plus, THIS step: main() 0x80012204 disassembled (its epilogue 0x8001228C-0x8001229C is UNREACHABLE, so it never returns); the loop was first reproduced natively in the former game/core/frame_loop.cpp and PROVEN to run — PSXPORT_FNTRACE ra field is 0x80012238/0x80012284 (the guest's own call sites) with the loop off and DEAD0000 (the port's top-level sentinel) with it on, same first frame 436 and same call counts. Cadence measured twice, on two different builds: 21551 presents/vblanks against 11333 calls of 0x8001ED5C over 75s (pre-pace-parity binary), and 28218 against 15053 over 60s with PSXPORT_NOPACE=1 on the current one — 1.86-1.90 vblanks per drawn frame either way, which is the number the present-ownership design has to respect.
 - where: titles/spyro1/core/spyro1_frame_driver.*; titles/spyro1/core/spyro1_boot_sequence.*; titles/spyro1/core/spyro1_field_scheduler.*; game/core/main.cpp; game/render/render_frame.cpp
 - gap: The exercised native product path is runtime-owned and issue 0087 is resolved: a real 800-field run completed boot, reached stage 13, advanced exactly one framework presentation fence per finite host step, and exited 0. Wider scene coverage and the retained reference-renderer tail remain separate frontier items, so this step stays re-partial rather than claiming whole-game equivalence.
-- notes: C225. Generated boot bodies remain intact for A/B. The product does not dispatch guest main 0x80012204 or boot 0x800127C0. Zero-field asset/finalization transitions are folded into adjacent visible boot steps rather than emitted as fake frames. Gameplay retains update 0x8003385C; native rendering uses the title seam.
+- notes: C225. The native owners currently bypass guest main 0x80012204 and boot 0x800127C0 on the retired execution path. Under the target architecture, any unowned continuation resumes through Lightrec rather than an emitted body. Zero-field asset/finalization transitions are folded into adjacent visible boot steps rather than emitted as fake frames. Gameplay retains update 0x8003385C; native rendering uses the title seam.
 
 ### frame.vsync — Reimplement VSync faithfully and register it
 - status: re-partial
@@ -211,7 +251,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 
 ## recomp
 
-### recomp.overlays — Determine whether Spyro loads code overlays, and recompile them if so
+### recomp.overlays — Determine Spyro's WAD runtime images and load boundaries
 - status: re-verified
 - deps: boot.guest-main
 - evidence: C032,C047,C048
@@ -251,7 +291,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - evidence: Issue 0089; real SCUS_942.28; Clang product, controlled idle-vs-Left replay, the native gate route, and the corrected 2026-08-29 action matrix. Four isolated directional holds produce distinct nonzero target directions and position changes; Cross reaches `m_State=5` and rising `m_airTime`; Square reaches `m_State=0xB`; Circle sets `g_SpyroFlame+0x98=1`. Seven gameplay-action runs exit 0 with no native-render refusal or fatal. The final gate route continued through the wired stage-0 sequence for 1,820 reconciled logic frames with zero dropped layers and no refusal, including the visible portal mask/near family and type-2 particles.
 - where: game/core/native_gameplay.{h,cpp}; titles/spyro1/core/spyro1_runtime.cpp; titles/spyro1/core/spyro1_frame_driver.cpp; tests/test_native_gameplay.cpp
 - gap: The controlled route now renders the normal three-layer Spyro model through FIELD's `0x80023AC4` owner and continues through the wired stage-0 producers, including the visible portal mask/near family and issue 0097's type-2 particle family, with 1,821 reconciled logic frames and zero dropped layers. The regular actor owner now stages the source-backed Moby shadow list at `0x800724F4` and publishes its cursor at `0x80075F00` after actor admission. A snapshot-isolated retained capture measured zero Moby-shadow packets but 16 Spyro-shadow packets from `0x80059A48`, including exact point `SZ` values, non-negative OT buckets, and complete guest link chains; an eight-capture route produced 128 packets with no graph error. The native Spyro-shadow owner now derives and queues that 16-face fan; its first face matches the retained anchor/point/depth capture exactly. Moby shadow `0x80059F8C`, flame/glow/sparkle effects, full visual/oracle parity, and remaining variants are still open. Start/Select reach pause/inventory state but their native menu picture owners still refuse explicitly. Portal traversal remains a separate level-transition gap.
-- notes: The native override super-calls gen_func_8003D3B8, preserves analog/release behavior, and only corrects the source-defined digital target selection from m_Held. The 2026-08-29 action matrix additionally witnessed retained jump (`m_State=5`), charge (`m_State=0xB`), and flame activation (`g_SpyroFlame+0x98=1`) on isolated raw-pad holds. PSXPORT_GAMEPLAY_PROBE is diagnostic-only and presents the previous frame while retaining real logic, collision, input, and field delivery. It now preserves the retail two-field logic quota by deferring the first of two fields and presenting once on the second. FIELD player visibility follows the source `g_IsSpyroHidden` gate at `0x80075814`; its authored replay phase is after regular and secondary actors so it can share the world queue without mixed-policy refusal. The secondary/shaded actors now use a combined source-order owner with batch painter admission; shadows/effects, full visual/oracle parity, and portal traversal remain open. The gate teleport remains diagnostic-only: it writes the source-backed node position, not level or transition state.
+- notes: On the retired product, the native override called the original 0x8003D3B8 body and preserved analog/release behavior while correcting the source-defined digital target selection from m_Held. Under the target architecture that original call must execute through Lightrec. The 2026-08-29 action matrix additionally witnessed retained jump (`m_State=5`), charge (`m_State=0xB`), and flame activation (`g_SpyroFlame+0x98=1`) on isolated raw-pad holds. PSXPORT_GAMEPLAY_PROBE is diagnostic-only and presents the previous frame while retaining real logic, collision, input, and field delivery. It preserves the retail two-field logic quota by deferring the first of two fields and presenting once on the second. FIELD player visibility follows the source `g_IsSpyroHidden` gate at `0x80075814`; its authored replay phase is after regular and secondary actors so it can share the world queue without mixed-policy refusal. The secondary/shaded actors use a combined source-order owner with batch painter admission; shadows/effects, full visual/oracle parity, and portal traversal remain open. The gate teleport remains diagnostic-only: it writes the source-backed node position, not level or transition state.
 
 ## gpu
 
@@ -259,7 +299,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - status: re-verified
 - deps: boot.post-cd
 - evidence: C037,I008
-- where: issue 0015; gen_func_80061820 submit path
+- where: issue 0015; guest submit path 0x80061820
 - gap: RESOLVED. The render-queue drain (C037) fixed the abort. The 'black screen' that appeared to remain was a MEASUREMENT ARTEFACT, not a defect: PSXPORT_GPU_DUMP reads s_vram and VK-path polygons never touch it (instrument I008), so the dump goes black the moment real rendering starts. The guest's own prim count shows 680 frames submitting geometry in the last quarter of the run. C038, which claimed prims reached the renderer but not the screen, is falsified. Remaining unknown, tracked as issue 0018: there is no headless way to capture VK output, so 'are the pixels CORRECT' is unmeasured — a per-frame readback hangs the port and was reverted. The port's live blocker is now the recomp miss at 0x8008772C (issue 0017).
 - notes:
 
@@ -289,7 +329,7 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - gap:
 - notes: RESOLVED, and the original framing was wrong. 0x8007CFB4 was never in the overlay it was being read from: the arena is reloaded constantly, so the last IDENTIFIED overlay is not the resident one at a fail-fast (C065). Both earlier conclusions — 'jump-table case label' and 'the overlays are mostly data' — were artifacts of reading the wrong image. The port now dumps guest RAM at every miss (I012), which settles residency by searching WAD.WAD for the resident bytes. tools/overlay_scan.py (I011) recovers the whole set from a run's arena loads into game/overlays.json; overlays are named by WAD offset so the set grows without renaming and re-pointing existing seeds; ensure_recomp.py now also deletes slices that leave the set, since emit.py walks the directory and a stale slice emits a whole module at the live arena base. Seven overlays extracted, all identified at load, zero unmatched. Per-overlay what remains is ONE seed each — the per-frame entry installed into [0x80075734], called indirectly at 0x80033AA4 (C066) — each verified as a real prologue in the RESIDENT bytes before being added. With OV_237D000 0x8007AEB8 and OV_2F5B000 0x8007B7A8 seeded the port runs a full 45s at rc=137 with zero recomp misses.
 
-### overlay.entry-seeds-auto — Automate the per-overlay entry seed instead of one fail-fast per rebuild
+### overlay.entry-seeds-auto — Derive per-image entry metadata from authenticated WAD bytes
 - status: re-verified
 - deps: overlay.ovl2-discovery
 - evidence: C066,C067
@@ -308,12 +348,12 @@ Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
 - notes: PHASE DONE: the high-caller LEAF work is complete. tools/own_candidates.py now derives 27 owned bodies from the live ndiff_run sites; C081's historical count of 15 is superseded. Four are GTE bodies, owned without reimplementing the GTE — scalar logic native, COP2 via the platform's gte_op/gte_read_data/gte_write_ctrl, integer divide via cpu_div (C++ division is UB exactly where MIPS defines behaviour: /0 and INT_MIN/-1). Its best remaining LEAF has 15 callers, down from 136, so this seam has given what it has to give. CAVEAT on exhausted: the caller count is STATIC, so indirect calls are invisible and a low count is not proof of coldness — a runtime call histogram is the honest measurement. Continuing is tracked by own.non-leaf.
 
 ### own.non-leaf — Own NON-LEAF functions, bottom-up from the leaves already owned
-- status: in-progress
+- status: re-partial
 - deps: own.next-targets
 - evidence: C082,C207,C209,C210,C211,C213,C224,C230,I019,I020,I028
 - where: game/core/native_printf.cpp; game/core/native_actor_mesh_scratch.cpp; game/core/native_spu_pio_upload.cpp; game/core/spu_pio_upload.h; game/core/native_spu_hardware_init.cpp; game/core/spu_hardware_init.h; game/core/native_text_sprites.cpp; game/core/text_sprites.h; game/core/native_memcard_event_stack.cpp; game/core/memcard_event_stack.h; game/core/native_memcard_operations.cpp; game/core/memcard_operations.h; game/core/recomp_register.cpp; tools/own_candidates.py --ready-nonleaf
-- gap: SEVENTH STEP VERIFIED. The dependency-ready libmcrd request starters MemCardExist 0x8006635C and MemCardAccept 0x800665B8 are now owned together as one async-operation boundary. Their 31-instruction bodies share the idle/busy transaction and have only the already-owned printf and event-stack children. Current-binary FNTRACE reached MemCardAccept twice, first at frame 280, and MemCardExist 346 times, first at frame 287; `scratch/logs/spyro-memcard-operations-ndiff-20260828-final.log` matched native calls 1-2 and 1-4 respectively against their retained generated bodies with no divergence. The focused memcard test covers the operation codes and callback addresses alongside the event-stack layout. C230 and issue 0096 record the compared surface and falsifier. The registry now wires the generated raw-slot getter so FNTRACE can preserve existing owners. Remaining candidates must be ranked and observed before the eighth step.
-- notes: C082 puts all guest code at only 4.5-4.9% of host CPU, so further ownership buys correctness and architecture, not speed. Pick from tools/prof_hot.py for measured speed work and from the static queue for coverage. FNTRACE and an owned override cannot be armed on the same address because both use its one override slot; C207, C209, C210, C211, and C213 therefore cite separate reach and equality runs. NDIFF does not snapshot host-only device/framework state; C211 records the SPU blind surface rather than laundering the exact compared-state result into a whole-device equivalence claim.
+- gap: SEVENTH STEP VERIFIED on the retired comparison path. The dependency-ready libmcrd request starters MemCardExist 0x8006635C and MemCardAccept 0x800665B8 are owned together as one async-operation boundary. Their 31-instruction bodies share the idle/busy transaction and have only the already-owned printf and event-stack children. Current-binary FNTRACE reached MemCardAccept twice, first at frame 280, and MemCardExist 346 times, first at frame 287; `scratch/logs/spyro-memcard-operations-ndiff-20260828-final.log` compared native calls 1-2 and 1-4 respectively with no divergence. The focused memcard test covers operation codes and callback addresses alongside the event-stack layout. C230 and issue 0096 record the compared surface and falsifier. Future original-call comparison must use Lightrec plus the separate test oracle; no generated raw-slot getter remains in the product design.
+- notes: C082 puts guest code at only 4.5-4.9% of host CPU on the measured retired path, so further native ownership buys correctness and architecture, not assumed speed. Additional title-native work is paused behind the Lightrec migration; future override equality uses the runtime executor and a separately built oracle, not generated product bodies. Existing reach/equality evidence remains scoped to the state it compared. NDIFF did not snapshot host-only device/framework state; C211 records the SPU blind surface rather than laundering exact compared-state results into whole-device equivalence.
 
 ## perf
 

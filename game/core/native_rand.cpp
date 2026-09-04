@@ -1,10 +1,7 @@
 // native_rand.cpp — the first guest function this port OWNS rather than observes.
 //
-// WHY THIS ONE FIRST. Almost everything else in game/core/ is an observation wrapper: it logs and
-// then super-calls the recompiled body, so the guest code still does the work. That is
-// instrumentation, not a port. This is a real replacement — the recompiled body never runs once
-// this is installed — chosen to be small and exactly specified so the REPLACEMENT MECHANISM can be
-// proven before it is pointed at anything load-bearing.
+// WHY THIS ONE FIRST. It is a real native replacement, chosen to be small and exactly specified so
+// native-override registration can be proven before it is pointed at anything load-bearing.
 //
 // THE FUNCTION. 0x8006272C is Sony's rand(): the standard LCG, verified from its own disassembly
 // rather than assumed from the constants.
@@ -25,14 +22,12 @@
 // code under test.
 //
 // HI/LO ARE PART OF THE CONTRACT, and this is the subtlety worth stating. `mult` writes the hi/lo
-// register pair, and the substrate models them. A native body that computes the right RETURN VALUE
+// register pair, and the runtime models them. A native body that computes the right RETURN VALUE
 // but leaves hi/lo stale is NOT equivalent — any guest code that reads hi/lo before the next mult
 // would diverge. That is exactly the kind of difference a human reviewer waves past and a per-call
 // differential catches, so the native body sets them explicitly.
 #include "core.h"
-#include "native_diff.h"
-#include "rec_decls.h"
-#include "recomp_iface.h"
+#include "native_execution.h"
 #include "spyro_game.h"
 
 namespace {
@@ -43,7 +38,7 @@ constexpr uint32_t kMul = 0x41C64E6Du;
 void rand_native(Core *c) {
   const uint32_t seed = c->mem_r32(kSeed);
   // The 64-bit product is what `mult` leaves in hi/lo; the low half is what the LCG uses. Compute
-  // it signed, because MIPS `mult` is a SIGNED multiply and the substrate models it that way —
+  // it signed, because MIPS `mult` is a SIGNED multiply and the runtime models it that way —
   // using an unsigned product would give the same low word but the wrong `hi`.
   const int64_t prod = (int64_t)(int32_t)seed * (int64_t)(int32_t)kMul;
   const uint32_t lo = (uint32_t)(prod & 0xFFFFFFFFu);
@@ -60,21 +55,15 @@ void rand_native(Core *c) {
   // 0x8007` (0x80062748, building the seed address for the store) leaves 0x80070000 behind, and the
   // per-call differential flagged the mismatch on call #10 — the first call where the caller
   // happened to leave a different value in $at. Architecturally $at is the assembler temporary and
-  // no compiler-generated code reads it across a call, so this is harmless in practice. It is
+  // no host code reads it across a call, so this is harmless in practice. It is
   // reproduced anyway because "harmless" is a judgement and "identical" is a measurement, and the
   // moment a replacement is allowed to differ "where it does not matter" the differential stops
   // meaning anything. I would not have noticed this by reading the code.
   c->r[1] = 0x80070000u;
 }
 
-// Under PSXPORT_NDIFF the native body is checked against the recompiled one on its first N calls,
-// from the identical pre-state; otherwise only the native body runs.
-void rand_owned(Core *c) {
-  ndiff_run(c, "rand@0x8006272C", rand_native, gen_func_8006272C);
-}
-
 } // namespace
 
-void spyro_register_native_rand() {
-  psxport_recomp()->shard_set_override(0x8006272Cu, rand_owned);
+void spyro_register_native_rand(Core &core) {
+  spyro::installNativeOverride(core, 0x8006272Cu, "rand", rand_native);
 }

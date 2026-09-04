@@ -263,7 +263,7 @@ def find_repos(root):
 
 class Index:
     """basename -> [(repo, relpath)] over every tracked file in every repo, for resolving the bare
-    file names claims actually use ("gpu_vk.cpp", not "external/psxport/runtime/recomp/gpu_vk.cpp")."""
+    file names claims actually use ("gpu_vk.cpp", not "external/psxport/runtime/psx/gpu_vk.cpp")."""
 
     def __init__(self, root):
         self.root, self.repos, self.by_base, self.by_rel, self.files = root, find_repos(root), {}, {}, 0
@@ -1047,7 +1047,7 @@ def main():
                          "'if the reference renderer shares the fault, this number proves nothing'")
     ca.add_argument("--depends", action="append", metavar="PATH[#SYMBOL]",
                     help="the code this claim's evidence rests on, e.g. "
-                         "runtime/recomp/gpu_vk.cpp#render_geom. Makes rot mechanically detectable "
+                         "runtime/psx/gpu_vk.cpp#render_geom. Makes rot mechanically detectable "
                          "by `claim check`; without it the claim is INVISIBLE to that check.")
     ca.set_defaults(fn=cmd_claim_add)
     cl = c.add_parser("list"); cl.add_argument("--stale", action="store_true")

@@ -14,24 +14,38 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | ID | Capability / observable outcome | State | Dependencies | Goals |
 |---|---|---|---|---|
 | S001 | The verified Spyro 1 executable reaches stage 13's title overlay under the recorded native owners | partial | — | G001 |
-| S002 | Stage-13 title modes 0 and 1 are presented through game-owned native sprite commands | partial | S001 | G003 |
-| S003 | Stage-13 title mode 2 presents the three-slot save screen natively | verified | S002 | G003 |
-| S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | verified | S001 | G002, G003 |
-| S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | partial | S002, S004 | G003 |
+| S002 | Stage-13 title modes 0 and 1 are presented through game-owned native sprite commands | missing | S001 | G003 |
+| S003 | Stage-13 title mode 2 presents the three-slot save screen natively | missing | S002 | G003 |
+| S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | missing | S001 | G002, G003 |
+| S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | missing | S002, S004 | G003 |
 | S006 | Spyro 2 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial | — | G001 |
-| S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | verified | S004 | G001, G003 |
-| S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with no interpreter in gameplay products | missing | — | G002, G004 |
+| S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | partial | S004 | G001, G003 |
+| S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with no interpreter in gameplay products | partial | — | G002, G004 |
 | S009 | Spyro 1 reaches both stage-13 800/900 discriminators through Lightrec and native frame ownership | missing | S004, S008 | G001, G002 |
-| S010 | The generated world-body include is replaced by resumable runtime guest execution | missing | S008, S009 | G002 |
-| S011 | Representative Spyro 1 gameplay conforms on each released host and permits deletion of the static pipeline | missing | S005, S007, S010 | G001, G002, G003, G004 |
-| S012 | The frozen launcher builds and runs the native/Lightrec product without offline guest translation | missing | S008, S011 | G004 |
+| S010 | The generated world-body include is replaced by resumable runtime guest execution | partial | S008, S009 | G002 |
+| S011 | Representative Spyro 1 gameplay conforms on each released host through native/Lightrec execution | missing | S005, S007, S010 | G001, G002, G003, G004 |
+| S012 | The frozen launcher builds and runs the native/Lightrec product without offline guest translation | partial | S008, S011 | G004 |
 
 ## Current focus
 
-S008 — integrate the per-Core Lightrec executor and mechanically exclude the test interpreter from
-every gameplay product before further title implementation.
+S008 — prove real Spyro execution through the linked per-Core Lightrec executor and mechanically
+exclude the test interpreter from every gameplay product before further title implementation.
 
-## Preserved current-path evidence
+## Hosted verification and host gaps
+
+The repository's hosted CI is intentionally asset-free: one Linux x86_64 source-policy job runs the
+canonical Python verifier's negative selftests and live scan. It downloads no disc, executable,
+BIOS, generated guest body, or prebuilt runtime, and claims no gameplay evidence. The local native
+Clang/Ninja gate now passes against the frozen PSXport/Lightrec pin and its synthetic framework
+contract. macOS arm64, Windows x86_64, and Android arm64 runtime jobs are partial/missing until the
+shared runtime and platform packaging owners provide real target builds and execution evidence.
+
+## Preserved historical evidence
+
+Everything in this section describes the retired product and retained semantic recipes. It is not
+evidence that the current JIT product can boot, present, accept input, or render. Runtime oracle,
+frame, service, and generated-dispatch integrations named below have been deleted; only the durable
+binary facts and independently testable native semantics remain evidence.
 
 The retired generated-code product established that held digital input reaches the source-backed
 movement target and moves Spyro after the field handoff; jump, charge, and flame also reach the guest
@@ -76,7 +90,7 @@ S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned.
 cyclorama producers plus its measured clear-colour, culling-distance, and fade responsibilities.
 The stage-14 owner was observed presenting at 16:9 under the same host-owned frame loop, resolving
 its missing-scene refusal, but C228 is falsified as proof of the complete New Game transition because
-that run was manually ended before handoff to gameplay. The false recompiler entry that later crashed
+that run was manually ended before handoff to gameplay. The false guest entry that later crashed
 the transition has now been removed, and the product reaches the exact stage-0 native-render seam.
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
 the completed-gem text branch), regular actors, the visible normal Spyro model arm, the composed
@@ -153,7 +167,7 @@ At framework `3a8256e9`, `scratch/logs/spyro-mode2-native-wide-lerp-3a8256e9.log
 renderer, interpolation, and explicit 16:9 settings, announces `aspect=1`, `wide_engine=1`, and
 `512 -> 684`, reaches mode-2 state 4 for 174 draws, and emits all eight commands on each recorded
 frame. It exits cleanly at the 900-field cap with the frame-loop contract satisfied and no guest
-VSync, native-render refusal, or recomp miss. Present 380 is a real 960x720, 69.72%-non-black image;
+VSync, native-render refusal, or guest-execution refusal. Present 380 is a real 960x720, 69.72%-non-black image;
 visual inspection shows all three EMPTY slots, New Game/Load Game choices, card footer, live Spyro,
 and the widened mountain backdrop. C227 and issue 0086 record the resolved boundary. The diagnostic
 reference leg remains intentionally fail-fast at its guest-VSync tail, so live retired-body
@@ -166,7 +180,7 @@ Evidence: `Spyro1Runtime` creates one title-local `Spyro1FrameDriver`; `dc_boot_
 framework shell calls one finite `stepFrame`. The driver owns the measured input-latch/update/frame-
 step/render order, while `FieldScheduler` owns the 60 Hz counter, pad service, guest callback root,
 audio, BIOS events, present/pace, host-turn acknowledgement, and producer boundary. Boot
-`0x800127C0`/`0x8001286C` is transcribed as a resumable sequence of its four eight-field fades, two
+`0x800127C0`/`0x8001286C` is recovered as a resumable sequence of its four eight-field fades, two
 210-field holds, CD/state pump, and final display initialization. The adapter config declares
 libetc VSync `0x8005DBC4` as the mandatory fatal trap; helper `0x8005DD0C` has no success override.
 The retired product kept emitted boot bodies as A/B references. The native/Lightrec product must use
@@ -222,7 +236,7 @@ At framework `3c342ec3`, an isolated `SCUS_942.28` run reached selector 14, reso
 early cutscene frames. The operator ended it through the REPL before transition completion. C228 is
 therefore falsified as whole-route evidence and cannot prove gameplay after the card; it remains only
 an observation of the reached early stage-14 picture. A later exact run exposed the collision crash
-recorded in issue 0089; after its recompiler root fix, the route reaches stage 0 and truthfully refuses
+recorded in issue 0089; after its guest-entry fix, the route reaches stage 0 and truthfully refuses
 the previously incomplete FIELD scene. The latest source-owned field unit is the separate `0x80022A2C`
 world/shaded queue: its stage-0 snapshot preserves 93 total records, 52 valid meshes / 936 source
 primitives, and 3 visible records / 54 candidates, with both observed mesh and lighting-table classes;
@@ -267,7 +281,7 @@ independent oracle PCM parity.
 Binary analysis of the exact manifest-matched `SCUS_944.25` executable identified 683 resident
 function entries with no foreign-title or overlay assumptions. The retired dedicated `spyro2_port`
 kept its emitted guest bodies separate from Spyro 1, proving the images cannot share address-derived
-dispatch. `Spyro2Runtime` has no Spyro 1 legacy config or hooks. The title-owned finite boot driver reproduces
+dispatch. `Spyro2Runtime` has no Spyro 1 compatibility state or hooks. The retired title-owned finite boot driver reproduced
 the binary's persistent game-main and boot-prefix stack frames, calls constructors `0x80054834`
 and first leaf `0x800548A4`, then enters a title-owned display-bootstrap state machine instead of
 dispatching either the non-returning guest main or the retained bootstrap. That owner preserves the
@@ -299,11 +313,15 @@ visual gameplay.
 
 ### S008 — Runtime Lightrec execution
 
-Missing capability: integrate maintained pinned Lightrec into psxport as a per-`Core` executor.
-psxport must own CPU/device synchronization, bounded exits, complete WAD-image identity, native
-override dispatch, scoped original calls, and executable-memory invalidation. Link and selector
-inspection must prove that gameplay products neither contain nor can select the separate test
-interpreter.
+Implemented subset: the product enters authenticated crt0 through psxport's per-`Core`
+`dispatchGuest` boundary. Image-aware native dispatch, scoped `callOriginal`, invalidation, and typed
+exit contracts are present, the frozen PSXport/Lightrec backend is linked, and the synthetic framework
+contract passes. The old generator/dispatcher/selector/product are absent.
+
+Gap: the authenticated Spyro image has not yet been driven through a title-specific real-media route.
+Prove nonzero translated blocks, CPU/device synchronization, native/original dispatch, WAD
+address-reuse invalidation, and link inspection showing the separate test interpreter absent from
+gameplay. Do not treat the synthetic framework contract as boot or gameplay evidence.
 
 Atomic work: issue 0101.
 
@@ -317,22 +335,29 @@ not representative gameplay.
 
 ### S010 — Resumable world execution
 
-Missing capability: remove `game/core/world_body.inc` and every emitted-world-body call. Execute the
-unchanged retail world code through Lightrec, return explicit bounded exits for host-owned frame and
-service work, and resume the same guest CPU state. No generated super-call, body transcription, or
-interpreter fallback may replace it.
+Implemented subset: `game/core/world_body.inc`, its native transcription, and emitted-body calls are
+gone. `WorldGuestExecution` resumes unchanged retail `RenderWorldChunks` at `0x800258F0` through the
+scoped-original runtime boundary.
 
-### S011 — Representative gameplay and static retirement
+Gap: the Lightrec backend must execute that boundary and prove bounded host-service exits resume the
+same guest CPU state. No body transcription or interpreter fallback may replace it.
+
+### S011 — Representative gameplay conformance
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,
 independent-oracle timing/memory/interrupt/device comparison, and the declared correctness/frame-time
-budget on every released host architecture. Only then delete the generator, emitted corpus,
-emission-only seeds, generated dispatch/tests, and old build/provisioning path atomically.
+budget on every released host architecture. The obsolete generator, corpus, seeds,
+dispatcher/tests, and old build/provisioning route have already been removed break-first and may not
+return as a fallback.
 
 ### S012 — Native/Lightrec launcher
 
-Missing capability: the frozen zero-argument launcher must authenticate the user's disc, build the
-native/Lightrec product without offline guest translation or a pre-populated runtime cache, and launch
-Spyro 1 as the current default. The existing launcher still drives the retired path and is not valid
-delivery evidence.
+Implemented subset: the frozen launcher authenticates the user's disc, provisions only the selected
+PS-X EXE, builds the sole `spyro_port` native/Lightrec target under `build/player`, and launches Spyro
+1 by default without offline guest translation or a pre-populated runtime cache. The native target
+links the frozen PSXport/Lightrec backend, and its asset-free synthetic framework contract passes.
+
+Gap: a real-media launch still refuses at the first unverified title-specific runtime boundary.
+Cold-path title execution, boot/title routes, and gameplay evidence remain to be recorded; the
+synthetic framework contract is not boot evidence.

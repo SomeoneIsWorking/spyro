@@ -18,20 +18,12 @@ TOOLS = Path(__file__).resolve().parent
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
-import ensure_recomp  # noqa: E402
-import ensure_spyro2_substrate  # noqa: E402
-import provision_title  # noqa: E402
+import provision_title
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAYER_BUILD = ROOT / "scratch/build/player"
-FRAMEWORK_BUILD = ROOT / "scratch/build/player-tools"
+PLAYER_BUILD = ROOT / "build/player"
+FRAMEWORK_BUILD = ROOT / "build/player-tools"
 MAINTAINER_BUILD = ROOT / "build"
-EXE = ROOT / "scratch/bin/spyro/SCUS_942.28"
-PORT = ROOT / "scratch/bin/spyro_port"
-PORTS = {
-    "spyro1": PORT,
-    "spyro2": ROOT / "scratch/bin/spyro2_port",
-}
 
 
 class Refusal(RuntimeError):
@@ -47,7 +39,8 @@ class Host:
 
     @staticmethod
     def run(args: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess:
-        return subprocess.run([str(value) for value in args], **kwargs)
+        check = bool(kwargs.pop("check", False))
+        return subprocess.run([str(value) for value in args], check=check, **kwargs)
 
     @staticmethod
     def system() -> str:
@@ -214,13 +207,34 @@ def sync_framework():
 
 
 def sync_submodules(psxport):
-    if not (ROOT / ".gitmodules").is_file():
-        return
-    tool = psxport / "scripts/sync-submodules.sh"
-    if tool.is_file():
-        command([tool])
-        return
-    say("WARNING: framework submodule-sync tool is absent; Spyro reference submodules were not synced")
+    """Initialize only dependencies required by this consumer.
+
+    Beetle carries an optional URL-less oracle gitlink below its own checkout. Recursive sync
+    therefore cannot be a fresh-clone prerequisite; the port needs Beetle, Lucent, and libchdr only.
+    """
+    command(
+        [
+            "git",
+            "-C",
+            psxport,
+            "submodule",
+            "update",
+            "--init",
+            "vendor/beetle-psx",
+            "vendor/lucent",
+        ]
+    )
+    command(
+        [
+            "git",
+            "-C",
+            Path(psxport) / "vendor/beetle-psx",
+            "submodule",
+            "update",
+            "--init",
+            "deps/libchdr",
+        ]
+    )
 
 
 def resolve_disc(spec, explicit):
@@ -297,35 +311,19 @@ def build_discdump(psxport, compiler_options):
     raise Refusal("discdump build produced no executable")
 
 
-def provision(spec, disc, psxport, discdump):
-    if spec.slug != "spyro1":
-        try:
-            executable = provision_title.provision(spec, disc, discdump)
-        except provision_title.Refused as error:
-            raise Refusal(str(error)) from error
-        if spec.slug == "spyro2":
-            try:
-                ensure_spyro2_substrate.ensure(executable, psxport)
-            except ensure_spyro2_substrate.Refused as error:
-                raise Refusal(str(error)) from error
-        return executable
-    env = os.environ.copy()
-    env["PSXPORT_DIR"] = str(psxport)
-    env["PSXPORT_DISCDUMP"] = str(discdump)
-    command([sys.executable, ROOT / "tools/ensure_recomp.py", disc], env=env)
-    if not EXE.is_file():
-        raise Refusal(f"recomp provisioning produced no {EXE.relative_to(ROOT)}")
-    return EXE
+def provision(spec, disc, _psxport, discdump):
+    try:
+        return provision_title.provision(spec, disc, discdump)
+    except provision_title.Refused as error:
+        raise Refusal(str(error)) from error
 
 
 def configure_and_build(psxport, compiler_options, spec=provision_title.SPECS["spyro1"]):
     jobs = str(os.cpu_count() or 4)
     say(f"building the native port (CMake -j{jobs})…")
     configure(ROOT, PLAYER_BUILD, compiler_options, f"-DPSXPORT_DIR={psxport}")
-    target = "spyro2_port" if spec.slug == "spyro2" else "spyro_port"
-    product = PORTS.get(spec.slug)
-    if product is None:
-        raise Refusal(f"{spec.title} has no product target yet")
+    target = "spyro_port"
+    product = PLAYER_BUILD / "bin" / target
     command(["cmake", "--build", PLAYER_BUILD, "--target", target, "-j", jobs])
     if not os.access(product, os.X_OK):
         raise Refusal(f"build produced no executable at {product.relative_to(ROOT)}")
@@ -343,9 +341,8 @@ def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
 
 
 def launch(psxport, disc, spec, executable):
-    product = PORTS.get(spec.slug)
-    if product is None:
-        raise Refusal(f"{spec.title} has no product target yet")
+    target = "spyro_port"
+    product = PLAYER_BUILD / "bin" / target
     say(f"launching {spec.title} (native PC port)…")
     os.execve(
         product,

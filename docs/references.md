@@ -42,16 +42,14 @@ matched, ~2.7x `open-spyro`'s figure). Verified 2026-08-16: its target `PSX.EXE`
 ## How these differ from this project
 
 A **decompilation** recovers human-written source that recompiles to the original binary. This repo
-is a **static recompilation port**: psxport translates the shipped MIPS machine code into C
-automatically, runs it on a native PC platform layer, and native reimplementations then replace that
-substrate function by function, each gated byte-exact against the code it replaces. The two are
-complementary — a decomp is an excellent source of *function boundaries and names* to check our RE
-against, and it answers structural questions (like the overlay count above) that are expensive to
-derive from scratch.
+is a native/Lightrec hybrid port: psxport dynamically translates instructions from the player's
+authenticated executable and runtime WAD images, while measured native owners replace cohesive game
+or platform behavior. The references remain useful for function boundaries and names to verify
+against our own evidence, and for structural questions such as overlay ownership.
 
 ## Open cross-check
 
 The overlay question is currently **unresolved** — see [`issues/0001`](issues/0001-whether-spyro-loads-code-overlays-and-from-where.md).
-The decomp projects say 37 overlays exist; the disc image contains no per-overlay files. Our recomp
-covers only the resident executable today. This is exactly the kind of discrepancy a reference is
-useful for surfacing and a running port is needed to settle.
+The decomp projects say 37 overlays exist; the disc image contains no per-overlay files. Runtime WAD
+image activation and invalidation remain to be proven through Lightrec. This is exactly the kind of
+discrepancy a reference is useful for surfacing and a running port is needed to settle.

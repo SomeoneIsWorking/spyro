@@ -20,6 +20,18 @@ def verify_clang_build(build: Path) -> None:
         raise run.Refusal(f"the configured maintainer build in {build} is not using Clang")
 
 
+def verify_source_policy() -> None:
+    """Run the asset-free source-policy gate used by hosted CI.
+
+    The native runtime links the frozen psxport/Lightrec dependency, but this mode deliberately
+    proves only source policy and its negative selftests; it never fabricates a guest executor or
+    claims title gameplay coverage.
+    """
+    source_policy = run.ROOT / "tools/source_policy.py"
+    run.command([sys.executable, source_policy, "--selftest"])
+    run.command([sys.executable, source_policy])
+
+
 def verify(jobs: int) -> None:
     compiler_options = run.preflight()
     psxport = run.sync_framework()
@@ -42,15 +54,23 @@ def verify(jobs: int) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jobs", type=int, default=max(1, os.cpu_count() or 1))
+    parser.add_argument(
+        "--source-policy",
+        action="store_true",
+        help="run the asset-free source-policy gate without building psxport",
+    )
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
     try:
-        verify(args.jobs)
+        verify_source_policy() if args.source_policy else verify(args.jobs)
     except (OSError, run.Refusal) as error:
         print(f"[verify] REFUSED: {error}", file=sys.stderr)
         return 2
-    print("[verify] PASS: Clang build, complete CTest, and psxport pin")
+    if args.source_policy:
+        print("[verify] PASS: asset-free source policy")
+    else:
+        print("[verify] PASS: Clang build, complete CTest, and psxport pin")
     return 0
 
 

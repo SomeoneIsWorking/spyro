@@ -5,9 +5,9 @@
 namespace spyro::cutscene_scene_recipe {
 namespace {
 
-// 0x8001E9C8 — generated/shard_4.c plus the matching Rosetta body in
-// external/spyro-1/src/gamestates/draw.c. Focused recipe tests verify the render-only state
-// transcription; isolated real-disc runtime and visual evidence is C228 / issue 0088.
+// 0x8001E9C8 — matching source body in external/spyro-1/src/gamestates/draw.c. Focused recipe tests
+// verify the render-only state behavior; isolated real-disc runtime and visual evidence remains a
+// documented gap.
 constexpr uint32_t kCycloramaBackground = 0x80078A50u;
 constexpr uint32_t kFade = 0x80075918u;
 constexpr uint32_t kDrawEnvA = 0x80076EE0u;

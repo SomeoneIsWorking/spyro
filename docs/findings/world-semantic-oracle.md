@@ -1,7 +1,7 @@
 # RenderWorldChunks semantic oracle
 
 `PSXPORT_WORLD_SCENE_ORACLE=1` arms diagnostic capture inside the retained
-`0x800258F0` transcription. The shipping semantic producer does not call that
+`0x800258F0` runtime body. The shipping semantic producer does not call that
 body and does not consume its packet pool, OT, scratchpad, or GTE output.
 
 The acceptance corpus is the final linked world stream, not the allocation

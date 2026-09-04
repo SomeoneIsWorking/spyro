@@ -9,7 +9,7 @@ reveals its overlay).
 
 The archive's first sector is an INDEX: a flat array of (byte offset, length) pairs, all
 sector-aligned. Confirmed against ground truth — entry 2 is (0x5B800, 0x3800), exactly the overlay
-already located and recompiled, and every load the running port made corresponds to an entry.
+already located in runtime evidence, and every load the running port made corresponds to an entry.
 
 So the whole set can be enumerated statically. Which entries are CODE is then scored by the SHARE of
 words whose opcode is one that dominates real MIPS (see CODE_OPS). Do NOT score on "did the word
@@ -17,15 +17,15 @@ decode": the decoder names unrecognised encodings op:0x2F / regimm:0x04 rather t
 test returns ~100% for arbitrary data — the first version of this tool did exactly that and scored
 every entry 100%, which is the classic uniform-output tell of a broken instrument. The share metric
 discriminates: the already-verified overlay scores 99.5% while neighbouring entries score 64% and 88%.
-The metric is base-independent, so no load address is needed to classify — only to recompile.
+The metric is base-independent, so no load address is needed to classify. Runtime activation still
+needs the exact load base to assign image identity and invalidation ranges.
 
 Usage:
   wad_index.py [--wad PATH] [--min-score 90] [--max-entries N]
 
 Output: one line per entry — index, offset, length, code-opcode share, and a CODE marker. Entries
-flagged CODE are candidates for extraction into tools/ensure_recomp.py's OVERLAYS list; each still
-needs its LOAD BASE established before it can be recompiled, because a wrong base emits a whole
-module at wrong addresses.
+flagged CODE are runtime-image candidates; each still needs its load base established so the JIT
+cache, native override keys, and invalidation owner refer to the correct resident image.
 """
 import argparse
 import os
@@ -34,7 +34,7 @@ import sys
 from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "external", "psxport", "tools", "recomp"))
+                                "..", "external", "psxport", "tools", "mips"))
 from decode import decode  # noqa: E402
 
 SECTOR = 0x800
@@ -97,7 +97,7 @@ def main():
     a = ap.parse_args()
 
     if not os.path.isfile(a.wad):
-        sys.exit(f"wad_index: {a.wad} not found (ensure_recomp.py extracts it)")
+        sys.exit(f"wad_index: {a.wad} not found (provision the authenticated title archive first)")
     size = os.path.getsize(a.wad)
     with open(a.wad, "rb") as f:
         head = f.read(SECTOR)
@@ -142,14 +142,14 @@ def main():
         print(f"\n{len(code)} entr(ies) score >= {a.min_score}% valid opcodes:")
         for idx, off, ln in code:
             print(f"  entry {idx}: WAD +0x{off:X}, {ln} bytes"
-                  + ("   <-- already recompiled as OVL0" if off == 0x5B800 else ""))
-        print("\nEach still needs its LOAD BASE established before recompiling — a wrong base emits a\n"
-              "whole module at wrong addresses. NOTE (claim C034): for the level entries this cannot be\n"
+                  + ("   <-- observed title overlay" if off == 0x5B800 else ""))
+        print("\nEach still needs its LOAD BASE established before runtime activation. NOTE (claim C034):\n"
+              "for the level entries this cannot be\n"
               "done from their own bytes. They contain NO internal direct calls (zero jal targets above\n"
               "text_end), so there is nothing to triangulate from, and their embedded absolute constants\n"
               "spread over ~1.6MB. Do NOT assume the arena 0x8007AA38 just because OVL0 lands there. The\n"
-              "one line that settles it is an observed load: PSXPORT_DEBUG=cdq logs a3 (the WAD byte\n"
-              "offset) next to dest, so reaching a level names the base outright.")
+              "one line that settles it is an observed load: a CD/archive trace must report a3 (the\n"
+              "WAD byte offset) next to dest, so reaching a level names the base outright.")
 
 
 if __name__ == "__main__":

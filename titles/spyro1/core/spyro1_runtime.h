@@ -14,14 +14,8 @@ public:
   void destroyContext(void *context) override;
   void registerOverrides(Game &game) override;
   void bootInit(Core &core) override;
-  std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
-  RenderCapabilities renderCapabilities() const override {
-    return RenderCapabilities::interpolatedNative();
-  }
+  RenderCapabilities renderCapabilities() const override;
   bool guestVramIsPicture(const Game &game) const override;
-  std::unique_ptr<TemporalFramePresentation> createTemporalFramePresentation(Game &game) override;
-  bool installSubstrate() override;
-  std::string_view substrateRefusal() const override;
 
 private:
   static const GuestProgramImage programImage_;

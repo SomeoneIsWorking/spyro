@@ -1,9 +1,9 @@
 // native_util.cpp — small engine utilities this port owns outright: a set-and-return-previous
 // global, a 2D distance approximation, and the display-list link primitive.
 //
-// Picked with tools/own_candidates.py by caller count among LEAF functions, same basis as
+// Picked by recorded caller count among leaf functions, the same basis as
 // native_leaf.cpp and native_angle.cpp. Ownership here buys architecture, not speed — a host
-// profile puts ALL recompiled guest code under 5% of this port's CPU time (C082).
+// profile puts all guest CPU execution under 5% of this port's CPU time (C082).
 //
 // EVERY REGISTER THE BODY LEAVES IS PART OF THE CONTRACT, including scratch ones no caller can
 // read. Two of the three below leave $at holding an intermediate, and both reproduce it: the
@@ -15,18 +15,16 @@
 // node becomes the list head on BOTH paths — reading it as belonging to the not-taken arm gives a
 // body that links correctly only when the list is empty.
 #include "core.h"
-#include "native_diff.h"
-#include "rec_decls.h"
-#include "recomp_iface.h"
+#include "native_execution.h"
 #include "spyro_game.h"
 
 namespace {
 
 // 0x8006276C (strlen, 9 callers) and 0x80067614 (a set-and-return-previous global, 8 callers) were
-// transcribed too, and are deliberately NOT installed: across 4000 frames with input driven,
+// measured too, and are deliberately NOT installed: across 4000 frames with input driven,
 // neither is called even once, so neither can be differentially verified. An override that has
-// never been checked against the recompiled body is an unverified replacement of guest behaviour on
-// a live path. Both transcriptions are recorded in the issue catalog ("transcribed but
+// never been checked against guest execution is an unverified replacement of guest behaviour on
+// a live path. Both measurements are recorded in the issue catalog ("measured but
 // unexercised") so they can be installed and verified in a single step once a run reaches code that
 // calls them.
 
@@ -107,20 +105,10 @@ void dl_link_native(Core *c) {
   }
 }
 
-void setg3c30_owned(Core *c) {
-  ndiff_run(c, "setg3c30@0x80063C30", setg_3c30_native, gen_func_80063C30);
-}
-void dist2d_owned(Core *c) {
-  ndiff_run(c, "dist2d@0x80017990", dist2d_native, gen_func_80017990);
-}
-void dllink_owned(Core *c) {
-  ndiff_run(c, "dllink@0x800168DC", dl_link_native, gen_func_800168DC);
-}
-
 } // namespace
 
-void spyro_register_native_util() {
-  psxport_recomp()->shard_set_override(0x80063C30u, setg3c30_owned);
-  psxport_recomp()->shard_set_override(0x80017990u, dist2d_owned);
-  psxport_recomp()->shard_set_override(0x800168DCu, dllink_owned);
+void spyro_register_native_util(Core &core) {
+  spyro::installNativeOverride(core, 0x80063C30u, "setg3c30", setg_3c30_native);
+  spyro::installNativeOverride(core, 0x80017990u, "dist2d", dist2d_native);
+  spyro::installNativeOverride(core, 0x800168DCu, "dllink", dl_link_native);
 }

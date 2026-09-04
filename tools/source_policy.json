@@ -1,0 +1,23 @@
+{
+  "source_suffixes": [".c", ".cc", ".cpp", ".h", ".hpp", ".cmake", ".py"],
+  "source_names": ["CMakeLists.txt"],
+  "excluded_roots": ["docs", "external"],
+  "excluded_paths": ["tools/source_policy.py"],
+  "forbidden_tokens": [
+    "gen_func_",
+    "rec_dispatch",
+    "rec_guest_instruction_ticks",
+    "rec_host_turn",
+    "rec_irq_poll",
+    "recomp_iface",
+    "engine_set_override_main",
+    "LegacyGameRuntimeAdapter",
+    "psxport_recomp",
+    "shard_set_override",
+    "ndiff_run",
+    "rec_decls"
+  ],
+  "forbidden_include_fragments": ["runtime/recomp/"],
+  "forbidden_path_components": ["generated"],
+  "allowed_shell_paths": ["run.sh"]
+}

@@ -4,7 +4,7 @@ namespace spyro::screen_border_recipe {
 
 namespace {
 
-// The guest's stepping rule, transcribed from func_80018F30's prologue. int32 arithmetic
+// The guest's stepping rule, recovered from func_80018F30's prologue. int32 arithmetic
 // throughout: enabled ramps the bars up to the authored 22-pixel hold, disabled ramps them
 // back down to zero, one g_DeltaTime step per logic frame in both directions.
 int32_t stepped(int32_t height, uint32_t enabled, int32_t deltaTime) {

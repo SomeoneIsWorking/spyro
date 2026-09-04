@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""re_frontier.py — the RE-frontier progress tracker for OpenBL2.
+"""re_frontier.py — the RE-frontier progress tracker for Spyro's dynamic runtime.
 
 The codemap (docs/codemap.md) answers "what subsystem is where + coarse status".
 The issue-catalog answers "did we hit this symptom before". Neither answers the
@@ -61,31 +61,26 @@ SATISFIED = {"re-verified", "re-partial", "skip-by-design"}
 FIELDS = ["status", "area", "deps", "evidence", "where", "gap", "notes"]
 VALID_STATUS = set(STATUS_EMOJI) - {"blocked"}
 
-HEADER = """# RE Frontier — the ordered RE dependency chain toward a faithful BL2
+HEADER = """# RE Frontier — ordered evidence chain for Spyro's dynamic runtime
 
 Tracked by `tools/re_frontier.py` (consult it FIRST; update it in the SAME commit
-that changes a step). This is the fine-grained companion to `docs/codemap.md`:
-the codemap says *what subsystem exists*, this says *which ordered RE step is
-real reverse-engineering vs a hack that jumped ahead*.
+that changes a step). This is the fine-grained companion to `docs/codemap.md`: the codemap says what
+subsystem owns a responsibility, while this records the binary or asset evidence required before a
+runtime boundary can be implemented and verified.
 
-**Hard rule (no hacks / no fallbacks):** a `⛔ hack` status is DEBT, never an
-acceptable resting state. It marks a shortcut standing in for absent RE and MUST
-be removed as its real mechanism lands. `re_frontier.py hacks` is the debt list;
-`re_frontier.py next` tells you the next RE-ready step.
+**Hard rule (no substitutes):** a shortcut standing in for absent runtime evidence is not an
+acceptable product state. `re_frontier.py next` identifies the next evidence-ready step.
 
-**`re-verified` MEANS FAITHFUL to the real target — not "the mechanism runs."** A
-step is `re-verified` only when its OUTPUT matches the real game/binary (look /
-sound / behavior) on real data. An internal trace ("bytecode reached the call
-site", "N rows attached") is a mechanism check, NOT faithfulness — if it runs but
-the result doesn't match the real target, it is `re-partial` with the
-faithfulness gap named. The user observes the running system; that observation
-overrides any internal trace.
+**`re-verified` means faithful to the real target, not merely that a mechanism runs.** A step is
+`re-verified` only when its observable output matches the real game or binary on real data. An
+internal trace is mechanism evidence, not fidelity evidence; a remaining mismatch keeps the step
+`re-partial` with its gap named.
 
-**Fail fast & loud:** a failure must surface loudly, never silently fall back —
-unless the fallback IS intended behavior of the real target being reproduced.
+**Fail fast and loud:** a failure must surface rather than silently choosing an alternate execution
+method.
 
-Statuses: ✅ re-verified · 🟡 re-partial (honest gap) · 🔬 in-progress ·
-⛔ hack (debt, must remove) · ⬜ todo · ➖ skip-by-design · ⏸ blocked (computed).
+Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · ➖ skip-by-design · ⏸ blocked
+(computed).
 
 <!-- Machine-edited by tools/re_frontier.py add/set. Format: `## <area>` sections;
      each entry is `### <id> — <title>` followed by `- <field>: <value>` lines. -->

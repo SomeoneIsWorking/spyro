@@ -24,7 +24,7 @@ constexpr uint32_t kMemcardAcceptCallback = 0x80066634u;
 
 // The two public starters share one libmcrd contract: accept only an idle request and register
 // the matching state-machine callback. The callbacks are guest addresses because the event stack
-// dispatches them later through the recompiled substrate.
+// dispatches them later through runtime guest execution.
 constexpr MemcardOperationPlan memcardOperationPlan(MemcardOperation operation) {
   return {
       .operation = operation,

@@ -26,9 +26,9 @@ Recipe uniform(uint32_t fade,
 
 } // namespace
 
-// 0x800190D4 as reached from 0x8001E9C8 — generated/shard_4.c plus the matching Rosetta body in
+// 0x800190D4 as reached from 0x8001E9C8 — the matching source body in
 // external/spyro-1/src/gamestates/draw.c. The focused test verifies its mode-2 colour/extent
-// transcription; isolated real-disc runtime and visual evidence is C228 / issue 0088.
+// behavior; isolated real-disc runtime and visual evidence remains a documented gap.
 Recipe cutscene(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
   return uniform(fade, 4u, drawOffsetX, drawOffsetY, renderWidth);
 }

@@ -37,21 +37,21 @@ SPECS = {
         "spyro1",
         "SCUS_942.28",
         ("PSXPORT_SPYRO1_DISC", "PSXPORT_SPYRO_DISC", "PSXPORT_DISC"),
-        ROOT / "scratch" / "bin" / "spyro",
+        ROOT / "scratch" / "assets" / "spyro1",
     ),
     "spyro2": ProvisionSpec(
         "Spyro 2: Ripto's Rage!",
         "spyro2",
         "SCUS_944.25",
         ("PSXPORT_SPYRO2_DISC", "PSXPORT_DISC"),
-        ROOT / "scratch" / "bin" / "spyro2",
+        ROOT / "scratch" / "assets" / "spyro2",
     ),
     "spyro3": ProvisionSpec(
         "Spyro: Year of the Dragon",
         "spyro3",
         "SCUS_944.67",
         ("PSXPORT_SPYRO3_DISC", "PSXPORT_DISC"),
-        ROOT / "scratch" / "bin" / "spyro3",
+        ROOT / "scratch" / "assets" / "spyro3",
     ),
 }
 

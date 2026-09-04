@@ -8,7 +8,7 @@ tags: input,stage,overlay
 
 ## Claim
 
-The exit from Spyro's title sub-state 1 is gated at 0x8007CBA0 on [0x80078D7C] == 5, and this is a STATIC fact, not a runtime one. 0x8007CBA0 has exactly one predecessor — the branch at 0x8007CAA8 — whose delay slot 'addiu v0,zero,5' always executes, so control arrives with v0 = 5 unconditionally; s0 is loaded once at 0x8007C55C from 0x80078D7C and never rewritten. Of the 19 immediate-form writers of that global, exactly one stores 5 (0x8007B8F8 in OV_5B800), and the pair just before it stores 2 to the sub-state, so a single block performs both halves of the transition. That block lives in the sub-state-1 arm of the handler, which the dispatch at 0x8007AD28-0x8007AD5C selects: sub 0 -> 0x8007AD64, sub 1 -> 0x8007B0B8, sub 2 -> 0x8007C454, anything else -> exit.
+The exit from Spyro's title sub-state 1 is gated at 0x8007CBA0 on [0x80078D7C] == 5, and this is a binary fact, not a runtime one. 0x8007CBA0 has exactly one predecessor — the branch at 0x8007CAA8 — whose delay slot 'addiu v0,zero,5' always executes, so control arrives with v0 = 5 unconditionally; s0 is loaded once at 0x8007C55C from 0x80078D7C and never rewritten. Of the 19 immediate-form writers of that global, exactly one stores 5 (0x8007B8F8 in OV_5B800), and the pair just before it stores 2 to the sub-state, so a single block performs both halves of the transition. That block lives in the sub-state-1 arm of the handler, which the dispatch at 0x8007AD28-0x8007AD5C selects: sub 0 -> 0x8007AD64, sub 1 -> 0x8007B0B8, sub 2 -> 0x8007C454, anything else -> exit.
 
 ## Evidence
 

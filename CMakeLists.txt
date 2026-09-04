@@ -1,69 +1,31 @@
-# SpyroEngine — the Spyro the Dragon PC-native port, built on the psxport framework
-# (external/psxport).
-#
-# The framework (PSX-generic static-recomp substrate + runtime + HW backends + SBS harness + SDL_GPU
-# renderer) is the reusable `psxport` library; this repo adds the game (game/**) and the recompiled
-# SCUS_942.28 substrate (generated/**, produced by run.sh / tools/ensure_recomp.py) and links it.
 cmake_minimum_required(VERSION 3.21)
-
-# ccache, when it is available. The recompiled substrate is ~200 MB of generated C across ~47
-# translation units, and compiling it takes 10-15 minutes while a no-op build links in ~3 seconds —
-# so compilation is essentially the whole cost of an iteration here. The pattern that makes this pay
-# is the normal one: change the emitter, measure, change it again, and land back on bytes that were
-# already compiled once. Must be set BEFORE project(), which is when CMake probes the compiler.
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}")
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  message(STATUS "ccache: ${CCACHE_PROGRAM}")
-endif()
-
-project(spyroengine CXX C)
-
-# PSXPORT_DIR — WHERE THE FRAMEWORK SOURCE COMES FROM. Defaults to external/psxport, which is no
-# longer a git submodule (2026-08-16): tools/psxport_sync.py --auto (called by run.sh) makes it a
-# SYMLINK to the workspace's shared framework clone when one exists, or a private clone at this
-# repo's psxport.pin on a fresh machine. So a fresh clone of this repo alone still builds
-# standalone: that property is what "each game is its own project using psxport as the framework"
-# means, and it must stay testable.
-#
-# Point it at a specific framework checkout to build against in-progress framework work:
-#
-#   cmake -S . -B build -DPSXPORT_DIR=$HOME/repo/psx/psxport
-#
-# It is a CACHE path, so it survives reconfigures, and `tools/run.py` passes it through from the
-# environment. Everything else in this file and in cmake/ derives from it — never re-spell
-# `external/psxport` at a call site, or the two halves of a build can come from different checkouts.
-set(PSXPORT_DIR "${CMAKE_SOURCE_DIR}/external/psxport" CACHE PATH
-    "psxport framework source directory (default: external/psxport)")
-if(NOT EXISTS "${PSXPORT_DIR}/cmake/psxport.cmake")
-  message(FATAL_ERROR "PSXPORT_DIR=${PSXPORT_DIR} has no cmake/psxport.cmake — "
-                      "run `python3 tools/psxport_sync.py --auto`, or point PSXPORT_DIR at a psxport checkout.")
-endif()
-message(STATUS "psxport framework: ${PSXPORT_DIR}")
-
-# RECORD WHAT THIS CONFIGURE RESOLVED, so `tools/psxport_sync.py --check` can compare the framework you
-# actually BUILT against with the one psxport.pin RECORDS. The framework is no longer a git submodule
-# (external/psxport is a symlink to the workspace's shared clone, or a private clone at the pin — see
-# tools/psxport_sync.py); the pin is provenance, and this file is what keeps it honest. Measured
-# 2026-08-16: this tree was once built against one framework commit while recording another, so a bare
-# clone did not compile, and nothing noticed.
-execute_process(COMMAND git -C "${PSXPORT_DIR}" rev-parse HEAD
-                OUTPUT_VARIABLE PSXPORT_RESOLVED_SHA OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET RESULT_VARIABLE _psxport_rev_rc)
-if(NOT _psxport_rev_rc EQUAL 0)
-  set(PSXPORT_RESOLVED_SHA "unknown")   # honest: never silently record a plausible-looking sha
-endif()
-file(WRITE "${CMAKE_BINARY_DIR}/psxport_resolved.txt"
-     "dir = ${PSXPORT_DIR}\ncommit = ${PSXPORT_RESOLVED_SHA}\n")
-message(STATUS "psxport commit: ${PSXPORT_RESOLVED_SHA}")
+project(spyro_port CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(PSXPORT_DIR "${CMAKE_SOURCE_DIR}/external/psxport" CACHE PATH
+    "psxport framework source directory")
+if(NOT EXISTS "${PSXPORT_DIR}/cmake/psxport.cmake")
+  message(FATAL_ERROR
+    "PSXPORT_DIR=${PSXPORT_DIR} has no cmake/psxport.cmake; resolve the pinned psxport checkout")
+endif()
+find_package(Git REQUIRED)
+execute_process(
+  COMMAND "${GIT_EXECUTABLE}" -C "${PSXPORT_DIR}" rev-parse HEAD
+  RESULT_VARIABLE PSXPORT_REVISION_RESULT
+  OUTPUT_VARIABLE PSXPORT_REVISION
+  ERROR_QUIET
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PSXPORT_REVISION_RESULT EQUAL 0 OR PSXPORT_REVISION STREQUAL "")
+  message(FATAL_ERROR "cannot resolve the PSXPORT_DIR commit for build provenance")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/psxport_resolved.txt"
+     "dir = ${PSXPORT_DIR}\ncommit = ${PSXPORT_REVISION}\n")
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(ZLIB REQUIRED)
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 find_package(zstd CONFIG QUIET)
 if(NOT TARGET zstd::libzstd_shared)
   find_library(ZSTD_LIBRARY zstd REQUIRED)
@@ -71,11 +33,78 @@ if(NOT TARGET zstd::libzstd_shared)
   set_target_properties(zstd::libzstd_shared PROPERTIES IMPORTED_LOCATION "${ZSTD_LIBRARY}")
 endif()
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
-# libchdr (CHD access) comes from the Beetle PSX submodule NESTED under psxport (PSXPORT_DIR, above).
 add_subdirectory(${PSXPORT_DIR}/vendor/beetle-psx/deps/libchdr
                  ${CMAKE_BINARY_DIR}/libchdr_build EXCLUDE_FROM_ALL)
+include(${PSXPORT_DIR}/cmake/psxport.cmake)
 
-# The game binary (spyro_port): game/** + generated/** linking libpsxport. Output: scratch/bin/spyro_port.
-# (This also includes cmake/psxport.cmake, which defines the framework library itself.)
-include(cmake/spyro_port.cmake)
+set(SPYRO_CATALOG_HEADER ${CMAKE_BINARY_DIR}/generated/spyro_title_catalog.generated.h)
+add_custom_command(
+  OUTPUT ${SPYRO_CATALOG_HEADER}
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/generate_title_catalog.py
+          --output ${SPYRO_CATALOG_HEADER}
+  DEPENDS
+    ${CMAKE_SOURCE_DIR}/tools/generate_title_catalog.py
+    ${CMAKE_SOURCE_DIR}/tools/title_identity.py
+    ${CMAKE_SOURCE_DIR}/titles/spyro1/executable.json
+    ${CMAKE_SOURCE_DIR}/titles/spyro2/executable.json
+    ${CMAKE_SOURCE_DIR}/titles/spyro3/executable.json
+  COMMENT "Generating executable identity catalog"
+  VERBATIM)
+add_custom_target(spyro_title_catalog DEPENDS ${SPYRO_CATALOG_HEADER})
+
+set(SPYRO_RUNTIME_SOURCES
+  game/core/native_angle.cpp
+  game/core/native_gameplay.cpp
+  game/core/native_gte.cpp
+  game/core/native_leaf.cpp
+  game/core/native_rand.cpp
+  game/core/native_util.cpp
+  game/core/native_vec.cpp
+  game/core/spyro_runtime.cpp
+  game/core/title_runtime_registry.cpp
+  game/core/title_selection.cpp
+  titles/spyro1/core/spyro1_runtime.cpp
+  titles/spyro2/core/spyro2_runtime.cpp
+  titles/spyro3/core/spyro3_runtime.cpp)
+
+add_library(spyro_runtime STATIC ${SPYRO_RUNTIME_SOURCES})
+add_dependencies(spyro_runtime spyro_title_catalog)
+target_include_directories(spyro_runtime PUBLIC
+  game/core
+  titles/spyro1/core
+  titles/spyro2/core
+  titles/spyro3/core
+  ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(spyro_runtime PUBLIC psxport OpenSSL::Crypto)
+
+add_executable(spyro_port
+  game/core/main.cpp
+  game/core/guest_execution.cpp
+  game/core/world_guest_execution.cpp)
+target_link_libraries(spyro_port PRIVATE spyro_runtime)
+set_target_properties(spyro_port PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(test_title_selection
+    tests/test_title_selection.cpp)
+  target_include_directories(test_title_selection PRIVATE game/core)
+  target_link_libraries(test_title_selection PRIVATE spyro_runtime OpenSSL::Crypto)
+  add_test(NAME title_selection COMMAND test_title_selection)
+  add_executable(test_spyro3_runtime
+    tests/test_spyro3_runtime.cpp)
+  target_include_directories(test_spyro3_runtime PRIVATE game/core)
+  target_link_libraries(test_spyro3_runtime PRIVATE spyro_runtime)
+  add_test(NAME spyro3_runtime COMMAND test_spyro3_runtime)
+  add_test(NAME launcher_policy
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_launcher.py)
+  add_test(NAME provision_titles
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_provision_titles.py)
+  add_test(NAME source_policy
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/source_policy.py)
+  add_test(NAME source_policy_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/source_policy.py --selftest)
+endif()

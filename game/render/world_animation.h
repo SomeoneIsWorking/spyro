@@ -50,7 +50,7 @@ bool appendSector(const world_chunk_codec::RamView &ram,
                   Plan &plan,
                   const char *&why);
 
-// The two GTE operations the interpolated channels use, transcribed from the hardware reference so
+// The two GTE operations the interpolated channels use, recovered from the hardware reference so
 // the blended forms are exact rather than close. sf=1, lm=0, which is what the guest encodes.
 struct Vector3 {
   int32_t x = 0;

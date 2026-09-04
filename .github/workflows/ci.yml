@@ -1,0 +1,45 @@
+name: Asset-free source-policy verification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spyro-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-policy:
+    name: Source policy (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Spyro
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out shared re-harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: SomeoneIsWorking/re-harness
+          ref: d9e05ab50880a9ace09550f166c8d8f6f49d526a
+          path: shared/re-harness
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install locked Python runner
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: 0.10.12
+          enable-cache: false
+
+      - name: Run asset-free canonical source-policy verifier
+        env:
+          RE_HARNESS_DIR: ${{ github.workspace }}/shared/re-harness
+        run: uv run --frozen python tools/verify.py --source-policy

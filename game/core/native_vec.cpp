@@ -1,11 +1,9 @@
 // native_vec.cpp — the 3-word vector arithmetic leaves, and libgte's angle-table interpolator.
 //
-// Same discipline as native_leaf.cpp: leaves only, every register the substrate leaves reproduced,
-// and PSXPORT_NDIFF checks that claim on real calls rather than trusting the comment.
+// Same discipline as native_leaf.cpp: leaves only, every register the guest leaves reproduced, with
+// recorded differential evidence from real calls.
 #include "core.h"
-#include "native_diff.h"
-#include "rec_decls.h"
-#include "recomp_iface.h"
+#include "native_execution.h"
 #include "spyro_game.h"
 
 namespace {
@@ -13,9 +11,9 @@ namespace {
 // ── 0x80017758 — dst = a + b, three words. 102 static callers.
 //     lw at/v0/v1 from a1 ; lw a3/t0/t1 from a2 ; add ; sw to a0
 // Six registers are left live (at, v0, v1, a3, t0, t1) and all six are reproduced. Note the adds
-// are `add`, not `addu` — signed, which on real MIPS traps on overflow. The substrate does not
+// are `add`, not `addu` — signed, which on real MIPS traps on overflow. The runtime does not
 // trap, so C++ signed addition (which is UB on overflow) is the wrong tool: use unsigned
-// arithmetic, which wraps exactly the way the substrate's does.
+// arithmetic, which wraps exactly the way the runtime's does.
 void vadd_native(Core *c) {
   const uint32_t dst = c->r[4], a = c->r[5], b = c->r[6];
   const uint32_t a0_ = c->mem_r32(a + 0), a1_ = c->mem_r32(a + 4), a2_ = c->mem_r32(a + 8);
@@ -55,7 +53,7 @@ void vsub_native(Core *c) {
 //     andi a0, a0, 0x0FFF        ; wrap to 12 bits
 //     at = 0x8006CC78            ; the table (lui 0x8007 ; addiu -13192 = -0x3388)
 // I first wrote 0x80073C78 here — a mis-subtraction — and the differential caught it on call #1
-// with `a0: native=0x80073C94 substrate=0x8006CC94`, a clean 0x7000 apart. This is exactly the
+// with `a0: native=0x80073C94 guest=0x8006CC94`, a clean 0x7000 apart. This is exactly the
 // address the project rule says never to guess; the per-call check turns a guess into a measurement
 // in one run.
 //     andi v1, a0, 0x000F        ; fractional part
@@ -74,7 +72,7 @@ void vsub_native(Core *c) {
 // negative deltas, which is most of a signed wave table.
 //
 // The zero-fraction path is a separate arm (0x80016CF4) with its own register effects, so it is
-// read from the substrate rather than guessed; both arms are reproduced below.
+// read from guest execution rather than guessed; both arms are reproduced below.
 void angtbl_body(Core *c, uint32_t kTbl) {
   const uint32_t ang = c->r[4] & 0x0FFFu;
   const uint32_t frac = ang & 0x0Fu;
@@ -152,32 +150,13 @@ void vsra_native(Core *c) {
   c->r[3] = (uint32_t)w2;
 }
 
-void vadd_owned(Core *c) {
-  ndiff_run(c, "vadd@0x80017758", vadd_native, gen_func_80017758);
-}
-void vsub_owned(Core *c) {
-  ndiff_run(c, "vsub@0x8001778C", vsub_native, gen_func_8001778C);
-}
-void angtblA_owned(Core *c) {
-  ndiff_run(c, "angtblA@0x80016CB0", angtbl_a_native, gen_func_80016CB0);
-}
-void angtblB_owned(Core *c) {
-  ndiff_run(c, "angtblB@0x80016C58", angtbl_b_native, gen_func_80016C58);
-}
-void angdist_owned(Core *c) {
-  ndiff_run(c, "angdist@0x80017928", angdist_native, gen_func_80017928);
-}
-void vsra_owned(Core *c) {
-  ndiff_run(c, "vsra@0x800176C8", vsra_native, gen_func_800176C8);
-}
-
 } // namespace
 
-void spyro_register_native_vec() {
-  psxport_recomp()->shard_set_override(0x80017758u, vadd_owned);
-  psxport_recomp()->shard_set_override(0x8001778Cu, vsub_owned);
-  psxport_recomp()->shard_set_override(0x80016CB0u, angtblA_owned);
-  psxport_recomp()->shard_set_override(0x80016C58u, angtblB_owned);
-  psxport_recomp()->shard_set_override(0x80017928u, angdist_owned);
-  psxport_recomp()->shard_set_override(0x800176C8u, vsra_owned);
+void spyro_register_native_vec(Core &core) {
+  spyro::installNativeOverride(core, 0x80017758u, "vadd", vadd_native);
+  spyro::installNativeOverride(core, 0x8001778Cu, "vsub", vsub_native);
+  spyro::installNativeOverride(core, 0x80016CB0u, "angtblA", angtbl_a_native);
+  spyro::installNativeOverride(core, 0x80016C58u, "angtblB", angtbl_b_native);
+  spyro::installNativeOverride(core, 0x80017928u, "angdist", angdist_native);
+  spyro::installNativeOverride(core, 0x800176C8u, "vsra", vsra_native);
 }

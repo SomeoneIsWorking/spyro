@@ -4,7 +4,7 @@
 // code and belongs to the port; the command itself is HARDWARE and belongs to the platform layer.
 // So the native body does the loads, the arithmetic and the table lookup itself, and calls the
 // framework's own gte_op()/gte_read_data()/gte_write_data() for the COP2 work — the same model the
-// substrate uses, so those results match by construction rather than by my re-deriving Beetle's
+// runtime uses, so those results match by construction rather than by re-deriving Beetle's
 // saturation and flag rules. Reimplementing the GTE here would be a large, subtle piece of work
 // with no benefit: it is the platform's job, not the game's.
 //
@@ -13,13 +13,11 @@
 // guest RAM.
 #include "core.h"
 #include "game.h"
-#include "native_diff.h"
-#include "rec_decls.h"
-#include "recomp_iface.h"
+#include "native_execution.h"
 #include "spyro_game.h"
 
 // The GTE accessors are FREE functions bound to the current core's register file (gte_bind), not
-// Core members — the same ones the generated shards call, which is exactly why results match by
+// Core members — the same ones guest execution calls, which is exactly why results match by
 // construction rather than by my re-deriving the model.
 uint32_t gte_read_data(uint32_t reg);
 void gte_write_data(uint32_t reg, uint32_t v);
@@ -142,7 +140,7 @@ void veclen_native(Core *c) {
 //     lw at/v0,12..16(a0)   ; ctc2 -> CR3,CR4
 //     lw at/v0/v1,0..8(a1)  ; mtc2 at->IR3 ; v0 = -v0 -> IR1 ; v1 = -v1 -> IR2
 //     GTE 0x4A49E012 (MVMVA) ; mfc2 at<-MAC3, v0<-MAC1, v1<-MAC2 ; negate v0,v1 ; store to a2
-// The register PERMUTATION and the sign flips are transcribed exactly rather than rationalised into
+// The register PERMUTATION and the sign flips are recovered exactly rather than rationalised into
 // whatever geometry they implement — getting the intent right is not the job, getting the bytes
 // right is, and the differential checks the bytes.
 void mvmva_native(Core *c) {
@@ -215,24 +213,11 @@ void vscale_native(Core *c) {
   c->r[3] = r3;
 }
 
-void veclen_owned(Core *c) {
-  ndiff_run(c, "veclen@0x800171FC", veclen_native, gen_func_800171FC);
-}
-void vscale_owned(Core *c) {
-  ndiff_run(c, "vscale@0x800175B8", vscale_native, gen_func_800175B8);
-}
-void mvmva_owned(Core *c) {
-  ndiff_run(c, "mvmva@0x80017048", mvmva_native, gen_func_80017048);
-}
-void isqrt_owned(Core *c) {
-  ndiff_run(c, "isqrt@0x80017A38", isqrt_native, gen_func_80017A38);
-}
-
 } // namespace
 
-void spyro_register_native_gte() {
-  psxport_recomp()->shard_set_override(0x800171FCu, veclen_owned);
-  psxport_recomp()->shard_set_override(0x80017048u, mvmva_owned);
-  psxport_recomp()->shard_set_override(0x80017A38u, isqrt_owned);
-  psxport_recomp()->shard_set_override(0x800175B8u, vscale_owned);
+void spyro_register_native_gte(Core &core) {
+  spyro::installNativeOverride(core, 0x800171FCu, "veclen", veclen_native);
+  spyro::installNativeOverride(core, 0x80017048u, "mvmva", mvmva_native);
+  spyro::installNativeOverride(core, 0x80017A38u, "isqrt", isqrt_native);
+  spyro::installNativeOverride(core, 0x800175B8u, "vscale", vscale_native);
 }

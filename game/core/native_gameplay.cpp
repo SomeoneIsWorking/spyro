@@ -5,16 +5,14 @@
 // direction must remain active for every held frame. The live route proves the consequence: the
 // active pad contains m_Held=0x8000 for Left and m_Released=0, but Spyro's position does not move.
 //
-// This is a narrow runtime override, not a generated-code edit. It runs the retained body first,
+// This is a narrow runtime override. It runs the ordinary guest body first,
 // then supplies the missing held-direction target-speed update. Analog input and release-edge
-// behavior remain owned by the generated body. Keeping that body alive preserves the A/B seam for
-// later differential work and confines the native ownership to the diagnosed contract defect.
+// behavior remain owned by the runtime guest path. The native ownership stays confined to the
+// diagnosed contract defect.
 #include "native_gameplay.h"
 
 #include "core.h"
-#include "override_registry.h"
-#include "rec_decls.h"
-#include "recomp_iface.h"
+#include "native_execution.h"
 #include "spyro_game.h"
 
 namespace {
@@ -36,14 +34,16 @@ constexpr std::uint32_t kPadLeftY = 0x17u;
 
 void digitalMovementOwned(Core *c) {
   const std::int32_t speed = static_cast<std::int32_t>(c->r[4]);
-  gen_func_8003D3B8(c);
+  if (!spyro::callOriginalOrPropagate(*c, kDigitalMovement)) {
+    return;
+  }
 
   const std::uint32_t activePad = c->mem_r32(kActivePad);
   if (activePad == 0) {
     return;
   }
 
-  // The generated body is authoritative whenever a moved analog stick is active. The native
+  // The guest body is authoritative whenever a moved analog stick is active. The native
   // correction only fills the digital branch that is otherwise keyed off the release edge.
   const bool analogMoved = c->mem_r32(activePad + kPadLeftStickMoved) != 0;
   const bool analogIsDeflected =
@@ -67,11 +67,7 @@ void digitalMovementOwned(Core *c) {
 
 } // namespace
 
-void spyro_register_native_gameplay() {
-  overrides::install(kDigitalMovement,
-                     "Spyro::DigitalMovement",
-                     digitalMovementOwned,
-                     gen_func_8003D3B8,
-                     psxport_recomp()->shard_set_override,
-                     false);
+void spyro_register_native_gameplay(Core &core) {
+  spyro::installNativeOverride(
+      core, kDigitalMovement, "Spyro::DigitalMovement", digitalMovementOwned);
 }

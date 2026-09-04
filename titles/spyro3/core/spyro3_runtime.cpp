@@ -1,8 +1,9 @@
 #include "spyro3_runtime.h"
 
-#include <lucent/log.h>
+#include "game.h"
 
 #include <cstdlib>
+#include <lucent/log.h>
 
 namespace spyro3 {
 
@@ -32,24 +33,13 @@ void Spyro3Runtime::destroyContext(void *) {}
 
 void Spyro3Runtime::registerOverrides(Game &) {}
 
-bool Spyro3Runtime::installSubstrate() {
-  return false;
-}
-
-std::string_view Spyro3Runtime::substrateRefusal() const {
-  return "SCUS_944.67 is measured through crt0 and its first game-main call, but has no generated "
-         "substrate; execution is refused before Game construction";
-}
-
 void Spyro3Runtime::bootInit(Core &) {
-  lucent::error("spyro3-runtime",
-                "unreachable: substrate refusal must happen before Game construction");
+  lucent::error("boot", "Spyro 3 is not the active conformance title");
   std::abort();
 }
 
 bool Spyro3Runtime::guestVramIsPicture(const Game &) const {
-  lucent::error("spyro3-runtime", "{}", substrateRefusal());
-  std::abort();
+  return true;
 }
 
 } // namespace spyro3

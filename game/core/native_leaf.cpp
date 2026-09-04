@@ -1,9 +1,9 @@
 // native_leaf.cpp — hot LEAF functions this port owns outright.
 //
-// Chosen with tools/own_candidates.py rather than by eye, after picking by eye went wrong: the
-// buffer flip looked like a small, exactly-specified target because its first dozen instructions
-// are a flip, and it continues into the entire per-frame stage dispatcher. Owning it would have
-// meant owning the frame loop by accident.
+// Chosen from a recorded leaf-function caller census rather than by eye, after picking by eye went
+// wrong: the buffer flip looked like a small, exactly-specified target because its first dozen
+// instructions are a flip, and it continues into the entire per-frame stage dispatcher. Owning it
+// would have meant owning the frame loop by accident.
 //
 // A LEAF (no jal/jalr) is the right shape for a first-class replacement: its whole effect is
 // registers plus memory, which is exactly what the per-call differential compares. A non-leaf drags
@@ -11,13 +11,10 @@
 //
 // EVERY REGISTER THE BODY LEAVES IS PART OF THE CONTRACT, including ones that "cannot matter". The
 // first native function in this port matched for nine calls and then diverged on $at, which no
-// compiler-generated code reads across a call (I019). Each body below therefore reproduces the
-// exact final register state, and PSXPORT_NDIFF checks that claim on real calls rather than
-// trusting this comment.
+// host code reads across a call (I019). Each body below therefore reproduces the
+// exact final register state; recorded differential evidence checks that claim on real calls.
 #include "core.h"
-#include "native_diff.h"
-#include "rec_decls.h"
-#include "recomp_iface.h"
+#include "native_execution.h"
 #include "spyro_game.h"
 
 namespace {
@@ -62,9 +59,9 @@ void zero3_native(Core *c) {
 // exit a2 = a0_initial + len - 4 while a0 = a0_initial + len.
 //
 // LENGTH 0 IS NOT GUARDED, deliberately. With a2 = 0 the end address is a0-4, the first store still
-// happens, and the loop runs away — that is what the recompiled body does, so a native body that
-// "helpfully" returned early would DIVERGE from the substrate on a caller bug and hide it. Faithful
-// includes faithful to the broken case.
+// happens, and the loop runs away — that is what the executable does, so a native body that
+// "helpfully" returned early would diverge from guest execution on a caller bug and hide it.
+// Faithful includes faithful to the broken case.
 void fill_native(Core *c) {
   const uint32_t start = c->r[4], val = c->r[5], len = c->r[6];
   const uint32_t end = start + len - 4; // final a2
@@ -125,24 +122,11 @@ void copy_words_native(Core *c) {
   c->r[13] = w[3]; // t2..t5
 }
 
-void copy3_owned(Core *c) {
-  ndiff_run(c, "copy3@0x80017700", copy3_native, gen_func_80017700);
-}
-void copyw_owned(Core *c) {
-  ndiff_run(c, "copyw@0x80016958", copy_words_native, gen_func_80016958);
-}
-void zero3_owned(Core *c) {
-  ndiff_run(c, "zero3@0x800176F0", zero3_native, gen_func_800176F0);
-}
-void fill_owned(Core *c) {
-  ndiff_run(c, "fill@0x80016914", fill_native, gen_func_80016914);
-}
-
 } // namespace
 
-void spyro_register_native_leaves() {
-  psxport_recomp()->shard_set_override(0x80017700u, copy3_owned);
-  psxport_recomp()->shard_set_override(0x800176F0u, zero3_owned);
-  psxport_recomp()->shard_set_override(0x80016914u, fill_owned);
-  psxport_recomp()->shard_set_override(0x80016958u, copyw_owned);
+void spyro_register_native_leaves(Core &core) {
+  spyro::installNativeOverride(core, 0x80017700u, "copy3", copy3_native);
+  spyro::installNativeOverride(core, 0x800176F0u, "zero3", zero3_native);
+  spyro::installNativeOverride(core, 0x80016914u, "fill", fill_native);
+  spyro::installNativeOverride(core, 0x80016958u, "copyw", copy_words_native);
 }

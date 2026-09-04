@@ -6,8 +6,8 @@ gameplay pause button, and several screens perform required I/O while their artw
 
 ## Boot logos and loading
 
-The resident boot function `0x800127C0` owns the entire sequence. Its 143-line Ghidra decompile is
-in `scratch/decomp/frameown.c`; the emitted body is `generated/shard_6.c`. In order, it performs:
+The resident boot function `0x800127C0` owns the entire sequence. A recovered runtime trace
+establishes the following order:
 
 1. eight fade-in iterations for the first uploaded logo;
 2. three synchronous data loads, then a VBlank hold until `now - stamp >= 210`;

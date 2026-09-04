@@ -97,7 +97,7 @@ void emit(Plan &plan, uint32_t address, uint32_t value) {
 
 } // namespace
 
-// i32_to_i16_saturate with lm=0, and the i44 truncation applied to the intermediate, transcribed
+// i32_to_i16_saturate with lm=0, and the i44 truncation applied to the intermediate, recovered
 // from the same GTE reference this port already vendors (beetle-psx mednafen/psx/gte.c).
 namespace {
 

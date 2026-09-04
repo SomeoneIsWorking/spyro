@@ -10,7 +10,7 @@ No game code, asset, executable, disc image, or BIOS is distributed. Supply a le
 
 | Title | Executable identity | Current evidence |
 | --- | --- | --- |
-| Spyro the Dragon | `SCUS_942.28` | The retired generated-code product reached stage 13, the native title/save flow, stage 14, and a controlled stage-0 FIELD route. Native rendering, widescreen, temporal presentation, input, CD, and audio owners exist, but Lightrec gameplay and complete visual/oracle coverage do not. |
+| Spyro the Dragon | `SCUS_942.28` | Historical evidence reached stage 13, the title/save flow, stage 14, and a controlled stage-0 FIELD route. Verified native leaf/gameplay owners are image-scoped; the old frame/render/service integrations are removed. Lightrec gameplay and complete visual/oracle coverage do not exist yet. |
 | Spyro 2 | `SCUS_944.25` | Identity and crt0 facts are measured. The prior bring-up reached three host-owned black display fields and stopped at `0x80011B1C`; later boot and gameplay are absent. |
 | Spyro 3 | `SCUS_944.67` | Executable identity and crt0 facts are measured. Disc provenance and product execution are absent. |
 
@@ -20,35 +20,44 @@ another title's addresses, runtime images, or capability policy.
 ## Migration status
 
 The former product emitted guest code as C and compiled it into title-specific executables. That
-architecture is retired. Do not regenerate, build, or run it for new evidence. The replacement plan
-is [`docs/migration.md`](docs/migration.md).
+architecture is removed. The generator, corpora, seeds, generated dispatcher/tests, old build path,
+and emitted world body are absent. The sole product accepts the authenticated executable and enters
+psxport's runtime guest-execution boundary. The remaining work is in
+[`docs/migration.md`](docs/migration.md).
 
 Spyro 1's first implementation discriminator is the pair of already-recorded stage-13 routes:
 
 - the 800-field boot/title route; and
 - the 900-field forced-input mode-2 save-picker route.
 
-Both must run through Lightrec with the existing native `Spyro1FrameDriver` and `FieldScheduler`,
-nonzero translated blocks, one presentation fence per host step, and fatal guest VSync. The generated
-world-body include must be replaced by resumable execution of the unchanged retail guest body through
-explicit executor exits.
+Both must run through the linked Lightrec executor with a new title-owned frame/field boundary,
+nonzero translated blocks, one presentation fence per host step, and fatal guest VSync. The emitted
+world-body include has been replaced by an explicit scoped-original boundary for the unchanged
+retail guest body; title-specific runtime-exit and route conformance remain unverified.
 
-These 800/900 routes prove wiring only. Deleting the old pipeline requires a later representative
-interactive gameplay milestone that proves native and scoped-original calls, positive and negative
+These 800/900 routes prove wiring only. A later representative interactive gameplay milestone must
+prove native and scoped-original calls, positive and negative
 invalidation across address-reusing WAD images, independent-oracle state, no linked/selectable
 interpreter, and correctness/frame-time budgets on each released host architecture.
 
 ## Intended player experience
 
-The finished `./run.sh` path will enter the frozen `uv` environment, authenticate the selected disc,
-build the native/Lightrec product without offline guest translation, and launch it. The current
-launcher still drives the retired generated pipeline and is therefore not a valid product or
-verification route during migration.
+`./run.sh` enters the frozen `uv` environment, authenticates the selected disc, provisions only the
+PS-X EXE, builds the native/Lightrec product without offline guest translation, and launches it.
+The frozen PSXport/Lightrec backend is linked and its synthetic framework contract passes. With real
+media, the title still stops honestly at the first unverified title-specific runtime boundary; no
+interpreter or alternate executor is selected.
 
 Player builds will accept the supported GCC, Clang, and AppleClang toolchains. Maintainer C++
 verification uses Clang with the tracked `clang-format` and `clang-tidy` policy. Missing native
 dependencies must be refused with an exact user-run package command; Ghidra and other RE tools are
 never player prerequisites.
+
+Hosted CI is deliberately asset-free. Its Linux x86_64 source-policy job runs the canonical verifier
+without downloading game files or claiming runtime gameplay. macOS arm64, Windows x86_64, and
+Android arm64 runtime jobs remain partial/missing until platform packaging owners land. Maintainers
+run `uv run --frozen python tools/verify.py` for the full local Clang build, CTest, and frozen-pin
+gate; title gameplay and real-media evidence remain separate requirements.
 
 ## Architecture
 

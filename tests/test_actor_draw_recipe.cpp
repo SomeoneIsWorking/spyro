@@ -66,7 +66,7 @@ void testEvaluatorFamiliesAndNegatives() {
   const auto semiResult = evaluate(semi);
   require(semiResult.supported && semiResult.emitted &&
               semiResult.payload[1] == g3.payload[1] + 0x02000000u,
-          "guest semitransparent command bit was not transcribed");
+          "guest semitransparent command bit was not preserved");
   auto corrupt = g3;
   corrupt.payload[2] ^= 1u;
   require(corrupt.payload != g3.payload, "payload corruption discriminator failed");

@@ -13,7 +13,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from tools import run as launcher  # noqa: E402
+from tools import run as launcher
 
 LOCKED_PYTHON = "/locked/venv/bin/python"
 
@@ -69,7 +69,8 @@ class LauncherTest(unittest.TestCase):
         events = []
         psxport = ROOT / "external/psxport"
         disc = ROOT / "disc.chd"
-        discdump = ROOT / "scratch/bin/discdump"
+        discdump = ROOT / "build/player-tools/tools/discdump"
+        executable = launcher.provision_title.SPECS["spyro1"].cache_dir / "SCUS_942.28"
 
         launcher.execute(
             None,
@@ -86,7 +87,7 @@ class LauncherTest(unittest.TestCase):
             provision_step=lambda spec, media, framework, tool: events.append(
                 ("provision", spec.slug, media, framework, tool)
             )
-            or launcher.EXE,
+            or executable,
             build_step=lambda framework, compiler_options, spec: events.append(
                 ("build", framework, compiler_options, spec.slug)
             ),
@@ -98,9 +99,8 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(events[0:2], ["preflight", "framework"])
         self.assertEqual(events[2], ("submodules", psxport))
         self.assertEqual(events[3], ("resolve", "spyro1", None))
-        self.assertEqual(events[-1], ("launch", psxport, disc, "spyro1", launcher.EXE))
-        self.assertEqual(launcher.PORT, ROOT / "scratch/bin/spyro_port")
-        self.assertEqual(launcher.EXE, ROOT / "scratch/bin/spyro/SCUS_942.28")
+        self.assertEqual(events[-1], ("launch", psxport, disc, "spyro1", executable))
+        self.assertEqual(launcher.PLAYER_BUILD, ROOT / "build/player")
 
     def test_explicit_missing_disc_refuses(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(
@@ -120,7 +120,7 @@ class LauncherTest(unittest.TestCase):
         with self.assertRaisesRegex(launcher.Refusal, "missing media"):
             launcher.execute(
                 None,
-                preflight_step=lambda: [],
+                preflight_step=list,
                 sync_step=lambda: ROOT / "external/psxport",
                 submodule_step=lambda _framework: None,
                 resolve_step=refuse,
@@ -140,14 +140,14 @@ class LauncherTest(unittest.TestCase):
         launcher.execute(
             str(disc),
             title="spyro3",
-            preflight_step=lambda: [],
+            preflight_step=list,
             sync_step=lambda: ROOT / "external/psxport",
             submodule_step=lambda _framework: None,
             resolve_step=lambda selected, explicit: events.append(
                 ("resolve", selected.slug, explicit)
             )
             or disc,
-            discdump_step=lambda *_args: ROOT / "scratch/bin/discdump",
+            discdump_step=lambda *_args: ROOT / "build/player-tools/tools/discdump",
             provision_step=lambda selected, *_args: events.append(
                 ("provision", selected.slug)
             )
@@ -196,17 +196,50 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(env["PSXPORT_SPYRO_DISC"], str(disc))
         self.assertEqual(env["PSXPORT_DISC"], str(disc))
 
+    def test_submodule_sync_avoids_unresolvable_recursive_oracle_gitlink(self):
+        commands = []
+        psxport = ROOT / "external/psxport"
+        with mock.patch.object(
+            launcher, "command", side_effect=lambda args, **_kwargs: commands.append(args)
+        ):
+            launcher.sync_submodules(psxport)
+        self.assertEqual(
+            commands,
+            [
+                [
+                    "git",
+                    "-C",
+                    psxport,
+                    "submodule",
+                    "update",
+                    "--init",
+                    "vendor/beetle-psx",
+                    "vendor/lucent",
+                ],
+                [
+                    "git",
+                    "-C",
+                    psxport / "vendor/beetle-psx",
+                    "submodule",
+                    "update",
+                    "--init",
+                    "deps/libchdr",
+                ],
+            ],
+        )
+
     def test_prepare_only_never_launches_or_runs_tests(self):
         events = []
         launcher.execute(
             None,
             prepare_only=True,
-            preflight_step=lambda: [],
+            preflight_step=list,
             sync_step=lambda: ROOT / "external/psxport",
             submodule_step=lambda _framework: None,
             resolve_step=lambda _spec, _explicit: ROOT / "disc.chd",
-            discdump_step=lambda *_args: ROOT / "scratch/bin/discdump",
-            provision_step=lambda *_args: launcher.EXE,
+            discdump_step=lambda *_args: ROOT / "build/player-tools/tools/discdump",
+            provision_step=lambda *_args: launcher.provision_title.SPECS["spyro1"].cache_dir
+            / "SCUS_942.28",
             build_step=lambda *_args: events.append("build"),
             launch_step=lambda *_args: events.append("launch"),
         )
@@ -253,7 +286,7 @@ class LauncherTest(unittest.TestCase):
             "command",
             side_effect=lambda args, **_kwargs: commands.append(args),
         ), mock.patch.object(launcher.sys, "executable", LOCKED_PYTHON):
-            launcher.configure(ROOT, ROOT / "scratch/build/launcher-test", [])
+            launcher.configure(ROOT, launcher.PLAYER_BUILD, [])
         configure = commands[0]
         self.assertIn(f"-DPython3_EXECUTABLE={LOCKED_PYTHON}", configure)
         self.assertIn("-DBUILD_TESTING=OFF", configure)
@@ -268,7 +301,7 @@ class LauncherTest(unittest.TestCase):
         ), mock.patch.object(launcher.sys, "executable", LOCKED_PYTHON):
             launcher.configure(
                 ROOT,
-                ROOT / "scratch/build/launcher-test",
+                launcher.PLAYER_BUILD,
                 [],
                 build_testing=True,
             )
@@ -292,11 +325,11 @@ class LauncherTest(unittest.TestCase):
             commands[1][0:5],
             ["cmake", "--build", launcher.PLAYER_BUILD, "--target", "spyro_port"],
         )
-        self.assertEqual(launcher.PLAYER_BUILD, ROOT / "scratch/build/player")
+        self.assertEqual(launcher.PLAYER_BUILD, ROOT / "build/player")
         flattened = [str(value) for command in commands for value in command]
         self.assertNotIn("ctest", [Path(value).name for value in flattened])
 
-    def test_spyro2_build_selects_only_its_title_local_product(self):
+    def test_spyro2_build_uses_shared_runtime_product(self):
         commands = []
         with mock.patch.object(
             launcher,
@@ -313,7 +346,7 @@ class LauncherTest(unittest.TestCase):
 
         self.assertEqual(
             commands[1][0:5],
-            ["cmake", "--build", launcher.PLAYER_BUILD, "--target", "spyro2_port"],
+            ["cmake", "--build", launcher.PLAYER_BUILD, "--target", "spyro_port"],
         )
 
     def test_shell_and_locked_project_are_the_stable_entry_contract(self):

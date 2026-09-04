@@ -12,7 +12,7 @@ Delivering BIOS event class 0xF0000009 per-frame unblocks the boot: 226 -> 436 f
 
 ## Evidence
 
-PSXPORT_DEBUG=ev showed the guest opens exactly one event: class=0xF0000009 spec=0x20 -> handle=0xF1000000, the handle func_8005CBB0 polls forever (C022). Put that class in GameConfig::irqEventClasses and delivered it from the vblank wait — necessary because the framework's normal delivery point (native_step_frame) never runs while the guest owns its own frame loop. Result in a 40s run: frames 226 -> 436, and 18 DISTINCT frame-occupancy values vs ~2 before (held splash + black), i.e. the picture is actually changing rather than static.
+PSXPORT_DEBUG=ev showed the guest opens exactly one event: class=0xF0000009 spec=0x20 -> handle=0xF1000000, the handle func_8005CBB0 polls forever (C022). Put that class in GameConfig::irqEventClasses and delivered it from the vblank wait — necessary because the framework's normal delivery point (native_step_frame) never runs while the guest owns its own frame loop. Result in a 40s run: frames 226 -> 436, and 18 distinct frame-occupancy values vs ~2 before (held splash + black), proving presentation progressed.
 
 ## What would falsify it
 

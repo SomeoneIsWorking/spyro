@@ -9,9 +9,8 @@ int main() {
   const GuestProgramImage *image = runtime.guestProgramImage();
   const RenderCapabilities capabilities = runtime.renderCapabilities();
   if (image == nullptr || runtime.legacyConfigForMigration() != nullptr ||
-      runtime.legacyHooksForMigration() != nullptr || runtime.installSubstrate() ||
-      capabilities.defaultPath != RenderPath::Gte || capabilities.nativeRenderPath ||
-      capabilities.temporalInterpolation) {
+      runtime.legacyHooksForMigration() != nullptr || capabilities.defaultPath != RenderPath::Gte ||
+      capabilities.nativeRenderPath || capabilities.temporalInterpolation) {
     return 1;
   }
   return runtime.title() == spyro::SpyroTitle::Spyro3 && image->bss.begin == 0x8006C4F4u &&

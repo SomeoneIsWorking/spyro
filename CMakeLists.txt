@@ -55,6 +55,7 @@ add_custom_command(
 add_custom_target(spyro_title_catalog DEPENDS ${SPYRO_CATALOG_HEADER})
 
 set(SPYRO_RUNTIME_SOURCES
+  game/core/guest_execution.cpp
   game/core/native_angle.cpp
   game/core/native_gameplay.cpp
   game/core/native_gte.cpp
@@ -81,7 +82,6 @@ target_link_libraries(spyro_runtime PUBLIC psxport OpenSSL::Crypto)
 
 add_executable(spyro_port
   game/core/main.cpp
-  game/core/guest_execution.cpp
   game/core/world_guest_execution.cpp)
 target_link_libraries(spyro_port PRIVATE spyro_runtime)
 set_target_properties(spyro_port PROPERTIES
@@ -89,6 +89,9 @@ set_target_properties(spyro_port PROPERTIES
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(test_guest_execution tests/test_guest_execution.cpp)
+  target_link_libraries(test_guest_execution PRIVATE spyro_runtime)
+  add_test(NAME guest_execution COMMAND test_guest_execution)
   add_executable(test_title_selection
     tests/test_title_selection.cpp)
   target_include_directories(test_title_selection PRIVATE game/core)

@@ -63,9 +63,10 @@ int main(int argc, char **argv) {
     lucent::error("executor", "{} has no authenticated runtime entry", selection.identity->serial);
     return 3;
   }
-  spyro::GuestExecution execution(core);
-  return spyro::reportExecutionResult(execution.enter(program->crt0Entry),
-                                      selection.identity->serial)
-             ? 0
-             : 3;
+  spyro::GuestExecution execution(core, program->crt0Entry);
+  psx::cpu::ExecutionResult result;
+  do {
+    result = execution.step(psx::cpu::ExecutionBudget::currentTurn(core));
+  } while (result.reason == psx::cpu::ExecutionExitReason::BudgetExhausted);
+  return spyro::reportExecutionResult(result, selection.identity->serial) ? 0 : 3;
 }

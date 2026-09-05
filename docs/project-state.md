@@ -20,7 +20,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | missing | S002, S004 | G003 |
 | S006 | Spyro 2 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial | — | G001 |
 | S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | partial | S004 | G001, G003 |
-| S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with no interpreter in gameplay products | partial | — | G002, G004 |
+| S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with bounded, accounted fallback | partial | — | G002, G004 |
 | S009 | Spyro 1 reaches both stage-13 800/900 discriminators through Lightrec and native frame ownership | missing | S004, S008 | G001, G002 |
 | S010 | The generated world-body include is replaced by resumable runtime guest execution | partial | S008, S009 | G002 |
 | S011 | Representative Spyro 1 gameplay conforms on each released host through native/Lightrec execution | missing | S005, S007, S010 | G001, G002, G003, G004 |
@@ -28,8 +28,8 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 ## Current focus
 
-S008 — prove real Spyro execution through the linked per-Core Lightrec executor and mechanically
-exclude the test interpreter from every gameplay product before further title implementation.
+S008 — diagnose the real-media CD synchronization timeout after the resumed Lightrec boot opens
+the authenticated disc. Native field ownership, stage 13, and gameplay remain unverified.
 
 ## Hosted verification and host gaps
 
@@ -318,10 +318,27 @@ Implemented subset: the product enters authenticated crt0 through psxport's per-
 exit contracts are present, the frozen PSXport/Lightrec backend is linked, and the synthetic framework
 contract passes. The old generator/dispatcher/selector/product are absent.
 
-Gap: the authenticated Spyro image has not yet been driven through a title-specific real-media route.
-Prove nonzero translated blocks, CPU/device synchronization, native/original dispatch, WAD
-address-reuse invalidation, and link inspection showing the separate test interpreter absent from
-gameplay. Do not treat the synthetic framework contract as boot or gameplay evidence.
+Real-media evidence (2026-09-05, Linux x86_64, Clang, framework `eb5f23a8`): the authenticated
+`SCUS_942.28` initially stopped at `0x80064F0C` after one cycle budget, with 43,550 executed JIT
+blocks and zero fallback. The root entry point incorrectly treated a normal budget yield as fatal.
+`GuestExecution::step` now preserves the initial return address and committed continuation across
+budgets; it propagates every other exit without silently resuming it. Four synthetic production-path
+scenarios cover an uninterrupted nested call, the same call over 125 yields, an unknown-image fault,
+and a native frame exit. Both nested-call variants execute 1,002 JIT blocks / 4,008 instructions and
+produce the same result with zero fallback; repeated terminal steps execute nothing.
+
+A debugger observation at the next entry after 100 completed executor calls measured
+844 translations, 3,090,158 executed blocks, 21,759,844 executed instructions, 258 host dispatches,
+3,089,314 cache hits / 844 misses, zero executor faults, and zero fallback blocks/instructions.
+The continuation was `0x8001647C`. The real disc opened; the 15-second headless/no-audio observation
+reported CD synchronization timeouts and was externally bounded. This establishes continuation and
+real-image JIT execution, not successful boot or CD correctness.
+
+Gap: diagnose CD synchronization/interrupt delivery, then prove field ownership, native/original
+dispatch, WAD address-reuse invalidation, independent-oracle state, and bounded fallback admission.
+The separate interpreter-only oracle must remain outside product selection. Lightrec's classified,
+bounded fallback follows the shared framework contract; zero observed fallback alone does not prove
+that admission policy.
 
 Atomic work: issue 0101.
 
@@ -358,6 +375,6 @@ PS-X EXE, builds the sole `spyro_port` native/Lightrec target under `build/playe
 1 by default without offline guest translation or a pre-populated runtime cache. The native target
 links the frozen PSXport/Lightrec backend, and its asset-free synthetic framework contract passes.
 
-Gap: a real-media launch still refuses at the first unverified title-specific runtime boundary.
-Cold-path title execution, boot/title routes, and gameplay evidence remain to be recorded; the
-synthetic framework contract is not boot evidence.
+Gap: the real-media product now resumes ordinary cycle-budget exits and opens the disc, but CD
+synchronization times out before the stage-13 discriminator. Cold-path provisioning, boot/title
+routes, and gameplay remain unverified; the S008 observation is not gameplay evidence.

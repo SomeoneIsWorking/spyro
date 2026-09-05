@@ -4,11 +4,34 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 
 import run
+
+
+def verify_cpp_quality(build: Path) -> None:
+    """Check the first-party code compiled by the current product and its tests."""
+    entries = json.loads((build / "compile_commands.json").read_text())
+    sources = sorted({
+        Path(entry["file"]).resolve()
+        for entry in entries
+        if Path(entry["file"]).resolve().is_relative_to(run.ROOT)
+        and Path(entry["file"]).resolve().relative_to(run.ROOT).parts[0]
+        in {"game", "titles", "tests"}
+    })
+    if not sources:
+        raise run.Refusal("compile database contains zero first-party translation units")
+    files = sorted(set(sources) | {path.with_suffix(".h") for path in sources if path.with_suffix(".h").is_file()})
+    for path in files:
+        lines = len(path.read_text().splitlines())
+        if lines > 1200:
+            raise run.Refusal(f"{path.relative_to(run.ROOT)}: {lines} lines exceeds the 1200-line structure limit")
+    run.command([sys.executable, run.ROOT / "tools/format.py", "--check", *files])
+    run.command(["clang-tidy", "-p", build, *sources])
+    print(f"[verify] C++ quality: {len(sources)} translation units, {len(files)} source/header files")
 
 
 def verify_clang_build(build: Path) -> None:
@@ -45,6 +68,7 @@ def verify(jobs: int) -> None:
     )
     verify_clang_build(run.MAINTAINER_BUILD)
     run.command(["cmake", "--build", run.MAINTAINER_BUILD, "-j", str(jobs)])
+    verify_cpp_quality(run.MAINTAINER_BUILD)
     run.command(
         ["ctest", "--test-dir", run.MAINTAINER_BUILD, "--output-on-failure"]
     )
@@ -70,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.source_policy:
         print("[verify] PASS: asset-free source policy")
     else:
-        print("[verify] PASS: Clang build, complete CTest, and psxport pin")
+        print("[verify] PASS: Clang build, C++ quality, complete CTest, and psxport pin")
     return 0
 
 

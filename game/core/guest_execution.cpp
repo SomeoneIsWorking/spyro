@@ -1,20 +1,25 @@
 #include "guest_execution.h"
 
 #include "core.h"
-#include "native_dispatch.h"
+#include "lightrec_executor.h"
 
 #include <lucent/log.h>
 
 namespace spyro {
 
-GuestExecution::GuestExecution(Core &core) : core_(core) {}
+GuestExecution::GuestExecution(Core &core, std::uint32_t entry)
+    : core_(core), returnAddress_(core.r[31]), nextAddress_(entry) {}
 
-psx::cpu::ExecutionResult GuestExecution::enter(std::uint32_t address) {
-  return psx::cpu::dispatchGuest(core_, address, psx::cpu::ExecutionBudget::currentTurn(core_));
-}
-
-psx::cpu::ExecutionResult GuestExecution::callOriginal(std::uint32_t address) {
-  return psx::cpu::callOriginal(core_, address, psx::cpu::ExecutionBudget::currentTurn(core_));
+psx::cpu::ExecutionResult GuestExecution::step(psx::cpu::ExecutionBudget budget) {
+  if (stopped_) {
+    return *stopped_;
+  }
+  auto result = core_.lightrecExecutor().executeFunction(nextAddress_, returnAddress_, budget);
+  nextAddress_ = result.guestPc;
+  if (result.reason != psx::cpu::ExecutionExitReason::BudgetExhausted) {
+    stopped_ = result;
+  }
+  return result;
 }
 
 bool reportExecutionResult(const psx::cpu::ExecutionResult &result, std::string_view owner) {

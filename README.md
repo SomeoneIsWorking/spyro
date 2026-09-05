@@ -37,16 +37,18 @@ retail guest body; title-specific runtime-exit and route conformance remain unve
 
 These 800/900 routes prove wiring only. A later representative interactive gameplay milestone must
 prove native and scoped-original calls, positive and negative
-invalidation across address-reusing WAD images, independent-oracle state, no linked/selectable
-interpreter, and correctness/frame-time budgets on each released host architecture.
+invalidation across address-reusing WAD images, independent-oracle state, bounded fallback admission,
+no interpreter-only product selector, and correctness/frame-time budgets on each released host
+architecture.
 
 ## Intended player experience
 
 `./run.sh` enters the frozen `uv` environment, authenticates the selected disc, provisions only the
 PS-X EXE, builds the native/Lightrec product without offline guest translation, and launches it.
-The frozen PSXport/Lightrec backend is linked and its synthetic framework contract passes. With real
-media, the title still stops honestly at the first unverified title-specific runtime boundary; no
-interpreter or alternate executor is selected.
+The frozen PSXport/Lightrec backend is linked and its synthetic framework contract passes. The
+real-media execution boundary and remaining boot failure are recorded in
+[`docs/project-state.md`](docs/project-state.md#s008--runtime-lightrec-execution). Lightrec remains the
+sole product executor, with only the shared framework's bounded fallback after a classified JIT refusal.
 
 Player builds will accept the supported GCC, Clang, and AppleClang toolchains. Maintainer C++
 verification uses Clang with the tracked `clang-format` and `clang-tidy` policy. Missing native
@@ -56,8 +58,9 @@ never player prerequisites.
 Hosted CI is deliberately asset-free. Its Linux x86_64 source-policy job runs the canonical verifier
 without downloading game files or claiming runtime gameplay. macOS arm64, Windows x86_64, and
 Android arm64 runtime jobs remain partial/missing until platform packaging owners land. Maintainers
-run `uv run --frozen python tools/verify.py` for the full local Clang build, CTest, and frozen-pin
-gate; title gameplay and real-media evidence remain separate requirements.
+run `uv run --frozen python tools/verify.py` for the full local Clang build, formatting/clang-tidy/
+structure checks on active first-party translation units and their paired headers, CTest, and
+frozen-pin gate; title gameplay and real-media evidence remain separate requirements.
 
 ## Architecture
 

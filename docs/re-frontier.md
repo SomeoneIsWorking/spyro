@@ -5,9 +5,9 @@ Tracked by `tools/re_frontier.py`. This is the fine-grained companion to
 boundary can be implemented and verified.
 
 The product executes the authenticated PSX image through psxport's Lightrec runtime. It does not
-generate guest source or ship a generated guest corpus. An interpreter may exist only in a separate
-test or diagnostic target and is not a gameplay fallback. A mechanism trace is not fidelity
-evidence; a step becomes `re-verified` only after its observable result matches the real title on
+generate guest source or ship a generated guest corpus. Interpreter-only execution belongs in a
+separate test or diagnostic target; gameplay admits only the shared framework's bounded fallback
+after JIT refusal. A mechanism trace is not fidelity evidence; a step becomes `re-verified` only after its observable result matches the real title on
 real data.
 
 Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · ➖ skip-by-design · ⏸ blocked
@@ -31,7 +31,7 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - deps: boot.provision
 - evidence: psxport exposes per-Core `dispatchGuest`, scoped `callOriginal`, typed exits, image identity, and invalidation; Spyro enters the boundary at authenticated crt0.
 - where: external/psxport/runtime/cpu; game/core/guest_execution.*; game/core/main.cpp
-- gap: The frozen Lightrec backend and synthetic framework contract are linked and verified; real Spyro media has not yet proven nonzero translated blocks, title dispatch, or product-link interpreter exclusion.
+- gap: Real Spyro media executes nonzero JIT blocks across budget yields (S008); CD synchronization, complete title dispatch, and bounded-fallback conformance remain unverified.
 - notes: This is a shared-runtime prerequisite, not a title-specific code-generation task.
 
 ### dynarec.dispatch — Route native overrides and original calls by image identity
@@ -63,7 +63,7 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - deps: dynarec.stage13, dynarec.world-resume
 - evidence: The project goal defines a bounded interactive route with independent state comparison and native/original dispatch coverage.
 - where: docs/project-goals.md; docs/project-state.md; tools/verify.py
-- gap: Compare timing, interrupts, memory, and relevant device state against an independent emulator; exercise WAD invalidation; prove no interpreter in the gameplay product; meet the declared host frame-time budget.
+- gap: Compare timing, interrupts, memory, and relevant device state against an independent emulator; exercise WAD invalidation; prove bounded fallback admission and no interpreter-only product selector; meet the declared host frame-time budget.
 - notes: Boot, logos, menus, FMV, and a clean trace are not gameplay conformance.
 
 ### delivery.host-matrix — Qualify every claimed host architecture

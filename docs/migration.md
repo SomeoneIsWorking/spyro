@@ -31,9 +31,10 @@ psxport executor. Lightrec owns dynamic translation and code-cache memory. psxpo
 synchronization, PSX service callbacks, bounded exits, image-aware override/original dispatch, and
 invalidation. Spyro code owns measured title policy and native subsystems.
 
-An interpreter may exist only in a separately built test/diagnostic target. The gameplay executable
-must not link it, expose an engine selector for it, or fall back to it. Static analysis may retain
-symbols or other non-executable metadata; it may not emit guest function bodies.
+Interpreter-only execution belongs in a separately built test/diagnostic target. The gameplay
+executable always offers code to Lightrec first and exposes no interpreter selector. Only the shared
+framework's classified, bounded, accounted fallback after a JIT refusal is permitted. Static analysis
+may retain symbols or other non-executable metadata; it may not emit guest function bodies.
 
 ## Ordered migration
 
@@ -57,7 +58,7 @@ symbols or other non-executable metadata; it may not emit guest function bodies.
    checkpoints. Compare timing, interrupts, memory, and relevant device state with an independent
    emulator or separate test oracle; exercise native and scoped-original calls plus WAD replacement;
    verify correctness and frame-time budgets on every released host; and prove by link/configuration
-   inspection that the interpreter is absent and unselectable.
+   inspection that interpreter-only execution is unselectable and fallback admission remains bounded.
 6. **Later titles.** Continue Spyro 2 from `0x80011B1C`, then Spyro 3 from its measured boot boundary,
    only after Spyro 1's compatibility and performance gates pass. Reuse framework mechanics, never
    title addresses or unverified behavior.
@@ -65,6 +66,8 @@ symbols or other non-executable metadata; it may not emit guest function bodies.
 ## Completion boundary
 
 The destructive half of the migration is complete; the product now links the frozen Lightrec
-executor, but title-specific real-media execution remains unverified. Passing both stage-13 routes
+executor. Real Spyro 1 execution now resumes cycle-budget yields with its original root return
+boundary intact; the measured interval and remaining CD synchronization failure are recorded in
+`docs/project-state.md` (S008). Passing both stage-13 routes
 will prove that the replacement executor is wired to real Spyro code, while completion still requires
 representative gameplay, cache/override conformance, and host performance evidence.

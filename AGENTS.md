@@ -15,8 +15,9 @@ Project intent, factual coverage, placement, migration order, and binary-evidenc
 - Each gameplay product is one native-plus-dynarec runtime. Native owners replace verified title
   behavior; Lightrec translates every remaining instruction on demand from the authenticated
   executable and currently resident WAD image.
-- The interpreter is test-only. It may exist in a separately built diagnostic target but must not be
-  linked into, selectable by, or reachable as a fallback from any gameplay executable.
+- Interpreter-only execution is test-only and must never be selectable by a gameplay executable.
+  The shared framework may admit its classified, bounded, accounted fallback only after a JIT
+  refusal; an unfinished backend never authorizes interpreter-first execution.
 - Offline guest translation is retired. Do not regenerate, build, run, extend, or diagnose the old
   generated-C product. Static analysis may produce reviewable symbols and non-executable metadata,
   never guest function bodies.
@@ -45,7 +46,7 @@ shipping super-call.
 
 The 800/900 stage-13 routes are first wiring discriminators, not representative gameplay. An
 interactive gameplay route must prove native and scoped-original dispatch,
-address-reusing WAD invalidation, independent-oracle state, no interpreter in the product, and the
+address-reusing WAD invalidation, independent-oracle state, bounded fallback admission, and the
 declared correctness/performance budget on each released host.
 
 Finish Spyro 1 before continuing title-specific Spyro 2 or Spyro 3 implementation. Preserve their

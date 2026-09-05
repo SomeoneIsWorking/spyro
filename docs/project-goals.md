@@ -38,14 +38,15 @@ Success conditions:
 
 - psxport owns a per-`Core` Lightrec executor, CPU/device synchronization, bounded exits, image-aware
   native overrides, scoped original calls, and executable-memory invalidation.
-- Gameplay executables neither link nor select an interpreter and have no interpreter fallback.
+- Gameplay executables always use Lightrec first and expose no interpreter-only selector; any
+  classified fallback after JIT refusal is bounded and accounted by the shared framework.
 - Fresh product builds emit no guest C/C++, object corpus, or precompiled title substrate.
 - The generator, generated corpora, emission-only seeds, generated dispatch/tests, and obsolete
   provisioning paths are absent after representative-gameplay conformance.
 
 Constraints and non-goals:
 
-- An interpreter may exist only in a separately built test/diagnostic target.
+- Interpreter-only execution may exist only in a separately built test/diagnostic target.
 - Runtime JIT code generation and an optional disposable cache are allowed; a pre-populated cache may
   not be a fresh-install prerequisite.
 - Static analysis may produce symbols or non-executable metadata, never guest bodies.

@@ -21,6 +21,8 @@ run.sh -> locked Python launcher -> authenticated title image
                            +---------+----------+
 ```
 
+`game/core/` contains process composition, root continuation, and lineage policy.
+`titles/spyro2/` holds Spyro 2 identity, runtime policy, and retained bootstrap semantics.
 `SpyroRuntime` owns only proven address-free lineage policy. Each final title runtime owns its
 executable identity, image-aware addresses, lifecycle, and capability policy. psxport owns PSX CPU
 execution and services; title code must not fork Lightrec or reproduce a second cache/dispatcher.
@@ -33,7 +35,8 @@ execution and services; title code must not fork Lightrec or reproduce a second 
 | Title identity | Serial, PS-X EXE header, size, hashes, labels, and environment keys | `titles/spyro*/executable.json`, `tools/title_identity.py`, `tools/generate_title_catalog.py` | title catalog loader | `docs/project-state.md` |
 | Runtime image provisioning | Extract and authenticate the selected executable without emitting guest bodies | `tools/provision_title.py`; title manifests remain fact authority | `provision_title.provision` | `docs/migration.md` |
 | PSX guest executor | Per-`Core` Lightrec instance, CPU/device synchronization, code cache, bounded exits, and invalidation | `external/psxport/runtime/cpu/`; no title-local executor | `psx::cpu::dispatchGuest` | `docs/migration.md` |
-| Runtime dispatch | Complete image identity, native overrides, scoped original calls, and override-change invalidation | `external/psxport/runtime/cpu/native_dispatch.*`; title wrapper in `game/core/guest_execution.*` | `dispatchGuest`, `callOriginal` | `docs/migration.md` |
+| Runtime dispatch | Complete image identity, native overrides, scoped original calls, and override-change invalidation | `external/psxport/runtime/cpu/native_dispatch.*` | `dispatchGuest`, `callOriginal` | `docs/migration.md` |
+| Root guest continuation | Preserve the root return address and committed PC across bounded Lightrec budget yields; propagate other exits | `game/core/guest_execution.*` | `GuestExecution::step` | `docs/migration.md` |
 | Lineage runtime | Address-free executable/capability defaults and title-runtime registry | `game/core/spyro_runtime.*`, `game/core/title_runtime_registry.*` | `SpyroRuntime`, title runtime factory | `AGENTS.md` |
 | Spyro 1 runtime | `SCUS_942.28` image policy and image-scoped verified native leaf/gameplay overrides | `titles/spyro1/core/spyro1_runtime.*`, `game/core/native_{rand,leaf,vec,gte,angle,util,gameplay}.cpp` | `Spyro1Runtime::registerOverrides` | `docs/re-frontier.md` |
 | Spyro 2 runtime | `SCUS_944.25` image policy and explicit missing JIT execution boundary | `titles/spyro2/core/spyro2_runtime.*` | `Spyro2Runtime` | `docs/re-frontier.md` |

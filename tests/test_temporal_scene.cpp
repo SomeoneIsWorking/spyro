@@ -540,6 +540,52 @@ void test_stationary_unequal_depth_faces_preserve_authored_bucket_fifo() {
   }
 }
 
+void test_stationary_fractional_source_preserves_every_presentation() {
+  for (const int32_t cameraDepth : {1000, 40000}) {
+    auto game = std::make_unique<Game>();
+    SpyroContext context;
+    game->core.gameCtx = &context;
+    game->mods.fps60 = true;
+    auto frame = triangle();
+    setSourceDepth(frame, cameraDepth);
+    // A fractional fixed-point transform exposes precision lost by integer IR/denominator
+    // conversion. The far case independently distinguishes signed IR3 from projection depth.
+    frame.transform.layer_cr[0][0] = 4095u;
+    frame.transform.layer_cr[0][2] = 4095u;
+    frame.transform.layer_cr[0][4] = 4095u;
+    for (auto &vertex : frame.pose) {
+      vertex[0] = 1;
+    }
+    auto &state = context.pairedActor;
+    state.previous = state.current = frame;
+    state.endpoints_compatible = true;
+    state.was_fps60_active = true;
+    CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, frame) ==
+          SpyroPairedRebuildResult::Emitted);
+    CHECK_EQ(game->rq.n, 1);
+    if (game->rq.n != 1) {
+      continue;
+    }
+    const RqItem endpoint = game->rq.items[0];
+    spyro_temporal_scene_prepare(game->core);
+    CHECK(state.temporal_eligible);
+    Fps60 presentation(*game, spyro_temporal_scene_source());
+    for (float t : {0.0f, 0.5f, 1.0f}) {
+      presentation.presentPass(&game->core, t, {});
+      CHECK_EQ(presentation.mSink->n, 1);
+      if (presentation.mSink->n != 1) {
+        continue;
+      }
+      const auto &sample = presentation.mSink->items[0];
+      for (size_t vertex = 0; vertex < 3; ++vertex) {
+        CHECK_EQ(sample.xsf[vertex], endpoint.xsf[vertex]);
+        CHECK_EQ(sample.ysf[vertex], endpoint.ysf[vertex]);
+        CHECK_EQ(sample.depth[vertex], endpoint.depth[vertex]);
+      }
+    }
+  }
+}
+
 } // namespace
 
 int main() {
@@ -553,5 +599,6 @@ int main() {
   RUN(coalesced_actor_buckets_merge_with_field_world);
   RUN(moving_camera_depth_uses_source_midpoint);
   RUN(stationary_unequal_depth_faces_preserve_authored_bucket_fifo);
+  RUN(stationary_fractional_source_preserves_every_presentation);
   return pt_summary();
 }

@@ -527,6 +527,14 @@ MAC-Z rather than requiring a stationary depth origin. Actual presenter tests ex
 ordering, empty endpoints with visible midpoints, immutable sources, and moving depth. The S011
 run records nonzero paired midpoint/endpoint emission through the shipping JIT product.
 
+Endpoint and midpoint floating projection share the framework's `project_view` formula. The
+presenter regression preserves stationary fractional geometry at depths 1000 and 40000 across
+both endpoints and the midpoint; it failed before removing endpoint XY truncation and midpoint
+depth narrowing. Exact integer GTE projection remains a separately verified framework contract.
+An Artisans observation with this shared projection emitted 1,035 midpoint/endpoint pairs
+(2,070/2,070 nonempty outputs) and executed 21,244,084 JIT blocks with zero fallback. This proves
+the path was exercised, not matched-checkpoint oracle parity or full-scene interpolation.
+
 World endpoint capture and reconstruction now share an owned source boundary, with a separate
 queue-only emission path; its preservation contracts are described in
 [world-semantic-oracle](findings/world-semantic-oracle.md#owned-world-endpoint-source).

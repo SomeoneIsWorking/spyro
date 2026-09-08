@@ -409,8 +409,8 @@ bool interpolate_projected(std::span<const spyro::paired_actor::ProjectedVertex>
   }
   out.clear();
   out.reserve(a.size());
-  const float ofx = (float)(int32_t)tr.ofx / 65536.0f, ofy = (float)(int32_t)tr.ofy / 65536.0f,
-              h = (float)tr.h;
+  const psxport::native_projection::ProjectionParams projection{
+      (int32_t)tr.ofx, (int32_t)tr.ofy, (uint16_t)tr.h};
   for (size_t i = 0; i < a.size(); ++i) {
     spyro::paired_actor::ProjectedVertex p{};
     p.raw_view_x = a[i].raw_view_x + (b[i].raw_view_x - a[i].raw_view_x) * t;
@@ -422,10 +422,11 @@ bool interpolate_projected(std::span<const spyro::paired_actor::ProjectedVertex>
     }
     const float irx = std::clamp(p.raw_view_x, -32768.0f, 32767.0f);
     const float iry = std::clamp(p.raw_view_y, -32768.0f, 32767.0f);
-    p.view_z = (int16_t)std::clamp(std::max(h * 0.5f, p.raw_view_z), -32768.0f, 32767.0f);
-    const float scale = h / (float)p.view_z;
-    p.screen_x = std::clamp(ofx + irx * scale, -1024.0f, 1023.0f);
-    p.screen_y = std::clamp(ofy + iry * scale, -1024.0f, 1023.0f);
+    const auto projected = psxport::native_projection::project_view(
+        {p.raw_view_x, p.raw_view_y, p.raw_view_z}, projection);
+    p.view_z = projected.pz;
+    p.screen_x = projected.px;
+    p.screen_y = projected.py;
     p.x = (int16_t)std::clamp(round_screen(p.screen_x), -1024, 1023);
     p.y = (int16_t)std::clamp(round_screen(p.screen_y), -1024, 1023);
     p.depth = (uint16_t)std::clamp(p.raw_view_z, 0.0f, 65535.0f);

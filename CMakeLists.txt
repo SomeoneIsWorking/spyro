@@ -55,6 +55,9 @@ add_custom_command(
 add_custom_target(spyro_title_catalog DEPENDS ${SPYRO_CATALOG_HEADER})
 
 set(SPYRO_RUNTIME_SOURCES
+  game/core/archive_transfer.cpp
+  game/core/content_identity.cpp
+  game/core/cd_queue.cpp
   game/core/guest_execution.cpp
   game/core/native_angle.cpp
   game/core/native_gameplay.cpp
@@ -63,10 +66,91 @@ set(SPYRO_RUNTIME_SOURCES
   game/core/native_rand.cpp
   game/core/native_util.cpp
   game/core/native_vec.cpp
+  game/core/runtime_run.cpp
+  game/core/spyro_context.cpp
+  game/core/spyro_gate_debug.cpp
   game/core/spyro_runtime.cpp
   game/core/title_runtime_registry.cpp
   game/core/title_selection.cpp
+  game/render/actor_draw_recipe.cpp
+  game/render/actor_face_submitter.cpp
+  game/render/actor_global_order.cpp
+  game/render/actor_model_codec.cpp
+  game/render/actor_prefix_builder.cpp
+  game/render/actor_recipe_capture.cpp
+  game/render/actor_scene_builder.cpp
+  game/render/actor_transform_math.cpp
+  game/render/cutscene_scene_recipe.cpp
+  game/render/cyclorama_mask_recipe.cpp
+  game/render/cyclorama_mask_submitter.cpp
+  game/render/cyclorama_portal_mesh_recipe.cpp
+  game/render/cyclorama_portal_submitter.cpp
+  game/render/cyclorama_scene_recipe.cpp
+  game/render/field_collectables_recipe.cpp
+  game/render/field_environment_recipe.cpp
+  game/render/field_environment_scene.cpp
+  game/render/field_moby_lists.cpp
+  game/render/field_particle_type2_submitter.cpp
+  game/render/field_particles_recipe.cpp
+  game/render/field_scene_recipe.cpp
+  game/render/field_shaded_queue_recipe.cpp
+  game/render/field_shaded_queue_scene.cpp
+  game/render/field_shaded_queue_submitter.cpp
+  game/render/field_shadow_recipe.cpp
+  game/render/field_shadow_submitter.cpp
+  game/render/field_tracers_recipe.cpp
+  game/render/frame_env.cpp
+  game/render/fx_actor_draw.cpp
+  game/render/fx_field_actor_composition.cpp
+  game/render/fx_field_collectables.cpp
+  game/render/fx_field_cyclorama.cpp
+  game/render/fx_field_environment.cpp
+  game/render/fx_field_particles.cpp
+  game/render/fx_field_player_actor.cpp
+  game/render/fx_field_shaded_queue.cpp
+  game/render/fx_field_shadow.cpp
+  game/render/fx_field_tracers.cpp
+  game/render/fx_paired_actor.cpp
+  game/render/fx_screen_border.cpp
+  game/render/fx_screen_fade.cpp
+  game/render/fx_secondary_actor.cpp
+  game/render/fx_sprite_queue.cpp
+  game/render/fx_title_menu.cpp
+  game/render/fx_world_draw.cpp
+  game/render/native_terrain.cpp
+  game/render/painter_submission_preflight.cpp
+  game/render/paired_actor_decode.cpp
+  game/render/paired_actor_pose.cpp
+  game/render/paired_actor_temporal_evidence.cpp
+  game/render/presentation_owner.cpp
+  game/render/render_frame.cpp
+  game/render/scene.cpp
+  game/render/scene_painter_order.cpp
+  game/render/screen_border_recipe.cpp
+  game/render/screen_fade_recipe.cpp
+  game/render/secondary_actor_recipe.cpp
+  game/render/secondary_actor_scene.cpp
+  game/render/stage13_scene_recipe.cpp
+  game/render/title_menu_recipe.cpp
+  game/render/title_menu_state.cpp
+  game/render/world_animation.cpp
+  game/render/world_chunk_codec.cpp
+  game/render/world_hq_recipe.cpp
+  game/render/world_hq_refinement.cpp
+  game/render/world_lq_recipe.cpp
+  game/render/world_material_codec.cpp
+  game/render/world_projection_math.cpp
+  game/render/world_recipe.cpp
+  game/render/world_scene_builder.cpp
+  game/render/world_scene_capture.cpp
+  game/render/world_scene_oracle.cpp
+  game/render/world_scene_prepare.cpp
+  game/render/world_scene_submitter.cpp
+  titles/spyro1/core/spyro1_boot_sequence.cpp
+  titles/spyro1/core/spyro1_field_scheduler.cpp
+  titles/spyro1/core/spyro1_frame_driver.cpp
   titles/spyro1/core/spyro1_runtime.cpp
+  titles/spyro2/core/spyro2_gpu_sync.cpp
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 
@@ -74,6 +158,7 @@ add_library(spyro_runtime STATIC ${SPYRO_RUNTIME_SOURCES})
 add_dependencies(spyro_runtime spyro_title_catalog)
 target_include_directories(spyro_runtime PUBLIC
   game/core
+  game/render
   titles/spyro1/core
   titles/spyro2/core
   titles/spyro3/core
@@ -83,12 +168,26 @@ target_link_libraries(spyro_runtime PUBLIC psxport OpenSSL::Crypto)
 add_executable(spyro_port
   game/core/main.cpp
   game/core/world_guest_execution.cpp)
+add_dependencies(spyro_port gen_gpu_shaders)
 target_link_libraries(spyro_port PRIVATE spyro_runtime)
 set_target_properties(spyro_port PROPERTIES
+  ENABLE_EXPORTS ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
+  target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
+  add_test(NAME archive_transfer COMMAND test_archive_transfer)
+  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe)
+    add_executable(test_${test_name} tests/test_${test_name}.cpp)
+    target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
+    target_link_libraries(test_${test_name} PRIVATE spyro_runtime)
+    add_test(NAME ${test_name} COMMAND test_${test_name})
+  endforeach()
+  add_executable(test_runtime_run tests/test_runtime_run.cpp)
+  target_link_libraries(test_runtime_run PRIVATE spyro_runtime)
+  add_test(NAME runtime_run COMMAND test_runtime_run)
   add_executable(test_guest_execution tests/test_guest_execution.cpp)
   target_link_libraries(test_guest_execution PRIVATE spyro_runtime)
   add_test(NAME guest_execution COMMAND test_guest_execution)

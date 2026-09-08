@@ -31,6 +31,11 @@ psxport executor. Lightrec owns dynamic translation and code-cache memory. psxpo
 synchronization, PSX service callbacks, bounded exits, image-aware override/original dispatch, and
 invalidation. Spyro code owns measured title policy and native subsystems.
 
+WebAssembly is part of the migration release contract: add a browser-capable path that executes
+through the same runtime boundary and bounded fallback contract as desktop. Keep web evidence in the
+same representative gameplay and telemetry gates; if parity is incomplete, leave release claims
+blocked.
+
 Interpreter-only execution belongs in a separately built test/diagnostic target. The gameplay
 executable always offers code to Lightrec first and exposes no interpreter selector. Only the shared
 framework's classified, bounded, accounted fallback after a JIT refusal is permitted. Static analysis
@@ -66,8 +71,7 @@ may retain symbols or other non-executable metadata; it may not emit guest funct
 ## Completion boundary
 
 The destructive half of the migration is complete; the product now links the frozen Lightrec
-executor. Real Spyro 1 execution now resumes cycle-budget yields with its original root return
-boundary intact; the measured interval and remaining CD synchronization failure are recorded in
-`docs/project-state.md` (S008). Passing both stage-13 routes
-will prove that the replacement executor is wired to real Spyro code, while completion still requires
-representative gameplay, cache/override conformance, and host performance evidence.
+executor. The restored native frame/scene composition now completes both stage-13 routes through real Spyro
+code; `docs/project-state.md` (S008–S009) owns the measured scope. Completion still requires
+representative gameplay, complete widescreen/interpolated rendering, cache/override conformance,
+and host performance evidence.

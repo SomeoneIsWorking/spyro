@@ -23,9 +23,10 @@ struct Evidence {
 
 struct Decision {
   Evidence transfer;
+  bool refused = false;
 
   constexpr bool accepted() const {
-    return transfer.complete();
+    return !refused && transfer.complete();
   }
 
   constexpr bool completionPending() const {

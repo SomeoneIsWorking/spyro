@@ -1,11 +1,9 @@
 #include "title_selection.h"
-
-#include <openssl/evp.h>
+#include "content_identity.h"
 
 #include <algorithm>
 #include <array>
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 
 namespace spyro {
@@ -28,22 +26,6 @@ SelectionResult mismatch(const ExecutableIdentity &identity, std::string detail)
   return {SelectionStatus::IdentityMismatch,
           &identity,
           std::string(identity.serial) + " identity mismatch: " + std::move(detail)};
-}
-
-std::string sha256(std::span<const std::uint8_t> bytes) {
-  std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
-  unsigned int digestSize = 0;
-  if (EVP_Digest(bytes.data(), bytes.size(), digest.data(), &digestSize, EVP_sha256(), nullptr) !=
-          1 ||
-      digestSize != 32u) {
-    return {};
-  }
-  std::ostringstream stream;
-  stream << std::hex << std::setfill('0');
-  for (unsigned int index = 0; index < digestSize; ++index) {
-    stream << std::setw(2) << static_cast<unsigned int>(digest[index]);
-  }
-  return stream.str();
 }
 
 } // namespace

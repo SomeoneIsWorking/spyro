@@ -1,6 +1,10 @@
+#include "cfg.h"
 #include "core.h"
+#include "frame_loop_shell.h"
 #include "game.h"
-#include "guest_execution.h"
+#include "host_turn.h"
+#include "runtime_run.h"
+#include "spyro_game.h"
 #include "spyro_runtime.h"
 #include "title_runtime_registry.h"
 #include "title_selection.h"
@@ -10,12 +14,15 @@
 #include <memory>
 
 extern "C" {
+void watchdog_init(void);
 void mdec_init(void);
 void spu_init(void);
 }
 
 void gte_init(void);
 void load_exe(const char *path, Core *core);
+void dc_boot_init(Core *c);
+void dc_step_frame(Core *c, uint32_t frame);
 
 namespace {
 constexpr const char *kDefaultExecutable = "scratch/assets/spyro1/SCUS_942.28";
@@ -50,23 +57,23 @@ int main(int argc, char **argv) {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
 
+  watchdog_init();
   load_exe(path, &core);
   gte_init();
   mdec_init();
   spu_init();
   game->spu_audio.init();
   game->gpu.gpu_native_init();
-  runtime.registerOverrides(*game);
 
-  const GuestProgramImage *program = runtime.guestProgramImage();
-  if (!program || !program->crt0Entry) {
-    lucent::error("executor", "{} has no authenticated runtime entry", selection.identity->serial);
-    return 3;
+  spyro::runtimeRun(core) = spyro::RuntimeRun(cfg_int("PSXPORT_NATIVE_FRAMES", 0));
+
+  dc_boot_init(&core);
+
+  std::uint32_t completedSteps = 0;
+  while (!spyro::runtimeRun(core).shouldEnd()) {
+    dc_step_frame(&core, ++completedSteps);
   }
-  spyro::GuestExecution execution(core, program->crt0Entry);
-  psx::cpu::ExecutionResult result;
-  do {
-    result = execution.step(psx::cpu::ExecutionBudget::currentTurn(core));
-  } while (result.reason == psx::cpu::ExecutionExitReason::BudgetExhausted);
-  return spyro::reportExecutionResult(result, selection.identity->serial) ? 0 : 3;
+  psx::cpu::shutdownHostTurn();
+  spyro::reportRuntimeRun(core, completedSteps);
+  return 0;
 }

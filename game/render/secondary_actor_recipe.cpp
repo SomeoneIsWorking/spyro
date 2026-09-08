@@ -30,9 +30,8 @@ Recipe derive(const secondary_actor_scene::Frame &frame) {
   }
 
   for (const auto &candidate : topology.candidateOrder) {
-    // Bit 2 reaches 0x80021C70..0x800227B0's view-normal/specular program.
-    // It is distinct from the ordinary descriptor-colour stream below and
-    // must be owned atomically rather than rendered with regular-actor colour.
+    // Bit 2 selects the distinct view-normal/specular program at 0x80021C70.
+    // Base material colour does not reproduce that lighting contract.
     if (candidate.evaluation.emitted && (candidate.input.words[0] & 4u) != 0u) {
       recipe.status = Status::UnsupportedLighting;
       recipe.firstUnsupportedRecord = candidate.record;

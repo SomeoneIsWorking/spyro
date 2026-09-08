@@ -1,0 +1,378 @@
+#include "spyro1_field_scheduler.h"
+
+#include "cfg.h"
+#include "core.h"
+#include "frame_pacer.h"
+#include "game.h"
+#include "guest_call.h"
+#include "hle.h"
+#include "host_turn.h"
+#include "repl.h"
+#include "runtime_run.h"
+#include "snapshot.h"
+#include "spyro1_frame_driver.h"
+#include "spyro1_vblank_irq.h"
+#include "spyro_game.h"
+
+#include <chrono>
+#include <cstdlib>
+#include <lucent/log.h>
+
+namespace spyro1 {
+namespace {
+
+constexpr std::uint16_t kPadStart = 0x0008u;
+constexpr std::uint16_t kPadCross = 0x4000u;
+constexpr std::uint32_t kVblankCounter = 0x800749E0u;
+constexpr std::uint32_t kRootHandlers = 0x80073928u;
+constexpr std::uint32_t kHandlerStackTop = 0x8000E000u;
+constexpr std::uint32_t kHandlerStackBytes = 8192u;
+constexpr std::uint32_t kHandlerStackFloor = kHandlerStackTop - kHandlerStackBytes;
+constexpr std::uint32_t kStackPoison = 0xCDCDCDCDu;
+
+double monotonicMilliseconds() {
+  using Clock = std::chrono::steady_clock;
+  static const auto start = Clock::now();
+  return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+}
+
+std::uint32_t handlerStackLowWater(Core &core) {
+  for (std::uint32_t address = kHandlerStackFloor; address < kHandlerStackTop; address += 4) {
+    if (core.mem_r32(address) != kStackPoison) {
+      return address;
+    }
+  }
+  return kHandlerStackTop;
+}
+
+} // namespace
+
+FieldScheduler::FieldScheduler(Game &game) : game_(game) {}
+
+void FieldScheduler::beginLogicFrame() {
+  cadence_.beginLogicFrame();
+}
+
+bool FieldScheduler::finishLogicFrame() const {
+  return cadence_.completesLogicFrame();
+}
+
+std::uint32_t FieldScheduler::fieldsThisLogicFrame() const {
+  return cadence_.fields();
+}
+
+std::int32_t FieldScheduler::counter() const {
+  return static_cast<std::int32_t>(game_.core.mem_r32(kVblankCounter));
+}
+
+void FieldScheduler::bootSequenceBegin() {
+  if (bootSequenceActive_) {
+    lucent::error("skipmap", "boot sequence observation armed twice");
+    std::abort();
+  }
+  bootSequenceActive_ = true;
+  lucent::debug("skipmap", "observing Start edges during guest boot function 0x800127C0");
+}
+
+void FieldScheduler::bootSequenceEnd() {
+  bootSequenceActive_ = false;
+}
+
+void FieldScheduler::armHostClock() {
+  if (hostClockArmed_) {
+    lucent::error("fields", "Spyro 1 host field clock armed twice");
+    std::abort();
+  }
+  hostClockArmed_ = true;
+  psx::cpu::registerHostTurn(game_.core, hostTurn, gpu_field_rate_millihz(&game_.core));
+  lucent::info("fields", "native host field clock armed at the gameplay boundary");
+}
+
+void FieldScheduler::observeVblankCallback(std::uint32_t function) {
+  if (function == callbackFallback_) {
+    return;
+  }
+  callbackFallback_ = function;
+  lucent::info(
+      "fields", "VSyncCallback(0x{:08X}) registered for host-owned field delivery", function);
+}
+
+bool FieldScheduler::dispatchCallbacks() {
+  Core &core = game_.core;
+  const std::uint32_t root = core.mem_r32(kRootHandlers);
+  const std::uint32_t target = root != 0 ? root : callbackFallback_;
+  if (target == 0) {
+    return false;
+  }
+  if (!handlerStackArmed_) {
+    handlerStackArmed_ = true;
+    for (std::uint32_t address = kHandlerStackFloor; address < kHandlerStackTop; address += 4) {
+      core.mem_w32(address, kStackPoison);
+    }
+    lucent::info("fields",
+                 "guest vblank callbacks use IRQ stack [0x{:08X},0x{:08X})",
+                 kHandlerStackFloor,
+                 kHandlerStackTop);
+  }
+
+  const std::int32_t before = counter();
+  R3000 saved = static_cast<R3000 &>(core);
+  core.r[29] = kHandlerStackTop;
+  if (shouldDispatchVblankThroughIrq(
+          core.irqStatLatch(), game_.hle.i_mask, game_.hle.exception_exit_buf)) {
+    // A real display edge owns this dispatch. The guest's HookEntryInt context is a saved
+    // continuation, not the root handler itself, so direct rc0(root) would run both the resumed
+    // IRQ path and the root once guest irq poll reaches the latched edge. Re-arm the gate from the
+    // same I_STAT fact it represents, then let Hle restore and unwind that continuation exactly
+    // once. Other IRQ sources remain Hle's responsibility; they never select this branch alone.
+    core.pending_work |= Core::PW_IRQ;
+    game_.hle.irqPoll(&core);
+  } else {
+    // Host-owned fields have no hardware VBlank edge to dispatch. Keep the measured root fallback
+    // for that case only.
+    psx::cpu::dispatchGuestToReturn0(
+        core, target, psx::cpu::ExecutionBudget::currentTurn(core), "field-callback");
+  }
+  static_cast<R3000 &>(core) = saved;
+
+  if (core.mem_r32(kHandlerStackFloor) != kStackPoison) {
+    lucent::error("fields",
+                  "guest vblank callback overflowed its {}-byte IRQ stack at 0x{:08X}",
+                  kHandlerStackBytes,
+                  kHandlerStackFloor);
+    std::abort();
+  }
+  static const lucent::Channel channel{"fields"};
+  if (channel) {
+    const std::uint32_t lowWater = handlerStackLowWater(core);
+    if (lowWater < deepestHandlerStack_) {
+      deepestHandlerStack_ = lowWater;
+      lucent::debug(channel, "vblank callback stack peak: {} bytes", kHandlerStackTop - lowWater);
+    }
+  }
+
+  // The retained root handler still performs the physical counter store. The scheduler owns when
+  // that tick occurs and verifies the exact one-field contract; direct native callback-table
+  // dispatch remains the next RE boundary.
+  const std::int32_t after = counter();
+  if (root != 0 && after != before + 1) {
+    lucent::error("fields",
+                  "guest vblank root advanced counter {} -> {}; host scheduler requires exactly "
+                  "one field",
+                  before,
+                  after);
+    std::abort();
+  }
+  return root != 0;
+}
+
+void FieldScheduler::serviceSkipMap(bool startEdge) {
+  constexpr std::uint32_t kStage = 0x800757D8u;
+  constexpr std::uint32_t kSubstate = 0x80078D78u;
+  constexpr std::uint32_t kSubSubstate = 0x80078D7Cu;
+  constexpr std::uint32_t kBootPhase = 0x80075864u;
+  Core &core = game_.core;
+
+  ++skipMapFields_;
+  const bool bootActive = bootSequenceActive_;
+  bootActive ? ++skipMapBootFields_ : ++skipMapStageFields_;
+  if (startEdge) {
+    ++skipMapStartEdges_;
+  }
+  const std::uint32_t stage = core.mem_r32(kStage);
+  const std::uint32_t substate = core.mem_r32(kSubstate);
+  const std::uint32_t subSubstate = core.mem_r32(kSubSubstate);
+  const std::uint32_t bootPhase = core.mem_r32(kBootPhase);
+  const bool changed = stage != previousStage_ || substate != previousSubstate_ ||
+                       subSubstate != previousSubSubstate_ || bootPhase != previousBootPhase_ ||
+                       bootActive != previousBootActive_;
+  if (startEdge || changed) {
+    lucent::debug("skipmap",
+                  "field={} start_edge={} region={} boot_phase={} stage={}/{}/{} edges={}",
+                  skipMapFields_,
+                  startEdge ? 1 : 0,
+                  bootActive ? "boot" : "stage",
+                  bootPhase,
+                  stage,
+                  substate,
+                  subSubstate,
+                  skipMapStartEdges_);
+  }
+  if (skipMapFields_ % 600u == 0) {
+    lucent::debug("skipmap",
+                  "scanned {} fields: start_edges={} boot_fields={} stage_fields={} current={}",
+                  skipMapFields_,
+                  skipMapStartEdges_,
+                  skipMapBootFields_,
+                  skipMapStageFields_,
+                  bootActive ? "boot" : "stage");
+  }
+  previousStage_ = stage;
+  previousSubstate_ = substate;
+  previousSubSubstate_ = subSubstate;
+  previousBootPhase_ = bootPhase;
+  previousBootActive_ = bootActive;
+}
+
+void FieldScheduler::serviceInspection() {
+  Core &core = game_.core;
+  snapshot_tick(&core);
+  if (!cfg_on("PSXPORT_REPL")) {
+    return;
+  }
+  if (!replQuit_ && replBudget_ <= 0) {
+    while ((replBudget_ = game_.repl.read(&core, core.mem_r32(kVblankCounter))) == 0) {
+    }
+    if (replBudget_ == -2) {
+      lucent::info("repl", "end — ending the run cleanly");
+      spyro::runtimeRun(core).requestEnd();
+      replQuit_ = true;
+    }
+    if (replBudget_ < 0) {
+      replQuit_ = true;
+      lucent::info("repl", "quit — running free");
+    }
+  }
+  if (replBudget_ > 0) {
+    --replBudget_;
+  }
+}
+
+void FieldScheduler::reportField(const FieldRequest &request,
+                                 int queueSize,
+                                 bool queueWasUnconsumed) {
+  lucent::debug("pace",
+                "t={:.1f}ms vbl={} pace={} present={} ack={} rq_unconsumed={} | site={} quota={} "
+                "counter={} rq_n={} unconsumed={}",
+                monotonicMilliseconds(),
+                fields_,
+                paces_,
+                presents_,
+                acknowledgements_,
+                queueFirstConsumers_,
+                request.site,
+                game_.core.cfg ? game_.core.cfg->paceQuota : 0u,
+                counter(),
+                queueSize,
+                queueWasUnconsumed ? 1 : 0);
+}
+
+bool FieldScheduler::deliver(const FieldRequest &request) {
+  Core &core = game_.core;
+  if (inField_) {
+    ++refused_;
+    lucent::debug("pace",
+                  "field refused at {}: one is already in flight (refused={})",
+                  request.site,
+                  refused_);
+    return false;
+  }
+  inField_ = true;
+
+  const int queueSize = game_.rq.n;
+  const bool queueWasUnconsumed = queueSize > 0 && !game_.rq.consumed;
+  queueFirstConsumers_ += queueWasUnconsumed ? 1u : 0u;
+  if (request.present) {
+    game_.rq.flush(&core);
+  }
+
+  game_.pad.serviceFrame();
+  const bool startDown = (game_.pad.buttons & kPadStart) == 0;
+  const bool startEdge = startDown && (previousButtons_ & kPadStart) != 0;
+  previousButtons_ = game_.pad.buttons;
+  const bool guestRootAdvanced = dispatchCallbacks();
+  if (!guestRootAdvanced) {
+    core.mem_w32(kVblankCounter, core.mem_r32(kVblankCounter) + 1u);
+  }
+  cadence_.delivered();
+  serviceSkipMap(startEdge);
+  serviceInspection();
+
+  if (request.present) {
+    // Every visible field crosses the framework's one presentation fence. This is the same owner
+    // the native gameplay path reaches through Fps60::frame_commit; boot/upload fields simply have
+    // no temporal decorator. A raw gpu_present here showed pixels but left FrameLoopShell's product
+    // boundary at fence zero, so the host could not prove one-and-only-one presentation per step.
+    game_.presentation.commit(&core, request.pace ? 1 : 0);
+    ++presents_;
+  }
+  game_.spu_audio.frame();
+  if (request.pace) {
+    ++paces_;
+  }
+  if (request.acknowledgeHostTurn) {
+    psx::cpu::notifyDisplayField(core);
+    ++acknowledgements_;
+  }
+  const std::array<std::uint32_t, 2> eventClasses =
+      core.cfg != nullptr ? std::array{core.cfg->irqEventClasses[0], core.cfg->irqEventClasses[1]}
+                          : std::array{0xF0000009u, 0xF2000003u};
+  for (std::uint32_t eventClass : eventClasses) {
+    if (eventClass != 0) {
+      game_.hle.deliverEvent(eventClass, 0xFFFFFFFFu);
+    }
+  }
+
+  ++fields_;
+  reportField(request, queueSize, queueWasUnconsumed);
+  inField_ = false;
+  spyro::runtimeRun(core).fieldDelivered();
+  return true;
+}
+
+void FieldScheduler::fps60CommitDelivered() {
+  psx::cpu::notifyDisplayField(game_.core);
+  ++acknowledgements_;
+  lucent::debug("pace",
+                "temporal commit ack: vbl={} pace={} present={} ack={}",
+                fields_,
+                paces_,
+                presents_,
+                acknowledgements_);
+}
+
+bool FieldScheduler::bootPresentationSkipPressed() const {
+  return game_.pad.pressedButton(kPadStart | kPadCross);
+}
+
+FieldScheduler &fieldScheduler(Core &core) {
+  return frameDriver(core).fields();
+}
+
+const FieldScheduler &fieldScheduler(const Core &core) {
+  return frameDriver(core).fields();
+}
+
+bool deliverNativeField(Core &core, const char *site, bool fps60CommitPending) {
+  return fieldScheduler(core).deliver({.site = site,
+                                       .present = !fps60CommitPending,
+                                       .pace = !fps60CommitPending,
+                                       .acknowledgeHostTurn = !fps60CommitPending});
+}
+
+void acknowledgeTemporalCommit(Core &core) {
+  fieldScheduler(core).fps60CommitDelivered();
+}
+
+void beginBootSequence(Core &core) {
+  fieldScheduler(core).bootSequenceBegin();
+}
+
+void endBootSequence(Core &core) {
+  fieldScheduler(core).bootSequenceEnd();
+}
+
+void observeVblankCallback(Core &core, std::uint32_t function) {
+  fieldScheduler(core).observeVblankCallback(function);
+}
+
+void hostTurn(Core *core) {
+  FieldScheduler &scheduler = fieldScheduler(*core);
+  // A host turn may deliver the next guest field while a finite update is still executing, but it
+  // is not a second display owner. The enclosing FrameDriver step reaches exactly one presentation
+  // fence at its native frame commit; presenting here made that same step advance the fence twice.
+  scheduler.deliver(
+      {.site = "hostturn", .present = false, .pace = false, .acknowledgeHostTurn = false});
+}
+
+} // namespace spyro1

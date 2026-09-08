@@ -1,6 +1,6 @@
 # Project state
 
-Factual capability coverage for Spyro 1's boot and native title presentation. Atomic work lives in
+Factual capability coverage for Spyro 1 native/Lightrec execution and presentation. Atomic work lives in
 `docs/issues/`, ownership and placement in `docs/codemap.md`, and the ordered binary-evidence chain
 in `docs/re-frontier.md`.
 
@@ -14,22 +14,23 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | ID | Capability / observable outcome | State | Dependencies | Goals |
 |---|---|---|---|---|
 | S001 | The verified Spyro 1 executable reaches stage 13's title overlay under the recorded native owners | partial | — | G001 |
-| S002 | Stage-13 title modes 0 and 1 are presented through game-owned native sprite commands | missing | S001 | G003 |
-| S003 | Stage-13 title mode 2 presents the three-slot save screen natively | missing | S002 | G003 |
-| S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | missing | S001 | G002, G003 |
-| S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | missing | S002, S004 | G003 |
+| S002 | Stage-13 title modes 0 and 1 are presented through game-owned native sprite commands | partial | S001 | G003 |
+| S003 | Stage-13 title mode 2 presents the three-slot save screen natively | verified | S002 | G003 |
+| S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | partial | S001 | G002, G003 |
+| S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | partial | S002, S004 | G003 |
 | S006 | Spyro 2 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial | — | G001 |
 | S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | partial | S004 | G001, G003 |
 | S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with bounded, accounted fallback | partial | — | G002, G004 |
-| S009 | Spyro 1 reaches both stage-13 800/900 discriminators through Lightrec and native frame ownership | missing | S004, S008 | G001, G002 |
+| S009 | Spyro 1 reaches both stage-13 800/900 discriminators through Lightrec and native frame ownership | verified | S004, S008 | G001, G002 |
 | S010 | The generated world-body include is replaced by resumable runtime guest execution | partial | S008, S009 | G002 |
 | S011 | Representative Spyro 1 gameplay conforms on each released host through native/Lightrec execution | missing | S005, S007, S010 | G001, G002, G003, G004 |
 | S012 | The frozen launcher builds and runs the native/Lightrec product without offline guest translation | partial | S008, S011 | G004 |
 
 ## Current focus
 
-S008 — diagnose the real-media CD synchronization timeout after the resumed Lightrec boot opens
-the authenticated disc. Native field ownership, stage 13, and gameplay remain unverified.
+S011 — reach interactive Spyro 1 gameplay through the restored native/Lightrec frame owners, then
+verify complete scene coverage, wider projection, and actual per-object temporal interpolation.
+Stage-13 title/save presentation is a wiring milestone, not completion of this focus.
 
 ## Hosted verification and host gaps
 
@@ -334,21 +335,42 @@ The continuation was `0x8001647C`. The real disc opened; the 15-second headless/
 reported CD synchronization timeouts and was externally bounded. This establishes continuation and
 real-image JIT execution, not successful boot or CD correctness.
 
-Gap: diagnose CD synchronization/interrupt delivery, then prove field ownership, native/original
-dispatch, WAD address-reuse invalidation, independent-oracle state, and bounded fallback admission.
-The separate interpreter-only oracle must remain outside product selection. Lightrec's classified,
-bounded fallback follows the shared framework contract; zero observed fallback alone does not prove
-that admission policy.
+Current integration (2026-09-08): Spyro now composes its native boot, display-field, and scene
+owners around bounded guest calls. The framework exposes stock CD command success separately from
+blocking-control success and supplies the title disc key. The title WAD owner stages complete reads
+before publication, refuses truncated input with a typed fault, derives image identity from SHA-256,
+and relies on canonical guest writes for invalidation. Synthetic production tests cover short reads,
+per-Core completion, changed-code execution, and missing-disc faults. These changes pass the recorded
+stage-13 routes below; the prior CD timeout no longer describes the current frontier.
+
+Gap: representative gameplay, independent-oracle state, and real-game WAD replacement/override
+coverage remain unqualified. Synthetic changed-image tests do not prove every gameplay overlay.
 
 Atomic work: issue 0101.
 
 ### S009 — Stage-13 dynamic discriminators
 
-Missing capability: execute the authenticated `SCUS_942.28` image through Lightrec with nonzero
-translated blocks and preserve the current title-owned scheduler and native producers. Reproduce both
-the 800-field boot/title route and the 900-field forced-input mode-2 save-picker route with one
-presentation fence per host step and no successful guest VSync. These checkpoints establish wiring,
-not representative gameplay.
+The Linux x86_64 Clang product, using framework `f7d4baf5`, completes the 800-field idle title
+route and the 900-field Start-input save-picker route through native field/scene owners. Guest VSync
+remains the framework's mandatory fatal trap. Run caps now return from the complete product step
+before ending, so the final presentation fence is checked and the Core is destroyed normally.
+
+The idle run ended at 800 fields / 600 checked steps and fences, with 3,144,960 executed JIT
+blocks / 20,096,897 instructions and zero faults/fallback.
+
+The 16:9 save-picker observation ended at 900 delivered fields, 474 completed product steps and 474
+presentation fences, with 1,485 translated blocks, 3,116,634 executed blocks / 20,245,455 instructions,
+zero executor faults, and zero fallback blocks/instructions. It reached stage 13/mode 2/state 4.
+The inspected presented image contains all three slots, menu/footer text, Spyro, and expanded
+backdrop; native render width is 684 versus the 512-wide baseline. Interpolation was enabled;
+this still image and menu run do not qualify smooth gameplay or all renderer arms.
+
+Reproduce using `build/bin/spyro_port` with `PSXPORT_NOAUDIO=1`, `PSXPORT_VK_WINDOW=0`,
+`PSXPORT_ASSET_DIR=external/psxport`, `PSXPORT_NATIVE_FRAMES=900`, and
+`PSXPORT_FORCE_BUTTONS=FFF7`. Use `PSXPORT_SETTINGS` pointing to an isolated file containing
+`aspect=1`, `ires=1`, and `fps60=1`; `PSXPORT_ASPECT` is not a supported option.
+`PSXPORT_PRESENT_SHOT_AT=450` captures the inspected menu. The idle discriminator uses an 800-field
+cap and no forced input. These observations establish wiring, not representative gameplay.
 
 ### S010 — Resumable world execution
 
@@ -375,6 +397,5 @@ PS-X EXE, builds the sole `spyro_port` native/Lightrec target under `build/playe
 1 by default without offline guest translation or a pre-populated runtime cache. The native target
 links the frozen PSXport/Lightrec backend, and its asset-free synthetic framework contract passes.
 
-Gap: the real-media product now resumes ordinary cycle-budget exits and opens the disc, but CD
-synchronization times out before the stage-13 discriminator. Cold-path provisioning, boot/title
-routes, and gameplay remain unverified; the S008 observation is not gameplay evidence.
+Gap: cold-path provisioning and packaged first-run setup remain unqualified. The native boot/title
+routes are recorded in S009; representative gameplay and host qualification remain open.

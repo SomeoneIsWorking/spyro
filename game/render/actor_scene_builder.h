@@ -46,7 +46,8 @@ struct Frame {
 bool build_source_record(Core *c,
                          uint32_t moby,
                          actor_recipe_capture::SourceRecord &source,
-                         Census &census);
+                         Census &census,
+                         bool *horizontalVisibleOut = nullptr);
 
 // Builds the regular-actor records and the shadow-list entries produced by the same retail
 // culling pass. The frame is inert until commit succeeds in the owning submitter.

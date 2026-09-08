@@ -34,14 +34,20 @@ Status prepare(Core *core, Frame &frame) {
     frame.visitedMobys.push_back(moby);
     ++frame.census.scanned;
     actor_recipe_capture::SourceRecord source{};
-    if (!actor_scene::build_source_record(core, moby, source, frame.census)) {
+    bool horizontalVisible = false;
+    if (!actor_scene::build_source_record(core, moby, source, frame.census, &horizontalVisible)) {
       ++frame.census.culled;
-      // 0x800208FC appends a shadow after horizontal culling but before its
-      // final vertical cull. A fully rejected source does not reveal which
-      // side of that boundary it reached, so do not silently lose state.
-      if ((int32_t)core->mem_r32(moby + 0x1cu) < 0) {
-        frame = {};
-        return Status::CulledShadowSideEffectUnowned;
+      // 0x800208FC appends a shadow after horizontal culling even if vertical culling fails.
+      if (horizontalVisible && (int32_t)core->mem_r32(moby + 0x1cu) < 0 && source.tz < -0x1200) {
+        const uint32_t texture =
+            source.descriptor + 0x2au + (uint32_t)core->mem_r8(moby + 0x3eu) * 8u;
+        if (!actor_recipe_capture::physical_span(texture & ~3u, 4u) ||
+            !actor_recipe_capture::physical_span(
+                frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
+          frame = {};
+          return Status::InvalidShadowCursor;
+        }
+        frame.shadows.push_back({.moby = moby, .modelByte = core->mem_r8(texture)});
       }
       continue;
     }

@@ -1,9 +1,13 @@
 #include "spyro1_runtime.h"
 
+#include "cd_control.h"
+#include "fps60.h"
 #include "game.h"
+#include "presentation_owner.h"
+#include "spyro1_frame_driver.h"
+#include "spyro_context.h"
 #include "spyro_game.h"
 
-#include <cstdlib>
 #include <lucent/log.h>
 
 namespace spyro1 {
@@ -27,12 +31,15 @@ const GuestProgramImage Spyro1Runtime::programImage_{
 Spyro1Runtime::Spyro1Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro1) {}
 
 void *Spyro1Runtime::createContext(Core &) {
-  return nullptr;
+  return new SpyroContext();
 }
 
-void Spyro1Runtime::destroyContext(void *) {}
+void Spyro1Runtime::destroyContext(void *context) {
+  delete static_cast<SpyroContext *>(context);
+}
 
 void Spyro1Runtime::registerOverrides(Game &game) {
+  spyro_register_cd_queue(game.core);
   spyro_register_native_rand(game.core);
   spyro_register_native_leaves(game.core);
   spyro_register_native_vec(game.core);
@@ -43,17 +50,78 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   lucent::info("boot", "installed Spyro 1's verified image-scoped native overrides");
 }
 
-void Spyro1Runtime::bootInit(Core &) {
-  lucent::error("boot", "Spyro 1 native frame boot is not an entry path before JIT conformance");
-  std::abort();
+void Spyro1Runtime::bootInit(Core &core) {
+  frameDriver(core).initialize(core);
 }
 
-RenderCapabilities Spyro1Runtime::renderCapabilities() const {
-  return RenderCapabilities::direct();
+std::unique_ptr<FrameDriver> Spyro1Runtime::createFrameDriver(Game &game) {
+  return std::make_unique<Spyro1FrameDriver>(game);
 }
 
-bool Spyro1Runtime::guestVramIsPicture(const Game &) const {
-  return true;
+bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {
+  return spyro_presentation_owner(game.core).guestVramIsPicture();
+}
+
+std::unique_ptr<TemporalFramePresentation>
+Spyro1Runtime::createTemporalFramePresentation(Game &game) {
+  return std::make_unique<Fps60>(game);
+}
+
+namespace {
+
+constexpr std::uint32_t kGpuTimeoutDeadlineVar = 0x80074B7Cu;
+constexpr std::uint32_t kGpuTimeoutFlagVar = 0x80074B80u;
+constexpr std::uint32_t kGpuTimeoutArm = 0x80062090u;
+constexpr std::uint32_t kGpuTimeoutCheck = 0x800620C4u;
+constexpr std::uint32_t kCdControl = 0x80063C48u;
+constexpr std::uint32_t kCdControlB = 0x80063D80u;
+constexpr std::uint32_t kCdSync = 0x800647A0u;
+constexpr std::uint32_t kCdCw = 0x80064CECu;
+constexpr std::uint32_t kCdDataSync = 0x800655A0u;
+constexpr std::uint32_t kCdInitHandshake = 0x800653B4u;
+
+void gpuTimeoutArm(Core *core) {
+  core->mem_w32(kGpuTimeoutDeadlineVar, 0x7fffffffu);
+  core->mem_w32(kGpuTimeoutFlagVar, 0);
+}
+
+void syncComplete(Core *core) {
+  core->r[2] = 0;
+}
+
+} // namespace
+
+const PlatformHlePlan *Spyro1Runtime::platformHlePlan() const {
+  static const PlatformHlePlan plan = [] {
+    PlatformHlePlan p{};
+    p.vsyncAddress = 0x8005DBC4u;
+    p.setGeomOffset = 0x80062618u;
+    p.setGeomScreen = 0x80062638u;
+    p.drawSyncAddress = 0x8005F764u;
+    p.bindings[0] = {kGpuTimeoutArm, gpuTimeoutArm};
+    p.bindings[1] = {kGpuTimeoutCheck, syncComplete};
+    p.bindings[2] = {kCdDataSync, syncComplete};
+    p.bindings[3] = {kCdInitHandshake, syncComplete};
+    p.bindings[4] = {kCdControl, cd_control_sync};
+    p.bindings[5] = {kCdControlB, cd_control_sync};
+    p.bindings[6] = {kCdSync, cd_sync_stock_sync};
+    p.bindings[7] = {kCdCw, cd_command_stock_sync};
+    p.bindingCount = 8;
+    p.windowLo[0] = 0x8005B000u;
+    p.windowHi[0] = 0x80066000u;
+    return p;
+  }();
+  return &plan;
+}
+
+const GuestPadBufferLayout *Spyro1Runtime::guestPadBufferLayout() const {
+  static constexpr GuestPadBufferLayout layout{
+      .slot0Buffer = 0x800786A0u,
+      .slot1Buffer = 0x800786C2u,
+      .slotPointerTable = 0u,
+      .slotPointerStride = 4u,
+  };
+  return &layout;
 }
 
 } // namespace spyro1

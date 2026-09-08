@@ -43,11 +43,11 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - notes: Guest address alone is never a valid cache or override key.
 
 ### dynarec.stage13 — Reach the 800/900 stage-13 discriminators
-- status: todo
+- status: re-verified
 - deps: dynarec.dispatch
-- evidence: Retired-route records identify the 800-field title path and 900-field mode-2 save-picker path; those records are wiring evidence only.
-- where: titles/spyro1/core/spyro1_runtime.*; game/core/guest_execution.*; target psxport executor
-- gap: Reproduce both routes with nonzero Lightrec blocks, native scene owners active, exactly one presentation fence per host field, and fatal guest VSync.
+- evidence: Native/Lightrec title and save-picker observations, displayed image inspection, execution counters, and per-product-step fence counts are recorded in docs/project-state.md S009.
+- where: titles/spyro1/core/spyro1_frame_driver.*; game/render/render_frame.cpp; game/core/runtime_run.*
+- gap: None for the two wiring discriminators; gameplay and motion qualification belong to dynarec.gameplay.
 - notes: These are first runtime discriminators, not representative gameplay.
 
 ### dynarec.world-resume — Resume unchanged world code through the runtime

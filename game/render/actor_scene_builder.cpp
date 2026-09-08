@@ -43,10 +43,14 @@ bool coarse_visible(Core *c, uint32_t moby, int32_t radius) {
          dz + radius > 0 && dz - radius < 0;
 }
 
-bool view_visible(std::array<int32_t, 3> view,
-                  uint32_t modelRadius,
-                  int32_t radius,
-                  uint32_t &flags) {
+struct VisibilityResult {
+  bool horizontalVisible = false;
+  bool visible = false;
+  uint32_t flags = 0;
+};
+
+VisibilityResult
+evaluate_visibility(std::array<int32_t, 3> view, uint32_t modelRadius, int32_t radius) {
   const int32_t extent = (int32_t)modelRadius * 16;
   const int32_t horizontalNear = extent / 2 + extent / 4 + extent / 32;
   const int32_t horizontalFar = extent / 2 + (int32_t)modelRadius + extent / 32;
@@ -54,24 +58,33 @@ bool view_visible(std::array<int32_t, 3> view,
   const int32_t verticalFar = extent - extent / 32 - extent / 64;
   const int32_t x = view[0], y = view[1], z = view[2];
   if (z - radius >= 0 || z + extent <= 0 ||
-      (std::abs(x) - horizontalNear) * 4 - (z + horizontalFar) * 3 >= 0 ||
-      z + verticalNear - (std::abs(y) - verticalFar) * 3 < 1) {
-    return false;
+      (std::abs(x) - horizontalNear) * 4 - (z + horizontalFar) * 3 >= 0) {
+    return {};
   }
+  VisibilityResult result{};
+  result.horizontalVisible = true;
+  if (z + verticalNear - (std::abs(y) - verticalFar) * 3 < 1) {
+    return result;
+  }
+  result.visible = true;
   if ((std::abs(x) + horizontalNear) * 4 - (z - horizontalFar) * 3 < 0 &&
       z - verticalNear - (std::abs(y) + verticalFar) * 3 >= 1) {
-    flags = 0x40000000u;
+    result.flags = 0x40000000u;
   } else {
-    flags = 0x80000000u;
+    result.flags = 0x80000000u;
   }
-  return true;
+  return result;
 }
 
 bool build_source(Core *c,
                   uint32_t moby,
                   const Matrix &cameraMatrix,
                   actor_recipe_capture::SourceRecord &source,
-                  Census &census) {
+                  Census &census,
+                  bool *horizontalVisibleOut = nullptr) {
+  if (horizontalVisibleOut) {
+    *horizontalVisibleOut = false;
+  }
   const uint16_t extentWord = c->mem_r16(moby + 80u);
   const int32_t radius = (int32_t)((extentWord & 0xffu) << 8) + (int32_t)(extentWord & 0x100u) * 2;
   if (!coarse_visible(c, moby, radius)) {
@@ -95,6 +108,8 @@ bool build_source(Core *c,
   // deliberate cyclic lane layout rather than pretending this is an ordinary XYZ matrix call.
   const std::array<int32_t, 3> view =
       actor_transform_math::transform(cameraMatrix, {relative[1], relative[2], relative[0]});
+  source.descriptor = descriptor;
+  source.tz = view[2];
   lucent::debug("actordirect",
                 "candidate moby=0x{:08X} relative=({},{},{}) view=({},{},{}) radius={} "
                 "model_radius={}",
@@ -107,14 +122,17 @@ bool build_source(Core *c,
                 view[2],
                 radius,
                 c->mem_r8(descriptor + 7u));
-  uint32_t clipFlags = 0;
-  if (!view_visible(view, c->mem_r8(descriptor + 7u), radius, clipFlags)) {
+  const auto vis = evaluate_visibility(view, c->mem_r8(descriptor + 7u), radius);
+  if (horizontalVisibleOut) {
+    *horizontalVisibleOut = vis.horizontalVisible;
+  }
+  if (!vis.visible) {
     ++census.viewCulled;
     return false;
   }
   const uint32_t animation = c->mem_r32(moby + 68u);
   const uint32_t blend = c->mem_r8(moby + 64u);
-  source.header = clipFlags + blend * 0x100u + (animation >> 24) * 0x10000u +
+  source.header = vis.flags + blend * 0x100u + (animation >> 24) * 0x10000u +
                   (uint32_t)c->mem_r8(descriptor + 11u) * 0x1000000u + c->mem_r8(moby + 87u);
   source.descriptor = descriptor;
   source.model = descriptor + 36u + ((frame >> 16) & 0xffu) * 8u;
@@ -136,8 +154,10 @@ bool build_source(Core *c,
 bool build_source_record(Core *c,
                          uint32_t moby,
                          actor_recipe_capture::SourceRecord &source,
-                         Census &census) {
-  return build_source(c, moby, actor_transform_math::readCameraMatrix(c), source, census);
+                         Census &census,
+                         bool *horizontalVisibleOut) {
+  return build_source(
+      c, moby, actor_transform_math::readCameraMatrix(c), source, census, horizontalVisibleOut);
 }
 
 Status build_scene(Core *c, Frame &frame, bool captureShadows) {

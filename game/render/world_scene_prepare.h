@@ -1,7 +1,7 @@
 #pragma once
 
 #include "world_animation.h"
-#include "world_chunk_codec.h"
+#include "world_source.h"
 
 #include <array>
 #include <cstdint>
@@ -15,12 +15,24 @@ struct TaggedSector {
   uint8_t tags = 0;
 };
 
+struct AnimationSector {
+  uint32_t address = 0;
+  uint32_t active = 0;
+};
+
 struct Prepared {
   std::array<uint8_t, 256> broadVisible{};
   std::vector<TaggedSector> low;
   std::vector<TaggedSector> high;
   uint32_t selectedSectors = 0;
+  std::vector<AnimationSector> animations;
 };
+
+bool prepare(const world_source::Selection &selection,
+             int32_t horizontalWidth,
+             Prepared &out,
+             const char *&why,
+             bool decodingAnimation = false);
 
 // Builds RenderWorldChunks' phase-1 sector lists from an immutable RAM view.
 // No guest state is changed here in either form. horizontalWidth is the same native-pixel

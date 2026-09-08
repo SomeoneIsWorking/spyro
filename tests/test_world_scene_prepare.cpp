@@ -228,9 +228,182 @@ void widened_animation_and_build_contract() {
           "resolved animation is not replayed");
 }
 
+void immutable_source_contract() {
+  auto bytes = fixture();
+  view(bytes, 0, 0, 1000, 0);
+  w32(bytes, kSector + 4u, 0x4000u); // LQ only; the unused HQ layout is deliberately invalid.
+  w32(bytes, kEnvironment + 0x28u, 65536u);
+  w32(bytes, kSector + 0x10u, 0x00010404u);
+  constexpr uint32_t vertices = kSector + 0x1cu;
+  for (uint32_t i = 0; i < 4; ++i) {
+    w32(bytes, vertices + i * 4u, ((i & 1u) ? 64u << 10 : 0u) | ((i & 2u) ? 64u : 0u));
+    w32(bytes, vertices + 16u + i * 4u, 0x00123456u + i);
+  }
+  constexpr uint32_t face = vertices + 32u;
+  const uint32_t indices = (1u << 20) | (2u << 14) | (3u << 8);
+  w32(bytes, face, indices | 0x80u);
+  w32(bytes, face + 4u, indices | 7u);
+  w32(bytes, kGroups, kGroup);
+  w8(bytes, kGroup, 0u);
+  w8(bytes, kGroup + 1u, 0u);
+  w8(bytes, kGroup + 2u, 0xffu);
+  constexpr uint32_t material = 0x95000u;
+  w32(bytes, kEnvironment + 0x20u, 1u);
+  w32(bytes, kEnvironment + 0x18u, material);
+  w32(bytes, kEnvironment + 0x1cu, material + 16u);
+  w32(bytes, material, 0xaabbccddu);
+
+  auto game = std::make_unique<Game>();
+  auto &core = game->core;
+  std::copy(bytes.begin(), bytes.end(), core.ram);
+  core.rsub.mode.setPath(RenderPath::Native);
+  core.rsub.projParams.setGeomOffset(256, 120);
+  core.rsub.projParams.setGeomScreen(341);
+  game->gpu.s_disp_w = kNativeWidth;
+  game->mods.aspect = ASPECT_4_3;
+  const auto captured = spyro::world_scene::capture(&core, 0);
+  const auto endpoint = spyro::world_scene::build(&core, 0);
+  require(endpoint.status == spyro::world_recipe::Status::Ready && endpoint.faces.size() == 2 &&
+              endpoint.candidates == 2 && endpoint.highSectors == 0,
+          "authored duplicate LQ faces render while unused invalid HQ is retained");
+  require(endpoint.faces[0].vertices[0].rgb == 0x00123456u &&
+              endpoint.faces[0].material.semiTransparent &&
+              endpoint.faces[0].material.tpage == 96u &&
+              endpoint.faces[0].vertices[0].sz == 1000u && endpoint.faces[0].paintGroup == 0u &&
+              endpoint.faces[1].paintGroup == 1u,
+          "source endpoint retains colors, material, exact depth and duplicate OT link order");
+  std::fill(std::begin(core.ram), std::end(core.ram), 0u);
+  core.rsub.projParams.setGeomOffset(0, 0);
+  const auto rebuilt = spyro::world_scene::build(captured);
+  require(
+      rebuilt.status == endpoint.status && rebuilt.broadVisible == endpoint.broadVisible &&
+          rebuilt.candidates == endpoint.candidates &&
+          spyro::world_recipe::compare(endpoint.faces, rebuilt.faces).equal &&
+          rebuilt.faces[0].vertices[0].viewZ == endpoint.faces[0].vertices[0].viewZ &&
+          rebuilt.faces[0].vertices[0].screenX == endpoint.faces[0].vertices[0].screenX &&
+          captured.materials.r32(material) == 0xaabbccddu,
+      "captured endpoint survives destruction of live geometry, camera, projection and materials");
+  require(spyro::world_scene::build(&core, 0).status != spyro::world_recipe::Status::Ready,
+          "live endpoint changes after source destruction discriminator");
+
+  view(bytes, 900, 0, 1000, 0);
+  w32(bytes, kSector + 4u, 0x4000u);
+  auto hidden = spyro::world_source::capture(RamView(bytes), 0, captured.projection, kNativeWidth);
+  require(hidden.selection.occurrences.size() == 2u && hidden.sectors[0] &&
+              hidden.sectors[0]->low.faces.size() == 1u &&
+              spyro::world_scene::build(hidden).faces.empty(),
+          "capture retains authored duplicate candidates outside endpoint frustum");
+  std::fill(bytes.begin(), bytes.end(), 0u);
+  hidden.selection.camera.position[1] = 0;
+  const auto revealed = spyro::world_scene::build(hidden);
+  require(revealed.faces.size() == 2u &&
+              spyro::world_recipe::compare(endpoint.faces, revealed.faces).equal,
+          "new camera reclassifies and projects captured candidates without live RAM");
+  hidden.selection.sectors[0]->extent = 100;
+  require(spyro::world_scene::build(hidden).status == spyro::world_recipe::Status::InvalidChunk,
+          "retained malformed HQ refuses when camera/LOD selection activates it");
+  hidden.selection.sectors[0]->animation = 0xffffff00u;
+  require(spyro::world_scene::build(hidden).status == spyro::world_recipe::Status::ActiveAnimation,
+          "capture cannot bless unresolved authored animation");
+  require(!captured.materials.contains(material + 0xb8u, 4u),
+          "material source refuses bytes beyond captured records");
+  auto partialBytes = fixture();
+  w32(partialBytes, kEnvironment + 0x20u, 1u);
+  w32(partialBytes, kEnvironment + 0x18u, 0x801ffff8u);
+  w32(partialBytes, 0x1ffff8u, 0xa1b2c3d4u);
+  const auto partial = spyro::world_source::Materials::capture(RamView(partialBytes));
+  require(partial.contains(0x801ffff8u, 8u) && !partial.contains(0x801ffff8u, 16u) &&
+              partial.r32(0x801ffff8u) == 0xa1b2c3d4u,
+          "capture preserves valid partial material reads at RAM boundary");
+  w32(partialBytes, kEnvironment + 0x1cu, material);
+  w8(partialBytes, 0x6d378u, 0xf0u); // Medium base +8, signed -16 -> previous eight bytes.
+  w32(partialBytes, material - 8u, 0x11223344u);
+  const auto signedPair = spyro::world_source::Materials::capture(RamView(partialBytes));
+  require(signedPair.contains(material - 8u, 8u) && signedPair.r32(material - 8u) == 0x11223344u,
+          "authored signed pair selector retains referenced bytes outside nominal HQ record");
+  require(!spyro::world_source::capture(RamView(bytes), INT32_MAX, captured.projection, 512)
+               .selection.valid,
+          "selection slot overflow refuses instead of wrapping into RAM");
+}
+
+void immutable_refined_source_contract() {
+  // The same authored attribute-0x68 material and quad used by test_world_hq_refinement,
+  // now encoded as a complete chunk so capture, classification and refinement all participate.
+  for (uint32_t depth : {1024u, 256u}) {
+    auto bytes = fixture();
+    view(bytes, 0, 0, (int)(depth / 4u), 0);
+    w32(bytes, kSector + 4u, 0x2000u); // HQ only.
+    w32(bytes, kCamera + 0x2cu, depth / 2u);
+    w32(bytes, kCamera + 0x30u, depth / 2u);
+    w32(bytes, kSector + 0x14u, 0x00010404u); // Four vertices, two 16-byte color planes, one face.
+    const uint32_t side = depth / 16u;
+    constexpr uint32_t vertices = kSector + 0x1cu;
+    w32(bytes, vertices, (side << 10) | side);
+    w32(bytes, vertices + 4u, side);
+    w32(bytes, vertices + 8u, 0u);
+    w32(bytes, vertices + 12u, side << 10);
+    for (uint32_t i = 0; i < 8; ++i) {
+      w32(bytes, vertices + 16u + i * 4u, 0x00406080u);
+    }
+    constexpr uint32_t face = vertices + 48u;
+    w32(bytes, face, 0x00010203u);
+    w32(bytes, face + 4u, 0x00010203u);
+    w32(bytes, face + 8u, 0u);
+    w32(bytes, face + 12u, 4u);
+    constexpr uint32_t material = 0x95000u;
+    w32(bytes, kEnvironment + 0x1cu, material);
+    w32(bytes, kEnvironment + 0x20u, 1u);
+    w32(bytes, 0x6d0c0u, 0xffe1001fu);
+    w32(bytes, 0x6d0c4u, 0x1f001f1fu);
+    const uint32_t count = depth == 1024u ? 4u : 16u;
+    const uint32_t firstPair = depth == 1024u ? 8u : 0x28u;
+    for (uint32_t child = 0; child < count; ++child) {
+      w32(bytes, material + firstPair + child * 8u, 0x2420e0e0u);
+      w32(bytes, material + firstPair + child * 8u + 4u, 0xd088e0ffu);
+    }
+    auto game = std::make_unique<Game>();
+    auto &core = game->core;
+    std::copy(bytes.begin(), bytes.end(), core.ram);
+    core.rsub.mode.setPath(RenderPath::Native);
+    core.rsub.projParams.setGeomOffset(256, 120);
+    core.rsub.projParams.setGeomScreen(341);
+    game->gpu.s_disp_w = kNativeWidth;
+    game->mods.aspect = ASPECT_4_3;
+    const auto captured = spyro::world_scene::capture(&core, -1);
+    const auto endpoint = spyro::world_scene::build(&core, -1);
+    require(endpoint.status == spyro::world_recipe::Status::Ready && endpoint.faces.size() == count,
+            "complete captured HQ chunk reaches expected medium/near subdivision");
+    for (uint32_t child = 0; child < count; ++child) {
+      const auto &output = endpoint.faces[child];
+      require(output.material.clut == 0x2420u && output.material.tpage == 0xd088u &&
+                  output.textureSource == material + firstPair + child * 8u &&
+                  output.vertices[0].u == 0xffu && output.vertices[1].u == 0xe0u,
+              "complete HQ endpoint preserves authored refinement material and UV adjustment");
+    }
+    std::fill(std::begin(core.ram), std::end(core.ram), 0u);
+    core.rsub.projParams.setGeomScreen(1);
+    const auto rebuilt = spyro::world_scene::build(captured);
+    require(rebuilt.status == endpoint.status && rebuilt.broadVisible == endpoint.broadVisible &&
+                spyro::world_recipe::compare(endpoint.faces, rebuilt.faces).equal,
+            "HQ source rebuild retains geometry, camera, material and refinement tables after RAM "
+            "destruction");
+    for (size_t child = 0; child < endpoint.faces.size(); ++child) {
+      for (uint32_t vertex = 0; vertex < 4; ++vertex) {
+        const auto &before = endpoint.faces[child].vertices[vertex];
+        const auto &after = rebuilt.faces[child].vertices[vertex];
+        require(before.screenX == after.screenX && before.screenY == after.screenY &&
+                    before.viewZ == after.viewZ && before.sz == after.sz,
+                "HQ immutable rebuild retains precise projection and authored depth");
+      }
+    }
+  }
+}
+
 } // namespace
 
 int main() {
+  immutable_source_contract();
+  immutable_refined_source_contract();
   retained_selection_contract();
   horizontal_projection_contract();
   unchanged_vertical_and_near_contract();

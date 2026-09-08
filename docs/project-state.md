@@ -527,6 +527,10 @@ MAC-Z rather than requiring a stationary depth origin. Actual presenter tests ex
 ordering, empty endpoints with visible midpoints, immutable sources, and moving depth. The S011
 run records nonzero paired midpoint/endpoint emission through the shipping JIT product.
 
+World endpoint capture and reconstruction now share an owned source boundary, with a separate
+queue-only emission path; its preservation contracts are described in
+[world-semantic-oracle](findings/world-semantic-oracle.md#owned-world-endpoint-source).
+
 Gap: world, camera, regular actors, shadows, particles and other unowned temporal sources do not yet
 have complete matching-source interpolation. Discontinuous paired-model intervals retain endpoint
 presentation. Full-scene 60fps motion, paced timing/audio and performance remain unqualified.

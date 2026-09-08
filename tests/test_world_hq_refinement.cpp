@@ -3,6 +3,7 @@
 #include "world_projection_math.h"
 
 #include <cstdlib>
+#include <lucent/log.h>
 #include <vector>
 
 namespace {
@@ -12,10 +13,20 @@ using psxport::native_projection::ProjectionParams;
 using spyro::world_hq_refinement::HighVertex;
 using spyro::world_hq_refinement::Position;
 
+unsigned checks = 0;
+const char *currentCase = "unstarted";
+
 void require(bool condition) {
+  ++checks;
   if (!condition) {
+    lucent::error("selftest", "world HQ refinement: FAIL {} (check {})", currentCase, checks);
     std::abort();
   }
+}
+
+void run(const char *name, void (*test)()) {
+  currentCase = name;
+  test();
 }
 
 FixedAffine identity() {
@@ -153,7 +164,13 @@ void test_near_quad_texture_attribute() {
   const char *why = "none";
   const ProjectionParams projection{256 << 16, 120 << 16, 341};
   require(spyro::world_hq_refinement::append(
-      spyro::world_chunk_codec::RamView(bytes), projection, 512, work, recipe, why));
+      spyro::world_source::Materials::capture(spyro::world_chunk_codec::RamView(bytes)),
+      spyro::world_projection_math::decodeMatrix(spyro::world_chunk_codec::RamView(bytes), kCamera),
+      projection,
+      512,
+      work,
+      recipe,
+      why));
   require(recipe.faces.size() == 16u);
   for (uint32_t child = 0; child < recipe.faces.size(); ++child) {
     const auto &face = recipe.faces[child];
@@ -200,7 +217,13 @@ void test_medium_quad_texture_attribute() {
   const char *why = "none";
   const ProjectionParams projection{256 << 16, 120 << 16, 341};
   require(spyro::world_hq_refinement::append(
-      spyro::world_chunk_codec::RamView(bytes), projection, 512, work, recipe, why));
+      spyro::world_source::Materials::capture(spyro::world_chunk_codec::RamView(bytes)),
+      spyro::world_projection_math::decodeMatrix(spyro::world_chunk_codec::RamView(bytes), kCamera),
+      projection,
+      512,
+      work,
+      recipe,
+      why));
   require(recipe.faces.size() == 4u);
   for (uint32_t child = 0; child < recipe.faces.size(); ++child) {
     const auto &face = recipe.faces[child];
@@ -215,11 +238,12 @@ void test_medium_quad_texture_attribute() {
 } // namespace
 
 int main() {
-  test_depth_and_clip_paths();
-  test_projection_flag_facing_gate();
-  test_packed_projection_input_borrow();
-  test_near_quad_color_graph();
-  test_near_quad_texture_attribute();
-  test_medium_quad_texture_attribute();
+  run("depth and clip paths", test_depth_and_clip_paths);
+  run("projection flag facing gate", test_projection_flag_facing_gate);
+  run("packed projection input borrow", test_packed_projection_input_borrow);
+  run("near quad color graph", test_near_quad_color_graph);
+  run("near quad texture attribute", test_near_quad_texture_attribute);
+  run("medium quad texture attribute", test_medium_quad_texture_attribute);
+  lucent::info("selftest", "world HQ refinement: PASS 6 cases, {} checks", checks);
   return 0;
 }

@@ -2,6 +2,7 @@
 
 #include "world_hq_recipe.h"
 #include "world_recipe.h"
+#include "world_source.h"
 
 #include <optional>
 
@@ -28,6 +29,13 @@ struct AnimationResult {
   uint32_t lastAddress = 0; // an address the plan actually wrote — the oracle's mutation probe
 };
 AnimationResult animate(Core *core, int32_t selection);
+
+// Capture after animate() has committed the authored arrays. The result owns all selected
+// candidates, camera/projection policy and material inputs; it does not retain Core or RAM.
+world_source::Source
+capture(Core *core, int32_t selection, std::optional<uint32_t> cullingDistance = std::nullopt);
+world_recipe::Recipe build(const world_source::Source &source,
+                           world_hq_recipe::Audit *audit = nullptr);
 
 // Builds a complete immutable RenderWorldChunks recipe. The builder reads
 // current game state only; it never executes guest code and never reads the

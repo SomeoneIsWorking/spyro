@@ -99,20 +99,34 @@ AnimationResult animate(Core *core, int32_t selection) {
   return out;
 }
 
+world_source::Source
+capture(Core *core, int32_t selection, std::optional<uint32_t> cullingDistance) {
+  if (!core || !core->game || !core->rsub.projParams.geomValid()) {
+    world_source::Source out{};
+    out.selection.refusal = "projection_unset";
+    return out;
+  }
+  const int clipRight = renderWidth(core);
+  return world_source::capture(world_chunk_codec::RamView(std::span<const uint8_t>(core->ram)),
+                               selection,
+                               projection(core, clipRight),
+                               clipRight,
+                               cullingDistance);
+}
+
 Recipe build(Core *core,
              int32_t selection,
              world_hq_recipe::Audit *audit,
              std::optional<uint32_t> cullingDistance) {
-  Recipe out{};
-  if (!core || !core->game || !core->rsub.projParams.geomValid()) {
-    return refuse(std::move(out), Status::InvalidSelection, "projection_unset");
-  }
-  const int clipRight = renderWidth(core);
+  return build(capture(core, selection, cullingDistance), audit);
+}
 
-  const world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
+Recipe build(const world_source::Source &source, world_hq_recipe::Audit *audit) {
+  Recipe out{};
+  const int clipRight = source.clipRight;
   world_scene_prepare::Prepared prepared{};
   const char *why = "none";
-  if (!world_scene_prepare::prepare(ram, selection, clipRight, prepared, why)) {
+  if (!world_scene_prepare::prepare(source.selection, clipRight, prepared, why)) {
     const Status status = why == std::string_view("active_animation") ? Status::ActiveAnimation
                                                                       : Status::InvalidSelection;
     return refuse(std::move(out), status, why);
@@ -122,10 +136,10 @@ Recipe build(Core *core,
   out.lowSectors = (uint32_t)prepared.low.size();
   out.highSectors = (uint32_t)prepared.high.size();
 
-  const ProjectionParams params = projection(core, clipRight);
-  const uint32_t farLimit = cullingDistance.value_or(ram.r32(0x800785a8u + 0x28u)) >> 7;
-  if (!world_lq_recipe::append(ram, prepared, params, clipRight, farLimit, out, why) ||
-      !world_hq_recipe::append(ram, prepared, params, clipRight, out, why, audit)) {
+  const ProjectionParams &params = source.projection;
+  const uint32_t farLimit = source.selection.cullingDistance >> 7;
+  if (!world_lq_recipe::append(source, prepared, params, clipRight, farLimit, out, why) ||
+      !world_hq_recipe::append(source, prepared, params, clipRight, out, why, audit)) {
     return refuse(std::move(out), refusalStatus(why), why);
   }
   out.status = out.faces.empty() ? Status::ValidEmpty : Status::Ready;

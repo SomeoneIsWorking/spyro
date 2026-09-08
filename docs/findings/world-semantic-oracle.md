@@ -46,3 +46,35 @@ adaptive, transition, and edge cases. This is live proof of the packet-observabl
 fields above, not packet proof of depth. A future executable, animated world
 state, new material family, or first differing final-stream record falsifies the
 admission result and must reopen the producer audit.
+
+## Owned world endpoint source
+
+`world_scene::capture` now owns the ordered sector-selection occurrences, including duplicates
+and candidates outside the endpoint frustum, both decoded LODs, full camera coordinates and both
+matrices, projection/culling policy, animation readiness, and bounded authored material/refinement
+records. It retains no Core, live RAM view, projected vertices, packets, or render-queue items.
+The shipping `build(Core*, ...)` delegates to the same `build(const world_source::Source&)` used
+for immutable endpoint reconstruction. Camera reclassification therefore revisits source
+candidates, rather than trying to recover geometry from the previous picture.
+
+Capture preserves refusal at the consuming boundary: a malformed inactive LOD remains represented
+and refuses when selected; an unresolved animation channel cannot become current merely because
+its packed arrays were copied. Animation still advances once through the logic-frame owner.
+`world_scene_submitter::submit` publishes the complete guest visibility table before emission,
+including a valid empty recipe. Its queue-only `emit` sibling shares the draw implementation and
+leaves guest RAM and scratch untouched. Presentation must use that sibling.
+
+The normal CTest suite includes `world_scene_prepare`, `world_hq_refinement`, and
+`native_render_producers`. They exercise source destruction, previously culled candidates,
+duplicate selection occurrences, LQ and textured HQ refinement, material bounds, exact endpoint
+attributes, populated/empty visibility publication, refusal, and queue-only emission. These are
+endpoint contracts; world/camera temporal matching and intermediate projection are not enabled
+by this ownership change.
+
+A silent widescreen product observation during this integration reached Artisans and ended at
+field 4061 with 2,063 presentation fences, 22,230,736 JIT block executions and zero fallback.
+The 60-field Left input retained the prior native player `(84356, 46546, 9692)` and camera
+`(86564, 45526, 10301)` samples. The spawn and Left pictures differed from the preceding capture
+in 5,030 and 6,457 of 492,480 RGB channel bytes respectively; the run also completed one additional
+product step at that field count. This observation is not a pixel-equivalence result or a matched
+oracle checkpoint. The independently sampled camera-phase limitation in issue 0102 remains open.

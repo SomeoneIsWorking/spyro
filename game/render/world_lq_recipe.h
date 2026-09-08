@@ -1,9 +1,9 @@
 #pragma once
 
 #include "native_projection.h"
-#include "world_chunk_codec.h"
 #include "world_recipe.h"
 #include "world_scene_prepare.h"
+#include "world_source.h"
 
 namespace spyro::world_lq_recipe {
 
@@ -11,7 +11,7 @@ namespace spyro::world_lq_recipe {
 // caller owns display policy (including widescreen) and passes its exclusive
 // right clipping boundary explicitly; this builder has no Core, GPU, packet
 // pool, ordering-table, or ambient GTE dependency.
-bool append(const world_chunk_codec::RamView &ram,
+bool append(const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
             const psxport::native_projection::ProjectionParams &projection,
             int clipRight,

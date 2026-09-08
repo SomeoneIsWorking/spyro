@@ -14,7 +14,6 @@ namespace {
 
 using psxport::native_projection::FixedAffine;
 using psxport::native_projection::ProjectionParams;
-using spyro::world_chunk_codec::RamView;
 using spyro::world_hq_refinement::HighVertex;
 using spyro::world_hq_refinement::Parent;
 using spyro::world_hq_refinement::Work;
@@ -23,15 +22,13 @@ using spyro::world_recipe::Family;
 using spyro::world_recipe::Origin;
 using spyro::world_recipe::Recipe;
 
-constexpr uint32_t kEnvironment = 0x800785a8u;
-constexpr uint32_t kCamera = 0x80076dd0u;
 constexpr size_t kFaceLimit = 16384;
 
 std::array<uint32_t, 4> highOffsets(uint32_t word) {
   return {(word >> 22) & 0x3fcu, (word >> 14) & 0x3fcu, (word >> 6) & 0x3fcu, (word << 2) & 0x3fcu};
 }
 
-bool appendDirect(const RamView &ram,
+bool appendDirect(const world_source::Source &input,
                   const world_chunk_codec::HighChunk &chunk,
                   const world_chunk_codec::HighFace &source,
                   const Parent &parent,
@@ -48,8 +45,7 @@ bool appendDirect(const RamView &ram,
   face.source = parent.source;
   face.sourceOrdinal = parent.ordinal;
   const auto colorOffsets = highOffsets(source.colorWord);
-  const uint32_t fogEnd =
-      (ram.r32(kEnvironment + 0x24u) >> 2) + ((parent.flags & 1u) ? 0x2000u : 0u);
+  const uint32_t fogEnd = (input.selection.lodDistance >> 2) + ((parent.flags & 1u) ? 0x2000u : 0u);
   for (uint32_t i = 0; i < parent.count; ++i) {
     // The quad packet is authored as 0,1,3,2. The guest uses 0,1,3 for
     // NCLIP, then writes t0 (source 3) before a3 (source 2) at
@@ -71,14 +67,15 @@ bool appendDirect(const RamView &ram,
   face.material.semiTransparent = key.semiTransparent;
   if (key.textured) {
     const uint32_t record = lqTextures + (uint32_t)key.index * 16u;
-    if (key.index >= textureCount || !ram.contains(record, 16u)) {
+    if (key.index >= textureCount || !input.materials.contains(record, 16u)) {
       why = "lq_texture_bounds";
       return false;
     }
     const auto fade = world_material_codec::directFade(
         world_hq_refinement::depthSum(parent.vertices, parent.count), fogEnd);
     const uint32_t tileAddress = record + fade.halfOffset;
-    const world_material_codec::Tile tile{ram.r32(tileAddress), ram.r32(tileAddress + 4u)};
+    const world_material_codec::Tile tile{input.materials.r32(tileAddress),
+                                          input.materials.r32(tileAddress + 4u)};
     world_hq_refinement::applyTile(
         face,
         parent.count == 4 ? world_material_codec::decodeQuad(tile, fade.step)
@@ -122,7 +119,7 @@ AuditEntry auditEntry(const Parent &parent,
   return entry;
 }
 
-bool classify(const RamView &ram,
+bool classify(const world_source::Source &input,
               const world_scene_prepare::Prepared &prepared,
               const ProjectionParams &projection,
               int clipRight,
@@ -130,21 +127,21 @@ bool classify(const RamView &ram,
               Recipe &out,
               const char *&why,
               Audit *audit) {
-  const auto cameraMatrix = world_projection_math::decodeMatrix(ram, kCamera);
-  const int32_t cameraX = (int32_t)ram.r32(kCamera + 0x28u) >> 2;
-  const int32_t cameraY = (int32_t)ram.r32(kCamera + 0x2cu) >> 2;
-  const int32_t cameraZ = (int32_t)ram.r32(kCamera + 0x30u) >> 2;
-  const uint32_t lodDistance = ram.r32(kEnvironment + 0x24u);
-  const uint32_t textureCount = ram.r32(kEnvironment + 0x20u);
-  const uint32_t lqTextures = ram.r32(kEnvironment + 0x18u);
+  const auto cameraMatrix = input.selection.camera.projectionMatrix;
+  const int32_t cameraX = input.selection.camera.position[0] >> 2;
+  const int32_t cameraY = input.selection.camera.position[1] >> 2;
+  const int32_t cameraZ = input.selection.camera.position[2] >> 2;
+  const uint32_t lodDistance = input.selection.lodDistance;
+  const uint32_t textureCount = input.materials.count();
+  const uint32_t lqTextures = input.materials.lowBase();
   uint32_t ordinal = (uint32_t)out.faces.size();
   for (const world_scene_prepare::TaggedSector &selected : prepared.high) {
-    world_chunk_codec::HighChunk chunk{};
-    if (world_chunk_codec::decodeHigh(ram, selected.address, chunk) !=
-        world_chunk_codec::Status::Ok) {
+    const auto &sector = input.sectors[selected.index];
+    if (!sector || sector->highStatus != world_chunk_codec::Status::Ok) {
       why = "high_chunk_decode";
       return false;
     }
+    const auto &chunk = sector->high;
     std::vector<HighVertex> vertices;
     vertices.reserve(chunk.vertices.size());
     for (uint32_t packed : chunk.vertices) {
@@ -261,7 +258,7 @@ bool classify(const RamView &ram,
               parent, cameraMatrix, projection, chunkCommon, common, Decision::Direct, depth));
         }
         work.status[parent.statusAddress] = 1u;
-        if (!appendDirect(ram, chunk, source, parent, textureCount, lqTextures, out, why)) {
+        if (!appendDirect(input, chunk, source, parent, textureCount, lqTextures, out, why)) {
           return false;
         }
         continue;
@@ -293,7 +290,7 @@ bool classify(const RamView &ram,
 
 } // namespace
 
-bool append(const RamView &ram,
+bool append(const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
             const ProjectionParams &projection,
             int clipRight,
@@ -304,8 +301,14 @@ bool append(const RamView &ram,
   if (audit) {
     audit->clear();
   }
-  return classify(ram, prepared, projection, clipRight, work, out, why, audit) &&
-         world_hq_refinement::append(ram, projection, clipRight, work, out, why);
+  return classify(input, prepared, projection, clipRight, work, out, why, audit) &&
+         world_hq_refinement::append(input.materials,
+                                     input.selection.camera.projectionMatrix,
+                                     projection,
+                                     clipRight,
+                                     work,
+                                     out,
+                                     why);
 }
 
 } // namespace spyro::world_hq_recipe

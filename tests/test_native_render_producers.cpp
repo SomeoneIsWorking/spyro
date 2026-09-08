@@ -4,9 +4,12 @@
 #include "hw_bind.h"
 #include "spyro_game.h"
 #include "testutil.h"
+#include "world_scene_submitter.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -110,6 +113,114 @@ void test_external_terrain_vertices_refuse_independently_of_scratch() {
   }
 }
 
+constexpr uint32_t kWorldProducer = 0x800258f0u;
+constexpr uint32_t kBroadVisibility = 0x800771c8u;
+
+spyro::world_recipe::Recipe worldRecipe(bool visible) {
+  spyro::world_recipe::Recipe recipe{};
+  recipe.broadVisible[3] = 0xffu;
+  recipe.broadVisible[255] = 0xffu;
+  if (visible) {
+    spyro::world_recipe::Face face{};
+    face.otBin = 100u;
+    face.paintGroup = 0u;
+    face.vertices[0] = {.sx = 200, .sy = 100, .screenX = 200.25f, .screenY = 100.5f};
+    face.vertices[1] = {.sx = 300, .sy = 100, .screenX = 300.25f, .screenY = 100.5f};
+    face.vertices[2] = {.sx = 250, .sy = 200, .screenX = 250.25f, .screenY = 200.5f};
+    for (auto &vertex : face.vertices) {
+      vertex.sz = 1000u;
+      vertex.viewZ = 1000.0f;
+      vertex.rgb = 0x00112233u;
+    }
+    recipe.faces.push_back(face);
+    recipe.status = spyro::world_recipe::Status::Ready;
+  }
+  return recipe;
+}
+
+void prepareWorldSubmission(Game &game) {
+  game.mods.aspect = ASPECT_4_3;
+  game.core.rsub.mode.setPath(RenderPath::Native);
+  game.core.rsub.projParams.setGeomOffset(256, 120);
+  game.core.rsub.projParams.setGeomScreen(341);
+  game.gpu.s_da_x1 = 511;
+  game.gpu.s_da_y1 = 239;
+  for (uint32_t i = 0; i < 256u; ++i) {
+    game.core.mem_w8(kBroadVisibility + i, 0x5au);
+  }
+}
+
+void test_world_logic_submission_publishes_complete_visibility() {
+  for (bool visible : {false, true}) {
+    auto game = std::make_unique<Game>();
+    prepareWorldSubmission(*game);
+    const auto recipe = worldRecipe(visible);
+    const auto plan =
+        spyro::world_scene_submitter::prepare(&game->core, game->rq, kWorldProducer, recipe);
+    CHECK(plan.status == (visible ? spyro::world_scene_submitter::Status::Ready
+                                  : spyro::world_scene_submitter::Status::ValidEmpty));
+    spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan);
+    for (uint32_t i = 0; i < recipe.broadVisible.size(); ++i) {
+      CHECK_EQ(game->core.mem_r8(kBroadVisibility + i), recipe.broadVisible[i]);
+    }
+    CHECK_EQ(game->rq.n, visible ? 1 : 0);
+    if (game->rq.n == 1) {
+      const auto &item = game->rq.items[0];
+      CHECK_EQ(item.painter_object, kWorldProducer);
+      CHECK_EQ(item.painter_replay.key.ot_bin, 100u);
+      CHECK_EQ(item.xsf[0], 200.25f);
+      CHECK_EQ(item.ysf[0], 100.5f);
+      CHECK_EQ(item.rs[0], 0x33u);
+    }
+  }
+}
+
+void test_refused_world_submission_preserves_visibility_and_queue() {
+  auto game = std::make_unique<Game>();
+  prepareWorldSubmission(*game);
+  auto recipe = worldRecipe(true);
+  recipe.faces.front().vertexCount = 4;
+  const auto plan =
+      spyro::world_scene_submitter::prepare(&game->core, game->rq, kWorldProducer, recipe);
+  CHECK(plan.status == spyro::world_scene_submitter::Status::InvalidOrder);
+  const std::vector<uint8_t> before(std::begin(game->core.ram), std::end(game->core.ram));
+  spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan);
+  CHECK(std::equal(before.begin(), before.end(), std::begin(game->core.ram)));
+  CHECK_EQ(game->rq.n, 0);
+  CHECK(!spyro::world_scene_submitter::emit(&game->core, game->rq, kWorldProducer, recipe, plan));
+  CHECK(std::equal(before.begin(), before.end(), std::begin(game->core.ram)));
+  CHECK_EQ(game->rq.n, 0);
+}
+
+void test_world_presentation_emits_without_guest_writes() {
+  for (bool visible : {false, true}) {
+    auto game = std::make_unique<Game>();
+    prepareWorldSubmission(*game);
+    const auto recipe = worldRecipe(visible);
+    const auto plan =
+        spyro::world_scene_submitter::prepare(&game->core, game->rq, kWorldProducer, recipe);
+    const std::vector<uint8_t> ramBefore(std::begin(game->core.ram), std::end(game->core.ram));
+    const std::vector<uint8_t> scratchBefore(std::begin(game->core.scratch),
+                                             std::end(game->core.scratch));
+    CHECK(spyro::world_scene_submitter::emit(&game->core, game->rq, kWorldProducer, recipe, plan));
+    CHECK(std::equal(ramBefore.begin(), ramBefore.end(), std::begin(game->core.ram)));
+    CHECK(std::equal(scratchBefore.begin(), scratchBefore.end(), std::begin(game->core.scratch)));
+    CHECK_EQ(game->rq.n, visible ? 1 : 0);
+    if (game->rq.n == 1) {
+      const RqItem display = game->rq.items[0];
+      game->rq.reset();
+      spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan);
+      CHECK_EQ(game->rq.n, 1);
+      const auto &endpoint = game->rq.items[0];
+      CHECK_EQ(display.painter_object, endpoint.painter_object);
+      CHECK_EQ(display.painter_replay.key.ot_bin, endpoint.painter_replay.key.ot_bin);
+      CHECK(std::equal(std::begin(display.xsf), std::end(display.xsf), std::begin(endpoint.xsf)));
+      CHECK(std::equal(std::begin(display.ysf), std::end(display.ysf), std::begin(endpoint.ysf)));
+      CHECK(std::equal(std::begin(display.rs), std::end(display.rs), std::begin(endpoint.rs)));
+    }
+  }
+}
+
 } // namespace
 
 int main() {
@@ -117,5 +228,8 @@ int main() {
   RUN(refused_actor_submission_preserves_shadow_state);
   RUN(owned_terrain_vertices_submit);
   RUN(external_terrain_vertices_refuse_independently_of_scratch);
+  RUN(world_logic_submission_publishes_complete_visibility);
+  RUN(refused_world_submission_preserves_visibility_and_queue);
+  RUN(world_presentation_emits_without_guest_writes);
   return pt_summary();
 }

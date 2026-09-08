@@ -1,9 +1,9 @@
 #pragma once
 
 #include "native_projection.h"
-#include "world_chunk_codec.h"
 #include "world_recipe.h"
 #include "world_scene_prepare.h"
+#include "world_source.h"
 
 #include <array>
 #include <cstdint>
@@ -42,7 +42,7 @@ using Audit = std::vector<AuditEntry>;
 // by phase 1. The caller supplies the current projection and exclusive right
 // clip boundary, so this module has no Core, GPU, packet-pool, ordering-table,
 // scratchpad, or ambient GTE dependency.
-bool append(const world_chunk_codec::RamView &ram,
+bool append(const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
             const psxport::native_projection::ProjectionParams &projection,
             int clipRight,

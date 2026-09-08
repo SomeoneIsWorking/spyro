@@ -19,9 +19,6 @@ using spyro::world_recipe::Origin;
 using spyro::world_recipe::Recipe;
 using spyro::world_recipe::Vertex;
 
-constexpr uint32_t kEnvironment = 0x800785A8u;
-constexpr uint32_t kCamera = 0x80076DD0u;
-constexpr uint32_t kSkipLow = 0x8007591Cu;
 constexpr size_t kFaceLimit = 16384;
 
 uint8_t clipCode(int16_t sx, int16_t sy, int right) {
@@ -178,31 +175,31 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
 
 } // namespace
 
-bool append(const world_chunk_codec::RamView &ram,
+bool append(const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
             const ProjectionParams &projection,
             int clipRight,
             uint32_t farLimit,
             Recipe &out,
             const char *&why) {
-  if (ram.r32(kSkipLow)) {
+  if (input.selection.skipLow) {
     return true;
   }
 
-  const FixedAffine cameraMatrix = world_projection_math::decodeMatrix(ram, kCamera);
-  const int32_t cameraX = (int32_t)ram.r32(kCamera + 0x28u) >> 4;
-  const int32_t cameraY = (int32_t)ram.r32(kCamera + 0x2cu) >> 4;
-  const int32_t cameraZ = (int32_t)ram.r32(kCamera + 0x30u) >> 4;
-  const uint32_t lodBase = (ram.r32(kEnvironment + 0x24u) >> 7) - 32u;
+  const FixedAffine cameraMatrix = input.selection.camera.projectionMatrix;
+  const int32_t cameraX = input.selection.camera.position[0] >> 4;
+  const int32_t cameraY = input.selection.camera.position[1] >> 4;
+  const int32_t cameraZ = input.selection.camera.position[2] >> 4;
+  const uint32_t lodBase = (input.selection.lodDistance >> 7) - 32u;
   uint32_t ordinal = 0;
   std::vector<Vertex> vertices;
   for (const world_scene_prepare::TaggedSector &selected : prepared.low) {
-    world_chunk_codec::LowChunk chunk{};
-    if (world_chunk_codec::decodeLow(ram, selected.address, chunk) !=
-        world_chunk_codec::Status::Ok) {
+    const auto &sector = input.sectors[selected.index];
+    if (!sector || sector->lowStatus != world_chunk_codec::Status::Ok) {
       why = "low_chunk_decode";
       return false;
     }
+    const auto &chunk = sector->low;
     if (!projectVertices(chunk,
                          cameraMatrix,
                          projection,

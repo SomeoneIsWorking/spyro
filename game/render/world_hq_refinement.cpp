@@ -14,19 +14,17 @@ namespace spyro::world_hq_refinement {
 using psxport::native_projection::FixedAffine;
 using psxport::native_projection::NativeProjectedVertex;
 using psxport::native_projection::ProjectionParams;
-using spyro::world_chunk_codec::RamView;
 using spyro::world_recipe::Face;
 using spyro::world_recipe::Family;
 using spyro::world_recipe::Origin;
 using spyro::world_recipe::Recipe;
 using spyro::world_recipe::Vertex;
+using spyro::world_source::Materials;
 using HighParent = Parent;
 using HighWork = Work;
 using Vec3s = Position;
 
 namespace {
-constexpr uint32_t kEnvironment = 0x800785a8u;
-constexpr uint32_t kCamera = 0x80076dd0u;
 constexpr size_t kFaceLimit = 16384;
 
 uint8_t highClipCode(int16_t sx, int16_t sy, uint16_t depth, uint8_t tags, int clipRight) {
@@ -59,8 +57,8 @@ uint8_t highClipCode(int16_t sx, int16_t sy, uint16_t depth, uint8_t tags, int c
   return clip;
 }
 
-bool mapped(const RamView &ram, uint32_t address, uint32_t size) {
-  return ram.contains(address, size);
+bool mapped(const Materials &materials, uint32_t address, uint32_t size) {
+  return materials.contains(address, size);
 }
 
 uint32_t averageRgb(uint32_t left, uint32_t right) {
@@ -312,41 +310,41 @@ bool makeChild(const HighParent &parent,
   return true;
 }
 
-std::array<uint8_t, 3> edgeIndices(const RamView &ram, uint32_t descriptor) {
-  const uint32_t w0 = ram.r32(descriptor);
-  const uint32_t w1 = ram.r32(descriptor + 4u);
+std::array<uint8_t, 3> edgeIndices(const Materials &materials, uint32_t descriptor) {
+  const uint32_t w0 = materials.r32(descriptor);
+  const uint32_t w1 = materials.r32(descriptor + 4u);
   return {(uint8_t)((uint16_t)(w0 >> 16) / 16u),
           (uint8_t)((uint16_t)w0 / 16u),
           (uint8_t)((uint16_t)(w1 >> 16) / 16u)};
 }
 
 world_material_codec::DecodedTile
-edgeTile(const RamView &ram, uint32_t descriptor, uint32_t material) {
-  const uint32_t w1 = ram.r32(descriptor + 4u);
-  const uint32_t w2 = ram.r32(descriptor + 8u);
-  return packedTile({ram.r32(material) + (uint16_t)w1,
-                     ram.r32(material + 4u) + (uint32_t)(int32_t)(int16_t)(w2 >> 16),
-                     ram.r32(material) + (uint32_t)(int32_t)(int16_t)w2,
+edgeTile(const Materials &materials, uint32_t descriptor, uint32_t material) {
+  const uint32_t w1 = materials.r32(descriptor + 4u);
+  const uint32_t w2 = materials.r32(descriptor + 8u);
+  return packedTile({materials.r32(material) + (uint16_t)w1,
+                     materials.r32(material + 4u) + (uint32_t)(int32_t)(int16_t)(w2 >> 16),
+                     materials.r32(material) + (uint32_t)(int32_t)(int16_t)w2,
                      0},
                     3);
 }
 
-bool appendTransition(const RamView &ram,
+bool appendTransition(const Materials &materials,
                       const HighParent &parent,
                       std::span<const HighVertex> lattice,
                       uint32_t descriptor,
                       uint32_t material,
                       Recipe &out,
                       const char *&why) {
-  if (!mapped(ram, descriptor, 12u) || !mapped(ram, material, 8u)) {
+  if (!mapped(materials, descriptor, 12u) || !mapped(materials, material, 8u)) {
     why = "transition_table_bounds";
     return false;
   }
   Face face{};
   if (!makeChild(parent,
                  lattice,
-                 edgeIndices(ram, descriptor),
-                 edgeTile(ram, descriptor, material),
+                 edgeIndices(materials, descriptor),
+                 edgeTile(materials, descriptor, material),
                  Origin::EdgeFiller,
                  face)) {
     why = "transition_child";
@@ -355,22 +353,22 @@ bool appendTransition(const RamView &ram,
   return !face.vertexCount || appendFace(out, face, why);
 }
 
-bool refinedQuadTile(const RamView &ram,
+bool refinedQuadTile(const Materials &materials,
                      uint32_t pair,
                      uint8_t extent,
                      world_material_codec::DecodedTile &out) {
-  uint32_t first = ram.r32(pair);
-  uint32_t second = ram.r32(pair + 4u);
+  uint32_t first = materials.r32(pair);
+  uint32_t second = materials.r32(pair + 4u);
   uint32_t third = first + ((uint32_t)extent << 8);
   uint32_t fourth = third + extent;
   const uint32_t attribute = second >> 25;
   if (attribute) {
     const uint32_t adjustment = 0x8006d058u + attribute;
-    if (!mapped(ram, adjustment, 8u)) {
+    if (!mapped(materials, adjustment, 8u)) {
       return false;
     }
-    const uint32_t a = ram.r32(adjustment);
-    const uint32_t b = ram.r32(adjustment + 4u);
+    const uint32_t a = materials.r32(adjustment);
+    const uint32_t b = materials.r32(adjustment + 4u);
     third = first + (uint16_t)b;
     fourth = first + (uint16_t)(b >> 16);
     first += (uint16_t)a;
@@ -381,14 +379,14 @@ bool refinedQuadTile(const RamView &ram,
 }
 
 world_material_codec::DecodedTile
-triangleTile(const RamView &ram, uint32_t descriptor, uint8_t orientation, uint32_t pair) {
-  const uint32_t first = ram.r32(pair);
-  const uint32_t second = ram.r32(pair + 4u);
+triangleTile(const Materials &materials, uint32_t descriptor, uint8_t orientation, uint32_t pair) {
+  const uint32_t first = materials.r32(pair);
+  const uint32_t second = materials.r32(pair + 4u);
   const uint32_t rotation = ((uint32_t)orientation + descriptor) & 3u;
   const uint32_t attribute = (second >> 25) & 0x78u;
   const uint32_t deltaAddress = 0x8006d3c8u + (rotation << 7) + attribute;
-  const uint32_t delta = ram.r32(deltaAddress);
-  const int16_t delta2 = ram.r16(deltaAddress + 4u);
+  const uint32_t delta = materials.r32(deltaAddress);
+  const int16_t delta2 = materials.r16(deltaAddress + 4u);
   return packedTile({first + (uint16_t)delta,
                      second + (uint32_t)(int32_t)(int16_t)(delta >> 16),
                      first + (uint32_t)(int32_t)delta2,
@@ -421,16 +419,16 @@ void correctCenter(std::array<HighVertex, 9> &vertices) {
   center.sy = (int16_t)(((int32_t)self * center.sy + (int32_t)side * diagonalY) >> 8);
 }
 
-bool appendMedium(const RamView &ram,
+bool appendMedium(const Materials &materials,
+                  const psxport::native_projection::FixedAffine &cameraMatrix,
                   const ProjectionParams &projection,
                   int clipRight,
                   const HighWork &work,
                   Recipe &out,
                   const char *&why) {
   static constexpr std::array<uint8_t, 4> kQuadTopLeft = {0, 1, 3, 4};
-  const FixedAffine cameraMatrix = world_projection_math::decodeMatrix(ram, kCamera);
-  const uint32_t textureCount = ram.r32(kEnvironment + 0x20u);
-  const uint32_t hqTextures = ram.r32(kEnvironment + 0x1cu);
+  const uint32_t textureCount = materials.count();
+  const uint32_t hqTextures = materials.highBase();
   for (const HighParent &parent : work.medium) {
     const auto key = world_material_codec::classify((int8_t)parent.materialWord,
                                                     (parent.materialWord >> 8) & 3u);
@@ -439,7 +437,7 @@ bool appendMedium(const RamView &ram,
       return false;
     }
     const uint32_t material = hqTextures + (uint32_t)key.index * 0xa8u;
-    if (!mapped(ram, material, 0xa8u)) {
+    if (!mapped(materials, material, 0xa8u)) {
       why = "hq_texture_bounds";
       return false;
     }
@@ -470,7 +468,8 @@ bool appendMedium(const RamView &ram,
           return false;
         }
         if ((status & 1u) &&
-            !appendTransition(ram, parent, lattice, 0x8006cf98u + edge * 12u, material, out, why)) {
+            !appendTransition(
+                materials, parent, lattice, 0x8006cf98u + edge * 12u, material, out, why)) {
           return false;
         }
       }
@@ -480,7 +479,7 @@ bool appendMedium(const RamView &ram,
             p, (uint8_t)(p + 1), (uint8_t)(p + 3), (uint8_t)(p + 4)};
         const uint32_t textureSource = material + 8u + child * 8u;
         world_material_codec::DecodedTile tile{};
-        if (!refinedQuadTile(ram, textureSource, 0x1fu, tile)) {
+        if (!refinedQuadTile(materials, textureSource, 0x1fu, tile)) {
           why = "medium_quad_texture";
           return false;
         }
@@ -512,7 +511,7 @@ bool appendMedium(const RamView &ram,
         why = "medium_edge_status";
         return false;
       }
-      if ((status & 1u) && !appendTransition(ram,
+      if ((status & 1u) && !appendTransition(materials,
                                              parent,
                                              lattice,
                                              0x8006d138u + orientation * 0x24u + edge * 12u,
@@ -523,11 +522,13 @@ bool appendMedium(const RamView &ram,
       }
     }
     for (uint32_t child = 0; child < 4; ++child) {
-      const uint32_t descriptor = ram.r32(0x8006d0e8u + child * 4u);
+      const uint32_t descriptor = materials.r32(0x8006d0e8u + child * 4u);
       const uint32_t selector = (descriptor & 0x0cu) + orientation;
-      const int8_t pairOffset = (int8_t)ram.r8(0x8006d378u + selector);
-      const uint32_t pair = material + 8u + (int32_t)pairOffset;
-      if (!mapped(ram, pair, 8u)) {
+      const int8_t pairOffset =
+          (int8_t)materials.r8(world_material_codec::kMediumTrianglePairs.selectors + selector);
+      const uint32_t pair =
+          world_material_codec::kMediumTrianglePairs.address(material, pairOffset);
+      if (!mapped(materials, pair, 8u)) {
         why = "medium_triangle_texture";
         return false;
       }
@@ -535,7 +536,7 @@ bool appendMedium(const RamView &ram,
       if (!makeChild(parent,
                      lattice,
                      topology(descriptor),
-                     triangleTile(ram, descriptor, orientation, pair),
+                     triangleTile(materials, descriptor, orientation, pair),
                      Origin::Medium,
                      face)) {
         why = "medium_triangle_child";
@@ -685,7 +686,7 @@ bool appendNearFace(Recipe &out, Face face, bool oversized, int clipRight, const
   return true;
 }
 
-bool appendNearTransitions(const RamView &ram,
+bool appendNearTransitions(const Materials &materials,
                            const HighParent &parent,
                            std::span<const HighVertex> lattice,
                            const HighWork &work,
@@ -707,7 +708,7 @@ bool appendNearTransitions(const RamView &ram,
     const uint32_t count = 2u + (status & 1u);
     for (uint32_t child = 0; child < count; ++child) {
       if (!appendTransition(
-              ram, parent, lattice, table + edge * 0x24u + child * 12u, material, out, why)) {
+              materials, parent, lattice, table + edge * 0x24u + child * 12u, material, out, why)) {
         return false;
       }
     }
@@ -715,7 +716,8 @@ bool appendNearTransitions(const RamView &ram,
   return true;
 }
 
-bool appendNearQuads(const RamView &ram,
+bool appendNearQuads(const Materials &materials,
+                     const psxport::native_projection::FixedAffine &cameraMatrix,
                      const ProjectionParams &projection,
                      int clipRight,
                      const HighWork &work,
@@ -723,9 +725,8 @@ bool appendNearQuads(const RamView &ram,
                      const char *&why) {
   static constexpr std::array<uint8_t, 16> kTopLeft = {
       0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17, 18};
-  const FixedAffine cameraMatrix = world_projection_math::decodeMatrix(ram, kCamera);
-  const uint32_t textureCount = ram.r32(kEnvironment + 0x20u);
-  const uint32_t hqTextures = ram.r32(kEnvironment + 0x1cu);
+  const uint32_t textureCount = materials.count();
+  const uint32_t hqTextures = materials.highBase();
   for (const HighParent &parent : work.near) {
     if (parent.count != 4) {
       continue;
@@ -737,7 +738,7 @@ bool appendNearQuads(const RamView &ram,
       return false;
     }
     const uint32_t material = hqTextures + (uint32_t)key.index * 0xa8u;
-    if (!mapped(ram, material, 0xa8u)) {
+    if (!mapped(materials, material, 0xa8u)) {
       why = "hq_texture_bounds";
       return false;
     }
@@ -745,7 +746,7 @@ bool appendNearQuads(const RamView &ram,
     buildNearQuadLattice(parent, lattice);
     projectLattice(cameraMatrix, projection, parent.tags, clipRight, lattice, true);
     correctNearQuadInterior(lattice);
-    if (!appendNearTransitions(ram, parent, lattice, work, 0x8006cfc8u, material, out, why)) {
+    if (!appendNearTransitions(materials, parent, lattice, work, 0x8006cfc8u, material, out, why)) {
       return false;
     }
     for (uint32_t child = 0; child < kTopLeft.size(); ++child) {
@@ -754,7 +755,7 @@ bool appendNearQuads(const RamView &ram,
           p, (uint8_t)(p + 1), (uint8_t)(p + 5), (uint8_t)(p + 6)};
       const uint32_t textureSource = material + 0x28u + child * 8u;
       world_material_codec::DecodedTile tile{};
-      if (!refinedQuadTile(ram, textureSource, 0x0fu, tile)) {
+      if (!refinedQuadTile(materials, textureSource, 0x0fu, tile)) {
         why = "near_quad_texture";
         return false;
       }
@@ -776,15 +777,15 @@ bool appendNearQuads(const RamView &ram,
   return true;
 }
 
-bool appendNearTriangles(const RamView &ram,
+bool appendNearTriangles(const Materials &materials,
+                         const psxport::native_projection::FixedAffine &cameraMatrix,
                          const ProjectionParams &projection,
                          int clipRight,
                          const HighWork &work,
                          Recipe &out,
                          const char *&why) {
-  const FixedAffine cameraMatrix = world_projection_math::decodeMatrix(ram, kCamera);
-  const uint32_t textureCount = ram.r32(kEnvironment + 0x20u);
-  const uint32_t hqTextures = ram.r32(kEnvironment + 0x1cu);
+  const uint32_t textureCount = materials.count();
+  const uint32_t hqTextures = materials.highBase();
   for (const HighParent &parent : work.near) {
     if (parent.count != 3) {
       continue;
@@ -796,7 +797,7 @@ bool appendNearTriangles(const RamView &ram,
       return false;
     }
     const uint32_t material = hqTextures + (uint32_t)key.index * 0xa8u;
-    if (!mapped(ram, material, 0xa8u)) {
+    if (!mapped(materials, material, 0xa8u)) {
       why = "hq_texture_bounds";
       return false;
     }
@@ -804,16 +805,23 @@ bool appendNearTriangles(const RamView &ram,
     buildNearTriangleLattice(parent, lattice);
     projectLattice(cameraMatrix, projection, parent.tags, clipRight, lattice, true);
     const uint8_t orientation = (parent.materialWord >> 8) & 3u;
-    if (!appendNearTransitions(
-            ram, parent, lattice, work, 0x8006d1c8u + orientation * 0x6cu, material, out, why)) {
+    if (!appendNearTransitions(materials,
+                               parent,
+                               lattice,
+                               work,
+                               0x8006d1c8u + orientation * 0x6cu,
+                               material,
+                               out,
+                               why)) {
       return false;
     }
     for (uint32_t child = 0; child < 16; ++child) {
-      const uint32_t descriptor = ram.r32(0x8006d0f8u + child * 4u);
+      const uint32_t descriptor = materials.r32(0x8006d0f8u + child * 4u);
       const uint32_t selector = (descriptor & 0x3cu) + orientation;
-      const int8_t pairOffset = (int8_t)ram.r8(0x8006d388u + selector);
-      const uint32_t pair = material + 0x28u + (int32_t)pairOffset;
-      if (!mapped(ram, pair, 8u)) {
+      const int8_t pairOffset =
+          (int8_t)materials.r8(world_material_codec::kNearTrianglePairs.selectors + selector);
+      const uint32_t pair = world_material_codec::kNearTrianglePairs.address(material, pairOffset);
+      if (!mapped(materials, pair, 8u)) {
         why = "near_triangle_texture";
         return false;
       }
@@ -821,7 +829,7 @@ bool appendNearTriangles(const RamView &ram,
       if (!makeChild(parent,
                      lattice,
                      topology(descriptor),
-                     triangleTile(ram, descriptor, orientation, pair),
+                     triangleTile(materials, descriptor, orientation, pair),
                      Origin::Near,
                      face)) {
         why = "near_triangle_child";
@@ -841,15 +849,16 @@ bool appendNearTriangles(const RamView &ram,
 
 } // namespace
 
-bool append(const RamView &ram,
+bool append(const Materials &materials,
+            const psxport::native_projection::FixedAffine &cameraMatrix,
             const ProjectionParams &projection,
             int clipRight,
             const Work &work,
             Recipe &out,
             const char *&why) {
-  if (!appendMedium(ram, projection, clipRight, work, out, why) ||
-      !appendNearQuads(ram, projection, clipRight, work, out, why) ||
-      !appendNearTriangles(ram, projection, clipRight, work, out, why)) {
+  if (!appendMedium(materials, cameraMatrix, projection, clipRight, work, out, why) ||
+      !appendNearQuads(materials, cameraMatrix, projection, clipRight, work, out, why) ||
+      !appendNearTriangles(materials, cameraMatrix, projection, clipRight, work, out, why)) {
     return false;
   }
   return true;

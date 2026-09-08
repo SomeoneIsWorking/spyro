@@ -1,9 +1,9 @@
 #pragma once
 
 #include "native_projection.h"
-#include "world_chunk_codec.h"
 #include "world_material_codec.h"
 #include "world_recipe.h"
+#include "world_source.h"
 
 #include <array>
 #include <cstdint>
@@ -63,7 +63,8 @@ void applyTile(world_recipe::Face &face, const world_material_codec::DecodedTile
 // these colors by repeatedly midpointing the position lattice.
 std::array<uint32_t, 25> nearQuadColorLattice(const std::array<uint32_t, 4> &corners);
 
-bool append(const world_chunk_codec::RamView &ram,
+bool append(const world_source::Materials &materials,
+            const psxport::native_projection::FixedAffine &cameraMatrix,
             const psxport::native_projection::ProjectionParams &projection,
             int clipRight,
             const Work &work,

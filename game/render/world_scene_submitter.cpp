@@ -35,6 +35,13 @@ bool validFaces(const world_recipe::Recipe &recipe, std::vector<size_t> &paintOr
   return true;
 }
 
+bool validSubmission(const Core *core, const world_recipe::Recipe &recipe, const Plan &plan) {
+  return core != nullptr && core->game != nullptr &&
+         ((plan.status == Status::Ready && recipe.status == world_recipe::Status::Ready &&
+           plan.paintOrder.size() == recipe.faces.size()) ||
+          (plan.status == Status::ValidEmpty && recipe.status == world_recipe::Status::ValidEmpty));
+}
+
 } // namespace
 
 Plan prepare(const Core *core,
@@ -83,20 +90,13 @@ Plan prepare(const Core *core,
   return plan;
 }
 
-void submit(Core *core,
-            RenderQueue &queue,
-            uint32_t producerKey,
-            const world_recipe::Recipe &recipe,
-            const Plan &plan) {
-  if ((plan.status != Status::Ready && plan.status != Status::ValidEmpty) || core == nullptr ||
-      core->game == nullptr ||
-      (plan.status == Status::Ready && plan.paintOrder.size() != recipe.faces.size()) ||
-      (plan.status == Status::ValidEmpty && recipe.status != world_recipe::Status::ValidEmpty)) {
-    return;
-  }
-  for (uint32_t i = 0; i < recipe.broadVisible.size(); ++i) {
-    core->mem_w8(kBroadVisibility + i, recipe.broadVisible[i]);
-  }
+namespace {
+
+void emitPrepared(Core *core,
+                  RenderQueue &queue,
+                  uint32_t producerKey,
+                  const world_recipe::Recipe &recipe,
+                  const Plan &plan) {
   if (plan.status == Status::ValidEmpty) {
     return;
   }
@@ -165,6 +165,34 @@ void submit(Core *core,
                       textured ? (face.material.tpage >> 9) & 1u : gpu.s_tp_dither,
                       scene_painter_order::world(face.otBin, face.paintGroup, face.paintSuborder));
   }
+}
+
+} // namespace
+
+void submit(Core *core,
+            RenderQueue &queue,
+            uint32_t producerKey,
+            const world_recipe::Recipe &recipe,
+            const Plan &plan) {
+  if (!validSubmission(core, recipe, plan)) {
+    return;
+  }
+  for (uint32_t i = 0; i < recipe.broadVisible.size(); ++i) {
+    core->mem_w8(kBroadVisibility + i, recipe.broadVisible[i]);
+  }
+  emitPrepared(core, queue, producerKey, recipe, plan);
+}
+
+bool emit(Core *core,
+          RenderQueue &queue,
+          uint32_t producerKey,
+          const world_recipe::Recipe &recipe,
+          const Plan &plan) {
+  if (!validSubmission(core, recipe, plan)) {
+    return false;
+  }
+  emitPrepared(core, queue, producerKey, recipe, plan);
+  return true;
 }
 
 } // namespace spyro::world_scene_submitter

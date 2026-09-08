@@ -7,6 +7,19 @@
 
 namespace spyro::world_material_codec {
 
+// Authored signed selectors locate triangle texture pairs within the HQ refinement families.
+// Capture and refinement use the same address rule, including offsets outside a nominal record.
+struct TrianglePairs {
+  uint32_t selectors;
+  uint32_t count;
+  uint32_t baseOffset;
+  constexpr uint32_t address(uint32_t material, int8_t offset) const {
+    return material + baseOffset + (uint32_t)(int32_t)offset;
+  }
+};
+inline constexpr TrianglePairs kMediumTrianglePairs{0x8006d378u, 16u, 8u};
+inline constexpr TrianglePairs kNearTrianglePairs{0x8006d388u, 64u, 0x28u};
+
 struct Tile {
   uint32_t first = 0;
   uint32_t second = 0;

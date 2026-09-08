@@ -3,6 +3,7 @@
 #include "core.h"
 #include "game.h"
 #include "lightrec_executor.h"
+#include "paired_actor_temporal_evidence.h"
 #include "spyro_context.h"
 
 #include <lucent/log.h>
@@ -30,5 +31,6 @@ void reportRuntimeRun(Core &core, std::uint64_t completedSteps) {
                counts.invalidations,
                counts.faults);
   core.lightrecExecutor().reportFallbackTelemetry("run-complete");
+  spyro_paired_actor_temporal_finish(&core);
 }
 } // namespace spyro

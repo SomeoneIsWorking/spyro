@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "gpu_vk.h"
+#include "wide_clip_plan.h"
 #include "world_animation.h"
 #include "world_chunk_codec.h"
 #include "world_hq_recipe.h"
@@ -39,6 +40,10 @@ Status refusalStatus(std::string_view why) {
   return Status::InvalidChunk;
 }
 
+int renderWidth(Core *core) {
+  return gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : wide::kNativeClipWidth;
+}
+
 ProjectionParams projection(Core *core, int clipRight) {
   ProjectionParams out{};
   out.ofx = (int32_t)(core->rsub.projParams.geomOfx() * 65536.0f);
@@ -54,15 +59,16 @@ ProjectionParams projection(Core *core, int clipRight) {
 
 AnimationResult animate(Core *core, int32_t selection) {
   AnimationResult out{};
-  if (core == nullptr) {
-    out.refusal = "no_core";
+  if (core == nullptr || core->game == nullptr) {
+    out.refusal = core ? "no_game" : "no_core";
     return out;
   }
+  const int clipRight = renderWidth(core);
   const world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   world_scene_prepare::Prepared prepared{};
   world_animation::Plan plan{};
   const char *why = "none";
-  if (!world_scene_prepare::prepare(ram, selection, prepared, why, &plan)) {
+  if (!world_scene_prepare::prepare(ram, selection, clipRight, prepared, why, &plan)) {
     out.refusal = why;
     return out;
   }
@@ -78,7 +84,7 @@ AnimationResult animate(Core *core, int32_t selection) {
   // a real defect in the decode, and saying so beats a silent partial frame.
   world_scene_prepare::Prepared verified{};
   const char *residual = "none";
-  if (!world_scene_prepare::prepare(ram, selection, verified, residual)) {
+  if (!world_scene_prepare::prepare(ram, selection, clipRight, verified, residual)) {
     out.refusal = residual;
     return out;
   }
@@ -98,18 +104,15 @@ Recipe build(Core *core,
              world_hq_recipe::Audit *audit,
              std::optional<uint32_t> cullingDistance) {
   Recipe out{};
-  if (!core || !core->rsub.projParams.geomValid()) {
+  if (!core || !core->game || !core->rsub.projParams.geomValid()) {
     return refuse(std::move(out), Status::InvalidSelection, "projection_unset");
   }
-  const int clipRight = gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
-  if (clipRight <= 0 || clipRight > INT16_MAX) {
-    return refuse(std::move(out), Status::InvalidSelection, "clip_width");
-  }
+  const int clipRight = renderWidth(core);
 
   const world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   world_scene_prepare::Prepared prepared{};
   const char *why = "none";
-  if (!world_scene_prepare::prepare(ram, selection, prepared, why)) {
+  if (!world_scene_prepare::prepare(ram, selection, clipRight, prepared, why)) {
     const Status status = why == std::string_view("active_animation") ? Status::ActiveAnimation
                                                                       : Status::InvalidSelection;
     return refuse(std::move(out), status, why);

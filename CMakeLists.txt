@@ -74,6 +74,7 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/actor_draw_recipe.cpp
   game/render/actor_face_submitter.cpp
   game/render/actor_global_order.cpp
+  game/render/actor_ot_coalescer.cpp
   game/render/actor_model_codec.cpp
   game/render/actor_prefix_builder.cpp
   game/render/actor_recipe_capture.cpp
@@ -120,7 +121,9 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/painter_submission_preflight.cpp
   game/render/paired_actor_decode.cpp
   game/render/paired_actor_pose.cpp
+  game/render/paired_actor_depth.cpp
   game/render/paired_actor_temporal_evidence.cpp
+  game/render/temporal_scene.cpp
   game/render/presentation_owner.cpp
   game/render/render_frame.cpp
   game/render/scene.cpp
@@ -182,7 +185,7 @@ if(BUILD_TESTING)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)
-  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe)
+  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe temporal_scene world_scene_prepare field_shadow_recipe actor_global_order)
     add_executable(test_${test_name} tests/test_${test_name}.cpp)
     target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
     target_link_libraries(test_${test_name} PRIVATE spyro_runtime)

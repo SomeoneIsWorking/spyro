@@ -1,5 +1,6 @@
 #include "world_scene_prepare.h"
 
+#include "wide_clip_plan.h"
 #include "world_projection_math.h"
 
 #include <cstdint>
@@ -19,21 +20,30 @@ bool mapped(const RamView &ram, uint32_t address, uint32_t size) {
   return ram.contains(address, size);
 }
 
-bool broadCull(int32_t x, int32_t y, int32_t z, int32_t radius) {
-  const int32_t hx = (radius >> 1) + (radius >> 2) + (radius >> 5);
-  const int32_t xz = (radius >> 1) + (radius >> 4) + (radius >> 5);
-  const int32_t hy = radius - (radius >> 3);
-  const int32_t yz = (radius >> 1) - (radius >> 4);
-  return z + radius > 0 && 4 * (std::abs(x) - hx) - 3 * (z + xz) < 0 &&
-         32 * (std::abs(y) - hy) - 17 * (z + yz) < 0;
+bool horizontalInside(int32_t extent, int32_t depth, int32_t width) {
+  // The authored native plane is 4*x < 3*z. Projection retains focal length and
+  // expands its centered viewport by width/512, so scale only the depth term.
+  return 4ll * wide::kNativeClipWidth * extent < 3ll * width * depth;
 }
 
-bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius) {
+bool broadCull(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width) {
   const int32_t hx = (radius >> 1) + (radius >> 2) + (radius >> 5);
   const int32_t xz = (radius >> 1) + (radius >> 4) + (radius >> 5);
   const int32_t hy = radius - (radius >> 3);
   const int32_t yz = (radius >> 1) - (radius >> 4);
-  return z - radius > 0 && 4 * (std::abs(x) + hx) - 3 * (z - xz) < 0 &&
+  // Retain authored near-eye margin acceptance even when z+xz is negative: rotating
+  // that approximate bound outward must not remove sectors the native view admitted.
+  const bool horizontal = horizontalInside(std::abs(x) - hx, z + xz, wide::kNativeClipWidth) ||
+                          horizontalInside(std::abs(x) - hx, z + xz, width);
+  return z + radius > 0 && horizontal && 32 * (std::abs(y) - hy) - 17 * (z + yz) < 0;
+}
+
+bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width) {
+  const int32_t hx = (radius >> 1) + (radius >> 2) + (radius >> 5);
+  const int32_t xz = (radius >> 1) + (radius >> 4) + (radius >> 5);
+  const int32_t hy = radius - (radius >> 3);
+  const int32_t yz = (radius >> 1) - (radius >> 4);
+  return z - radius > 0 && horizontalInside(std::abs(x) + hx, z - xz, width) &&
          32 * (std::abs(y) + hy) - 17 * (z - yz) < 0;
 }
 
@@ -41,10 +51,15 @@ bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius) {
 
 bool prepare(const RamView &ram,
              int32_t selection,
+             int32_t horizontalWidth,
              Prepared &out,
              const char *&why,
              world_animation::Plan *animation) {
   out = {};
+  if (horizontalWidth < wide::kNativeClipWidth || horizontalWidth > INT16_MAX) {
+    why = "clip_width";
+    return false;
+  }
   if (!mapped(ram, kEnvironment, 44u) || !mapped(ram, kCamera, 52u)) {
     why = "global_bounds";
     return false;
@@ -112,11 +127,11 @@ bool prepare(const RamView &ram,
                                              (int16_t)((int32_t)(uint16_t)(h0 >> 16) - cameraX)});
     const int32_t x = transformed.ir[0], y = transformed.ir[1], z = transformed.ir[2];
     const int32_t radius = h1 & 0x1fffu;
-    if (!broadCull(x, y, z, radius)) {
+    if (!broadCull(x, y, z, radius, horizontalWidth)) {
       continue;
     }
     out.broadVisible[index] = 0xffu;
-    uint8_t tags = whollyInside(x, y, z, radius) ? 0u : 1u;
+    uint8_t tags = whollyInside(x, y, z, radius, horizontalWidth) ? 0u : 1u;
     const uint32_t flags = h1 & 0xe000u;
     const bool low = !(flags & 0x2000u) && ((flags & 0x8000u) || (int32_t)lod < z + radius + 256);
     const bool high = !(flags & 0x4000u) && z - radius < (int32_t)lod;

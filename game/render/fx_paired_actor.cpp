@@ -1,5 +1,7 @@
 // Owns renderer 0x80023AC4's normal arm; its alternate/status-plane arm remains a loud refusal.
 #include "fx_paired_actor.h"
+#include "actor_ot_coalescer.h"
+#include "paired_actor_depth.h"
 
 #include "core.h"
 #include "frame_env.h"
@@ -22,6 +24,7 @@
 #include <cmath>
 #include <cstdint>
 #include <lucent/log.h>
+#include <numeric>
 #include <span>
 #include <vector>
 
@@ -162,7 +165,8 @@ bool frames_compatible(const SpyroPairedFrame &a, const SpyroPairedFrame &b) {
          a.authored_replay == b.authored_replay && a.primitives.size() == b.primitives.size() &&
          a.materials == b.materials && a.override_control == b.override_control &&
          a.transform.ofx == b.transform.ofx && a.transform.ofy == b.transform.ofy &&
-         a.transform.h == b.transform.h && a.transform.depth_origin == b.transform.depth_origin &&
+         a.transform.h == b.transform.h && a.transform.ot_control == b.transform.ot_control &&
+         a.transform.depth_bias == b.transform.depth_bias &&
          a.transform.ot_shift == b.transform.ot_shift &&
          a.gpu.da_x0 - a.gpu.off_x == b.gpu.da_x0 - b.gpu.off_x &&
          a.gpu.da_y0 - a.gpu.off_y == b.gpu.da_y0 - b.gpu.off_y &&
@@ -210,61 +214,64 @@ bool rebuild_recipe_eligible(const SpyroPairedFrame &frame, bool duplicate) {
   return frame.valid && !frame.culled && !duplicate;
 }
 
-SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
-                                                RenderQueue &rq,
-                                                const SpyroPairedFrame &frame,
-                                                const SpyroPairedGpuSnapshot &destination) {
-  bool duplicate = false;
-  const int queued = rq.consumed ? 0 : rq.n;
-  for (int i = 0; i < queued; ++i) {
-    duplicate |= rq.items[i].painter_object == 0x80023AC4u;
+bool project_captured(const SpyroPairedFrame &frame,
+                      std::vector<spyro::paired_actor::ProjectedVertex> &out);
+
+spyro::actor_ot_coalescer::Result
+global_bins(std::span<const spyro::paired_actor::ResolvedFace> faces,
+            bool authoredReplay,
+            uint32_t depthNear,
+            uint32_t control) {
+  if (!authoredReplay) {
+    return {true, {}};
   }
-  if (!rebuild_recipe_eligible(frame, duplicate)) {
-    return SpyroPairedRebuildResult::Refused;
+  std::vector<uint32_t> bins;
+  bins.reserve(faces.size());
+  for (const auto &face : faces) {
+    bins.push_back(face.ot_bin);
   }
-  std::vector<spyro::paired_actor::ProjectedVertex> projected;
-  projected.reserve(frame.pose.size());
-  size_t at = 0;
-  for (uint32_t layer = 0; layer < 3; ++layer) {
-    std::array<uint32_t, 27> cr{};
-    for (uint32_t i = 0; i < 8; ++i) {
-      cr[i] = frame.transform.layer_cr[layer][i];
-    }
-    cr[24] = frame.transform.ofx;
-    cr[25] = frame.transform.ofy;
-    cr[26] = frame.transform.h;
-    for (uint32_t n = 0; n < frame.layer_counts[layer]; ++n, ++at) {
-      if (at >= frame.pose.size()) {
-        return SpyroPairedRebuildResult::Refused;
-      }
-      const auto &v = frame.pose[at];
-      const uint32_t d0 = (uint16_t)v[1] | ((uint32_t)(uint16_t)v[2] << 16);
-      projected.push_back(project_rtps(d0, (uint16_t)v[0], cr));
-    }
-  }
-  if (at != frame.pose.size()) {
-    return SpyroPairedRebuildResult::Refused;
-  }
-  auto resolved =
-      spyro::paired_actor::resolve_normal_faces(frame.primitives,
-                                                projected,
-                                                {frame.materials, frame.override_control},
-                                                frame.transform.depth_origin,
-                                                frame.transform.ot_shift);
-  if (!resolved) {
-    return SpyroPairedRebuildResult::Refused;
-  }
-  const auto &faces = resolved.faces;
+  return spyro::actor_ot_coalescer::map({0u, depthNear, control}, bins);
+}
+
+SpyroPairedRebuildResult emit_faces(Core *c,
+                                    RenderQueue &rq,
+                                    std::span<const spyro::paired_actor::ResolvedFace> faces,
+                                    bool authoredReplay,
+                                    uint32_t depthNear,
+                                    uint32_t control,
+                                    const SpyroPairedGpuSnapshot &destination) {
   if (faces.empty()) {
     return SpyroPairedRebuildResult::NoOutput;
   }
-  if (!preflight_paired(rq, faces.size(), frame.authored_replay)) {
+  if (!preflight_paired(rq, faces.size(), authoredReplay)) {
     return SpyroPairedRebuildResult::Refused;
+  }
+  const auto mapping = global_bins(faces, authoredReplay, depthNear, control);
+  if (!mapping.valid) {
+    return SpyroPairedRebuildResult::Refused;
+  }
+  std::vector<size_t> replay(faces.size());
+  std::iota(replay.begin(), replay.end(), size_t{0});
+  if (authoredReplay) {
+    // The shared OT appends each local bucket's source FIFO. Continuous depth remains useful
+    // for isolated groups, but must not reorder two authored faces inside the same bucket.
+    std::stable_sort(replay.begin(), replay.end(), [&](size_t left, size_t right) {
+      const auto &a = faces[left];
+      const auto &b = faces[right];
+      if (a.ot_bin != b.ot_bin) {
+        return a.ot_bin > b.ot_bin;
+      }
+      if (a.source_ordinal != b.source_ordinal) {
+        return a.source_ordinal < b.source_ordinal;
+      }
+      return a.fragment_ordinal < b.fragment_ordinal;
+    });
   }
   ProducerScope producer(&c->rsub.producerScope, kProducerKey, "pairedactor:normal");
   RenderQueue::PainterObjectScope painter(rq, kProducerKey);
   for (uint32_t faceOrdinal = 0; faceOrdinal < faces.size(); ++faceOrdinal) {
-    const auto &face = faces[faceOrdinal];
+    const size_t faceIndex = replay[faceOrdinal];
+    const auto &face = faces[faceIndex];
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float xsf[4]{}, ysf[4]{};
     unsigned char rs[4]{}, gs[4]{}, bs[4]{};
@@ -321,11 +328,45 @@ SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
                    0.0f,
                    0,
                    0,
-                   frame.authored_replay
-                       ? spyro::scene_painter_order::pairedActor((uint16_t)face.ot_bin, faceOrdinal)
-                       : PainterReplayOrder{});
+                   authoredReplay ? spyro::scene_painter_order::pairedActor(mapping.bins[faceIndex],
+                                                                            faceOrdinal)
+                                  : PainterReplayOrder{});
   }
   return SpyroPairedRebuildResult::Emitted;
+}
+
+SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
+                                                RenderQueue &rq,
+                                                const SpyroPairedFrame &frame,
+                                                const SpyroPairedGpuSnapshot &destination) {
+  bool duplicate = false;
+  const int queued = rq.consumed ? 0 : rq.n;
+  for (int i = 0; i < queued; ++i) {
+    duplicate |= rq.items[i].painter_object == 0x80023AC4u;
+  }
+  if (!rebuild_recipe_eligible(frame, duplicate)) {
+    return SpyroPairedRebuildResult::Refused;
+  }
+  std::vector<spyro::paired_actor::ProjectedVertex> projected;
+  if (!project_captured(frame, projected)) {
+    return SpyroPairedRebuildResult::Refused;
+  }
+  auto resolved =
+      spyro::paired_actor::resolve_normal_faces(frame.primitives,
+                                                projected,
+                                                {frame.materials, frame.override_control},
+                                                frame.transform.depth_origin,
+                                                frame.transform.ot_shift);
+  if (!resolved) {
+    return SpyroPairedRebuildResult::Refused;
+  }
+  return emit_faces(c,
+                    rq,
+                    resolved.faces,
+                    frame.authored_replay,
+                    frame.transform.depth_near,
+                    frame.transform.ot_control,
+                    destination);
 }
 
 bool project_captured(const SpyroPairedFrame &frame,
@@ -421,87 +462,26 @@ SpyroPairedRebuildResult emit_interpolated(
   if (!interpolate_projected(pa, pb, cur.transform, t, pm)) {
     return SpyroPairedRebuildResult::Refused;
   }
-  auto resolved =
-      spyro::paired_actor::resolve_normal_faces_continuous(cur.primitives,
-                                                           pm,
-                                                           {cur.materials, cur.override_control},
-                                                           cur.transform.depth_origin,
-                                                           cur.transform.ot_shift);
+  const auto depth = spyro::paired_actor_depth::interpolate(prev.transform.base_mac[2],
+                                                            cur.transform.base_mac[2],
+                                                            cur.transform.depth_bias,
+                                                            cur.transform.ot_control,
+                                                            t);
+  if (!depth) {
+    return SpyroPairedRebuildResult::Refused;
+  }
+  auto resolved = spyro::paired_actor::resolve_normal_faces_continuous(
+      cur.primitives, pm, {cur.materials, cur.override_control}, depth->origin, depth->shift);
   if (!resolved) {
     return SpyroPairedRebuildResult::Refused;
   }
-  const SpyroPairedFrame &mid = cur;
-  auto &faces = resolved.faces;
-  if (faces.empty()) {
-    return SpyroPairedRebuildResult::NoOutput;
-  }
-  if (!preflight_paired(rq, faces.size(), cur.authored_replay)) {
-    return SpyroPairedRebuildResult::Refused;
-  }
-  ProducerScope producer(&c->rsub.producerScope, kProducerKey, "pairedactor:normal");
-  RenderQueue::PainterObjectScope painter(rq, kProducerKey);
-  for (const auto &face : faces) {
-    int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
-    float xsf[4]{}, ysf[4]{}, depth[4]{};
-    unsigned char rs[4]{}, gs[4]{}, bs[4]{};
-    const uint16_t clut = (uint16_t)(face.packet_attr[0] >> 16),
-                   tpage = (uint16_t)(face.packet_attr[1] >> 16);
-    const uint32_t nv = face.quad ? 4u : 3u;
-    for (uint32_t v = 0; v < nv; ++v) {
-      xs[v] = face.vertex[v].x + mid.gpu.off_x;
-      ys[v] = face.vertex[v].y + mid.gpu.off_y;
-      xsf[v] = face.vertex[v].screen_x + (float)mid.gpu.off_x;
-      ysf[v] = face.vertex[v].screen_y + (float)mid.gpu.off_y;
-      us[v] = face.packet_attr[v] & 255;
-      vs[v] = (face.packet_attr[v] >> 8) & 255;
-      const uint32_t rgb = face.material.rgb[v];
-      rs[v] = rgb;
-      gs[v] = rgb >> 8;
-      bs[v] = rgb >> 16;
-      depth[v] = proj_pz_to_ord((float)face.vertex[v].view_z);
-    }
-    rq.emitOrQueue(c,
-                   1,
-                   RQ_WORLD,
-                   RQ_OM_DEPTH,
-                   (int)nv,
-                   0,
-                   0,
-                   xs,
-                   ys,
-                   xsf,
-                   ysf,
-                   us,
-                   vs,
-                   rs,
-                   gs,
-                   bs,
-                   depth,
-                   (tpage >> 7) & 3,
-                   (tpage & 15) * 64,
-                   ((tpage >> 4) & 1) * 256,
-                   (clut & 63) * 16,
-                   (clut >> 6) & 511,
-                   mid.gpu.tw_mx,
-                   mid.gpu.tw_my,
-                   mid.gpu.tw_ox,
-                   mid.gpu.tw_oy,
-                   mid.gpu.da_x0,
-                   mid.gpu.da_y0,
-                   mid.gpu.da_x1,
-                   mid.gpu.da_y1,
-                   (tpage >> 5) & 3,
-                   nullptr,
-                   -1,
-                   0.0f,
-                   0,
-                   0,
-                   cur.authored_replay
-                       ? spyro::scene_painter_order::pairedActor((uint16_t)face.ot_bin,
-                                                                 (uint32_t)(&face - faces.data()))
-                       : PainterReplayOrder{});
-  }
-  return SpyroPairedRebuildResult::Emitted;
+  return emit_faces(c,
+                    rq,
+                    resolved.faces,
+                    cur.authored_replay,
+                    depth->near,
+                    cur.transform.ot_control,
+                    destination);
 }
 
 bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredReplay) {
@@ -756,6 +736,7 @@ void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
                                     bool state2,
                                     bool reference_leg,
                                     bool fps60_active) {
+  state.temporal_eligible = false;
   if (fps60_active != state.was_fps60_active) {
     state.previous = {};
     state.current = {};
@@ -783,6 +764,7 @@ void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
 
 void spyro_paired_actor_fps60_rotate(Core *c) {
   auto &state = spyro_paired_actor_state(c);
+  state.temporal_eligible = false;
   if (state.current.valid && !state.refusal) {
     state.previous = std::move(state.current);
   } else {
@@ -861,16 +843,28 @@ bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state) {
   if (!interpolate_projected(a, b, state.current.transform, 0.5f, mid)) {
     return false;
   }
+  const auto depth = spyro::paired_actor_depth::interpolate(state.previous.transform.base_mac[2],
+                                                            state.current.transform.base_mac[2],
+                                                            state.current.transform.depth_bias,
+                                                            state.current.transform.ot_control,
+                                                            0.5f);
+  if (!depth) {
+    return false;
+  }
   auto rm = spyro::paired_actor::resolve_normal_faces_continuous(
       state.current.primitives,
       mid,
       {state.current.materials, state.current.override_control},
-      state.current.transform.depth_origin,
-      state.current.transform.ot_shift);
+      depth->origin,
+      depth->shift);
   if (rm) {
     ++resolved;
   }
-  const bool accepted = (bool)rm;
+  const bool accepted = rm && global_bins(rm.faces,
+                                          state.current.authored_replay,
+                                          depth->near,
+                                          state.current.transform.ot_control)
+                                  .valid;
   matched += accepted;
   lucent::debug("pairedactor",
                 "temporal continuous census: scanned={} projected={} resolved={} accepted={} "

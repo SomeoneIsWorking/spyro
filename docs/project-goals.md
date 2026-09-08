@@ -95,6 +95,14 @@ Success conditions:
   Clang, `clang-format`, and `clang-tidy`.
 - Each released host architecture passes a bounded representative interactive gameplay scenario with
   declared correctness and frame-time budgets.
+- Hosted CI builds and releases Windows packages, macOS `.app` bundles, Linux AppImages, Android
+  APKs, and a WASM browser build deployed on GitHub Pages. Each target executes synthetic runtime
+  checks on its matching platform; desktop evidence does not qualify Android or browser execution.
+- Packaged first launch provides a file picker for the player's game files, authenticates the
+  complete install, preserves a previous valid selection on failure, and persists selection and
+  saves through the host's user-data APIs. Browser selection imports files into browser storage.
+- Releases and the GitHub Pages deployment contain only redistributable product/runtime inputs;
+  players supply their own ROM/disc, with no game assets in CI or release archives.
 - Hermetic, runtime, registry, and negative-case checks print their exercised denominators and refuse
   missing corpus.
 
@@ -103,4 +111,4 @@ Constraints and non-goals:
 - Ghidra and other maintainer RE tools are not player prerequisites.
 - A clean boot or one image does not imply gameplay, audio, timing, or visual conformance.
 
-Related state: S008, S009, S010, S012.
+Related state: S008, S009, S010, S012, S013, S014, S015, S016, S017, S018.

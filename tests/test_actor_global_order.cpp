@@ -1,4 +1,6 @@
 #include "actor_global_order.h"
+#include "actor_ot_coalescer.h"
+#include "paired_actor_depth.h"
 #include "testutil.h"
 
 #include <algorithm>
@@ -13,7 +15,7 @@ spyro::actor_draw_recipe::Face face(uint32_t record, uint32_t localBin, uint32_t
   return out;
 }
 
-void test_observed_base_bounce_fixture() {
+void test_near_clamp_preserves_local_fifo() {
   spyro::actor_prefix::Output record{};
   record.controls[13] = 0;
   record.controls[14] = 0;
@@ -35,8 +37,8 @@ void test_observed_base_bounce_fixture() {
   CHECK_EQ(result.faces[2].otBin, 0);
   CHECK_EQ(result.faces[2].chainOrdinal, 2);
   CHECK_EQ(result.faces[3].faceIndex, 3);
-  CHECK_EQ(result.faces[3].otBin, 1);
-  CHECK_EQ(result.faces[3].chainOrdinal, 0);
+  CHECK_EQ(result.faces[3].otBin, 0);
+  CHECK_EQ(result.faces[3].chainOrdinal, 3);
 }
 
 void test_record_append_and_negative_controls() {
@@ -64,10 +66,51 @@ void test_record_append_and_negative_controls() {
   CHECK_EQ((int)badRecord.status, (int)spyro::actor_global_order::Status::InvalidRecord);
 }
 
+void test_chunk_boundaries_holes_and_controls() {
+  // Control 1 consumes 16 local buckets per global slot. Empty buckets consume their place.
+  const std::vector<uint32_t> bins{130, 115, 114, 99, 98, 19, 18, 3, 2};
+  const auto mapped = spyro::actor_ot_coalescer::map({0, 7, 1}, bins);
+  CHECK(mapped.valid);
+  CHECK(mapped.bins == std::vector<uint16_t>({7, 7, 6, 6, 5, 1, 0, 0, 0}));
+  const auto shifted = spyro::actor_ot_coalescer::map({128, 7, 1}, bins);
+  CHECK(shifted.valid);
+  CHECK(shifted.bins == std::vector<uint16_t>({8, 8, 7, 7, 6, 2, 1, 1, 0}));
+  const std::array<uint32_t, 2> tail{287, 271};
+  const auto end = spyro::actor_ot_coalescer::map({0, 7, 1}, tail);
+  CHECK(end.valid);
+  CHECK(end.bins == std::vector<uint16_t>({14, 13}));
+  CHECK(spyro::actor_ot_coalescer::map({0, 7, 1}, {}).valid);
+  CHECK(!spyro::actor_ot_coalescer::map({0, 7, 6}, bins).valid);
+  CHECK(!spyro::actor_ot_coalescer::map({1, 7, 1}, bins).valid);
+  CHECK(!spyro::actor_ot_coalescer::map({0, 2048, 1}, tail).valid);
+  CHECK(!spyro::actor_ot_coalescer::map({0, 7, 1}, std::array<uint32_t, 1>{288}).valid);
+}
+
+void test_source_depth_derivation() {
+  using namespace spyro::paired_actor_depth;
+  const auto near = derive(1023, 7, 1);
+  CHECK_EQ(near.origin, 0.0);
+  CHECK_EQ(near.near, 0u);
+  CHECK_EQ(near.shift, 5u);
+  const auto far = derive(1152, 7, 1);
+  CHECK_EQ(far.origin, 128.0);
+  CHECK_EQ(far.near, 2u);
+  const auto mid = interpolate(1023, 1152, 7, 1, 0.5f);
+  CHECK(mid.has_value());
+  CHECK_EQ(mid->origin, 63.5);
+  CHECK_EQ(mid->near, 1u);
+  CHECK_EQ(derive(-1, 0, 0).near, 0u);
+  CHECK_EQ(derive(INT32_MIN, 0, 0).origin, 2147483136.0);
+  CHECK(!interpolate(0, 100, 0, 0, -1).has_value());
+  CHECK(!interpolate(0, 100, 0, 0, 2).has_value());
+}
+
 } // namespace
 
 int main() {
-  RUN(observed_base_bounce_fixture);
+  RUN(near_clamp_preserves_local_fifo);
   RUN(record_append_and_negative_controls);
+  RUN(chunk_boundaries_holes_and_controls);
+  RUN(source_depth_derivation);
   return pt_summary();
 }

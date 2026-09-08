@@ -2,7 +2,6 @@
 
 #include "actor_transform_math.h"
 #include "core.h"
-#include "game.h"
 #include "proj_params.h"
 #include "world_projection_math.h"
 
@@ -185,13 +184,19 @@ Recipe derive(Core *core) {
   const auto orientation = actor_transform_math::rotateForMoby(
       core, camera, (std::uint32_t)core->mem_r8(kSpyro + 0x0eu) << 16u);
   psxport::native_projection::ProjectionParams projection{};
-  // 0x80059A48 does not program OFX/OFY/H itself. It consumes the live GTE controls left by the
-  // preceding actor pass, so the recipe must use that same per-call state instead of the game's
-  // persistent SetGeom values or a widescreen replacement.
-  projection.ofx = (std::int32_t)core->game->gte.REG[56];
-  projection.ofy = (std::int32_t)core->game->gte.REG[57];
-  projection.h = (std::uint16_t)core->game->gte.REG[58];
-  if (!core->rsub.projParams.geomValid() || projection.h == 0u) {
+  // 0x80059A48 inherits the scene projection; neither it nor the preceding paired actor body
+  // programs OFX/OFY/H. Native producers share the explicitly published scene geometry rather
+  // than leaving that projection in the guest GTE. Use the paired actor's same fixed-point input
+  // convention so unrelated guest GTE work cannot shift or resize the native shadow.
+  const auto &geometry = core->rsub.projParams;
+  if (!geometry.geomValid()) {
+    recipe.status = Status::InvalidProjection;
+    return recipe;
+  }
+  projection.ofx = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfx() << 16u);
+  projection.ofy = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfy() << 16u);
+  projection.h = (std::uint16_t)(std::int32_t)geometry.geomH();
+  if (projection.h == 0u) {
     recipe.status = Status::InvalidProjection;
     return recipe;
   }

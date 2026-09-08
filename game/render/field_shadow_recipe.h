@@ -42,6 +42,8 @@ struct Recipe {
 std::int32_t
 otBin(std::uint16_t firstSz, std::uint16_t secondSz, std::uint16_t anchorSz, std::int32_t bias);
 std::uint8_t interpolateRadius(std::uint8_t current, std::uint8_t next, std::uint8_t progress);
+// Consume the owned scene projection published in Core::rsub.projParams, independently of
+// ambient guest GTE controls. Missing geometry or a zero focal length is refused.
 Recipe derive(Core *core);
 const char *statusName(Status status);
 

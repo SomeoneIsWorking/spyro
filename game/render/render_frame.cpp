@@ -31,6 +31,7 @@
 #include "spyro1_field_scheduler.h"
 #include "spyro_game.h"
 #include "stage13_scene_recipe.h"
+#include "temporal_scene.h"
 #include <lucent/log.h>
 #include <stdlib.h> // abort
 
@@ -275,7 +276,6 @@ void SpyroRenderer::drawFrame() {
   Fps60 &temporal = fps60(*mC->game);
   const bool pairedState = pairedActorScene(mC, sc);
   spyro_paired_actor_frame_begin(paired, pairedState, mC->rsub.mode.psxRender(), temporal.active());
-  temporal.mTier1EligibleCur = false;
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the
   // denominator is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It
   // is how "which scenes does a real run actually reach" gets answered with data rather than from
@@ -325,22 +325,7 @@ void SpyroRenderer::drawFrame() {
   if (!spyro_paired_actor_frame_finish(paired, false, pairedState)) {
     abort();
   }
-  bool pairedWorld = false, foreignWorld = false;
-  for (int i = 0; i < mC->game->rq.n; ++i) {
-    const RqItem &it = mC->game->rq.items[i];
-    const bool tier1Owned = (it.layer == RQ_BACKGROUND && it.dbg_node == kBackdropDbgNode) ||
-                            (it.layer == RQ_WORLD && it.has_xyf);
-    if (!tier1Owned) {
-      continue;
-    }
-    if (it.layer == RQ_WORLD && it.has_xyf && it.painter_object == 0x80023AC4u) {
-      pairedWorld = true;
-    } else {
-      foreignWorld = true;
-    }
-  }
-  temporal.mTier1EligibleCur = paired.endpoints_compatible && pairedWorld && !foreignWorld &&
-                               spyro_paired_actor_fps60_eligible(paired);
+  spyro_temporal_scene_prepare(*mC);
   // Submit the complete native scene once, after every producer has accepted its input.
   mC->game->rq.flush(mC);
   // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see

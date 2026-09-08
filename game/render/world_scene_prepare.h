@@ -23,7 +23,8 @@ struct Prepared {
 };
 
 // Builds RenderWorldChunks' phase-1 sector lists from an immutable RAM view.
-// No guest state is changed here in either form.
+// No guest state is changed here in either form. horizontalWidth is the same native-pixel
+// viewport width used by projection; it widens horizontal planes only.
 //
 // With `animation` null this is the read-only producers' entry: a sector with a live animation
 // channel refuses the whole preparation, because its arrays hold geometry the frame has not
@@ -34,6 +35,7 @@ struct Prepared {
 // that, and it re-runs this in the refusing form afterwards to prove the state really advanced.
 bool prepare(const world_chunk_codec::RamView &ram,
              int32_t selection,
+             int32_t horizontalWidth,
              Prepared &out,
              const char *&why,
              world_animation::Plan *animation = nullptr);

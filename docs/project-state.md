@@ -17,7 +17,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S002 | Stage-13 title modes 0 and 1 are presented through game-owned native sprite commands | partial | S001 | G003 |
 | S003 | Stage-13 title mode 2 presents the three-slot save screen natively | verified | S002 | G003 |
 | S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | partial | S001 | G002, G003 |
-| S005 | Spyro 1 exposes its native renderer, wider-FOV aspect modes, and temporal interpolation through title-owned capability policy | partial | S002, S004 | G003 |
+| S005 | Spyro 1 exposes native rendering and presentation settings through title-owned capability policy | partial | S002, S004 | G003 |
 | S006 | Spyro 2 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial | — | G001 |
 | S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | partial | S004 | G001, G003 |
 | S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with bounded, accounted fallback | partial | — | G002, G004 |
@@ -25,12 +25,20 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S010 | The generated world-body include is replaced by resumable runtime guest execution | partial | S008, S009 | G002 |
 | S011 | Representative Spyro 1 gameplay conforms on each released host through native/Lightrec execution | missing | S005, S007, S010 | G001, G002, G003, G004 |
 | S012 | The frozen launcher builds and runs the native/Lightrec product without offline guest translation | partial | S008, S011 | G004 |
+| S013 | Windows CI produces an installable release with matching-host runtime checks | missing | S008, S018 | G004 |
+| S014 | macOS CI produces a runnable `.app` release with matching-architecture runtime checks | missing | S008, S018 | G004 |
+| S015 | Linux CI produces a runnable AppImage release with package-install and runtime checks | missing | S008, S018 | G004 |
+| S016 | Android CI produces an APK with ARM64 dynarec execution and authored touch controls | missing | S008, S018 | G004 |
+| S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
+| S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
+| S019 | Widescreen renders additional horizontal scene coverage without stretching the original image | partial | S005 | G003 |
+| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial | S004, S005 | G003 |
 
 ## Current focus
 
-S011 — reach interactive Spyro 1 gameplay through the restored native/Lightrec frame owners, then
-verify complete scene coverage, wider projection, and actual per-object temporal interpolation.
-Stage-13 title/save presentation is a wiring milestone, not completion of this focus.
+S011 — compare the reached Artisans gameplay against the independent console oracle. Resolve the
+delivered-field/guest-VBlank discrepancy in issue 0102, then compare matching scene state and extend
+visual and temporal coverage. Boot/title and a visible player do not establish full conformance.
 
 ## Hosted verification and host gaps
 
@@ -130,8 +138,9 @@ with measured non-black coverage of 4.08%, 93.26%, and 93.33%. Issue 0085's reta
 denominators, and result are the durable record; the gitignored run artifacts are supporting evidence,
 not the sole verification basis.
 
-Gap: this route was measured through the retired generated-code execution path. It has not yet been
-reproduced through Lightrec, so the native/Lightrec product capability is partial.
+Gap: the historical retained-renderer comparison above has not been repeated against the current
+independent full-console oracle. Current native/Lightrec title and gameplay observations are recorded
+in S009 and S011; complete boot/state parity remains unqualified.
 
 ### S002 — Native title modes 0 and 1
 
@@ -202,7 +211,10 @@ predicate accepted that iteration without a field, contradicting the framework's
 contract. The scheduler now delivers one visible host field with the previous picture; the ensuing
 900-field native/wide/interpolated run reached 415 logic frames and satisfied the same contract.
 
-### S005 — Native, widescreen, and temporal product exposure
+Gap: independent oracle timing/device comparison and representative interactive gameplay cadence
+remain unqualified beyond these bounded native frame observations.
+
+### S005 — Native rendering and presentation settings
 
 `Spyro1Runtime::renderCapabilities` returns `RenderCapabilities::interpolatedNative()`, making the
 native producer path the title default and exposing the shared 60fps interpolation row. The same
@@ -251,7 +263,7 @@ but the native actor builders/renderers do not yet own the complete Moby shadow 
 Moby shadow consumer `0x80059F8C` and flame/glow/sparkle effects remain unowned; Spyro shadow
 `0x80059A48` is now owned by the separate native fan recipe and submitter.
 The separate `0x8002B9CC`
-environment/world owner is also compiled but unwired: on the same snapshot it derives selection 17,
+environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final
 faces without mutating the culling word or any of the 7,168 edge-work bytes during preparation. Its
 corrected medium-quad texture rule still needs issue 0077's retained-world oracle. The compiled
@@ -329,6 +341,9 @@ Historical idle-versus-Left replays changed player position after the New Game h
 charge, and flame reached the guest update. Those observations do not establish the false
 release-edge explanation or complete current gameplay parity.
 
+Gap: current interactive jump, charge, flame, and controller parity still need representative
+gameplay comparison against the independent console oracle.
+
 ### S008 — Runtime Lightrec execution
 
 Implemented subset: the product enters authenticated crt0 through psxport's per-`Core`
@@ -367,7 +382,7 @@ Atomic work: issue 0101.
 
 ### S009 — Stage-13 dynamic discriminators
 
-The Linux x86_64 Clang product, using framework `f7d4baf5`, completes the 800-field idle title
+Evidence: the Linux x86_64 Clang product, using framework `f7d4baf5`, completes the 800-field idle title
 route and the 900-field Start-input save-picker route through native field/scene owners. Guest VSync
 remains the framework's mandatory fatal trap. Run caps now return from the complete product step
 before ending, so the final presentation fence is checked and the Core is destroyed normally.
@@ -415,12 +430,25 @@ external device/timing history and proves this arithmetic window only. The frame
 raw banks and materializes SXYP's alias without shifting the FIFO; shipping-JIT GPF/SQR, FIFO and
 roundtrip regressions pass 111 checks, and its combined gate passes 133 tests.
 
-The initial 16:9 VRAM readback shows the Artisans environment without a visible player; a final
-presented capture after movement shows Spyro partly occluded by foreground terrain. Visual parity
-remains unqualified. Eight consecutive presented captures are collected. The direct
-runtime does not wire the framework's legacy temporal callbacks, and FIELD's mixed producers exceed
-the paired-actor-only temporal source. These are current rendering gaps, not a completed gameplay
-or visual-oracle conformance result.
+The current rendering observation at framework `bb75a192` reaches the same Artisans spawn position
+as an independent full-console run using the user's NTSC-U SCPH-1001 v2.2 BIOS. Spyro is visible at
+spawn after restoring the paired renderer's local-to-global OT coalescing; the native shadow uses the
+same explicitly owned projection. The source mapping is documented in
+[paired-actor-world-order](findings/paired-actor-world-order.md). The windowless, silent run exits 0
+after 2,758 fields / 1,315 product steps and fences, executing 7,659,432 JIT blocks / 58,142,779
+instructions with 3,634 translations, zero faults and zero fallback. The wired temporal source
+records 833 midpoint and 833 endpoint calls, 1,666/1,666 emitted. The final Clang/Ninja gate passes
+all 15 CTests, 114 translation units through clang-tidy, and 203 source/header format checks; an
+unchanged second configure/build performs zero compilations. This proves the reached composition
+and callback path, not visual parity or complete FIELD interpolation.
+
+Both products accept Left, but equal requested fields do not produce equal guest time or player
+state. Issue [0102](issues/0102-native-delivered-fields-undercount-guest-vblank.md) records excess
+native VBlank counter ticks and the remaining writer-attribution discriminator. The moved native
+picture still shows different foreground occlusion from the oracle; these captures have different
+player/camera states and cannot establish the rendering cause. Full-console comparison uses an
+independent CPU/scheduler but shares Beetle device lineage with the product, so it cannot exclude
+all common device defects.
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,
@@ -438,3 +466,74 @@ links the frozen PSXport/Lightrec backend, and its asset-free synthetic framewor
 
 Gap: cold-path provisioning and packaged first-run setup remain unqualified. The native boot/title
 routes are recorded in S009; representative gameplay and host qualification remain open.
+
+### S013 — Windows release
+
+Missing capability: a Windows build/package CI job, installable asset-free release, first-run file
+selection, and synthetic execution/package checks on the supported Windows architecture. The
+current hosted workflow performs Linux source-policy checks only. Real-title gameplay and
+performance remain local qualification requirements.
+
+### S014 — macOS application release
+
+Missing capability: a macOS `.app` bundle and release CI, matching-architecture dynarec/ABI/cache
+checks, first-run file selection, persistent user data, and local gameplay qualification. Apple
+Silicon support requires an actual AArch64 backend and executable-memory/instruction-cache
+qualification; interpreter fallback does not satisfy it.
+
+### S015 — Linux AppImage release
+
+Missing capability: an AppImage builder/release job and cold package-launch/install tests. The local
+Clang executable and interactive observations are useful inputs, but do not qualify a relocatable
+AppImage, its runtime dependencies, or no-terminal first-run selection.
+
+### S016 — Android APK release
+
+Missing capability: APK packaging/release CI, ARM64 runtime qualification, game-file selection,
+authored multi-touch controls, and measured performance on named device classes. Build and emulator
+mechanics belong in `shared/android-port`; Activity/SAF/lifecycle mechanics belong in Lucent. The
+title owns identity, complete-install policy, touch meaning/layout, and composition. Desktop
+measurements and compile-only CI do not establish Android gameplay support.
+
+### S017 — WASM release and GitHub Pages deployment
+
+Missing capability: a browser build using the same runtime guest-discovery/execution contract,
+browser package tests, and a CI deployment to GitHub Pages. Browser dynamic execution must preserve
+JIT-first semantics with bounded accounted fallback; a missing web backend cannot silently select
+an interpreter product. Acceptance includes user-selected local game files, persistent browser
+saves, controllable gameplay, audio/input correctness, and measured browser performance. No game
+files may be embedded in the deployment.
+
+### S018 — Packaged game-file setup
+
+Missing capability: desktop/mobile native file pickers and browser file selection that authenticate
+the complete supplied install, persist it in the OS/browser user-data location, support reselection,
+and preserve a prior valid selection on every failure. The existing launcher authenticates and
+provisions the disc through maintainer inputs; it does not provide packaged first-run UI. Shared
+archive/SAF mechanisms must be consumed from their canonical owners rather than copied into Spyro.
+
+### S019 — Additional widescreen scene coverage
+
+Evidence: the native Artisans observation renders a 684-pixel scene from the original 512-pixel
+projection width, with additional horizontal world geometry and an unstretched player. The world
+sector preparation now widens the authored horizontal culling plane by the same explicit width
+used for projection and animation admission. Focused production tests cover both edges, preserved
+near-eye acceptance, native-width behavior, and animation of newly admitted sectors exactly once.
+
+Gap: complete scene variants, horizontal culling owners, and same-state oracle visual comparison
+remain unqualified. Additional coverage in Artisans does not prove the whole game.
+
+### S020 — Source-based 60fps interpolation
+
+Evidence: Spyro 1 installs a per-instance temporal scene source. It reconstructs the compatible
+paired player model from immutable captured geometry while the framework preserves other authored
+FIELD producers in their global painter order. Endpoint and midpoint emission share the recovered
+local-to-global OT mapping, and camera-depth motion derives its ordering inputs from captured base
+MAC-Z rather than requiring a stationary depth origin. Actual presenter tests exercise mixed-world
+ordering, empty endpoints with visible midpoints, immutable sources, and moving depth. The S011
+run records nonzero paired midpoint/endpoint emission through the shipping JIT product.
+
+Gap: world, camera, regular actors, shadows, particles and other unowned temporal sources do not yet
+have complete matching-source interpolation. Discontinuous paired-model intervals retain endpoint
+presentation. Full-scene 60fps motion, paced timing/audio and performance remain unqualified; the
+VBlank discrepancy in issue 0102 must be resolved before cadence parity is claimed.

@@ -150,7 +150,7 @@ ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
 ResolveResult resolve_normal_faces_continuous(std::span<const Primitive> primitives,
                                               std::span<const ProjectedVertex> projected,
                                               const MaterialTables &materials,
-                                              uint32_t depth_origin,
+                                              double depth_origin,
                                               uint8_t shift);
 
 // Exact 0x80025348/0x800255F0 normal-path bin expression. Returns false for the guest's raw<=0

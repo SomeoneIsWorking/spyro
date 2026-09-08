@@ -1,4 +1,5 @@
 #include "paired_actor_pose.h"
+#include "paired_actor_depth.h"
 
 #include "actor_model_codec.h"
 #include "core.h"
@@ -415,13 +416,12 @@ bool build_transform(Core *c, SpyroPairedActorTransform &out) {
   if ((int32_t)(secondaryShift - primaryShift) < 0) {
     control = primaryShift;
   }
-  const uint32_t distance = 512u;
   out.ot_control = control;
-  out.ot_shift = (uint8_t)((control + 4u) & 31u);
-  const uint32_t rawOrigin = (uint32_t)tr[2] - (distance << (control & 31u));
-  out.depth_origin = (int32_t)rawOrigin < 0 ? 0u : rawOrigin;
-  const uint32_t rawNear = (uint32_t)((int32_t)tr[2] >> 7) - c->mem_r8(instance + 39u);
-  out.depth_near = (int32_t)rawNear < 0 ? 0u : rawNear;
+  out.depth_bias = c->mem_r8(instance + 39u);
+  const auto depth = paired_actor_depth::derive(tr[2], out.depth_bias, control);
+  out.ot_shift = depth.shift;
+  out.depth_origin = static_cast<uint32_t>(depth.origin);
+  out.depth_near = depth.near;
   return true;
 }
 

@@ -24,6 +24,7 @@ struct SpyroPairedActorTransform {
   uint32_t depth_near = 0;
   uint32_t ot_control = 0;
   uint8_t ot_shift = 0;
+  uint8_t depth_bias = 0;
 };
 
 struct SpyroPairedFrame {
@@ -51,6 +52,7 @@ struct SpyroPairedActorFrameState {
   SpyroPairedFrame previous{};
   SpyroPairedFrame current{};
   bool endpoints_compatible = false;
+  bool temporal_eligible = false;
   bool was_state2 = false;
   uint64_t stage2_epoch = 0;
   bool was_fps60_active = false;

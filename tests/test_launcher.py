@@ -6,6 +6,7 @@ import io
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
@@ -248,6 +249,10 @@ class LauncherTest(unittest.TestCase):
     def test_missing_dependencies_print_exact_platform_commands(self):
         cases = (
             (FakeHost(missing={"cmake"}), "sudo dnf install cmake"),
+            (FakeHost(missing={"ninja"}), "sudo dnf install ninja-build"),
+            (FakeHost(missing={"ninja"}, distribution="ubuntu"), "sudo apt install ninja-build"),
+            (FakeHost(missing={"ninja"}, system="Darwin"), "brew install ninja"),
+            (FakeHost(missing={"ninja"}, system="Windows"), "winget install Ninja-build.Ninja"),
             (
                 FakeHost(missing={"pkg-config"}, distribution="ubuntu"),
                 "sudo apt install pkg-config",
@@ -278,34 +283,6 @@ class LauncherTest(unittest.TestCase):
             ],
         )
         self.assertEqual(launcher.compiler_arguments(host, {}), [])
-
-    def test_configure_uses_locked_python_and_disables_ctest(self):
-        commands = []
-        with mock.patch.object(
-            launcher,
-            "command",
-            side_effect=lambda args, **_kwargs: commands.append(args),
-        ), mock.patch.object(launcher.sys, "executable", LOCKED_PYTHON):
-            launcher.configure(ROOT, launcher.PLAYER_BUILD, [])
-        configure = commands[0]
-        self.assertIn(f"-DPython3_EXECUTABLE={LOCKED_PYTHON}", configure)
-        self.assertIn("-DBUILD_TESTING=OFF", configure)
-        self.assertNotIn("ctest", [Path(str(value)).name for value in configure])
-
-    def test_maintainer_configure_can_enable_tests_explicitly(self):
-        commands = []
-        with mock.patch.object(
-            launcher,
-            "command",
-            side_effect=lambda args, **_kwargs: commands.append(args),
-        ), mock.patch.object(launcher.sys, "executable", LOCKED_PYTHON):
-            launcher.configure(
-                ROOT,
-                launcher.PLAYER_BUILD,
-                [],
-                build_testing=True,
-            )
-        self.assertIn("-DBUILD_TESTING=ON", commands[0])
 
     def test_player_build_is_isolated_and_targets_only_the_port(self):
         commands = []
@@ -359,6 +336,132 @@ class LauncherTest(unittest.TestCase):
         self.assertIn("package = false", (ROOT / "pyproject.toml").read_text())
         self.assertIn("version = 1", (ROOT / "uv.lock").read_text())
         self.assertTrue(os.access(ROOT / "run.sh", os.X_OK))
+
+
+class ConfigureTest(unittest.TestCase):
+    def setUp(self):
+        fixtures = ROOT / "build/test-launcher"
+        fixtures.mkdir(parents=True, exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(dir=fixtures)
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.source = self.root / "source"
+        self.source.mkdir()
+        self.build = self.root / "build"
+        self.commands = []
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        for name, value in {
+            "ROOT": self.root,
+            "MAINTAINER_BUILD": self.build,
+            "PLAYER_BUILD": self.build / "player",
+            "FRAMEWORK_BUILD": self.build / "player-tools",
+        }.items():
+            stack.enter_context(mock.patch.object(launcher, name, value))
+        stack.enter_context(mock.patch.object(
+            launcher, "command", side_effect=lambda args, **_kwargs: self.commands.append(args)
+        ))
+        stack.enter_context(mock.patch.object(launcher.sys, "executable", LOCKED_PYTHON))
+
+    def cache(self, build, generator="Ninja", source=None):
+        build.mkdir(parents=True, exist_ok=True)
+        (build / "CMakeCache.txt").write_text(
+            f"CMAKE_HOME_DIRECTORY:INTERNAL={source or self.source}\n"
+            f"CMAKE_GENERATOR:INTERNAL={generator}\n"
+            "CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/clang++\n"
+        )
+        objects = build / "CMakeFiles"
+        objects.mkdir(exist_ok=True)
+        sentinel = objects / "valid-object.o"
+        sentinel.write_bytes(b"preserved object")
+        return sentinel
+
+    def test_cold_configuration_uses_ninja_locked_python_and_explicit_tests(self):
+        for testing in (False, True):
+            with self.subTest(testing=testing):
+                launcher.configure(self.source, self.build, [], build_testing=testing)
+                args = self.commands[-1]
+                self.assertEqual(args[args.index("-G") + 1], "Ninja")
+                self.assertIn(f"-DPython3_EXECUTABLE={LOCKED_PYTHON}", args)
+                self.assertIn(f"-DBUILD_TESTING={'ON' if testing else 'OFF'}", args)
+                self.assertNotIn("ctest", [Path(str(value)).name for value in args])
+                self.assertFalse((self.build / ".spyro-toolchain").exists())
+
+    def test_compiler_spelling_does_not_delete_valid_objects(self):
+        sentinel = self.cache(self.build)
+        stamp = self.build / ".spyro-toolchain"
+        stamp.write_text("-DCMAKE_CXX_COMPILER=/usr/lib64/ccache/clang++\n")
+        for compiler in ("clang++", "/usr/bin/clang++", "g++", "clang-cl"):
+            with self.subTest(compiler=compiler):
+                option = f"-DCMAKE_CXX_COMPILER={compiler}"
+                launcher.configure(self.source, self.build, [option])
+                self.assertEqual(sentinel.read_bytes(), b"preserved object")
+                self.assertIn(option, self.commands[-1])
+                self.assertFalse(stamp.exists())
+
+    def test_legacy_generator_resets_only_its_cmake_tree(self):
+        sentinel = self.cache(self.build, "Unix Makefiles")
+        (self.build / "Makefile").write_text("obsolete generator")
+        child = self.cache(launcher.PLAYER_BUILD)
+        dependency = self.build / "deps/library/object.o"
+        dependency.parent.mkdir(parents=True)
+        dependency.write_bytes(b"dependency")
+        launcher.configure(self.source, self.build, [])
+        self.assertFalse(sentinel.exists())
+        self.assertFalse((self.build / "Makefile").exists())
+        self.assertFalse((self.build / "CMakeCache.txt").exists())
+        self.assertEqual(child.read_bytes(), b"preserved object")
+        self.assertEqual(dependency.read_bytes(), b"dependency")
+        self.assertEqual(self.commands[-1][self.commands[-1].index("-G") + 1], "Ninja")
+
+    def test_source_change_resets_each_owned_tree(self):
+        for build in (launcher.PLAYER_BUILD, launcher.FRAMEWORK_BUILD, self.build):
+            with self.subTest(build=build):
+                sentinel = self.cache(build, source=self.root / "previous-source")
+                launcher.configure(self.source, build, [])
+                self.assertFalse(sentinel.exists())
+                self.assertEqual(self.commands[-1][self.commands[-1].index("-B") + 1], build)
+
+    def test_unknown_directory_refuses_before_creating_or_cleaning(self):
+        for populated in (False, True):
+            build = self.root / f"unexpected-{populated}"
+            sentinel = self.cache(build, "Unix Makefiles") if populated else None
+            with self.subTest(populated=populated), self.assertRaisesRegex(
+                launcher.Refusal, "unexpected or symlinked"
+            ):
+                launcher.configure(self.source, build, [])
+            self.assertEqual(build.exists(), populated)
+            if sentinel:
+                self.assertTrue(sentinel.exists())
+        self.assertEqual(self.commands, [])
+
+    def symlink(self, link, target):
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"host cannot create directory symlinks: {error}")
+
+    def test_build_symlink_refuses_without_touching_target(self):
+        target = self.root / "outside"
+        sentinel = self.cache(target, "Unix Makefiles")
+        self.build.mkdir()
+        self.symlink(launcher.PLAYER_BUILD, target)
+        with self.assertRaisesRegex(launcher.Refusal, "symlinked"):
+            launcher.configure(self.source, launcher.PLAYER_BUILD, [])
+        self.assertTrue(sentinel.exists())
+        self.assertEqual(self.commands, [])
+
+    def test_cmake_state_symlink_refuses_before_partial_cleanup(self):
+        self.cache(self.build, "Unix Makefiles")
+        target = self.root / "outside"
+        target.mkdir()
+        self.symlink(self.build / "build.ninja", target)
+        with self.assertRaisesRegex(launcher.Refusal, "symlinked CMake state"):
+            launcher.configure(self.source, self.build, [])
+        self.assertTrue((self.build / "CMakeCache.txt").exists())
+        self.assertTrue((self.build / "CMakeFiles/valid-object.o").exists())
+        self.assertTrue(target.is_dir())
+        self.assertEqual(self.commands, [])
 
 
 if __name__ == "__main__":

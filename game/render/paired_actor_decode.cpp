@@ -369,7 +369,7 @@ FaceCompareResult compare_ordered_faces(std::span<const ResolvedFace> expected,
 static ResolveResult resolve_normal_faces_impl(std::span<const Primitive> primitives,
                                                std::span<const ProjectedVertex> projected,
                                                const MaterialTables &materials,
-                                               uint32_t depth_origin,
+                                               double depth_origin,
                                                uint8_t shift,
                                                bool continuous) {
   ResolveResult result;
@@ -444,7 +444,12 @@ static ResolveResult resolve_normal_faces_impl(std::span<const Primitive> primit
       face.continuous_ot_key = raw / scale;
       face.ot_raw = (uint32_t)std::clamp(raw, 0.0, (double)UINT32_MAX);
       face.ot_bin = (uint32_t)std::clamp(face.continuous_ot_key, 0.0, (double)UINT32_MAX);
-    } else if (!compute_ot_bin(emitted, depth, depth_origin, shift, face.ot_raw, face.ot_bin)) {
+    } else if (!compute_ot_bin(emitted,
+                               depth,
+                               static_cast<uint32_t>(depth_origin),
+                               shift,
+                               face.ot_raw,
+                               face.ot_bin)) {
       continue;
     }
     face.quad ? ++result.quads : ++result.triangles;
@@ -470,7 +475,7 @@ ResolveResult resolve_normal_faces(std::span<const Primitive> primitives,
 ResolveResult resolve_normal_faces_continuous(std::span<const Primitive> primitives,
                                               std::span<const ProjectedVertex> projected,
                                               const MaterialTables &materials,
-                                              uint32_t depth_origin,
+                                              double depth_origin,
                                               uint8_t shift) {
   return resolve_normal_faces_impl(primitives, projected, materials, depth_origin, shift, true);
 }

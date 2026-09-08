@@ -7,6 +7,8 @@
 #include "spyro1_frame_driver.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
+#include "temporal_scene.h"
+#include "temporal_scene_source.h"
 
 #include <lucent/log.h>
 
@@ -63,7 +65,7 @@ bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {
 
 std::unique_ptr<TemporalFramePresentation>
 Spyro1Runtime::createTemporalFramePresentation(Game &game) {
-  return std::make_unique<Fps60>(game);
+  return std::make_unique<Fps60>(game, spyro_temporal_scene_source());
 }
 
 namespace {

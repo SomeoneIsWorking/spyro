@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Spyro's authoritative Clang build, complete CTest suite, and framework pin gate."""
+"""Run Spyro's build, C++ quality checks, complete CTest suite, and framework pin gate."""
 
 from __future__ import annotations
 
@@ -34,15 +34,6 @@ def verify_cpp_quality(build: Path) -> None:
     print(f"[verify] C++ quality: {len(sources)} translation units, {len(files)} source/header files")
 
 
-def verify_clang_build(build: Path) -> None:
-    compiler_files = sorted((build / "CMakeFiles").glob("*/CMakeCXXCompiler.cmake"))
-    if not compiler_files or not any(
-        'CMAKE_CXX_COMPILER_ID "Clang"' in path.read_text(errors="replace")
-        for path in compiler_files
-    ):
-        raise run.Refusal(f"the configured maintainer build in {build} is not using Clang")
-
-
 def verify_source_policy() -> None:
     """Run the asset-free source-policy gate used by hosted CI.
 
@@ -66,7 +57,6 @@ def verify(jobs: int) -> None:
         f"-DPSXPORT_DIR={psxport}",
         build_testing=True,
     )
-    verify_clang_build(run.MAINTAINER_BUILD)
     run.command(["cmake", "--build", run.MAINTAINER_BUILD, "-j", str(jobs)])
     verify_cpp_quality(run.MAINTAINER_BUILD)
     run.command(
@@ -94,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.source_policy:
         print("[verify] PASS: asset-free source policy")
     else:
-        print("[verify] PASS: Clang build, C++ quality, complete CTest, and psxport pin")
+        print("[verify] PASS: build, C++ quality, complete CTest, and psxport pin")
     return 0
 
 

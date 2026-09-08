@@ -80,6 +80,7 @@ def package_command(host: Host, package: str) -> str | None:
     if system == "Darwin":
         return {
             "cmake": "brew install cmake",
+            "ninja": "brew install ninja",
             "git": "xcode-select --install",
             "pkg-config": "brew install pkg-config",
             "sdl3": "brew install sdl3",
@@ -90,6 +91,7 @@ def package_command(host: Host, package: str) -> str | None:
     if system == "Windows":
         return {
             "cmake": "winget install Kitware.CMake",
+            "ninja": "winget install Ninja-build.Ninja",
             "git": "winget install Git.Git",
             "pkg-config": "vcpkg install pkgconf",
             "sdl3": "vcpkg install sdl3",
@@ -104,6 +106,7 @@ def package_command(host: Host, package: str) -> str | None:
     if distribution & {"fedora", "rhel", "centos", "rocky", "almalinux"}:
         return {
             "cmake": "sudo dnf install cmake",
+            "ninja": "sudo dnf install ninja-build",
             "git": "sudo dnf install git",
             "pkg-config": "sudo dnf install pkgconf-pkg-config",
             "sdl3": "sudo dnf install SDL3-devel",
@@ -114,6 +117,7 @@ def package_command(host: Host, package: str) -> str | None:
     if distribution & {"debian", "ubuntu", "linuxmint", "pop"}:
         return {
             "cmake": "sudo apt install cmake",
+            "ninja": "sudo apt install ninja-build",
             "git": "sudo apt install git",
             "pkg-config": "sudo apt install pkg-config",
             "sdl3": "sudo apt install libsdl3-dev",
@@ -169,7 +173,7 @@ def preflight(
     host: Host | None = None, environment: Mapping[str, str] | None = None
 ) -> list[str]:
     machine = host or Host()
-    for tool in ("cmake", "git", "pkg-config"):
+    for tool in ("cmake", "ninja", "git", "pkg-config"):
         require_tool(machine, tool)
     for module, name, package in (
         ("sdl3", "SDL3 development files", "sdl3"),
@@ -255,30 +259,55 @@ def cache_value(build, key):
     return ""
 
 
+def owned_build_path(build: Path) -> Path:
+    """Refuse aliases and unknown paths before creating or invalidating build state."""
+    build = build.absolute()
+    allowed = {PLAYER_BUILD.absolute(), FRAMEWORK_BUILD.absolute(), MAINTAINER_BUILD.absolute()}
+    if build not in allowed or build.resolve() != build:
+        raise Refusal(f"refusing unexpected or symlinked build directory {build}")
+    return build
+
+
+def reset_cmake_state(build: Path) -> None:
+    """Invalidate this CMake tree without erasing sibling products or dependency builds."""
+    build = owned_build_path(build)
+    targets = [build / name for name in (
+        "CMakeCache.txt", "CMakeFiles", "Makefile", "build.ninja", "rules.ninja",
+        ".ninja_deps", ".ninja_log", "cmake_install.cmake", "CTestTestfile.cmake",
+        "DartConfiguration.tcl", "CPackConfig.cmake", "CPackSourceConfig.cmake",
+    )]
+    for target in targets:
+        if target.is_symlink():
+            raise Refusal(f"refusing symlinked CMake state {target}")
+    for target in targets:
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink(missing_ok=True)
+
+
 def configure(source, build, compiler_options, *definitions, build_testing=False):
-    build.mkdir(parents=True, exist_ok=True)
+    build = owned_build_path(Path(build))
+    source = Path(source)
     cached_source = cache_value(build, "CMAKE_HOME_DIRECTORY")
-    selection_file = build / ".spyro-toolchain"
-    selection = "\n".join(compiler_options) + "\n"
-    fresh = selection_file.is_file() and selection_file.read_text() != selection
-    fresh |= bool(cached_source and Path(cached_source).resolve() != source.resolve())
-    if fresh:
-        say(f"reconfiguring {build.relative_to(ROOT)} for the selected compiler settings")
-        allowed = {
-            PLAYER_BUILD.resolve(),
-            FRAMEWORK_BUILD.resolve(),
-            MAINTAINER_BUILD.resolve(),
-        }
-        if build.resolve() not in allowed:
-            raise Refusal(f"refusing to clean unexpected build directory {build}")
-        shutil.rmtree(build)
-        build.mkdir(parents=True)
+    generator = cache_value(build, "CMAKE_GENERATOR")
+    source_changed = bool(cached_source and Path(cached_source).resolve() != source.resolve())
+    generator_changed = bool(generator and generator != "Ninja")
+    if source_changed or generator_changed:
+        say(f"resetting CMake state in {build.relative_to(ROOT)} for source/Ninja configuration")
+        reset_cmake_state(build)
+    build.mkdir(parents=True, exist_ok=True)
+    # CMake owns compiler identity and compiler cache transitions. An argv-text stamp confuses
+    # aliases/ccache paths with toolchain changes and must never authorize deleting a build.
+    (build / ".spyro-toolchain").unlink(missing_ok=True)
     args = [
         "cmake",
         "-S",
         source,
         "-B",
         build,
+        "-G",
+        "Ninja",
         "-DCMAKE_BUILD_TYPE=Release",
         f"-DBUILD_TESTING={'ON' if build_testing else 'OFF'}",
         f"-DPython3_EXECUTABLE={sys.executable}",
@@ -286,7 +315,6 @@ def configure(source, build, compiler_options, *definitions, build_testing=False
         *definitions,
     ]
     command(args, quiet=True)
-    selection_file.write_text(selection)
 
 
 def build_discdump(psxport, compiler_options):

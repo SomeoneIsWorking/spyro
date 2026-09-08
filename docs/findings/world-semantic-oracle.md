@@ -62,7 +62,22 @@ and refuses when selected; an unresolved animation channel cannot become current
 its packed arrays were copied. Animation still advances once through the logic-frame owner.
 `world_scene_submitter::submit` publishes the complete guest visibility table before emission,
 including a valid empty recipe. Its queue-only `emit` sibling shares the draw implementation and
-leaves guest RAM and scratch untouched. Presentation must use that sibling.
+leaves guest RAM and scratch untouched. Presentation must use that sibling. Submission admission
+owns the draw offset/area (including the widened right edge), texture window, dither and depth
+projection plane. Emission consumes that small snapshot instead of revisiting live GPU state or
+copying the GPU's VRAM. A regression changes all those live settings after admission and compares
+the queued endpoint coordinates, depth and raster attributes; it failed on the live-read path and
+passes with the owned draw state.
+
+`Source::resourceRanges()` reports sorted, deduplicated physical half-open spans for the sector
+pointer table, selected group slot and terminated bytes, selected headers, successfully decoded
+LQ/HQ payloads, and retained material/refinement records. Codec layout arithmetic owns payload
+extents, including the unused prefix before HQ vertices. Mutable camera/environment globals are
+captured values, outside the loaded-resource spans. Invalid selection publishes no partial range
+set; an invalid inactive LOD publishes no payload range. Material spans retain valid RAM-end
+prefixes and signed-selector extras. These spans let temporal identity checks use psxport's
+whole-range image-generation lookup; checking only a resource's starting address would miss a
+newer load that replaces its interior.
 
 The normal CTest suite includes `world_scene_prepare`, `world_hq_refinement`, and
 `native_render_producers`. They exercise source destruction, previously culled candidates,

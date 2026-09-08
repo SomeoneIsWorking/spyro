@@ -21,6 +21,14 @@ bool RamView::contains(uint32_t address, uint32_t size) const {
   return mapped && physical <= mBytes.size() && size <= mBytes.size() - physical;
 }
 
+std::optional<GuestAddressRange> RamView::range(uint32_t address, uint32_t size) const {
+  if (!size || !contains(address, size)) {
+    return std::nullopt;
+  }
+  const uint32_t physical = address & 0x1fffffffu;
+  return GuestAddressRange{physical, physical + size};
+}
+
 uint8_t RamView::r8(uint32_t address) const {
   return mBytes[address & 0x1fffffffu];
 }
@@ -69,6 +77,7 @@ Status decodeLow(const RamView &ram, uint32_t address, LowChunk &out) {
     const uint32_t source = faceBase + i * 8u;
     out.faces.push_back({source, ram.r32(source), ram.r32(source + 4u)});
   }
+  out.payloadRange = ram.range(address + 0x1cu, end - (address + 0x1cu));
   return Status::Ok;
 }
 
@@ -118,6 +127,7 @@ Status decodeHigh(const RamView &ram, uint32_t address, HighChunk &out) {
                          ram.r32(source + 8u),
                          ram.r32(source + 12u)});
   }
+  out.payloadRange = ram.range(vertexBase, end - vertexBase);
   return Status::Ok;
 }
 

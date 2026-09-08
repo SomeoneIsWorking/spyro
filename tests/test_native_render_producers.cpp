@@ -221,6 +221,59 @@ void test_world_presentation_emits_without_guest_writes() {
   }
 }
 
+void test_world_submission_retains_admitted_draw_state() {
+  auto game = std::make_unique<Game>();
+  prepareWorldSubmission(*game);
+  game->core.rsub.projParams.setProjH(341);
+  game->gpu.s_off_x = 7;
+  game->gpu.s_off_y = 240;
+  game->gpu.s_da_y0 = 240;
+  game->gpu.s_da_y1 = 479;
+  game->gpu.s_tw_mx = 3;
+  game->gpu.s_tw_my = 5;
+  game->gpu.s_tw_ox = 1;
+  game->gpu.s_tw_oy = 2;
+  game->gpu.s_tp_dither = 1;
+  const auto recipe = worldRecipe(true);
+  const auto plan =
+      spyro::world_scene_submitter::prepare(&game->core, game->rq, kWorldProducer, recipe);
+  CHECK(spyro::world_scene_submitter::emit(&game->core, game->rq, kWorldProducer, recipe, plan));
+  CHECK_EQ(game->rq.n, 1);
+  const RqItem endpoint = game->rq.items[0];
+  game->rq.reset();
+
+  game->core.rsub.projParams.setProjH(100);
+  game->gpu.s_off_x = 0;
+  game->gpu.s_off_y = 0;
+  game->gpu.s_da_x0 = 10;
+  game->gpu.s_da_x1 = 200;
+  game->gpu.s_da_y0 = 0;
+  game->gpu.s_da_y1 = 239;
+  game->gpu.s_tw_mx = 0;
+  game->gpu.s_tw_my = 0;
+  game->gpu.s_tw_ox = 0;
+  game->gpu.s_tw_oy = 0;
+  game->gpu.s_tp_dither = 0;
+  const std::vector<uint8_t> before(std::begin(game->core.ram), std::end(game->core.ram));
+  CHECK(spyro::world_scene_submitter::emit(&game->core, game->rq, kWorldProducer, recipe, plan));
+  CHECK_EQ(game->rq.n, 1);
+  const auto &replayed = game->rq.items[0];
+  CHECK(std::equal(std::begin(endpoint.xsf), std::end(endpoint.xsf), std::begin(replayed.xsf)));
+  CHECK(std::equal(std::begin(endpoint.ysf), std::end(endpoint.ysf), std::begin(replayed.ysf)));
+  CHECK(
+      std::equal(std::begin(endpoint.depth), std::end(endpoint.depth), std::begin(replayed.depth)));
+  CHECK_EQ(endpoint.da_x0, replayed.da_x0);
+  CHECK_EQ(endpoint.da_y0, replayed.da_y0);
+  CHECK_EQ(endpoint.da_x1, replayed.da_x1);
+  CHECK_EQ(endpoint.da_y1, replayed.da_y1);
+  CHECK_EQ(endpoint.tw_mx, replayed.tw_mx);
+  CHECK_EQ(endpoint.tw_my, replayed.tw_my);
+  CHECK_EQ(endpoint.tw_ox, replayed.tw_ox);
+  CHECK_EQ(endpoint.tw_oy, replayed.tw_oy);
+  CHECK_EQ(endpoint.dither, replayed.dither);
+  CHECK(std::equal(before.begin(), before.end(), std::begin(game->core.ram)));
+}
+
 } // namespace
 
 int main() {
@@ -231,5 +284,6 @@ int main() {
   RUN(world_logic_submission_publishes_complete_visibility);
   RUN(refused_world_submission_preserves_visibility_and_queue);
   RUN(world_presentation_emits_without_guest_writes);
+  RUN(world_submission_retains_admitted_draw_state);
   return pt_summary();
 }

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "guest_program_image.h"
+
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -10,6 +13,7 @@ class RamView {
 public:
   explicit RamView(std::span<const uint8_t> bytes) : mBytes(bytes) {}
   bool contains(uint32_t address, uint32_t size) const;
+  std::optional<GuestAddressRange> range(uint32_t address, uint32_t size) const;
   uint8_t r8(uint32_t address) const;
   uint16_t r16(uint32_t address) const;
   uint32_t r32(uint32_t address) const;
@@ -25,6 +29,7 @@ struct LowFace {
 };
 
 struct LowChunk {
+  std::optional<GuestAddressRange> payloadRange;
   uint32_t address = 0;
   uint32_t originWord = 0;
   uint16_t originZ = 0;
@@ -43,6 +48,7 @@ struct HighFace {
 };
 
 struct HighChunk {
+  std::optional<GuestAddressRange> payloadRange;
   uint32_t address = 0;
   uint32_t originWord = 0;
   uint32_t originAndOffset = 0;

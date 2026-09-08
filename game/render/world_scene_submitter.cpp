@@ -44,7 +44,7 @@ bool validSubmission(const Core *core, const world_recipe::Recipe &recipe, const
 
 } // namespace
 
-Plan prepare(const Core *core,
+Plan prepare(Core *core,
              const RenderQueue &queue,
              uint32_t producerKey,
              const world_recipe::Recipe &recipe) {
@@ -86,6 +86,20 @@ Plan prepare(const Core *core,
     plan.paintOrder.clear();
     return plan;
   }
+  plan.draw = {.offsetX = gpu.s_off_x,
+               .offsetY = gpu.s_off_y,
+               .areaLeft = gpu.s_da_x0,
+               .areaTop = gpu.s_da_y0,
+               .areaRight = gpu_vk_wide_engine(core)
+                                ? std::max(gpu.s_da_x1, gpu_vk_wide_engine_w(core) - 1)
+                                : gpu.s_da_x1,
+               .areaBottom = gpu.s_da_y1,
+               .windowMaskX = gpu.s_tw_mx,
+               .windowMaskY = gpu.s_tw_my,
+               .windowOffsetX = gpu.s_tw_ox,
+               .windowOffsetY = gpu.s_tw_oy,
+               .dither = gpu.s_tp_dither,
+               .projectionH = core->rsub.projParams.projH()};
   plan.status = Status::Ready;
   return plan;
 }
@@ -101,11 +115,9 @@ void emitPrepared(Core *core,
     return;
   }
 
-  const GpuState gpu = core->game->gpu;
-  int drawRight = gpu.s_da_x1;
-  if (gpu_vk_wide_engine(core)) {
-    drawRight = std::max(drawRight, gpu_vk_wide_engine_w(core) - 1);
-  }
+  const DrawState &draw = plan.draw;
+  ProjParams depthProjection;
+  depthProjection.setProjH(draw.projectionH);
   RenderQueue::PainterObjectScope painter(queue, producerKey);
   for (size_t faceIndex : plan.paintOrder) {
     const auto &face = recipe.faces[faceIndex];
@@ -115,16 +127,16 @@ void emitPrepared(Core *core,
     unsigned char red[4]{}, green[4]{}, blue[4]{};
     for (uint32_t i = 0; i < count; ++i) {
       const auto &vertex = face.vertices[i];
-      xs[i] = vertex.sx + gpu.s_off_x;
-      ys[i] = vertex.sy + gpu.s_off_y;
-      screenX[i] = vertex.screenX + (float)gpu.s_off_x;
-      screenY[i] = vertex.screenY + (float)gpu.s_off_y;
+      xs[i] = vertex.sx + draw.offsetX;
+      ys[i] = vertex.sy + draw.offsetY;
+      screenX[i] = vertex.screenX + (float)draw.offsetX;
+      screenY[i] = vertex.screenY + (float)draw.offsetY;
       us[i] = vertex.u;
       vs[i] = vertex.v;
       red[i] = (uint8_t)vertex.rgb;
       green[i] = (uint8_t)(vertex.rgb >> 8);
       blue[i] = (uint8_t)(vertex.rgb >> 16);
-      depth[i] = core->rsub.projParams.pzToOrd(vertex.viewZ);
+      depth[i] = depthProjection.pzToOrd(vertex.viewZ);
     }
     const bool textured = face.material.textured;
     queue.emitOrQueue(core,
@@ -149,20 +161,20 @@ void emitPrepared(Core *core,
                       textured ? ((face.material.tpage >> 4) & 1u) * 256 : 0,
                       textured ? (face.material.clut & 0x3fu) * 16 : 0,
                       textured ? (face.material.clut >> 6) & 0x1ffu : 0,
-                      gpu.s_tw_mx,
-                      gpu.s_tw_my,
-                      gpu.s_tw_ox,
-                      gpu.s_tw_oy,
-                      gpu.s_da_x0,
-                      gpu.s_da_y0,
-                      drawRight,
-                      gpu.s_da_y1,
+                      draw.windowMaskX,
+                      draw.windowMaskY,
+                      draw.windowOffsetX,
+                      draw.windowOffsetY,
+                      draw.areaLeft,
+                      draw.areaTop,
+                      draw.areaRight,
+                      draw.areaBottom,
                       (face.material.tpage >> 5) & 3u,
                       nullptr,
                       -1,
                       0.0f,
                       1,
-                      textured ? (face.material.tpage >> 9) & 1u : gpu.s_tp_dither,
+                      textured ? (face.material.tpage >> 9) & 1u : draw.dither,
                       scene_painter_order::world(face.otBin, face.paintGroup, face.paintSuborder));
   }
 }

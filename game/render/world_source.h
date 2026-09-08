@@ -33,6 +33,7 @@ struct Selection {
   bool skipLow = false;
   std::vector<uint8_t> occurrences;
   std::array<std::optional<SectorHeader>, 256> sectors{};
+  std::vector<GuestAddressRange> resourceRanges;
 };
 
 Selection select(const world_chunk_codec::RamView &ram, int32_t group);
@@ -42,6 +43,7 @@ Selection select(const world_chunk_codec::RamView &ram, int32_t group);
 class Materials {
 public:
   static Materials capture(const world_chunk_codec::RamView &ram);
+  std::vector<GuestAddressRange> resourceRanges() const;
   bool contains(uint32_t address, uint32_t size) const;
   uint8_t r8(uint32_t address) const;
   uint16_t r16(uint32_t address) const;
@@ -82,6 +84,10 @@ struct Source {
   int32_t clipRight = 512;
   Materials materials{};
   std::array<std::optional<Sector>, 256> sectors{};
+
+  // Exact physical authored-input spans; excludes mutable camera/environment globals. Sorted
+  // and deduplicated without joining neighboring resources across residency boundaries.
+  std::vector<GuestAddressRange> resourceRanges() const;
 };
 
 Source capture(const world_chunk_codec::RamView &ram,

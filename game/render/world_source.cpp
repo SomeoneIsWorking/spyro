@@ -32,6 +32,9 @@ Selection select(const world_chunk_codec::RamView &ram, int32_t group) {
     out.refusal = "sector_table";
     return out;
   }
+  if (count) {
+    out.resourceRanges.push_back(*ram.range(table, count * 4u));
+  }
   if (group < 0) {
     for (uint32_t i = 0; i < count; ++i) {
       out.occurrences.push_back((uint8_t)i);
@@ -43,7 +46,9 @@ Selection select(const world_chunk_codec::RamView &ram, int32_t group) {
       out.refusal = "occlusion_group_slot";
       return out;
     }
+    out.resourceRanges.push_back(*ram.range((uint32_t)slot, 4u));
     uint32_t cursor = ram.r32((uint32_t)slot);
+    const uint32_t groupStart = cursor;
     for (uint32_t guard = 0; guard <= 256u; ++guard) {
       if (!ram.contains(cursor, 1u)) {
         out.refusal = "occlusion_group_bounds";
@@ -51,6 +56,7 @@ Selection select(const world_chunk_codec::RamView &ram, int32_t group) {
       }
       const uint8_t index = ram.r8(cursor++);
       if (index == 0xffu) {
+        out.resourceRanges.push_back(*ram.range(groupStart, cursor - groupStart));
         break;
       }
       if (index >= count) {
@@ -77,6 +83,9 @@ Selection select(const world_chunk_codec::RamView &ram, int32_t group) {
     if ((address & 3u) || !ram.contains(address, 0x1cu)) {
       out.refusal = "sector_bounds";
       return out;
+    }
+    if (!out.sectors[index]) {
+      out.resourceRanges.push_back(*ram.range(address, 0x1cu));
     }
     out.sectors[index] =
         SectorHeader{address, ram.r32(address), ram.r32(address + 4u), ram.r32(address + 0x18u)};
@@ -149,6 +158,45 @@ Materials Materials::capture(const world_chunk_codec::RamView &ram) {
     }
   }
   out.blocks_ = std::move(merged);
+  return out;
+}
+
+std::vector<GuestAddressRange> Materials::resourceRanges() const {
+  std::vector<GuestAddressRange> out;
+  out.reserve(blocks_.size());
+  for (const auto &block : blocks_) {
+    out.push_back({block.address, block.address + (uint32_t)block.bytes.size()});
+  }
+  return out;
+}
+
+std::vector<GuestAddressRange> Source::resourceRanges() const {
+  if (!selection.valid) {
+    return {};
+  }
+  auto out = selection.resourceRanges;
+  const auto materialRanges = materials.resourceRanges();
+  out.insert(out.end(), materialRanges.begin(), materialRanges.end());
+  for (const auto &sector : sectors) {
+    if (!sector) {
+      continue;
+    }
+    if (sector->lowStatus == world_chunk_codec::Status::Ok && sector->low.payloadRange) {
+      out.push_back(*sector->low.payloadRange);
+    }
+    if (sector->highStatus == world_chunk_codec::Status::Ok && sector->high.payloadRange) {
+      out.push_back(*sector->high.payloadRange);
+    }
+  }
+  std::sort(out.begin(), out.end(), [](const auto &left, const auto &right) {
+    return left.begin < right.begin || (left.begin == right.begin && left.end < right.end);
+  });
+  out.erase(std::unique(out.begin(),
+                        out.end(),
+                        [](const auto &left, const auto &right) {
+                          return left.begin == right.begin && left.end == right.end;
+                        }),
+            out.end());
   return out;
 }
 

@@ -399,9 +399,101 @@ void immutable_refined_source_contract() {
   }
 }
 
+void resource_span_contract() {
+  auto bytes = fixture();
+  view(bytes, 0, 0, 1000, 100);
+  w32(bytes, kEnvironment, 0x80000000u | kTable);
+  w32(bytes, kEnvironment + 4u, 2u);
+  w32(bytes, kTable, 0x80000000u | kSector);
+  w32(bytes, kGroups, 0x80000000u | kGroup);
+  w8(bytes, kGroup, 0u);
+  w8(bytes, kGroup + 1u, 0u);
+  w8(bytes, kGroup + 2u, 0xffu);
+  w32(bytes, kSector + 0x10u, 1u);
+  w32(bytes, kSector + 0x14u, 1u | (16u << 22));
+  constexpr uint32_t lowPayload = kSector + 0x1cu;
+  constexpr uint32_t highPayload = kSector + 0x2cu;
+  w32(bytes, lowPayload, 0x12345678u);
+  w32(bytes, highPayload, 0xabcdef01u);
+  const auto source = spyro::world_source::capture(
+      RamView(bytes), 0, {.ofx = 256 << 16, .ofy = 120 << 16, .h = 341}, 512);
+  const auto ranges = source.resourceRanges();
+  const std::vector<GuestAddressRange> expected{{0x6cf98u, 0x6d5c8u},
+                                                {kTable, kTable + 8u},
+                                                {kSector, kSector + 0x1cu},
+                                                {lowPayload, lowPayload + 4u},
+                                                {highPayload, highPayload + 4u},
+                                                {kGroups, kGroups + 4u},
+                                                {kGroup, kGroup + 3u}};
+  const auto sameRanges = [](const auto &left, const auto &right) {
+    return left.size() == right.size() &&
+           std::equal(left.begin(), left.end(), right.begin(), [](const auto &a, const auto &b) {
+             return a.begin == b.begin && a.end == b.end;
+           });
+  };
+  require(
+      source.selection.valid && source.selection.occurrences.size() == 2u &&
+          sameRanges(ranges, expected),
+      "physical source spans include exact selection, terminated group, header and both payloads");
+  require(source.sectors[0]->low.payloadRange->begin == lowPayload &&
+              source.sectors[0]->low.payloadRange->end == lowPayload + 4u &&
+              source.sectors[0]->high.payloadRange->begin == highPayload &&
+              source.sectors[0]->high.payloadRange->end == highPayload + 4u,
+          "codec reports validated payload spans without including unused HQ prefix gap");
+  uint32_t total = 0;
+  for (size_t i = 0; i < ranges.size(); ++i) {
+    const auto &range = ranges[i];
+    require(range.valid() && range.end <= 0x200000u && !range.containsPhysical(kCamera) &&
+                !range.containsPhysical(kEnvironment) && !range.containsPhysical(lowPayload + 4u) &&
+                (i == 0u || range.begin != ranges[i - 1].begin || range.end != ranges[i - 1].end),
+            "resource spans exclude mutable globals and layout gaps, with no invalid or duplicate "
+            "spans");
+    total += range.end - range.begin;
+  }
+  require(total == (0x6d5c8u - 0x6cf98u) + 8u + 28u + 4u + 4u + 4u + 3u,
+          "captured resource denominator covers bounded authored bytes rather than all RAM");
+  const auto endpoint = spyro::world_scene::build(source);
+  std::fill(bytes.begin(), bytes.end(), 0u);
+  require(sameRanges(source.resourceRanges(), ranges) &&
+              spyro::world_scene::build(source).status == endpoint.status &&
+              source.sectors[0]->high.vertices[0] == 0xabcdef01u,
+          "resource spans and captured payload survive live source destruction");
+  require(!RamView(bytes).range(0x801fffffu, 2u) && !RamView(bytes).range(kSector, 0u) &&
+              !RamView(bytes).range(0xa0091000u, 4u),
+          "range owner refuses crossing RAM boundary, empty and unmapped spans");
+
+  bytes = fixture();
+  view(bytes, 0, 0, 1000, 0);
+  w32(bytes, kSector + 4u, 0x4000u);
+  w32(bytes, kSector + 0x10u, 1u);
+  const auto dormant = spyro::world_source::capture(RamView(bytes), -1, source.projection, 512);
+  require(dormant.sectors[0]->highStatus != spyro::world_chunk_codec::Status::Ok &&
+              !dormant.sectors[0]->high.payloadRange &&
+              spyro::world_scene::build(dormant).status == spyro::world_recipe::Status::ValidEmpty,
+          "invalid inactive LOD adds no payload span and preserves endpoint admission");
+  require(dormant.resourceRanges().size() == 4u,
+          "flat selection excludes unused group records and failed LOD payloads");
+
+  constexpr uint32_t material = 0x95000u;
+  w32(bytes, kEnvironment + 0x20u, 1u);
+  w32(bytes, kEnvironment + 0x18u, 0x801ffff8u);
+  w32(bytes, kEnvironment + 0x1cu, material);
+  w8(bytes, 0x6d378u, 0xf0u);
+  const auto materials = spyro::world_source::Materials::capture(RamView(bytes));
+  const std::vector<GuestAddressRange> materialExpected{
+      {0x6cf98u, 0x6d5c8u}, {material - 8u, material + 0xa8u}, {0x1ffff8u, 0x200000u}};
+  require(sameRanges(materials.resourceRanges(), materialExpected),
+          "material spans retain signed-selector extras and exact partial RAM-end prefix");
+  require(spyro::world_source::capture(RamView(bytes), INT32_MAX, source.projection, 512)
+              .resourceRanges()
+              .empty(),
+          "invalid selection cannot publish partial resource provenance");
+}
+
 } // namespace
 
 int main() {
+  resource_span_contract();
   immutable_source_contract();
   immutable_refined_source_contract();
   retained_selection_contract();

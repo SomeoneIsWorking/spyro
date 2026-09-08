@@ -3,6 +3,7 @@
 // Spyro1FrameDriver calls this title seam directly. Scene producers feed one render queue, and
 // frame_commit owns the presentation fence. GameHooks::drawOTag remains unset to avoid a second
 // presentation route.
+#include "actor_scene_oracle.h"
 #include "core.h"
 #include "cutscene_scene_recipe.h"
 #include "field_moby_lists.h"
@@ -32,6 +33,7 @@
 #include "spyro_game.h"
 #include "stage13_scene_recipe.h"
 #include "temporal_scene.h"
+#include <array>
 #include <lucent/log.h>
 #include <stdlib.h> // abort
 
@@ -164,6 +166,15 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     if (!spyro_field_shadow_submit(mC)) {
       abortUnimplemented(sc, "Spyro shadow producer 0x80059A48 refused its atomic recipe");
     }
+    // Diagnostic only and a no-op unless PSXPORT_ACTOR_SCENE_ORACLE=1. It runs retail's moby-chain
+    // walker over the state the native producers have just read, so it must sit after every
+    // producer that walker covers, and must never be armed on a shipping frame. Retail draws the
+    // player and its shadow as ordinary mobys, so those two producers are part of the comparison
+    // even though the port owns them separately — which is why the call is here and not before
+    // them. The printed painter histogram is what makes the five-way split readable.
+    static constexpr std::array<uint32_t, 5> kActorPainters = {
+        0x8001F798u, 0x80020F34u, 0x80022A2Cu, 0x80023AC4u, 0x80059A48u};
+    spyro::actor_scene_oracle::compare(mC, 0x80019698u, kActorPainters, "actor-scene-oracle");
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");
     }

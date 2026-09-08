@@ -17,6 +17,11 @@ constexpr uint32_t kDurableRecords = 53u;
 constexpr uint32_t kTerminatorIndex = 53u;
 
 struct Record {
+  // The guest Moby instance this record was built from, or 0 when the producer's source is not a
+  // Moby. Every downstream consumer that needs per-instance identity — the objid overlay, the
+  // depth-contest diagnostics, the actor-scene oracle — reads it from the queue's dbg_node, and
+  // this is where that identity enters.
+  uint32_t moby = 0;
   actor_prefix::Input input;
   actor_prefix::Output expected;
   uint32_t descriptor = 0;
@@ -27,6 +32,7 @@ struct Record {
 };
 
 struct SourceRecord {
+  uint32_t moby = 0;
   uint32_t header = 0;
   uint32_t descriptor = 0;
   uint32_t model = 0;

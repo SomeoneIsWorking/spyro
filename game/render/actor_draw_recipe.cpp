@@ -282,6 +282,7 @@ Recipe compose(std::span<const actor_prefix::Output> records) {
       }
       if (result.emitted) {
         recipe.faces.push_back({recordIndex,
+                                record.moby,
                                 source,
                                 ordinal,
                                 result.family,

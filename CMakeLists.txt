@@ -92,6 +92,8 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/field_moby_lists.cpp
   game/render/field_particle_type2_submitter.cpp
   game/render/field_particles_recipe.cpp
+  game/render/actor_scene_oracle.cpp
+  game/render/gpu_packet_decode.cpp
   game/render/field_scene_recipe.cpp
   game/render/field_shaded_queue_recipe.cpp
   game/render/field_shaded_queue_scene.cpp

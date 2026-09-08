@@ -131,6 +131,10 @@ void submit(Core *core,
       blue[i] = rgb >> 16;
       depth[i] = core->rsub.projParams.pzToOrd(face.input.viewZ[source]);
     }
+    // The moby instance this face belongs to. RQ_WORLD items take their dbg_node from this scope,
+    // which is what gives every downstream consumer — the objid overlay, the depth-contest
+    // diagnostics, the actor-scene oracle — per-instance identity instead of one anonymous blob.
+    core->rsub.diag.beginObject(face.moby);
     const PainterReplayOrder replayOrder =
         layer == Layer::Regular
             ? scene_painter_order::actor(
@@ -174,6 +178,7 @@ void submit(Core *core,
                       1,
                       material.textured ? (material.tpage >> 9) & 1u : gpu.s_tp_dither,
                       replayOrder);
+    core->rsub.diag.endObject();
   }
 }
 

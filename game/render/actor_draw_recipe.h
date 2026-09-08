@@ -60,6 +60,7 @@ struct Candidate {
 
 struct Face {
   uint32_t record = 0;
+  uint32_t moby = 0; // The guest Moby instance owning this face, or 0 when unknown.
   uint32_t sourceWord = 0;
   uint32_t sourceOrdinal = 0;
   Family family = Family::G3;

@@ -130,6 +130,7 @@ bool build_source(Core *c,
     ++census.viewCulled;
     return false;
   }
+  source.moby = moby;
   const uint32_t animation = c->mem_r32(moby + 68u);
   const uint32_t blend = c->mem_r8(moby + 64u);
   source.header = vis.flags + blend * 0x100u + (animation >> 24) * 0x10000u +

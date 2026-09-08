@@ -66,6 +66,7 @@ struct Vertex {
 
 struct Output {
   Status status = Status::Stream;
+  uint32_t moby = 0;                   // The guest Moby instance, or 0 when the source is not one.
   std::array<uint32_t, 16> controls{}; // CR0..7 and CR13..15 at their numeric indices.
   std::vector<Vertex> vertices;
   std::vector<uint32_t> colors;

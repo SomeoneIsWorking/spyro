@@ -1,5 +1,7 @@
 #include "world_scene_capture.h"
 
+#include "gpu_packet_decode.h"
+
 #include "cfg.h"
 #include "core.h"
 
@@ -89,66 +91,29 @@ bool decodeGeometry(Core *core,
                     uint16_t drawMode,
                     uint8_t wordCount,
                     world_scene_oracle::Record &record) {
-  if (!ramSpan(packet, 8u)) {
-    return refuse(state, "packet_out_of_ram");
+  gpu_packet_decode::Packet decoded{};
+  const char *refusal = "none";
+  if (!gpu_packet_decode::decode(core, packet, drawMode, wordCount, decoded, refusal)) {
+    return refuse(state, refusal);
   }
-  const uint32_t codeWord = core->mem_r32(kseg(packet + 4u));
-  const uint8_t code = (uint8_t)(codeWord >> 24);
-  const uint8_t baseCode = code & (uint8_t)~2u;
   record = {};
-  record.packet = kseg(packet);
+  record.packet = decoded.address;
   record.otBin = otBin;
-  switch (baseCode) {
-  case 0x30:
-    record.family = world_recipe::Family::G3;
-    record.vertexCount = 3;
-    break;
-  case 0x34:
-    record.family = world_recipe::Family::GT3;
-    record.vertexCount = 3;
-    record.material.textured = true;
-    break;
-  case 0x38:
-    record.family = world_recipe::Family::G4;
-    record.vertexCount = 4;
-    break;
-  case 0x3c:
-    record.family = world_recipe::Family::GT4;
-    record.vertexCount = 4;
-    record.material.textured = true;
-    break;
-  default:
-    return refuse(state, "unsupported_packet");
+  record.vertexCount = decoded.vertexCount;
+  // Family is this renderer's vocabulary, not the packet's; the shared decoder reports only the
+  // vertex count and whether the primitive is textured.
+  if (decoded.vertexCount == 4) {
+    record.family = decoded.textured ? world_recipe::Family::GT4 : world_recipe::Family::G4;
+  } else {
+    record.family = decoded.textured ? world_recipe::Family::GT3 : world_recipe::Family::G3;
   }
-  const uint32_t packetBytes = record.material.textured ? (record.vertexCount == 4 ? 52u : 40u)
-                                                        : (record.vertexCount == 4 ? 36u : 28u);
-  if (wordCount != packetBytes / 4u - 1u || !ramSpan(packet, packetBytes)) {
-    return refuse(state, "packet_size_mismatch");
-  }
-  record.material.semiTransparent = (code & 2u) != 0;
-  for (uint32_t vertex = 0; vertex < record.vertexCount; ++vertex) {
-    const uint32_t stride = record.material.textured ? 12u : 8u;
-    const uint32_t rgbAddress = packet + 4u + vertex * stride;
-    const uint32_t xyAddress = rgbAddress + 4u;
-    const uint32_t rgb = core->mem_r32(kseg(rgbAddress));
-    const uint32_t xy = core->mem_r32(kseg(xyAddress));
-    auto &out = record.vertices[vertex];
-    out.sx = (int16_t)xy;
-    out.sy = (int16_t)(xy >> 16);
-    out.rgb = rgb & 0x00ffffffu;
-    if (record.material.textured) {
-      const uint32_t uv = core->mem_r32(kseg(xyAddress + 4u));
-      out.u = (uint8_t)uv;
-      out.v = (uint8_t)(uv >> 8);
-      if (vertex == 0) {
-        record.material.clut = (uint16_t)(uv >> 16);
-      } else if (vertex == 1) {
-        record.material.tpage = (uint16_t)(uv >> 16);
-      }
-    }
-  }
-  if (!record.material.textured && record.material.semiTransparent) {
-    record.material.tpage = drawMode & 0x60u;
+  record.material.textured = decoded.textured;
+  record.material.semiTransparent = decoded.semiTransparent;
+  record.material.clut = decoded.clut;
+  record.material.tpage = decoded.tpage;
+  for (uint32_t vertex = 0; vertex < decoded.vertexCount; ++vertex) {
+    const gpu_packet_decode::Vertex &in = decoded.vertices[vertex];
+    record.vertices[vertex] = {in.sx, in.sy, in.rgb, in.u, in.v};
   }
   return true;
 }

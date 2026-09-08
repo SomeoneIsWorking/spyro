@@ -118,6 +118,7 @@ bool capture_source(Core *c, const SourceRecord &source, Record &capture) {
       !c->rsub.projParams.geomValid()) {
     return false;
   }
+  capture.moby = source.moby;
   auto &input = capture.input;
   input = {};
   input.header = source.header;
@@ -257,6 +258,9 @@ actor_draw_recipe::Recipe compose_records(std::span<const Record> records,
   outputs.reserve(records.size());
   for (const auto &record : records) {
     outputs.push_back(record.expected);
+    // The prefix builder works from transform/stream state alone and has no way to know which
+    // instance produced it, so instance identity is attached here, where the capture still has it.
+    outputs.back().moby = record.moby;
   }
   // The live census has already established ownership before this adapter is
   // called. An empty list therefore means a known-empty scene, while the

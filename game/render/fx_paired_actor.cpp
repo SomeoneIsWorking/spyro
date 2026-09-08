@@ -517,7 +517,36 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   }
 
   SpyroPairedActorTransform transform{};
-  if (!build_transform(c, transform)) {
+  const bool transformOk = build_transform(c, transform);
+  // Layer 0 is placed by the instance position alone; layers 1 and 2 add a per-layer root offset
+  // decoded from the animation's root words. A detached head or wing shows up here as a layer
+  // translation that is not a small offset from layer 0's, so the failing side is named before any
+  // pixel is inspected. Printed on the refusing path too, where the values are the defaults.
+  lucent::debug(
+      "pairedroot",
+      "0x80023AC4 transform ok={} layer0_tr={},{},{} layer1_tr={},{},{} "
+      "layer2_tr={},{},{} root1={},{},{} root2={},{},{} words={:08X}/{:08X}/{:08X}/{:08X}",
+      transformOk,
+      (int32_t)transform.layer_cr[0][5],
+      (int32_t)transform.layer_cr[0][6],
+      (int32_t)transform.layer_cr[0][7],
+      (int32_t)transform.layer_cr[1][5],
+      (int32_t)transform.layer_cr[1][6],
+      (int32_t)transform.layer_cr[1][7],
+      (int32_t)transform.layer_cr[2][5],
+      (int32_t)transform.layer_cr[2][6],
+      (int32_t)transform.layer_cr[2][7],
+      transform.root_input[0][0],
+      transform.root_input[0][1],
+      transform.root_input[0][2],
+      transform.root_input[1][0],
+      transform.root_input[1][1],
+      transform.root_input[1][2],
+      transform.root_words[0],
+      transform.root_words[1],
+      transform.root_words[2],
+      transform.root_words[3]);
+  if (!transformOk) {
     return refuse_shipping(state, "production transform/projection inputs missing");
   }
   const int32_t tx = transform.base_mac[0], ty = transform.base_mac[1], tz = transform.base_mac[2];

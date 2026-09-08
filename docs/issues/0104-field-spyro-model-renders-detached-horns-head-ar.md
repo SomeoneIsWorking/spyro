@@ -27,6 +27,28 @@ head, horns and wings attached. So the actor model codec and its material path a
 in the FIELD composition of the player producer `0x80023AC4` (or the depth/OT ordering that places
 its sub-parts) is not.
 
+## Ruled out: the per-layer root translation
+
+`0x80023AC4` places three layers. Layer 0 is positioned from the instance position alone; layers 1
+and 2 add a per-layer root offset decoded from the animation's root words. A detached head or wing
+would show as a layer translation far from layer 0's, so `PSXPORT_DEBUG=pairedroot` now prints all
+three camera-space translations and the root words they came from, on the refusing path as well.
+
+Measured in a driven Artisans run (`scratch/logs/pairedroot.log`):
+
+```
+layer0_tr=0,0,2546  layer1_tr=0,42,2638  layer2_tr=4,147,2357
+root1=0,72,89       root2=4,226,-200     words=0B4003DC/E71FF38F/0B0003DC/E71FF38F
+```
+
+The layer translations are small, stable offsets from layer 0 at a view depth of ~2550, and they
+track frame to frame. The root decode is therefore NOT the fault; look at the per-layer pose vertex
+decode, or at which primitives reference which layer's vertices, instead.
+
+A zoomed capture with the same build is `scratch/shots/spyro-zoom.png`. At 6x it reads as Spyro from
+behind with horns, wings and body all present; the specific defect is narrower than "three
+disconnected pieces" and needs to be restated against an oracle before it is chased further.
+
 ## Not yet determined
 
 Whether the horn arc and the wing smear are one fault (a per-part transform) or two (a transform

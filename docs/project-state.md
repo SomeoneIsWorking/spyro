@@ -36,9 +36,8 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 ## Current focus
 
-S011 — compare the reached Artisans gameplay against the independent console oracle. Resolve the
-delivered-field/guest-VBlank discrepancy in issue 0102, then compare matching scene state and extend
-visual and temporal coverage. Boot/title and a visible player do not establish full conformance.
+S011 — compare the reached Artisans gameplay against the independent console oracle, including
+the remaining camera-state difference, and extend source-based world/camera interpolation. Boot/title and a visible player do not establish full conformance.
 
 ## Hosted verification and host gaps
 
@@ -430,25 +429,20 @@ external device/timing history and proves this arithmetic window only. The frame
 raw banks and materializes SXYP's alias without shifting the FIFO; shipping-JIT GPF/SQR, FIFO and
 roundtrip regressions pass 111 checks, and its combined gate passes 133 tests.
 
-The current rendering observation at framework `bb75a192` reaches the same Artisans spawn position
-as an independent full-console run using the user's NTSC-U SCPH-1001 v2.2 BIOS. Spyro is visible at
-spawn after restoring the paired renderer's local-to-global OT coalescing; the native shadow uses the
-same explicitly owned projection. The source mapping is documented in
-[paired-actor-world-order](findings/paired-actor-world-order.md). The windowless, silent run exits 0
-after 2,758 fields / 1,315 product steps and fences, executing 7,659,432 JIT blocks / 58,142,779
-instructions with 3,634 translations, zero faults and zero fallback. The wired temporal source
-records 833 midpoint and 833 endpoint calls, 1,666/1,666 emitted. The final Clang/Ninja gate passes
-all 15 CTests, 114 translation units through clang-tidy, and 203 source/header format checks; an
-unchanged second configure/build performs zero compilations. This proves the reached composition
-and callback path, not visual parity or complete FIELD interpolation.
+The current Artisans observation uses the native/Lightrec product with widescreen and fps60 enabled
+and an independent full-console reference using the user's NTSC-U SCPH-1001 v2.2 BIOS. Spyro is
+visible at spawn and above the fountain wall after movement; paired local-to-global OT coalescing
+and the explicitly owned shadow projection are documented in
+[paired-actor-world-order](findings/paired-actor-world-order.md).
 
-Both products accept Left, but equal requested fields do not produce equal guest time or player
-state. Issue [0102](issues/0102-native-delivered-fields-undercount-guest-vblank.md) records excess
-native VBlank counter ticks and the remaining writer-attribution discriminator. The moved native
-picture still shows different foreground occlusion from the oracle; these captures have different
-player/camera states and cannot establish the rendering cause. Full-console comparison uses an
-independent CPU/scheduler but shares Beetle device lineage with the product, so it cannot exclude
-all common device defects.
+Issue [0102](issues/0102-native-delivered-fields-undercount-guest-vblank.md) resolves duplicate
+VBlank delivery and records the exact comparison: native boot/title and Artisans counter deltas
+now equal delivered fields; Left for 60 fields ends within 1–2 guest units per player axis of the
+oracle. Camera state still differs, so this is not exact-state or complete visual parity. The run
+exits 0 after 4,061 fields / 2,062 product steps and fences, with nonzero JIT execution, zero faults
+and zero fallback. Paired temporal emission remains positive. Complete FIELD interpolation,
+paced audio/performance and all released hosts remain unqualified. The console reference uses an
+independent CPU/scheduler but shares Beetle device lineage, so it cannot exclude all common defects.
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,
@@ -535,5 +529,5 @@ run records nonzero paired midpoint/endpoint emission through the shipping JIT p
 
 Gap: world, camera, regular actors, shadows, particles and other unowned temporal sources do not yet
 have complete matching-source interpolation. Discontinuous paired-model intervals retain endpoint
-presentation. Full-scene 60fps motion, paced timing/audio and performance remain unqualified; the
-VBlank discrepancy in issue 0102 must be resolved before cadence parity is claimed.
+presentation. Full-scene 60fps motion, paced timing/audio and performance remain unqualified.
+Issue 0102 resolves the observed duplicate field tick; it does not qualify full-scene cadence parity.

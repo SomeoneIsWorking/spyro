@@ -40,6 +40,7 @@ public:
   std::int32_t counter() const;
 
 private:
+  // True while a guest root owns its counter, including an IRQ deferred by masking/critical state.
   bool dispatchCallbacks();
   void serviceInspection();
   void serviceSkipMap(bool startEdge);

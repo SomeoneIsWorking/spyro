@@ -18,6 +18,7 @@ public:
     return RenderCapabilities::interpolatedNative();
   }
   bool guestVramIsPicture(const Game &game) const override;
+  void pacePresentation(Core &core, int fields, int parts) override;
   const char *discEnvVar() const override {
     return "PSXPORT_SPYRO_DISC";
   }

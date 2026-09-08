@@ -2,6 +2,7 @@
 
 #include "cd_control.h"
 #include "fps60.h"
+#include "frame_pacer.h"
 #include "game.h"
 #include "presentation_owner.h"
 #include "spyro1_frame_driver.h"
@@ -61,6 +62,11 @@ std::unique_ptr<FrameDriver> Spyro1Runtime::createFrameDriver(Game &game) {
 
 bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {
   return spyro_presentation_owner(game.core).guestVramIsPicture();
+}
+
+void Spyro1Runtime::pacePresentation(Core &core, int fields, int parts) {
+  // FieldScheduler has already delivered this simulated time, including the guest IRQ callbacks.
+  gpu_wait_presented_fields(&core, fields, parts);
 }
 
 std::unique_ptr<TemporalFramePresentation>

@@ -1,8 +1,8 @@
 ---
 id: 102
 title: Native delivered fields undercount guest VBlank root ticks
-status: investigating
-symptom: Left 60 native fields moves farther than oracle; counter 0x800749E0 advances 79 over 60 fields and 910 over 610 boot fields
+status: resolved
+symptom: Guest VBlank callbacks ran both from native field delivery and presentation-generated hardware edges
 tags: timing,vblank,irq,oracle
 state_items: S004,S007,S011
 created: 2026-09-08
@@ -11,75 +11,85 @@ updated: 2026-09-08
 
 Affected state items: [S004](../project-state.md), [S007](../project-state.md), [S011](../project-state.md).
 
-## Observed discriminator
+## Cause and correction
 
-The operator's full-console oracle and native product start at matching Spyro spawn coordinates,
-but holding Left for 60 native delivered fields moves farther than 60 oracle fields. Native
-REPL counter 0x800749E0 advances 3968 -> 4047 (79) during those 60 delivered fields.
-A separate 610-field boot observation advances 1 -> 911 (910). These observations establish
-that delivered-field counts and guest root ticks are not equivalent; movement equivalence
-must not be inferred from equal requested counts. Runtime attribution of each extra store
-is still pending.
+The retained counter at 0x800749E0 increments in root 0x8005E560, store 0x8005E58C,
+before all eight callbacks at 0x800749C0 (`external/spyro-1/asm/psyq.s`).
+FieldScheduler invoked that root, but presentation subsequently advanced Timing and
+latched another hardware VBlank. Shipping JIT pending-work service could resume
+HookEntryInt 0x8005DFC8 -> master 0x8005E03C -> the same root outside the scheduler's
+local before/after check. Two-field presentation quotas could coalesce into one
+extra hardware edge; there is no fixed duplicate ratio.
 
-## Static ownership conflict
+FieldScheduler now advances one physical display field before interrupt service.
+Spyro1Runtime's presentation override waits for the host deadline without advancing
+devices again. Other runtimes retain the framework's combined time-and-wait behavior.
+Per-Game FramePacer state replaces a process-global deadline.
 
-The retained counter is incremented by guest root 0x8005E560 at store 0x8005E58C,
-before iterating all eight callbacks at 0x800749C0
-(`external/spyro-1/asm/psyq.s:3340`). Its other named store initializes zero at
-0x8005E52C. The host fallback increment occurs only when no root ran.
+An installed HookEntryInt path retains root/counter ownership while masked or in a
+critical section. The scheduler leaves its hardware edge pending and does not call
+the root directly or synthesize a counter increment. Hle owns the shared CPU-context
+readiness condition. Two masked physical fields coalesce into one latched IRQ, as
+hardware does; counter ticks need not equal physical fields during such deferral.
+Direct no-Hook callbacks and root-absent bootstrap counter ownership remain explicit.
 
-Two shipping routes can invoke that root:
+The production scheduler/presenter/pending-work regression failed with counter 2 for
+one field before this correction. A second discriminator exposed the same duplicate
+on unmask. The corrected fixture passes 9 cases / 997 checks, including the actual
+Core presenter, Fps60 endpoint/midpoint splitting, unpresented time, all eight callback
+slots, GPR/HI/LO/PC restoration, masked/critical deferral, no-Hook and bootstrap.
+Callback cases execute shipping JIT blocks with zero fallback.
 
-1. `titles/spyro1/core/spyro1_field_scheduler.cpp:100` invokes the root directly, or
-   consumes an already-pending enabled VBlank through Hle::irqPoll. Its before/after
-   assertion covers only this invocation. `deliver():283` then counts one field.
-2. Presentation later calls `FramePresentationBackend::pace`
-   (`../psxport/runtime/psx/frame_presenter.cpp:87`), reaching
-   `gpu_pace_subframe_fields` (`../psxport/runtime/psx/frame_pacer.cpp:62`).
-   This advances display time even with NOPACE, and
-   `Timing::advanceDisplayFields` / `raiseVBlank`
-   (`../psxport/runtime/psx/timing.cpp:45,103`) latches I_STAT bit 0 and PW_IRQ.
-   Lightrec pending-work exits call `servicePendingWork`
-   (`../psxport/runtime/cpu/lightrec_executor.cpp:548,568`;
-   `../psxport/runtime/cpu/execution_services.cpp:55`). Hle can then resume
-   HookEntryInt 0x8005DFC8 -> master dispatcher 0x8005E03C -> the same root,
-   outside the scheduler's counted invocation.
+## Exposed runtime cost
 
-Master dispatcher acknowledges the hardware bit before jalr at 0x8005E11C;
-the root's return address on that route is 0x8005E124. CPU instruction tick
-accounting services SIO/CDC but does not itself raise VBlank. The hardware
-VBlank latch is not a count, so two fields advanced together can coalesce into
-one extra callback; no fixed extra-tick ratio is assumed.
+The first corrected-clock game run hit the unchanged three-second watchdog inside
+retained libpad IRQ handling. GDB samples reached the legitimate pipelined final
+RX wait at 0x8006A0B0 (RA 0x8006AFAC) and the timer-based ACK wait at 0x8006BBD4;
+the latter had a pending ACK only 36 emulated ticks ahead. Transfers were progressing.
+Every JIT exit/reentry called gte_bind, which cleared the unused 1 MiB Pgxp cache.
+Retained pending IRQ work made those clears recur around small controller-poll blocks.
 
-History commit `380b3e31222568e15d42dfb84ab61b2936d8f657` preserves the
-already-pending edge continuation contract. It does not cover an edge serviced
-before the next scheduler invocation. Claim C117 also requires the complete
-root/table dispatch, including later non-pad callbacks.
+No shipping precision-cache readers remained in the framework or maintained consumers.
+The obsolete cache, storage and lookup/reset shims are removed. Required Beetle ABI
+hooks remain stateless; explicit projection provenance and GTE isolation are preserved.
+Five focused GTE/provenance tests pass. No watchdog, SIO timing or pending-work policy
+was relaxed. The subsequent real game run passes the same title-screen region.
 
-## Next falsifier and regression boundary
+## Real-game comparison
 
-Catch the guest counter store 0x8005E58C or exact synchronized root entry and
-record root RA plus whether FieldScheduler::dispatchCallbacks is on the host
-stack. RA 0x8005E124 with no scheduler dispatch frame demonstrates an uncounted
-hardware-root invocation. Sample the counter immediately after callbacks,
-after presentation, and at the next callback entry to locate its interval.
-If extra stores have another origin, revise this candidate rather than masking
-the counter or assuming the ratio proves it.
+The silent, windowless native/Lightrec product with widescreen and fps60 enabled:
 
-The regression should use the production FieldScheduler, presenter/pacer timing
-owner, pending-work service and synthetic registered guest interrupt callbacks:
-one delivered field plus presentation plus pending-work service must invoke the
-root once; a second field must invoke it a second time. Check emulated display
-time and scheduler cadence, plus an unpresented field and temporal split presents.
-Preserve the existing shared tests for hardware IRQ delivery, masked-latched
-edges, and rational half-field accumulation. A fake pace callback that merely
-counts calls cannot expose this failure.
+- Boot/title: counter 1 -> 611 over 610 delivered fields; before correction 1 -> 911.
+- Artisans Left: counter 3979 -> 4039 over 60 delivered fields; before correction
+  the observed 60-field interval advanced 3968 -> 4047.
+- Native spawn XYZ: 84992, 47173, 9557. After Left 60: 84356, 46546, 9692.
+- Independent console oracle, user's NTSC-U SCPH-1001 v2.2 BIOS: spawn
+  84992, 47173, 9556; after Left 60: 84357, 46544, 9691.
+- Native camera after Left: 86564, 45526, 10301; oracle: 86624, 45576, 10308.
 
-A fix must establish one display-clock owner: native field delivery advances
-simulated display time/devices/IRQ once, while presentation only schedules its
-host-time share of those delivered fields, or an explicit existing clock boundary
-is consumed exactly once. Do not add a title-specific skip-edge boolean, remove
-VBlank globally, mask unrelated interrupts, or change counter/timestep constants.
-The current pacer contract intentionally couples guest time and IRQ delivery for
-other consumers; `test_vblank_irq`, `test_cdc_emulated_time`,
-`test_hsync_counter` and `test_pace_plan` constrain that behavior.
+The moved native picture now keeps Spyro visible above the fountain wall, with
+additional horizontal coverage. The 1–2-unit player differences and remaining camera
+state differences are not exact-state or complete visual parity. Native REPL inspection can
+interrupt guest update or run in the post-present field tail; oracle retro_run stops at a
+scanout boundary and can likewise stop mid-update. Neither sample proves matching game
+phase. Align completed camera/render checkpoints before attributing the residual difference
+to gameplay or rendering. The oracle has an independent CPU/scheduler but shares Beetle
+device lineage.
+
+The complete native observation exits 0 at 4,061 fields / 2,062 product steps and
+presentation fences: 3,717 translations, 21,893,233 executed JIT blocks,
+183,465,800 instructions, zero faults and zero fallback. Paired temporal proof records
+1,050 midpoint and 1,050 endpoint callbacks, 2,100/2,100 emitted. This proves the reached
+clock and paired-player path, not complete FIELD interpolation or released-host performance.
+
+A recurrence of extra root ticks outside legitimate masked-edge deferral, failure of
+any production clock/IRQ regression, or a mismatched device-time advance falsifies this
+resolution. Broader camera/visual and paced audio/performance qualification remains S011.
+
+## Landing verification
+
+Framework `e6dd7256` passes all 137 checks. The pinned Spyro Clang/Ninja gate passes
+16 CTests, clang-tidy for 115 translation units, and formatting for 204 source/header
+files. The no-argument `./run.sh` path builds with Clang, provisions the authenticated
+input, and exits 0 after an explicitly bounded one-field startup (zero fallback).
+That launcher check is separate from the representative gameplay observation above.

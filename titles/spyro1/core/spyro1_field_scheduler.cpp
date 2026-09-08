@@ -104,6 +104,14 @@ bool FieldScheduler::dispatchCallbacks() {
   if (target == 0) {
     return false;
   }
+  const bool rootOwnsIrq = root != 0 && game_.hle.exception_exit_buf != 0;
+  if (rootOwnsIrq && (!hasPendingEnabledVblank(core.irqStatLatch(), game_.hle.i_mask) ||
+                      !game_.hle.canDispatchInterrupt(core))) {
+    // An installed guest IRQ continuation retains counter ownership while its edge is masked or
+    // its CPU context is unavailable. Calling the root directly here would duplicate that edge
+    // when the runtime later services it. Leave both hardware state and pending work untouched.
+    return true;
+  }
   if (!handlerStackArmed_) {
     handlerStackArmed_ = true;
     for (std::uint32_t address = kHandlerStackFloor; address < kHandlerStackTop; address += 4) {
@@ -118,8 +126,7 @@ bool FieldScheduler::dispatchCallbacks() {
   const std::int32_t before = counter();
   R3000 saved = static_cast<R3000 &>(core);
   core.r[29] = kHandlerStackTop;
-  if (shouldDispatchVblankThroughIrq(
-          core.irqStatLatch(), game_.hle.i_mask, game_.hle.exception_exit_buf)) {
+  if (rootOwnsIrq) {
     // A real display edge owns this dispatch. The guest's HookEntryInt context is a saved
     // continuation, not the root handler itself, so direct rc0(root) would run both the resumed
     // IRQ path and the root once guest irq poll reaches the latched edge. Re-arm the gate from the
@@ -128,8 +135,7 @@ bool FieldScheduler::dispatchCallbacks() {
     core.pending_work |= Core::PW_IRQ;
     game_.hle.irqPoll(&core);
   } else {
-    // Host-owned fields have no hardware VBlank edge to dispatch. Keep the measured root fallback
-    // for that case only.
+    // Without a guest IRQ continuation, the title's measured direct callback route owns delivery.
     psx::cpu::dispatchGuestToReturn0(
         core, target, psx::cpu::ExecutionBudget::currentTurn(core), "field-callback");
   }
@@ -151,9 +157,8 @@ bool FieldScheduler::dispatchCallbacks() {
     }
   }
 
-  // The retained root handler still performs the physical counter store. The scheduler owns when
-  // that tick occurs and verifies the exact one-field contract; direct native callback-table
-  // dispatch remains the next RE boundary.
+  // A root actually dispatched here must tick exactly once. Masked/critical guest IRQ ownership
+  // returned above: physical fields continue, but their counter tick waits for IRQ delivery.
   const std::int32_t after = counter();
   if (root != 0 && after != before + 1) {
     lucent::error("fields",
@@ -280,8 +285,12 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   const bool startDown = (game_.pad.buttons & kPadStart) == 0;
   const bool startEdge = startDown && (previousButtons_ & kPadStart) != 0;
   previousButtons_ = game_.pad.buttons;
-  const bool guestRootAdvanced = dispatchCallbacks();
-  if (!guestRootAdvanced) {
+  if (!game_.timing.advanceDisplayFields(1, 1, gpu_field_rate_millihz(&core))) {
+    lucent::error("fields", "display clock refused one field at {}", request.site);
+    std::abort();
+  }
+  const bool guestRootOwnsCounter = dispatchCallbacks();
+  if (!guestRootOwnsCounter) {
     core.mem_w32(kVblankCounter, core.mem_r32(kVblankCounter) + 1u);
   }
   cadence_.delivered();

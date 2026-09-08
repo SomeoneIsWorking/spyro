@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <lucent/log.h>
 #include <vector>
 
 namespace spyro::world_scene_prepare {
@@ -117,6 +118,23 @@ bool prepare(const world_source::Selection &previous,
     for (uint32_t channel = 0; channel < 4; ++channel) {
       if ((uint8_t)(active >> (channel * 8u)) < 0x80u ||
           (uint8_t)(previousActive >> (channel * 8u)) < 0x80u) {
+        lucent::debug("worldtemporal",
+                      "pending world animation sector={:08X} index={} channel={} "
+                      "previous={:02X} current={:02X} low={} high={} "
+                      "view={}/{}/{} radius={} lod={} flags={:04X}",
+                      sector,
+                      index,
+                      channel,
+                      (uint8_t)(previous.sectors[index]->animation >> (channel * 8u)),
+                      (uint8_t)(header.animation >> (channel * 8u)),
+                      low,
+                      high,
+                      x,
+                      y,
+                      z,
+                      radius,
+                      lod,
+                      flags);
         why = "active_animation";
         return false;
       }

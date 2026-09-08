@@ -503,6 +503,24 @@ void sampled_source_contract() {
   require(build(previous).status == Status::ValidEmpty &&
               sample(previous, current, 0.5).status == Status::ActiveAnimation,
           "newly visible midpoint refuses an unadvanced channel at either endpoint");
+  for (uint32_t channel = 0; channel < 4u; ++channel) {
+    for (bool dirtyPrevious : {false, true}) {
+      auto before = previous.selection, after = current.selection;
+      before.sectors[0]->animation = after.sectors[0]->animation = 0xffffffffu;
+      before.sectors[0]->extent = after.sectors[0]->extent = channel < 2u ? 0x4001u : 0x2001u;
+      auto &dirty = dirtyPrevious ? before : after;
+      dirty.sectors[0]->animation &= ~(0xffu << (channel * 8u));
+      const spyro::world_projection_math::ProjectionStream culling(
+          before.camera.cullingMatrix, after.camera.cullingMatrix, {}, 0.5);
+      Prepared prepared{};
+      const char *why = "unset";
+      require(!spyro::world_scene_prepare::prepare(before, after, culling, 512, prepared, why) &&
+                  why == std::string_view("active_animation"),
+              "each selected LQ/HQ vertex/color channel refuses when pending at either endpoint");
+      require(dirty.sectors[0]->animation == (0xffffffffu & ~(0xffu << (channel * 8u))),
+              "pending-channel diagnosis leaves captured readiness unchanged");
+    }
+  }
   previous = base;
   current = base;
   current.sectors[0]->low.colors[0] ^= 1u;

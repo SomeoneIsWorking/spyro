@@ -60,7 +60,6 @@ set(SPYRO_RUNTIME_SOURCES
   game/core/cd_queue.cpp
   game/core/guest_execution.cpp
   game/core/native_angle.cpp
-  game/core/native_gameplay.cpp
   game/core/native_gte.cpp
   game/core/native_leaf.cpp
   game/core/native_rand.cpp
@@ -176,6 +175,10 @@ set_target_properties(spyro_port PROPERTIES
 
 include(CTest)
 if(BUILD_TESTING)
+  # This discriminator consumes an explicitly supplied authenticated EXE locally. No game assets
+  # enter hosted CTest/CI, and no extracted instructions are committed as synthetic fixtures.
+  add_executable(test_spyro_digital_input tests/test_spyro_digital_input.cpp)
+  target_link_libraries(test_spyro_digital_input PRIVATE spyro_runtime)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)

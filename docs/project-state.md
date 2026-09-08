@@ -306,11 +306,28 @@ verified.
 
 ### S007 — Spyro 1 gameplay input
 
-Evidence: from the retired execution path, a controlled idle-versus-Left replay changed the player
-position and target after the New Game handoff, and retained update behavior responded to jump,
-charge, and flame. The same route crossed the native frame scheduler and current stage-0 scene
-owners. This verifies the title input/native-owner contract, not Lightrec execution or complete
-visual gameplay.
+The retail movement routine already consumes held digital input. The authenticated `SCUS_942.28`
+loads `[activePad + 4]` at `0x8003D4A0` and `0x8003D4BC`; this is the buffered held word.
+The reference decomp declares `g_ActivePad` as the outer `Gamepad*`, where the same `+4` offset is
+named `m_Released`. Treating that mistaken type name as buffered release-edge semantics introduced
+a redundant native movement override. The guest selector at `0x80043FE4` instead selects the
+24-byte buffered record at `0x800773BC + 24 * substep`. The override and its shift-only test are
+removed; movement remains owned by the unchanged retail body through Lightrec.
+
+`test_spyro_digital_input` is a local, asset-dependent production-boundary discriminator: it
+authenticates the supplied executable, runs press/hold/release/idle states through the retail
+function, and checks target speed/rotation, turn momentum, preserved ABI and nonzero JIT execution
+with zero fallback. Run explicitly after building the target:
+`build/test_spyro_digital_input <path/to/SCUS_942.28>`. It is not an asset-dependent hosted
+CTest gate. The operator's focused run passed all 4/4 cases: press and hold each executed 3 JIT
+blocks / 40 instructions and produced speed 1536, rotation 992; release and idle each executed
+3 blocks / 33 instructions and produced speed 0, rotation 592. Total execution was 12 JIT blocks
+/ 146 instructions with zero interpreter fallback. This proves the isolated retail input-consumer
+contract and preserved ABI, not representative gameplay conformance.
+
+Historical idle-versus-Left replays changed player position after the New Game handoff, and jump,
+charge, and flame reached the guest update. Those observations do not establish the false
+release-edge explanation or complete current gameplay parity.
 
 ### S008 — Runtime Lightrec execution
 
@@ -382,6 +399,28 @@ Gap: the Lightrec backend must execute that boundary and prove bounded host-serv
 same guest CPU state. No body transcription or interpreter fallback may replace it.
 
 ### S011 — Representative gameplay conformance
+
+A current Linux x86_64 Clang observation with framework `ed134133` reaches Artisans stage 0,
+accepts held Left, and returns cleanly after 2,744 fields / 1,367 product steps and presentation
+fences. Player position changes from `(0x14C00,0x0B845,0x02554)` to
+`(0x14991,0x0B289,0x0267B)` over 60 delivered fields. It executes 9,497,188 JIT blocks /
+75,262,114 instructions, with 3,683 translations and zero faults or interpreter fallback.
+
+This route first exposed a shared GTE-transfer defect: replaying MTC2 writes while copying the
+register bank overwrote IR3 through IRGB's write side effect. The collision loop at `0x8004E9D8`
+then repeated unchanged forever. An isolated Mednafen CPU window from the captured live arithmetic
+input reaches `0x8004EB34` in 153 steps / 837 oracle cycles with RAM and scratch unchanged. The
+incoming jump's delay slot is an ADDI, with no pending load; this comparison explicitly normalizes
+external device/timing history and proves this arithmetic window only. The framework now transfers
+raw banks and materializes SXYP's alias without shifting the FIFO; shipping-JIT GPF/SQR, FIFO and
+roundtrip regressions pass 111 checks, and its combined gate passes 133 tests.
+
+The initial 16:9 VRAM readback shows the Artisans environment without a visible player; a final
+presented capture after movement shows Spyro partly occluded by foreground terrain. Visual parity
+remains unqualified. Eight consecutive presented captures are collected. The direct
+runtime does not wire the framework's legacy temporal callbacks, and FIELD's mixed producers exceed
+the paired-actor-only temporal source. These are current rendering gaps, not a completed gameplay
+or visual-oracle conformance result.
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,

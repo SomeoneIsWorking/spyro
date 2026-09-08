@@ -69,9 +69,10 @@ void SpyroRenderer::installModeFromConfig(Core *c) {
   }
 }
 
-// THE RETAINED REFERENCE BODY — a diagnostic entry for native-producer comparison. It is not currently
-// a runnable player path: every reached retail render arm owns a VSync-based display tail, and the
-// mandatory guest-VSync trap stops it until those diagnostic tails are split from scene production.
+// THE RETAINED REFERENCE BODY — a diagnostic entry for native-producer comparison. It is not
+// currently a runnable player path: every reached retail render arm owns a VSync-based display
+// tail, and the mandatory guest-VSync trap stops it until those diagnostic tails are split from
+// scene production.
 //
 // The OT walk is inside it rather than beside it: the guest's driver ends in its own DrawOTag,
 // which reaches the GPU through DMA2, and the framework walks the ordering table there

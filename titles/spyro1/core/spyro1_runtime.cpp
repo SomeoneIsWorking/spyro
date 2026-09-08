@@ -46,7 +46,6 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   spyro_register_native_gte(game.core);
   spyro_register_native_angle(game.core);
   spyro_register_native_util(game.core);
-  spyro_register_native_gameplay(game.core);
   lucent::info("boot", "installed Spyro 1's verified image-scoped native overrides");
 }
 

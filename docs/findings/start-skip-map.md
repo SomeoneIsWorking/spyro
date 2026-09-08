@@ -58,11 +58,47 @@ inside a positively identified skippable state and release it before the next st
 
 ## Level-transition tally
 
-The level-transition owner is `func_8002DF9C` (`GS_LevelTransition = 1`). Its guest HUD/tally uses
-`g_LevelTransTicks` at `0x800756AC` and hides itself once the counter exceeds `416`; loading remains
-independent and continues through `LoadLevel(1)` while the HUD is inactive. The former host shortcut
-wrote that timer and HUD flag directly. It is removed: no level-transition skip is currently offered
-until a complete cancellation/transition route is recovered.
+The level-transition owner is `func_8002DF9C` (`GS_LevelTransition = 1`). Its guest HUD/tally
+`func_8002DA74` advances `g_LevelTransTicks` at `0x800756AC` and, once that counter passes `416`,
+clears `g_LevelTransHudActive` at `0x800756B0` **and does nothing else**: the branch that retires a
+gem sprite is inside the `<= 416` arm, so gems still in flight at expiry keep their live markers,
+and the counter itself is only ever re-zeroed when the next transition begins (`func_8002C664` in
+`gamestates/init.c`, and the type-6 surface in `special_surfaces.c`). Clearing that one flag is
+therefore the screen's entire terminal transition, not a shortcut past part of it.
+
+The screen is also not a loading screen: `func_8002DF9C` calls `LoadLevel(1)` while the load is
+below stage 11 **or** the flag is clear, so a finished load is *held* by the animation. Cancelling
+releases that hold and leaves every load phase to run.
+
+`titles/spyro1/core/spyro1_transition_skip.cpp` owns the enhancement. On a Start or Cross edge while
+the stage selector reads 1 and the flag is still set, it performs that same single write. It does
+not touch `g_LevelTransTicks`, the gem array, the load stage, or the gamestate, and it does not
+re-run the tally update, so no simulation is fast-forwarded and no I/O is bypassed. The former host
+shortcut, which wrote the timer as well as the flag, stays removed.
+
+`classify()` is pure and covered by `tests/test_transition_skip.cpp`, including the two negatives
+that matter: Start during play is the pause button and Start in the pause menu is confirm, and
+neither reads as a cancellation.
+
+NOT YET LIVE-VERIFIED. `GS_LevelTransition` is only entered by portal traversal and by
+`func_8002C664` (return home), and `func_8002C664` is reachable from the pause menu only in a
+sub-level, not in a homeworld. Both routes therefore sit behind the portal blocker below, so
+`tools/drive.py --skip-transitions` reaches gameplay without the state ever occurring: a driven run
+with the flag on and one with it off both reach `GS_Playing` at frame 6361 and log no cancellation.
+The mechanism is proven by unit test only until a portal can be traversed.
+
+## Transition screens still without a recovered cancellation
+
+Each of these has a named natural terminal writer but no exercised route, so none is installed:
+
+- `GS_EntranceAnimation = 9` (`func_8002E000`): terminates by writing `g_Gamestate = GS_Playing`
+  once the camera y-rotation drops below `-0x200` or the spherical preset reaches `D_8006CA84`. A
+  cancellation would have to leave the camera mid-rotation, which is a state question, not a flag.
+- `GS_ExitLevel = 10` (`func_8002E084`): terminates through its own counter chain into
+  `func_8002C664` (`0x8002C664`), which is a complete recovered route — a scoped original call to it
+  is the shape a cancellation should take, once the state can be reached.
+- `GS_Dragon = 8` and `GS_Cutscene = 14` gamestate cutscenes: blocked earlier than input. `GS_Dragon`
+  has no native producer at all (issue 0103).
 
 The portal traversal remains a separate blocker: the type-6 collision surface writes the transition
 globals, and a visible portal still reaches the unowned `0x80050BD0` mask/near-family/painter path.

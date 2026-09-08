@@ -172,9 +172,10 @@ class Navigator:
 
     STEP = 20  # frames between observations; small enough to catch a one-shot menu state
 
-    def __init__(self, port: Port, budget: int = 12000):
+    def __init__(self, port: Port, budget: int = 12000, skip_transitions: bool = False):
         self._port = port
         self._budget = budget
+        self._skip_transitions = skip_transitions
 
     def reach_gameplay(self) -> None:
         self._reach_title_menu()
@@ -236,6 +237,16 @@ class Navigator:
             state = self._port.gamestate()
             if state == GS_PLAYING:
                 return
+            # Exercises the port's own Start cancellation of the level-transition tally. The press is
+            # only meaningful while that screen's HUD flag is still set, which is also the condition
+            # the port itself checks, so a run with this off and one with it on differ by nothing but
+            # the press.
+            if (
+                self._skip_transitions
+                and state == GS_LEVEL_TRANSITION
+                and self._port.word(G_LEVEL_TRANS_HUD) != 0
+            ):
+                self._port.tap("start")
             if state not in (
                 GS_TITLE_SCREEN,
                 GS_LEVEL_TRANSITION,
@@ -302,6 +313,12 @@ def main() -> int:
         help="frames to run after arrival before any input; the level fades in and hands the player "
         "control some frames after GS_Playing is entered, so an input issued at frame 0 is eaten",
     )
+    parser.add_argument(
+        "--skip-transitions",
+        action="store_true",
+        help="press Start on the level-transition tally while driving in, exercising the port's "
+        "cancellation of that screen",
+    )
     parser.add_argument("--hold", action="append", default=[], help="button held after arrival")
     parser.add_argument("--hold-frames", type=int, default=60)
     parser.add_argument("--tap", action="append", default=[], help="button tapped after arrival")
@@ -325,7 +342,7 @@ def main() -> int:
 
     port = Port(ROOT / args.executable, ROOT / args.binary, ROOT / args.log, env)
     try:
-        Navigator(port).reach_gameplay()
+        Navigator(port, skip_transitions=args.skip_transitions).reach_gameplay()
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
         if args.settle:
             port.run(args.settle)

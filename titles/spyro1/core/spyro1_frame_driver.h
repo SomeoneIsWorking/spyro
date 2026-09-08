@@ -4,6 +4,7 @@
 #include "spyro1_boot_sequence.h"
 #include "spyro1_field_scheduler.h"
 #include "spyro1_frame_policy.h"
+#include "spyro1_transition_skip.h"
 
 #include <cstdint>
 #include <memory>
@@ -27,6 +28,7 @@ public:
 private:
   FieldScheduler fields_;
   BootSequence boot_;
+  TransitionSkip transitions_;
   std::unique_ptr<SpyroRenderer> renderer_;
   std::uint32_t gameplayFrame_ = 0;
 };

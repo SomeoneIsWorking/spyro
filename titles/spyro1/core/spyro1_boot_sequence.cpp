@@ -205,7 +205,7 @@ bool BootSequence::step(Core &core) {
       phase_ = Phase::HoldFirst;
       break;
     case Phase::HoldFirst:
-      if (fields_.bootPresentationSkipPressed()) {
+      if (fields_.presentationSkipPressed()) {
         lucent::info("boot-native", "Start/Cross ends Spyro 1's first presentation hold");
         leaveFirstPresentationHold(core);
         break;
@@ -243,7 +243,7 @@ bool BootSequence::step(Core &core) {
       phase_ = Phase::HoldSecond;
       break;
     case Phase::HoldSecond:
-      if (fields_.bootPresentationSkipPressed()) {
+      if (fields_.presentationSkipPressed()) {
         lucent::info("boot-native", "Start/Cross ends Spyro 1's second presentation hold");
         leaveSecondPresentationHold();
         break;

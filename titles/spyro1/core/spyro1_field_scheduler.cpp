@@ -340,7 +340,7 @@ void FieldScheduler::fps60CommitDelivered() {
                 acknowledgements_);
 }
 
-bool FieldScheduler::bootPresentationSkipPressed() const {
+bool FieldScheduler::presentationSkipPressed() const {
   return game_.pad.pressedButton(kPadStart | kPadCross);
 }
 

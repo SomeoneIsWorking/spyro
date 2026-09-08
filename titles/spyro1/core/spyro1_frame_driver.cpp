@@ -57,7 +57,8 @@ private:
 } // namespace
 
 Spyro1FrameDriver::Spyro1FrameDriver(Game &game)
-    : fields_(game), boot_(fields_), renderer_(std::make_unique<SpyroRenderer>(&game.core)) {}
+    : fields_(game), boot_(fields_), transitions_(fields_),
+      renderer_(std::make_unique<SpyroRenderer>(&game.core)) {}
 
 Spyro1FrameDriver::~Spyro1FrameDriver() = default;
 
@@ -79,6 +80,10 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
   if (!boot_.complete() && !boot_.step(core)) {
     return;
   }
+
+  // Before the guest update reads the transition globals, so a cancelled screen releases its hold
+  // in the same frame the press arrives.
+  transitions_.observe(core);
 
   const std::uint32_t frame = ++gameplayFrame_;
   FrameState state(core);

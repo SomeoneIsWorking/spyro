@@ -35,7 +35,7 @@ public:
 
   // BootSequence alone decides whether this edge transitions a presentation-only hold. The pad
   // subsystem continues to expose the input to later title states unchanged.
-  bool bootPresentationSkipPressed() const;
+  bool presentationSkipPressed() const;
 
   std::int32_t counter() const;
 

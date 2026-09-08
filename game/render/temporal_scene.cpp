@@ -79,6 +79,7 @@ bool SpyroTemporalSceneAdmission::world(Core &core, bool paired) {
     if (paired && spyro_paired_actor_rebuild_sample(
                       &core, *sink, context.pairedActor.previous, context.pairedActor.current, t) ==
                       SpyroPairedRebuildResult::Refused) {
+      lucent::debug("worldtemporal", "preflight refused stage=paired t={}", t);
       return false;
     }
     if (!context.worldTemporal.emit(core, *sink, t)) {
@@ -94,6 +95,13 @@ bool SpyroTemporalSceneAdmission::world(Core &core, bool paired) {
     // refuses a stream with zero grouped faces, so it applies only when there is output to replay.
     if (!stream.empty()) {
       const auto plan = planPainterItemStream(stream);
+      lucent::debug("worldtemporal",
+                    "preflight painter t={} refusal={} item={} partitioned={}/{}",
+                    t,
+                    static_cast<unsigned>(plan.stats.refusal),
+                    plan.stats.refusal_item,
+                    plan.stats.partitioned_items,
+                    stream.size());
       if (!plan.accepted() || plan.stats.partitioned_items != stream.size()) {
         return false;
       }

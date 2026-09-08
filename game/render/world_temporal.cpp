@@ -155,6 +155,17 @@ bool History::emit(Core &core, RenderQueue &target, double t) const {
   const auto recipe = world_scene::sample(previous_->source, current_->source, t);
   // Both endpoints and every interior sample draw into the CURRENT owned destination.
   const auto plan = world_scene_submitter::prepare(current_->draw, target, kProducerKey, recipe);
+  lucent::debug(
+      "worldtemporal",
+      "world sample frame={} t={} recipe={} reason={} plan={} faces={} candidates={} rejected={}",
+      serial_,
+      t,
+      static_cast<unsigned>(recipe.status),
+      recipe.refusal,
+      static_cast<unsigned>(plan.status),
+      recipe.faces.size(),
+      recipe.candidates,
+      recipe.rejected);
   ProducerScope producer(&core.rsub.producerScope, kProducerKey, "world:static");
   return world_scene_submitter::emit(&core, target, kProducerKey, recipe, plan);
 }

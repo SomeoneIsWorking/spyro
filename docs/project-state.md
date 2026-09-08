@@ -557,7 +557,7 @@ paths, exact endpoints and identity-change negatives.
 
 The corrected Artisans run reached field 3975 and then exercised 60 fields of held-left movement.
 World and paired-model presentation were jointly admitted for 38/40 sampled intervals (frames
-1931–1970); two world preflight refusals retained endpoint presentation and remain to be diagnosed.
+1931–1970); two world preflight refusals retained endpoint presentation.
 The material animation continued changing during the run. At normal exit, 4,038 fields and 2,048
 presentation fences executed 21,820,287 JIT blocks / 182,279,195 instructions with zero faults and
 zero fallback; paired presentation emitted 2,074/2,074 midpoint/endpoint outputs. A native
@@ -566,7 +566,14 @@ evidence, not matched-checkpoint oracle parity, historical VRAM reconstruction o
 The combined Clang/Ninja gate passes all 19 CTests, 121 translation units through clang-tidy,
 213 source/header formatting checks, and the exact framework pin `a5a79652`.
 
-Gap: world preflight refusal coverage still needs diagnosis; regular actors, shadows,
+A follow-up held-left observation with sample/queue diagnostics reproduced two refusals at frames
+1962 and 1966: the exact previous endpoints and joint painter plans were valid, while midpoint
+recipes reported `ActiveAnimation` / `active_animation`. The sampled visibility guard requires
+animation state that was not advanced at an endpoint. The diagnostic also reports successful sample
+and painter denominators; its existing synthetic tests distinguish valid output from malformed or
+unadvanced midpoint sources. Both focused temporal tests and the two touched TUs' clang-tidy pass.
+
+Gap: newly visible animated sectors need a faithful endpoint-state lifecycle; regular actors, shadows,
 particles and other unowned temporal sources lack complete matching-source interpolation.
 Discontinuous paired-model intervals retain endpoint presentation. Full-scene 60fps motion,
 paced timing/audio and performance remain unqualified.

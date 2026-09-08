@@ -21,8 +21,9 @@ Status prepare(Core *core, Frame &frame) {
   if (!frame.animation.ok) {
     return Status::AnimationRefused;
   }
-  frame.world = world_scene::build(
-      core, frame.invocation.worldSelection, nullptr, frame.invocation.cullingDistance);
+  frame.source =
+      world_scene::capture(core, frame.invocation.worldSelection, frame.invocation.cullingDistance);
+  frame.world = world_scene::build(frame.source);
   if (frame.world.status == world_recipe::Status::Ready) {
     return Status::Ready;
   }

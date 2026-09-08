@@ -1,6 +1,7 @@
 #pragma once
 
 #include "world_animation.h"
+#include "world_projection_math.h"
 #include "world_source.h"
 
 #include <array>
@@ -27,6 +28,14 @@ struct Prepared {
   uint32_t selectedSectors = 0;
   std::vector<AnimationSector> animations;
 };
+
+bool prepare(const world_source::Selection &previous,
+             const world_source::Selection &current,
+             const world_projection_math::ProjectionStream &culling,
+             int32_t horizontalWidth,
+             Prepared &out,
+             const char *&why,
+             bool decodingAnimation = false);
 
 bool prepare(const world_source::Selection &selection,
              int32_t horizontalWidth,

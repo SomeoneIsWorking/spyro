@@ -21,6 +21,11 @@ inline constexpr TrianglePairs kMediumTrianglePairs{0x8006d378u, 16u, 8u};
 inline constexpr TrianglePairs kNearTrianglePairs{0x8006d388u, 64u, 0x28u};
 
 struct Tile {
+  static constexpr uint32_t kPackedSize = 8u;
+  // Each authored word carries UV in its low half and CLUT/TPAGE/attributes in its high half.
+  static constexpr bool isUvByte(uint32_t offset) {
+    return offset < kPackedSize && (offset % 4u) < 2u;
+  }
   uint32_t first = 0;
   uint32_t second = 0;
 };

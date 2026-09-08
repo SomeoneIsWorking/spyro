@@ -2,6 +2,7 @@
 
 #include "native_projection.h"
 #include "world_material_codec.h"
+#include "world_projection_math.h"
 #include "world_recipe.h"
 #include "world_source.h"
 
@@ -21,6 +22,7 @@ struct Position {
 
 struct HighVertex {
   Position position{};
+  Position previousPosition{}; // Independently narrowed/midpointed authored input for sampling.
   world_recipe::Vertex projected{};
   bool requiresFacingCheck = false;
 };
@@ -48,6 +50,12 @@ struct Work {
 // Shared HQ geometry rules used while classifying roots and while projecting
 // their refinement lattices. They live here so the precision reproject,
 // facing, and depth semantics have one implementation.
+std::optional<HighVertex> projectVertex(const world_projection_math::ProjectionStream &projection,
+                                        Position previous,
+                                        Position current,
+                                        uint8_t tags,
+                                        int clipRight);
+
 HighVertex projectVertex(const psxport::native_projection::FixedAffine &cameraMatrix,
                          const psxport::native_projection::ProjectionParams &projection,
                          Position position,
@@ -62,6 +70,13 @@ void applyTile(world_recipe::Face &face, const world_material_codec::DecodedTile
 // have different interpolation graphs in the guest, so callers must not infer
 // these colors by repeatedly midpointing the position lattice.
 std::array<uint32_t, 25> nearQuadColorLattice(const std::array<uint32_t, 4> &corners);
+
+bool append(const world_source::Materials &materials,
+            const world_projection_math::ProjectionStream &projection,
+            int clipRight,
+            const Work &work,
+            world_recipe::Recipe &out,
+            const char *&why);
 
 bool append(const world_source::Materials &materials,
             const psxport::native_projection::FixedAffine &cameraMatrix,

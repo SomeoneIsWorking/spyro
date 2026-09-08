@@ -33,6 +33,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image | partial | S005 | G003 |
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial | S004, S005 | G003 |
+| S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 
 ## Current focus
 
@@ -538,8 +539,45 @@ the path was exercised, not matched-checkpoint oracle parity or full-scene inter
 World endpoint capture and reconstruction now share an owned source boundary, with a separate
 queue-only emission path; its preservation contracts are described in
 [world-semantic-oracle](findings/world-semantic-oracle.md#owned-world-endpoint-source).
+World sampling now reconstructs LQ/HQ geometry and refinement from paired raw source transforms.
+Per-game history rejects resource-generation changes, missing sources and incompatible camera/frame
+provenance, and reconstructs both endpoints into the current draw destination. The six focused
+source, refinement, producer and temporal tests pass, including 135 world-history checks and 903
+joint temporal-scene checks. They exercise midpoint-only visibility through the actual presenter,
+refusal of newly visible malformed sources, buffer flips and unchanged live rendering counters.
 
-Gap: world, camera, regular actors, shadows, particles and other unowned temporal sources do not yet
-have complete matching-source interpolation. Discontinuous paired-model intervals retain endpoint
-presentation. Full-scene 60fps motion, paced timing/audio and performance remain unqualified.
+The first live Artisans test refused every world interval because complete material byte equality
+treated scrolling UV values as resource identity. Consecutive captures isolated all 46 changed
+bytes to the low/HQ texture-coordinate fields of material 23; palette, texture-page and attribute
+fields were unchanged. Material pairing now permits only codec-defined UV state changes, using
+the current discrete UV state with interpolated geometry. Refinement tables, overlapping non-UV
+interpretations, resource spans and material identity remain strict. Source-pair tests pass 401
+checks; the shipping scene sampler passes 283 checks including medium, near and direct material
+paths, exact endpoints and identity-change negatives.
+
+The corrected Artisans run reached field 3975 and then exercised 60 fields of held-left movement.
+World and paired-model presentation were jointly admitted for 38/40 sampled intervals (frames
+1931–1970); two world preflight refusals retained endpoint presentation and remain to be diagnosed.
+The material animation continued changing during the run. At normal exit, 4,038 fields and 2,048
+presentation fences executed 21,820,287 JIT blocks / 182,279,195 instructions with zero faults and
+zero fallback; paired presentation emitted 2,074/2,074 midpoint/endpoint outputs. A native
+684×240 capture shows the Artisans world and player during movement. This is local source-sampling
+evidence, not matched-checkpoint oracle parity, historical VRAM reconstruction or full-scene cadence.
+The combined Clang/Ninja gate passes all 19 CTests, 121 translation units through clang-tidy,
+213 source/header formatting checks, and the exact framework pin `a5a79652`.
+
+Gap: world preflight refusal coverage still needs diagnosis; regular actors, shadows,
+particles and other unowned temporal sources lack complete matching-source interpolation.
+Discontinuous paired-model intervals retain endpoint presentation. Full-scene 60fps motion,
+paced timing/audio and performance remain unqualified.
 Issue 0102 resolves the observed duplicate field tick; it does not qualify full-scene cadence parity.
+
+### S021 — SVG touch-control interface
+
+**Status: missing.** Touch-enabled releases require an authored SVG overlay, reachable multi-touch
+layout, safe-area handling, input cancellation, and controller-aware hiding or configuration. Touch
+controls must use the same title action policy as physical controllers. No integrated or qualified
+Spyro touch overlay exists yet; Android runtime mechanics belong to Lucent and build/device mechanics
+to shared/android-port.
+
+Related goal: G004.

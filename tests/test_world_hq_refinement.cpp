@@ -2,6 +2,7 @@
 #include "world_hq_refinement.h"
 #include "world_projection_math.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <lucent/log.h>
 #include <vector>
@@ -235,15 +236,86 @@ void test_medium_quad_texture_attribute() {
   }
 }
 
+void test_sampled_precision_streams() {
+  const ProjectionParams projection{256 << 16, 120 << 16, 341};
+  const spyro::world_projection_math::ProjectionStream stream(
+      identity(), identity(), projection, 0.5);
+  const auto sampled =
+      spyro::world_hq_refinement::projectVertex(stream, {20, 10, 200}, {40, 30, 280}, 2, 512);
+  const auto expected = project(projection, {30, 20, 240}, 2);
+  require(sampled && sampled->projected.sx == expected.projected.sx &&
+          sampled->projected.sy == expected.projected.sy && sampled->projected.sz == 240u &&
+          sampled->projected.viewZ == expected.projected.viewZ &&
+          sampled->projected.screenX == expected.projected.screenX &&
+          sampled->projected.screenY == expected.projected.screenY &&
+          sampled->requiresFacingCheck == expected.requiresFacingCheck);
+  // Only the previous endpoint enters the precision arm. The sampled coarse predicate must
+  // independently request both scaled input streams rather than lerping endpoint SXY results.
+  require(project(projection, {40, 30, 280}, 2).projected.sz == 280u);
+  require(sampled->previousPosition.x == 20 && sampled->position.x == 40);
+
+  auto left = identity(), right = identity();
+  left.t[0] = INT32_MAX - 500;
+  right.t[0] = -(INT32_MAX - 500);
+  const spyro::world_projection_math::ProjectionStream overflow(left, right, projection, 0.5);
+  // Coarse endpoint transforms do not overflow and their interior is near the eye. Scaling
+  // each authored X by16 does overflow, so the second sample must propagate its refusal.
+  require(overflow.project({100, 0, 100}, {-100, -1, 100}).has_value());
+  require(
+      !spyro::world_hq_refinement::projectVertex(overflow, {100, 0, 100}, {-100, 0, 100}, 2, 512));
+}
+
+void test_independent_midpoint_graph() {
+  constexpr uint32_t environment = 0x785a8u, material = 0x90000u;
+  std::vector<uint8_t> bytes(0x200000u);
+  w32(bytes, environment + 0x1cu, material);
+  w32(bytes, environment + 0x20u, 1u);
+  spyro::world_hq_refinement::Work work{};
+  spyro::world_hq_refinement::Parent parent{};
+  parent.count = 4;
+  parent.flags = 4u;
+  parent.statusAddress = 0x100u;
+  parent.vertices[0].previousPosition = {1, 0, 1024};
+  parent.vertices[1].previousPosition = {4, 0, 1024};
+  parent.vertices[2].previousPosition = {4, 64, 1024};
+  parent.vertices[3].previousPosition = {1, 64, 1024};
+  for (auto &vertex : parent.vertices) {
+    vertex.position = vertex.previousPosition;
+    vertex.position.x += 1;
+    vertex.projected.rgb = 0x00406080u;
+  }
+  work.medium.push_back(parent);
+  const ProjectionParams projection{256 << 16, 120 << 16, 341};
+  const spyro::world_projection_math::ProjectionStream stream(
+      identity(), identity(), projection, 0.5);
+  spyro::world_recipe::Recipe out{};
+  const char *why = "none";
+  require(spyro::world_hq_refinement::append(
+      spyro::world_source::Materials::capture(spyro::world_chunk_codec::RamView(bytes)),
+      stream,
+      512,
+      work,
+      out,
+      why));
+  require(out.faces.size() == 4u);
+  // Authored top midpoint is floor((1+4)/2)=2 then floor((2+5)/2)=3 at the endpoints.
+  // Its sampled view is2.5. Midpointing already-blended root coordinates would instead give3.
+  require(std::abs(out.faces[0].vertices[1].screenX - (256.0f + 2.5f * 341.0f / 1024.0f)) <
+          0.0001f);
+  require(out.faces[0].vertices[1].screenX != 256.0f + 3.0f * 341.0f / 1024.0f);
+}
+
 } // namespace
 
 int main() {
+  run("sampled precision streams", test_sampled_precision_streams);
+  run("independent midpoint graph", test_independent_midpoint_graph);
   run("depth and clip paths", test_depth_and_clip_paths);
   run("projection flag facing gate", test_projection_flag_facing_gate);
   run("packed projection input borrow", test_packed_projection_input_borrow);
   run("near quad color graph", test_near_quad_color_graph);
   run("near quad texture attribute", test_near_quad_texture_attribute);
   run("medium quad texture attribute", test_medium_quad_texture_attribute);
-  lucent::info("selftest", "world HQ refinement: PASS 6 cases, {} checks", checks);
+  lucent::info("selftest", "world HQ refinement: PASS 8 cases, {} checks", checks);
   return 0;
 }

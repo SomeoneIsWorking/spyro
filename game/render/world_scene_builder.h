@@ -37,6 +37,11 @@ capture(Core *core, int32_t selection, std::optional<uint32_t> cullingDistance =
 world_recipe::Recipe build(const world_source::Source &source,
                            world_hq_recipe::Audit *audit = nullptr);
 
+// Pure reconstruction from matched authored endpoints. Exact endpoints retain build() semantics;
+// interior sampling refuses incompatible sources or unsampleable transforms atomically.
+world_recipe::Recipe
+sample(const world_source::Source &previous, const world_source::Source &current, double t);
+
 // Builds a complete immutable RenderWorldChunks recipe. The builder reads
 // current game state only; it never executes guest code and never reads the
 // guest packet pool, ordering table, scratchpad, or GTE output registers.

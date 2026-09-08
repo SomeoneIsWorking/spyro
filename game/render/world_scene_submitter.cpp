@@ -44,13 +44,14 @@ bool validSubmission(const Core *core, const world_recipe::Recipe &recipe, const
 
 } // namespace
 
-Plan prepare(Core *core,
+Plan prepare(const DrawState &draw,
              const RenderQueue &queue,
              uint32_t producerKey,
              const world_recipe::Recipe &recipe) {
   Plan plan{};
-  if (core == nullptr || core->game == nullptr) {
-    plan.status = Status::InvalidRecipe;
+  plan.draw = draw;
+  if (draw.areaLeft > draw.areaRight || draw.areaTop > draw.areaBottom) {
+    plan.status = Status::InvalidDrawArea;
     return plan;
   }
   if (recipe.status == world_recipe::Status::ValidEmpty) {
@@ -80,28 +81,50 @@ Plan prepare(Core *core,
     plan.paintOrder.clear();
     return plan;
   }
-  const GpuState &gpu = core->game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
-    plan.status = Status::InvalidDrawArea;
-    plan.paintOrder.clear();
-    return plan;
-  }
-  plan.draw = {.offsetX = gpu.s_off_x,
-               .offsetY = gpu.s_off_y,
-               .areaLeft = gpu.s_da_x0,
-               .areaTop = gpu.s_da_y0,
-               .areaRight = gpu_vk_wide_engine(core)
-                                ? std::max(gpu.s_da_x1, gpu_vk_wide_engine_w(core) - 1)
-                                : gpu.s_da_x1,
-               .areaBottom = gpu.s_da_y1,
-               .windowMaskX = gpu.s_tw_mx,
-               .windowMaskY = gpu.s_tw_my,
-               .windowOffsetX = gpu.s_tw_ox,
-               .windowOffsetY = gpu.s_tw_oy,
-               .dither = gpu.s_tp_dither,
-               .projectionH = core->rsub.projParams.projH()};
   plan.status = Status::Ready;
   return plan;
+}
+
+std::optional<DrawState> captureDrawState(Core &core) {
+  if (!core.game) {
+    return std::nullopt;
+  }
+  const GpuState &gpu = core.game->gpu;
+  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
+    return std::nullopt;
+  }
+  return DrawState{.offsetX = gpu.s_off_x,
+                   .offsetY = gpu.s_off_y,
+                   .areaLeft = gpu.s_da_x0,
+                   .areaTop = gpu.s_da_y0,
+                   .areaRight = gpu_vk_wide_engine(&core)
+                                    ? std::max(gpu.s_da_x1, gpu_vk_wide_engine_w(&core) - 1)
+                                    : gpu.s_da_x1,
+                   .areaBottom = gpu.s_da_y1,
+                   .windowMaskX = gpu.s_tw_mx,
+                   .windowMaskY = gpu.s_tw_my,
+                   .windowOffsetX = gpu.s_tw_ox,
+                   .windowOffsetY = gpu.s_tw_oy,
+                   .dither = gpu.s_tp_dither,
+                   .projectionH = core.rsub.projParams.projH()};
+}
+
+Plan prepare(Core *core,
+             const RenderQueue &queue,
+             uint32_t producerKey,
+             const world_recipe::Recipe &recipe) {
+  if (!core || !core->game) {
+    Plan out{};
+    out.status = Status::InvalidRecipe;
+    return out;
+  }
+  const auto draw = captureDrawState(*core);
+  if (!draw) {
+    Plan out{};
+    out.status = Status::InvalidDrawArea;
+    return out;
+  }
+  return prepare(*draw, queue, producerKey, recipe);
 }
 
 namespace {

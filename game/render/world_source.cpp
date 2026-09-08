@@ -121,13 +121,26 @@ Materials Materials::capture(const world_chunk_codec::RamView &ram) {
     out.blocks_.push_back(std::move(block));
   };
   retain(kRefinementTables, kRefinementTablesEnd - kRefinementTables);
+  const auto registerTile = [&](uint32_t address) {
+    if (ram.contains(address, 1u)) {
+      out.tilePairs_.push_back(address & 0x1fffffffu);
+    }
+  };
+  const auto retainTiles = [&](uint32_t address, uint32_t size) {
+    retain(address, size);
+    if (ram.contains(address, 1u)) {
+      for (uint32_t offset = 0; offset < size; offset += world_material_codec::Tile::kPackedSize) {
+        registerTile(address + offset);
+      }
+    }
+  };
   // The material ID encodes seven bits. Preserve every addressable authored record regardless
   // of current fog/LOD choice; material branches may change when the camera moves.
   const uint32_t count = std::min(out.count_, 128u);
   for (uint32_t i = 0; i < count; ++i) {
-    retain(out.lowBase_ + i * 16u, 16u);
+    retainTiles(out.lowBase_ + i * 16u, 16u);
     const uint32_t material = out.highBase_ + i * 0xa8u;
-    retain(material, 0xa8u);
+    retainTiles(material, 0xa8u);
     for (const auto &pairs :
          {world_material_codec::kMediumTrianglePairs, world_material_codec::kNearTrianglePairs}) {
       if (!ram.contains(pairs.selectors, pairs.count)) {
@@ -135,9 +148,10 @@ Materials Materials::capture(const world_chunk_codec::RamView &ram) {
       }
       for (uint32_t selector = 0; selector < pairs.count; ++selector) {
         const uint32_t pair = pairs.address(material, (int8_t)ram.r8(pairs.selectors + selector));
-        if (pair < material || pair - material > 0xa8u - 8u) {
-          retain(pair, 8u);
+        if (pair < material || pair - material > 0xa8u - world_material_codec::Tile::kPackedSize) {
+          retain(pair, world_material_codec::Tile::kPackedSize);
         }
+        registerTile(pair);
       }
     }
   }
@@ -158,6 +172,78 @@ Materials Materials::capture(const world_chunk_codec::RamView &ram) {
     }
   }
   out.blocks_ = std::move(merged);
+  std::sort(out.tilePairs_.begin(), out.tilePairs_.end());
+  out.tilePairs_.erase(std::unique(out.tilePairs_.begin(), out.tilePairs_.end()),
+                       out.tilePairs_.end());
+  return out;
+}
+
+bool Materials::isTileUvByte(uint32_t address) const {
+  if (address >= (kRefinementTables & 0x1fffffffu) &&
+      address < (kRefinementTablesEnd & 0x1fffffffu)) {
+    return false;
+  }
+  constexpr uint32_t size = world_material_codec::Tile::kPackedSize;
+  auto pair = std::lower_bound(
+      tilePairs_.begin(), tilePairs_.end(), address > size - 1u ? address - (size - 1u) : 0u);
+  bool covered = false;
+  for (; pair != tilePairs_.end() && *pair <= address; ++pair) {
+    // An overlapping signed selector may interpret another tile's UV as an identity field.
+    // A changed byte is UV state only when every tile that reads it agrees.
+    if (!world_material_codec::Tile::isUvByte(address - *pair)) {
+      return false;
+    }
+    covered = true;
+  }
+  return covered;
+}
+
+bool Materials::sameIdentity(const Materials &other) const {
+  if (count_ != other.count_ || lowBase_ != other.lowBase_ || highBase_ != other.highBase_ ||
+      tilePairs_ != other.tilePairs_ || blocks_.size() != other.blocks_.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < blocks_.size(); ++i) {
+    const auto &left = blocks_[i];
+    const auto &right = other.blocks_[i];
+    if (left.address != right.address || left.bytes.size() != right.bytes.size()) {
+      return false;
+    }
+    for (size_t j = 0; j < left.bytes.size(); ++j) {
+      if (left.bytes[j] != right.bytes[j] && !isTileUvByte(left.address + (uint32_t)j)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+MaterialDifference Materials::difference(const Materials &other) const {
+  MaterialDifference out;
+  out.layoutMismatch = count_ != other.count_ || lowBase_ != other.lowBase_ ||
+                       highBase_ != other.highBase_ || blocks_.size() != other.blocks_.size();
+  for (size_t i = 0; i < std::min(blocks_.size(), other.blocks_.size()); ++i) {
+    const auto &left = blocks_[i];
+    const auto &right = other.blocks_[i];
+    if (left.address != right.address || left.bytes.size() != right.bytes.size()) {
+      out.layoutMismatch = true;
+      continue;
+    }
+    ++out.scannedBlocks;
+    for (size_t j = 0; j < left.bytes.size(); ++j) {
+      ++out.scannedBytes;
+      if (left.bytes[j] != right.bytes[j]) {
+        if (!out.changedBytes) {
+          out.blockAddress = left.address;
+          out.blockSize = (uint32_t)left.bytes.size();
+          out.firstAddress = left.address + (uint32_t)j;
+          out.before = left.bytes[j];
+          out.after = right.bytes[j];
+        }
+        ++out.changedBytes;
+      }
+    }
+  }
   return out;
 }
 

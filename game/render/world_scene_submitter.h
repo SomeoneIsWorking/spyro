@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 class Core;
@@ -38,6 +39,12 @@ struct Plan {
   painter_submission::Plan admission{};
   DrawState draw{};
 };
+
+std::optional<DrawState> captureDrawState(Core &core);
+Plan prepare(const DrawState &draw,
+             const RenderQueue &queue,
+             uint32_t producerKey,
+             const world_recipe::Recipe &recipe);
 
 Plan prepare(Core *core,
              const RenderQueue &queue,

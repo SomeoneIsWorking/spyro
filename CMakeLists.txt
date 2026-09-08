@@ -149,6 +149,8 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/world_scene_prepare.cpp
   game/render/world_scene_submitter.cpp
   game/render/world_source.cpp
+  game/render/world_source_pair.cpp
+  game/render/world_temporal.cpp
   titles/spyro1/core/spyro1_boot_sequence.cpp
   titles/spyro1/core/spyro1_field_scheduler.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
@@ -186,7 +188,7 @@ if(BUILD_TESTING)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)
-  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe temporal_scene world_scene_prepare world_hq_refinement field_shadow_recipe actor_global_order field_scheduler)
+  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe temporal_scene world_source_pair world_temporal world_scene_prepare world_hq_refinement field_shadow_recipe actor_global_order field_scheduler)
     add_executable(test_${test_name} tests/test_${test_name}.cpp)
     target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
     target_link_libraries(test_${test_name} PRIVATE spyro_runtime)

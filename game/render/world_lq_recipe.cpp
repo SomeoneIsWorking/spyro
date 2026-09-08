@@ -10,8 +10,6 @@
 namespace spyro::world_lq_recipe {
 namespace {
 
-using psxport::native_projection::FixedAffine;
-using psxport::native_projection::NativeProjectedVertex;
 using psxport::native_projection::ProjectionParams;
 using spyro::world_recipe::Face;
 using spyro::world_recipe::Family;
@@ -39,39 +37,55 @@ std::array<uint32_t, 4> indices(uint32_t word) {
   return {(word >> 26) & 0x3fu, (word >> 20) & 0x3fu, (word >> 14) & 0x3fu, (word >> 8) & 0x3fu};
 }
 
-bool projectVertices(const world_chunk_codec::LowChunk &chunk,
-                     const FixedAffine &cameraMatrix,
-                     const ProjectionParams &projection,
-                     int32_t cameraX,
-                     int32_t cameraY,
-                     int32_t cameraZ,
-                     uint8_t tags,
-                     int clipRight,
-                     std::vector<Vertex> &out) {
+psxport::native_projection::ModelVertex projectionInput(const world_chunk_codec::LowChunk &chunk,
+                                                        const world_source::Camera &camera,
+                                                        uint32_t packed) {
+  const int32_t cameraX = camera.position[0] >> 4;
+  const int32_t cameraY = camera.position[1] >> 4;
+  const int32_t cameraZ = camera.position[2] >> 4;
+  const int32_t vx =
+      cameraY - (int32_t)(uint16_t)chunk.originWord - (int32_t)((packed >> 10) & 0x7ffu);
+  const int32_t vy = cameraZ - (int32_t)chunk.originZ - (int32_t)(packed & 0x3ffu);
+  const int32_t vz =
+      (int32_t)(packed >> 21) + (int32_t)(uint16_t)(chunk.originWord >> 16) - cameraX;
+  return world_projection_math::packProjectionInput(vx, vy, vz);
+}
+
+enum class ProjectionResult { Visible, Culled, Refused };
+
+ProjectionResult projectVertices(const world_chunk_codec::LowChunk &previous,
+                                 const world_chunk_codec::LowChunk &current,
+                                 const world_source::Camera &previousCamera,
+                                 const world_source::Camera &currentCamera,
+                                 const world_projection_math::ProjectionStream &projection,
+                                 uint8_t tags,
+                                 int clipRight,
+                                 std::vector<Vertex> &out) {
   out.clear();
-  out.reserve(chunk.vertices.size());
+  if (previous.vertices.size() != current.vertices.size()) {
+    return ProjectionResult::Refused;
+  }
+  out.reserve(current.vertices.size());
   uint8_t common = 0xffu;
-  for (uint32_t packed : chunk.vertices) {
-    const int32_t vx =
-        cameraY - (int32_t)(uint16_t)chunk.originWord - (int32_t)((packed >> 10) & 0x7ffu);
-    const int32_t vy = cameraZ - (int32_t)chunk.originZ - (int32_t)(packed & 0x3ffu);
-    const int32_t vz =
-        (int32_t)(packed >> 21) + (int32_t)(uint16_t)(chunk.originWord >> 16) - cameraX;
-    const auto input = world_projection_math::packProjectionInput(vx, vy, vz);
-    const NativeProjectedVertex projected =
-        psxport::native_projection::project(cameraMatrix, projection, input);
+  for (size_t i = 0; i < current.vertices.size(); ++i) {
+    const auto projected =
+        projection.project(projectionInput(previous, previousCamera, previous.vertices[i]),
+                           projectionInput(current, currentCamera, current.vertices[i]));
+    if (!projected) {
+      return ProjectionResult::Refused;
+    }
     Vertex vertex{};
-    vertex.sx = projected.sx;
-    vertex.sy = projected.sy;
-    vertex.sz = projected.sz;
+    vertex.sx = projected->sx;
+    vertex.sy = projected->sy;
+    vertex.sz = projected->sz;
     vertex.clip = tags & 1u ? clipCode(vertex.sx, vertex.sy, clipRight) : 0u;
-    vertex.screenX = projected.px;
-    vertex.screenY = projected.py;
-    vertex.viewZ = projected.pz;
+    vertex.screenX = projected->px;
+    vertex.screenY = projected->py;
+    vertex.viewZ = projected->pz;
     common &= vertex.clip;
     out.push_back(vertex);
   }
-  return !(tags & 1u) || !(common & 0x0fu);
+  return !(tags & 1u) || !(common & 0x0fu) ? ProjectionResult::Visible : ProjectionResult::Culled;
 }
 
 bool appendFace(const world_chunk_codec::LowChunk &chunk,
@@ -175,9 +189,10 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
 
 } // namespace
 
-bool append(const world_source::Source &input,
+bool append(const world_source::Source &previous,
+            const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
-            const ProjectionParams &projection,
+            const world_projection_math::ProjectionStream &projection,
             int clipRight,
             uint32_t farLimit,
             Recipe &out,
@@ -186,29 +201,31 @@ bool append(const world_source::Source &input,
     return true;
   }
 
-  const FixedAffine cameraMatrix = input.selection.camera.projectionMatrix;
-  const int32_t cameraX = input.selection.camera.position[0] >> 4;
-  const int32_t cameraY = input.selection.camera.position[1] >> 4;
-  const int32_t cameraZ = input.selection.camera.position[2] >> 4;
   const uint32_t lodBase = (input.selection.lodDistance >> 7) - 32u;
   uint32_t ordinal = 0;
   std::vector<Vertex> vertices;
   for (const world_scene_prepare::TaggedSector &selected : prepared.low) {
     const auto &sector = input.sectors[selected.index];
-    if (!sector || sector->lowStatus != world_chunk_codec::Status::Ok) {
+    const auto &previousSector = previous.sectors[selected.index];
+    if (!sector || !previousSector || sector->lowStatus != world_chunk_codec::Status::Ok ||
+        previousSector->lowStatus != world_chunk_codec::Status::Ok) {
       why = "low_chunk_decode";
       return false;
     }
     const auto &chunk = sector->low;
-    if (!projectVertices(chunk,
-                         cameraMatrix,
-                         projection,
-                         cameraX,
-                         cameraY,
-                         cameraZ,
-                         selected.tags,
-                         clipRight,
-                         vertices)) {
+    const auto result = projectVertices(previousSector->low,
+                                        chunk,
+                                        previous.selection.camera,
+                                        input.selection.camera,
+                                        projection,
+                                        selected.tags,
+                                        clipRight,
+                                        vertices);
+    if (result == ProjectionResult::Refused) {
+      why = "low_projection_sample";
+      return false;
+    }
+    if (result == ProjectionResult::Culled) {
       continue;
     }
     for (const world_chunk_codec::LowFace &source : chunk.faces) {
@@ -219,6 +236,18 @@ bool append(const world_source::Source &input,
     }
   }
   return true;
+}
+
+bool append(const world_source::Source &input,
+            const world_scene_prepare::Prepared &prepared,
+            const ProjectionParams &projection,
+            int clipRight,
+            uint32_t farLimit,
+            Recipe &out,
+            const char *&why) {
+  const world_projection_math::ProjectionStream stream(input.selection.camera.projectionMatrix,
+                                                       projection);
+  return append(input, input, prepared, stream, clipRight, farLimit, out, why);
 }
 
 } // namespace spyro::world_lq_recipe

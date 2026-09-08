@@ -5,9 +5,12 @@
 #include "wide_clip_plan.h"
 #include "world_scene_builder.h"
 #include "world_scene_prepare.h"
+#include "world_source_fixture.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <lucent/log.h>
 #include <memory>
 #include <string_view>
@@ -18,12 +21,7 @@ using spyro::world_scene_prepare::Prepared;
 
 namespace {
 
-constexpr uint32_t kEnvironment = 0x785a8u;
-constexpr uint32_t kCamera = 0x76dd0u;
-constexpr uint32_t kTable = 0x90000u;
-constexpr uint32_t kSector = 0x91000u;
-constexpr uint32_t kGroups = 0x92000u;
-constexpr uint32_t kGroup = 0x92100u;
+using namespace spyro::testing::world_source_fixture;
 constexpr int kNativeWidth = spyro::wide::kNativeClipWidth;
 constexpr int kWideWidth = 684;
 unsigned checks = 0;
@@ -34,46 +32,6 @@ void require(bool value, const char *message) {
     lucent::error("selftest", "world preparation: FAIL {} (check {})", message, checks);
     std::exit(1);
   }
-}
-
-void w8(std::vector<uint8_t> &ram, uint32_t address, uint8_t value) {
-  ram[address] = value;
-}
-
-void w32(std::vector<uint8_t> &ram, uint32_t address, uint32_t value) {
-  for (uint32_t i = 0; i < 4u; ++i) {
-    w8(ram, address + i, (uint8_t)(value >> (i * 8u)));
-  }
-}
-
-void identity(std::vector<uint8_t> &ram, uint32_t address) {
-  w32(ram, address, 0x00001000u);
-  w32(ram, address + 4u, 0u);
-  w32(ram, address + 8u, 0x00001000u);
-  w32(ram, address + 12u, 0u);
-  w32(ram, address + 16u, 0x00001000u);
-}
-
-std::vector<uint8_t> fixture() {
-  std::vector<uint8_t> bytes(0x200000u);
-  identity(bytes, kCamera);
-  identity(bytes, kCamera + 0x14u);
-  w32(bytes, kEnvironment, kTable);
-  w32(bytes, kEnvironment + 4u, 1u);
-  w32(bytes, kEnvironment + 8u, kGroups);
-  w32(bytes, kEnvironment + 0x24u, 16000u);
-  w32(bytes, kTable, kSector);
-  w32(bytes, kSector + 0x18u, 0xffffffffu);
-  return bytes;
-}
-
-// Invert the production sector-center/camera convention under identity matrices.
-void view(std::vector<uint8_t> &bytes, int x, int y, int z, unsigned radius) {
-  w32(bytes, kSector, 0u);
-  w32(bytes, kSector + 4u, radius);
-  w32(bytes, kCamera + 0x28u, (uint32_t)(-z * 16));
-  w32(bytes, kCamera + 0x2cu, (uint32_t)(x * 16));
-  w32(bytes, kCamera + 0x30u, (uint32_t)(y * 16));
 }
 
 Prepared prepare(const std::vector<uint8_t> &bytes, int width, int selection = -1) {
@@ -229,30 +187,8 @@ void widened_animation_and_build_contract() {
 }
 
 void immutable_source_contract() {
-  auto bytes = fixture();
-  view(bytes, 0, 0, 1000, 0);
-  w32(bytes, kSector + 4u, 0x4000u); // LQ only; the unused HQ layout is deliberately invalid.
-  w32(bytes, kEnvironment + 0x28u, 65536u);
-  w32(bytes, kSector + 0x10u, 0x00010404u);
-  constexpr uint32_t vertices = kSector + 0x1cu;
-  for (uint32_t i = 0; i < 4; ++i) {
-    w32(bytes, vertices + i * 4u, ((i & 1u) ? 64u << 10 : 0u) | ((i & 2u) ? 64u : 0u));
-    w32(bytes, vertices + 16u + i * 4u, 0x00123456u + i);
-  }
-  constexpr uint32_t face = vertices + 32u;
-  const uint32_t indices = (1u << 20) | (2u << 14) | (3u << 8);
-  w32(bytes, face, indices | 0x80u);
-  w32(bytes, face + 4u, indices | 7u);
-  w32(bytes, kGroups, kGroup);
-  w8(bytes, kGroup, 0u);
-  w8(bytes, kGroup + 1u, 0u);
-  w8(bytes, kGroup + 2u, 0xffu);
+  auto bytes = lowGeometryFixture();
   constexpr uint32_t material = 0x95000u;
-  w32(bytes, kEnvironment + 0x20u, 1u);
-  w32(bytes, kEnvironment + 0x18u, material);
-  w32(bytes, kEnvironment + 0x1cu, material + 16u);
-  w32(bytes, material, 0xaabbccddu);
-
   auto game = std::make_unique<Game>();
   auto &core = game->core;
   std::copy(bytes.begin(), bytes.end(), core.ram);
@@ -326,41 +262,49 @@ void immutable_source_contract() {
           "selection slot overflow refuses instead of wrapping into RAM");
 }
 
+std::vector<uint8_t> refinedGeometryFixture(uint32_t depth) {
+  auto bytes = fixture();
+  view(bytes, 0, 0, (int)(depth / 4u), 0);
+  w32(bytes, kSector + 4u, 0x2000u); // HQ only.
+  w32(bytes, kCamera + 0x2cu, depth / 2u);
+  w32(bytes, kCamera + 0x30u, depth / 2u);
+  w32(bytes, kSector + 0x14u, 0x00010404u); // Four vertices, two 16-byte color planes, one face.
+  const uint32_t side = depth / 16u;
+  constexpr uint32_t vertices = kSector + 0x1cu;
+  w32(bytes, vertices, (side << 10) | side);
+  w32(bytes, vertices + 4u, side);
+  w32(bytes, vertices + 8u, 0u);
+  w32(bytes, vertices + 12u, side << 10);
+  for (uint32_t i = 0; i < 8; ++i) {
+    w32(bytes, vertices + 16u + i * 4u, 0x00406080u);
+  }
+  constexpr uint32_t face = vertices + 48u;
+  w32(bytes, face, 0x00010203u);
+  w32(bytes, face + 4u, 0x00010203u);
+  w32(bytes, face + 8u, 0u);
+  w32(bytes, face + 12u, 4u);
+  constexpr uint32_t material = 0x95000u;
+  w32(bytes, kEnvironment + 0x1cu, material);
+  w32(bytes, kEnvironment + 0x20u, 1u);
+  w32(bytes, 0x6d0c0u, 0xffe1001fu);
+  w32(bytes, 0x6d0c4u, 0x1f001f1fu);
+  const uint32_t count = depth == 1024u ? 4u : 16u;
+  const uint32_t firstPair = depth == 1024u ? 8u : 0x28u;
+  for (uint32_t child = 0; child < count; ++child) {
+    w32(bytes, material + firstPair + child * 8u, 0x2420e0e0u);
+    w32(bytes, material + firstPair + child * 8u + 4u, 0xd088e0ffu);
+  }
+  return bytes;
+}
+
 void immutable_refined_source_contract() {
   // The same authored attribute-0x68 material and quad used by test_world_hq_refinement,
   // now encoded as a complete chunk so capture, classification and refinement all participate.
   for (uint32_t depth : {1024u, 256u}) {
-    auto bytes = fixture();
-    view(bytes, 0, 0, (int)(depth / 4u), 0);
-    w32(bytes, kSector + 4u, 0x2000u); // HQ only.
-    w32(bytes, kCamera + 0x2cu, depth / 2u);
-    w32(bytes, kCamera + 0x30u, depth / 2u);
-    w32(bytes, kSector + 0x14u, 0x00010404u); // Four vertices, two 16-byte color planes, one face.
-    const uint32_t side = depth / 16u;
-    constexpr uint32_t vertices = kSector + 0x1cu;
-    w32(bytes, vertices, (side << 10) | side);
-    w32(bytes, vertices + 4u, side);
-    w32(bytes, vertices + 8u, 0u);
-    w32(bytes, vertices + 12u, side << 10);
-    for (uint32_t i = 0; i < 8; ++i) {
-      w32(bytes, vertices + 16u + i * 4u, 0x00406080u);
-    }
-    constexpr uint32_t face = vertices + 48u;
-    w32(bytes, face, 0x00010203u);
-    w32(bytes, face + 4u, 0x00010203u);
-    w32(bytes, face + 8u, 0u);
-    w32(bytes, face + 12u, 4u);
+    auto bytes = refinedGeometryFixture(depth);
     constexpr uint32_t material = 0x95000u;
-    w32(bytes, kEnvironment + 0x1cu, material);
-    w32(bytes, kEnvironment + 0x20u, 1u);
-    w32(bytes, 0x6d0c0u, 0xffe1001fu);
-    w32(bytes, 0x6d0c4u, 0x1f001f1fu);
     const uint32_t count = depth == 1024u ? 4u : 16u;
     const uint32_t firstPair = depth == 1024u ? 8u : 0x28u;
-    for (uint32_t child = 0; child < count; ++child) {
-      w32(bytes, material + firstPair + child * 8u, 0x2420e0e0u);
-      w32(bytes, material + firstPair + child * 8u + 4u, 0xd088e0ffu);
-    }
     auto game = std::make_unique<Game>();
     auto &core = game->core;
     std::copy(bytes.begin(), bytes.end(), core.ram);
@@ -490,9 +434,190 @@ void resource_span_contract() {
           "invalid selection cannot publish partial resource provenance");
 }
 
+bool sameRecipe(const spyro::world_recipe::Recipe &a, const spyro::world_recipe::Recipe &b) {
+  if (a.status != b.status || a.broadVisible != b.broadVisible || a.candidates != b.candidates ||
+      a.rejected != b.rejected || !spyro::world_recipe::compare(a.faces, b.faces).equal) {
+    return false;
+  }
+  for (size_t face = 0; face < a.faces.size(); ++face) {
+    for (uint32_t vertex = 0; vertex < a.faces[face].vertexCount; ++vertex) {
+      const auto &x = a.faces[face].vertices[vertex];
+      const auto &y = b.faces[face].vertices[vertex];
+      if (x.screenX != y.screenX || x.screenY != y.screenY || x.viewZ != y.viewZ || x.sz != y.sz) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+void sampled_source_contract() {
+  using spyro::world_recipe::Status;
+  using spyro::world_scene::build;
+  using spyro::world_scene::sample;
+  const auto bytes = lowGeometryFixture();
+  const auto base = spyro::world_source::capture(
+      RamView(bytes), 0, {.ofx = 256 << 16, .ofy = 120 << 16, .h = 341}, 512);
+  auto previous = base, current = base, expected = base;
+  previous.selection.camera.position[1] = 128 * 16;
+  current.selection.camera.position[1] = 192 * 16;
+  expected.selection.camera.position[1] = 160 * 16;
+  const auto mid = sample(previous, current, 0.5);
+  require(
+      mid.status == Status::Ready && mid.faces.size() == 2u && sameRecipe(mid, build(expected)),
+      "LQ camera sampling matches independently constructed midpoint with duplicate occurrences");
+  require(sameRecipe(sample(previous, current, 0.0), build(previous)) &&
+              sameRecipe(sample(previous, current, 1.0), build(current)),
+          "sampling exact endpoints preserves complete endpoint recipes");
+  auto moving = current, middleGeometry = expected;
+  for (auto &vertex : moving.sectors[0]->low.vertices) {
+    vertex += 2u << 21;
+  }
+  for (auto &vertex : middleGeometry.sectors[0]->low.vertices) {
+    vertex += 1u << 21;
+  }
+  require(sameRecipe(sample(previous, moving, 0.5), build(middleGeometry)),
+          "authored geometry motion and camera translation sample before perspective division");
+  current.selection.camera.position[1] = 129 * 16;
+  const auto fractional = sample(previous, current, 0.5);
+  require(fractional.status == Status::Ready &&
+              std::abs(fractional.faces[0].vertices[0].screenX -
+                       (256.0f + 128.5f * 341.0f / 1000.0f)) < 0.0001f,
+          "interior LQ projection retains fractional raw view before projection");
+
+  current.selection.camera.position[1] = 192 * 16;
+  current.selection.camera.projectionMatrix.m[0][0] = 2048;
+  const auto transformed = sample(previous, current, 0.5);
+  require(transformed.status == Status::Ready &&
+              std::abs(transformed.faces[0].vertices[0].screenX -
+                       (256.0f + 112.0f * 341.0f / 1000.0f)) < 0.0001f,
+          "moving camera and transform sample endpoint views without matrix-lerp cross terms");
+  current = base;
+  previous = base;
+  previous.selection.camera.position[1] = -900 * 16;
+  current.selection.camera.position[1] = 900 * 16;
+  require(build(previous).faces.empty() && build(current).faces.empty() &&
+              sample(previous, current, 0.5).faces.size() == 2u,
+          "sampled culling reveals authored source absent from both endpoint recipes");
+  previous.selection.sectors[0]->animation = 0xffffff00u;
+  require(build(previous).status == Status::ValidEmpty &&
+              sample(previous, current, 0.5).status == Status::ActiveAnimation,
+          "newly visible midpoint refuses an unadvanced channel at either endpoint");
+  previous = base;
+  current = base;
+  current.sectors[0]->low.colors[0] ^= 1u;
+  require(sample(previous, current, 0.5).status == Status::InvalidSelection &&
+              sameRecipe(sample(previous, current, 0.0), build(previous)),
+          "incompatible source refuses interior while exact endpoint bypasses interval admission");
+  for (double t : {-0.1,
+                   1.1,
+                   std::numeric_limits<double>::infinity(),
+                   std::numeric_limits<double>::quiet_NaN()}) {
+    require(sample(base, base, t).status == Status::InvalidSelection,
+            "invalid temporal parameter refuses before source execution");
+  }
+  previous = base;
+  current = base;
+  previous.selection.camera.position[1] = current.selection.camera.position[1] = 128 * 16;
+  current.selection.camera.projectionMatrix.t[0] = INT32_MAX;
+  const auto refused = sample(previous, current, 0.5);
+  require(refused.status == Status::InvalidChunk && refused.faces.empty() &&
+              refused.refusal == std::string_view("low_projection_sample"),
+          "LQ MAC overflow refuses rather than being misreported as a culled vertex");
+  require(sameRecipe(sample(previous, current, 1.0), build(current)),
+          "exact endpoint preserves its MAC overflow behavior before sampleability checks");
+  current = previous;
+  current.selection.camera.cullingMatrix.t[0] = INT32_MAX;
+  require(sample(previous, current, 0.5).refusal == std::string_view("culling_projection_sample"),
+          "culling MAC overflow propagates distinct sample refusal");
+
+  for (uint32_t depth : {1024u, 256u}) {
+    const auto hqBytes = refinedGeometryFixture(depth);
+    const auto hq = spyro::world_source::capture(RamView(hqBytes), -1, base.projection, 512);
+    auto left = hq, right = hq;
+    // Translate endpoints in equal multiples of every authored lattice divisor. Their midpoint
+    // is exactly the original input, including packed low-half borrowing at every lattice node.
+    left.selection.camera.position[2] -= 64;
+    right.selection.camera.position[2] += 64;
+    const auto refined = sample(left, right, 0.5);
+    const auto reference = build(hq);
+    require(refined.status == Status::Ready && sameRecipe(refined, reference) &&
+                refined.faces.size() == (depth == 1024u ? 4u : 16u),
+            "HQ medium/near camera sample matches complete independently constructed source");
+    require(sameRecipe(sample(left, right, 0.0), build(left)) &&
+                sameRecipe(sample(left, right, 1.0), build(right)),
+            "HQ refinement exact endpoints preserve material, corrections, depth and paint order");
+  }
+}
+
+void sampled_material_timeline_contract() {
+  using spyro::world_recipe::Status;
+  using spyro::world_scene::build;
+  using spyro::world_scene::sample;
+  constexpr uint32_t high = 0x95000u;
+  constexpr uint32_t low = 0x96000u;
+  for (uint32_t mode = 0; mode < 3u; ++mode) {
+    auto bytes = refinedGeometryFixture(mode == 1u ? 256u : 1024u);
+    w32(bytes, kEnvironment + 0x18u, low);
+    for (uint32_t tile = 0; tile < 2u; ++tile) {
+      w32(bytes, low + tile * 8u, 0x24202010u);
+      w32(bytes, low + tile * 8u + 4u, 0x0088202fu);
+    }
+    if (mode == 2u) {
+      w32(bytes, kSector + 0x1cu + 60u, 0x84u); // Authored direct-face flag.
+    }
+    const auto capture = [&] {
+      return spyro::world_source::capture(
+          RamView(bytes), -1, {.ofx = 256 << 16, .ofy = 120 << 16, .h = 341}, 512);
+    };
+    auto previous = capture();
+    const auto oldRecipe = build(previous);
+    require(oldRecipe.status == Status::Ready && oldRecipe.faces.size() == (mode == 0u   ? 4u
+                                                                            : mode == 1u ? 16u
+                                                                                         : 1u),
+            "material timeline fixture reaches medium, near and direct shipping owners");
+    for (uint32_t tile = 0; tile < 21u; ++tile) {
+      bytes[high + tile * 8u + 1u] ^= 0x10u;
+      bytes[high + tile * 8u + 5u] ^= 0x10u;
+    }
+    for (uint32_t tile = 0; tile < 2u; ++tile) {
+      bytes[low + tile * 8u + 1u] ^= 0x10u;
+      bytes[low + tile * 8u + 5u] ^= 0x10u;
+    }
+    auto current = capture();
+    const auto expected = build(current);
+    require(!sameRecipe(oldRecipe, expected), "authored UV change visibly changes the recipe");
+    previous.selection.camera.position[2] -= 64;
+    current.selection.camera.position[2] += 64;
+    require(
+        sameRecipe(sample(previous, current, 0.5), expected),
+        "interior samples moving geometry with current discrete UV, never previous or blended UV");
+    require(sameRecipe(sample(previous, current, 0.0), build(previous)) &&
+                sameRecipe(sample(previous, current, 1.0), build(current)),
+            "UV animation retains exact t0 and t1 authored endpoint recipes");
+    for (uint32_t address : {low + 2u, low + 6u, high + 2u, high + 7u, 0x6cf98u}) {
+      bytes[address] ^= 1u;
+      const auto changed = capture();
+      const auto rejected = sample(previous, changed, 0.5);
+      require(rejected.status == Status::InvalidSelection && rejected.faces.empty() &&
+                  rejected.refusal == std::string_view("captured_materials"),
+              "changed CLUT, TPAGE, refinement attributes or tables refuse the shipping sampler");
+      bytes[address] ^= 1u;
+    }
+    w32(bytes, kEnvironment + 0x20u, 2u);
+    require(sample(previous, capture(), 0.5).refusal == std::string_view("captured_materials"),
+            "material layout change remains an interval refusal");
+    std::fill(bytes.begin(), bytes.end(), 0u);
+    require(sameRecipe(sample(previous, current, 0.5), expected),
+            "sampled UV state remains immutable after original RAM destruction");
+  }
+}
+
 } // namespace
 
 int main() {
+  sampled_source_contract();
+  sampled_material_timeline_contract();
   resource_span_contract();
   immutable_source_contract();
   immutable_refined_source_contract();

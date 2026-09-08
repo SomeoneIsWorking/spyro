@@ -275,7 +275,9 @@ void SpyroRenderer::drawFrame() {
   auto &paired = spyro_paired_actor_state(mC);
   Fps60 &temporal = fps60(*mC->game);
   const bool pairedState = pairedActorScene(mC, sc);
-  spyro_paired_actor_frame_begin(paired, pairedState, mC->rsub.mode.psxRender(), temporal.active());
+  const uint64_t temporalScene = (uint64_t{sc.stage} << 1u) | uint64_t{pairedState};
+  spyro_temporal_scene_begin(
+      *mC, temporalScene, pairedState, mC->rsub.mode.psxRender(), temporal.active());
   // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the
   // denominator is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It
   // is how "which scenes does a real run actually reach" gets answered with data rather than from

@@ -2,6 +2,7 @@
 #include "game.h"
 #include "lightrec_executor.h"
 #include "native_dispatch.h"
+#include "psx_exe_image.h"
 #include "title_runtime_registry.h"
 #include "title_selection.h"
 
@@ -10,8 +11,6 @@
 #include <cstdlib>
 #include <lucent/log.h>
 #include <memory>
-
-void load_exe(const char *path, Core *core);
 
 namespace {
 

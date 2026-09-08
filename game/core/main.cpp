@@ -3,6 +3,8 @@
 #include "frame_loop_shell.h"
 #include "game.h"
 #include "host_turn.h"
+#include "hw_bind.h"
+#include "psx_exe_image.h"
 #include "runtime_run.h"
 #include "spyro_game.h"
 #include "spyro_runtime.h"
@@ -19,8 +21,6 @@ void mdec_init(void);
 void spu_init(void);
 }
 
-void gte_init(void);
-void load_exe(const char *path, Core *core);
 void dc_boot_init(Core *c);
 void dc_step_frame(Core *c, uint32_t frame);
 

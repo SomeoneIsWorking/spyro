@@ -67,31 +67,41 @@ uint32_t averageRgb(uint32_t left, uint32_t right) {
 
 } // namespace
 
-HighVertex projectVertex(const FixedAffine &cameraMatrix,
-                         const ProjectionParams &projection,
-                         Vec3s position,
-                         uint8_t tags,
-                         int clipRight) {
-  const auto input = world_projection_math::packProjectionInput(position.x, position.y, position.z);
-  NativeProjectedVertex projected =
-      psxport::native_projection::project(cameraMatrix, projection, input);
+std::optional<HighVertex> projectVertex(const world_projection_math::ProjectionStream &projection,
+                                        Vec3s previous,
+                                        Vec3s position,
+                                        uint8_t tags,
+                                        int clipRight) {
+  const auto packed = [](Vec3s value) {
+    return world_projection_math::packProjectionInput(value.x, value.y, value.z);
+  };
+  const auto coarse = projection.project(packed(previous), packed(position));
+  if (!coarse) {
+    return std::nullopt;
+  }
+  NativeProjectedVertex projected = *coarse;
   const uint16_t originalDepth = projected.sz;
   const float originalViewDepth = projected.pz;
   if ((tags & 2u) && projected.sz < 0x100u && projected.raw_view[0] > -256.0f &&
       projected.raw_view[0] < 256.0f && projected.raw_view[1] > -256.0f &&
       projected.raw_view[1] < 256.0f) {
-    const Vec3s scaled{(int16_t)((uint16_t)position.x << 4),
-                       (int16_t)((uint16_t)position.y << 4),
-                       (int16_t)((uint16_t)position.z << 4)};
-    const auto scaledInput =
-        world_projection_math::packProjectionInput(scaled.x, scaled.y, scaled.z);
-    projected = psxport::native_projection::project(cameraMatrix, projection, scaledInput);
+    const auto scale = [](Vec3s value) {
+      return Vec3s{(int16_t)((uint16_t)value.x << 4),
+                   (int16_t)((uint16_t)value.y << 4),
+                   (int16_t)((uint16_t)value.z << 4)};
+    };
+    const auto precise = projection.project(packed(scale(previous)), packed(scale(position)));
+    if (!precise) {
+      return std::nullopt;
+    }
+    projected = *precise;
     projected.sz = originalDepth;
     projected.pz = originalViewDepth;
   }
 
   HighVertex out{};
   out.position = {(int16_t)position.x, (int16_t)position.y, (int16_t)position.z};
+  out.previousPosition = {(int16_t)previous.x, (int16_t)previous.y, (int16_t)previous.z};
   out.projected.sx = projected.sx;
   out.projected.sy = projected.sy;
   out.projected.sz = projected.sz;
@@ -106,6 +116,16 @@ HighVertex projectVertex(const FixedAffine &cameraMatrix,
   out.requiresFacingCheck =
       (tags & 2u) != 0 && originalDepth < 0x600u && (projected.flags & 0x80000000u) != 0;
   return out;
+}
+
+HighVertex projectVertex(const FixedAffine &cameraMatrix,
+                         const ProjectionParams &projection,
+                         Position position,
+                         uint8_t tags,
+                         int clipRight) {
+  const world_projection_math::ProjectionStream stream(cameraMatrix, projection);
+  // Endpoint projection has no interval admission and cannot return a sampling refusal.
+  return projectVertex(stream, position, position, tags, clipRight).value();
 }
 
 bool facing(const std::array<HighVertex, 4> &vertices, uint32_t count, uint32_t flags) {
@@ -197,24 +217,35 @@ bool appendFace(Recipe &out, Face face, const char *&why) {
   return true;
 }
 
+Position midpointPosition(Position left, Position right) {
+  return {(int16_t)(((int32_t)left.x + (int32_t)right.x) >> 1),
+          (int16_t)(((int32_t)left.y + (int32_t)right.y) >> 1),
+          (int16_t)(((int32_t)left.z + (int32_t)right.z) >> 1)};
+}
+
 HighVertex midpoint(const HighVertex &left, const HighVertex &right) {
   HighVertex out{};
-  out.position.x = (int16_t)(((int32_t)left.position.x + (int32_t)right.position.x) >> 1);
-  out.position.y = (int16_t)(((int32_t)left.position.y + (int32_t)right.position.y) >> 1);
-  out.position.z = (int16_t)(((int32_t)left.position.z + (int32_t)right.position.z) >> 1);
+  out.position = midpointPosition(left.position, right.position);
+  out.previousPosition = midpointPosition(left.previousPosition, right.previousPosition);
   out.projected.rgb = averageRgb(left.projected.rgb, right.projected.rgb);
   return out;
 }
 
-void projectLattice(const FixedAffine &cameraMatrix,
-                    const ProjectionParams &projection,
+bool projectLattice(const world_projection_math::ProjectionStream &projection,
                     uint8_t tags,
                     int clipRight,
                     std::span<HighVertex> vertices,
+                    const char *&why,
                     bool nonpositiveOutside = false) {
   for (HighVertex &vertex : vertices) {
     const uint32_t rgb = vertex.projected.rgb;
-    vertex = projectVertex(cameraMatrix, projection, vertex.position, tags, clipRight);
+    const auto projected =
+        projectVertex(projection, vertex.previousPosition, vertex.position, tags, clipRight);
+    if (!projected) {
+      why = "high_lattice_projection_sample";
+      return false;
+    }
+    vertex = *projected;
     vertex.projected.rgb = rgb;
     // The refinement projectors at 0x80027AE8 and 0x80028A70 always write
     // directional top/bottom/left/right outcodes. The depth-dependent coarse
@@ -225,6 +256,7 @@ void projectLattice(const FixedAffine &cameraMatrix,
       vertex.projected.clip = 0x0fu;
     }
   }
+  return true;
 }
 
 int32_t sign12(uint32_t value) {
@@ -420,8 +452,7 @@ void correctCenter(std::array<HighVertex, 9> &vertices) {
 }
 
 bool appendMedium(const Materials &materials,
-                  const psxport::native_projection::FixedAffine &cameraMatrix,
-                  const ProjectionParams &projection,
+                  const world_projection_math::ProjectionStream &projection,
                   int clipRight,
                   const HighWork &work,
                   Recipe &out,
@@ -459,7 +490,9 @@ bool appendMedium(const Materials &materials,
       // builds the packed RGB center directly from this diagonal. Keeping the
       // averaging order matters because each packed channel truncates.
       lattice[4].projected.rgb = averageRgb(lattice[2].projected.rgb, lattice[6].projected.rgb);
-      projectLattice(cameraMatrix, projection, parent.tags, clipRight, lattice);
+      if (!projectLattice(projection, parent.tags, clipRight, lattice, why)) {
+        return false;
+      }
       correctCenter(lattice);
       for (uint32_t edge = 0; edge < 4; ++edge) {
         uint8_t status = 0;
@@ -503,7 +536,9 @@ bool appendMedium(const Materials &materials,
     lattice[1] = midpoint(lattice[0], lattice[2]);
     lattice[3] = midpoint(lattice[0], lattice[5]);
     lattice[4] = midpoint(lattice[2], lattice[5]);
-    projectLattice(cameraMatrix, projection, parent.tags, clipRight, lattice);
+    if (!projectLattice(projection, parent.tags, clipRight, lattice, why)) {
+      return false;
+    }
     const uint8_t orientation = (parent.materialWord >> 8) & 3u;
     for (uint32_t edge = 0; edge < 3; ++edge) {
       uint8_t status = 0;
@@ -717,8 +752,7 @@ bool appendNearTransitions(const Materials &materials,
 }
 
 bool appendNearQuads(const Materials &materials,
-                     const psxport::native_projection::FixedAffine &cameraMatrix,
-                     const ProjectionParams &projection,
+                     const world_projection_math::ProjectionStream &projection,
                      int clipRight,
                      const HighWork &work,
                      Recipe &out,
@@ -744,7 +778,9 @@ bool appendNearQuads(const Materials &materials,
     }
     std::array<HighVertex, 25> lattice{};
     buildNearQuadLattice(parent, lattice);
-    projectLattice(cameraMatrix, projection, parent.tags, clipRight, lattice, true);
+    if (!projectLattice(projection, parent.tags, clipRight, lattice, why, true)) {
+      return false;
+    }
     correctNearQuadInterior(lattice);
     if (!appendNearTransitions(materials, parent, lattice, work, 0x8006cfc8u, material, out, why)) {
       return false;
@@ -778,8 +814,7 @@ bool appendNearQuads(const Materials &materials,
 }
 
 bool appendNearTriangles(const Materials &materials,
-                         const psxport::native_projection::FixedAffine &cameraMatrix,
-                         const ProjectionParams &projection,
+                         const world_projection_math::ProjectionStream &projection,
                          int clipRight,
                          const HighWork &work,
                          Recipe &out,
@@ -803,7 +838,9 @@ bool appendNearTriangles(const Materials &materials,
     }
     std::array<HighVertex, 15> lattice{};
     buildNearTriangleLattice(parent, lattice);
-    projectLattice(cameraMatrix, projection, parent.tags, clipRight, lattice, true);
+    if (!projectLattice(projection, parent.tags, clipRight, lattice, why, true)) {
+      return false;
+    }
     const uint8_t orientation = (parent.materialWord >> 8) & 3u;
     if (!appendNearTransitions(materials,
                                parent,
@@ -850,18 +887,32 @@ bool appendNearTriangles(const Materials &materials,
 } // namespace
 
 bool append(const Materials &materials,
-            const psxport::native_projection::FixedAffine &cameraMatrix,
+            const world_projection_math::ProjectionStream &projection,
+            int clipRight,
+            const Work &work,
+            Recipe &out,
+            const char *&why) {
+  if (!appendMedium(materials, projection, clipRight, work, out, why) ||
+      !appendNearQuads(materials, projection, clipRight, work, out, why) ||
+      !appendNearTriangles(materials, projection, clipRight, work, out, why)) {
+    return false;
+  }
+  return true;
+}
+
+bool append(const Materials &materials,
+            const FixedAffine &cameraMatrix,
             const ProjectionParams &projection,
             int clipRight,
             const Work &work,
             Recipe &out,
             const char *&why) {
-  if (!appendMedium(materials, cameraMatrix, projection, clipRight, work, out, why) ||
-      !appendNearQuads(materials, cameraMatrix, projection, clipRight, work, out, why) ||
-      !appendNearTriangles(materials, cameraMatrix, projection, clipRight, work, out, why)) {
-    return false;
-  }
-  return true;
+  return append(materials,
+                world_projection_math::ProjectionStream(cameraMatrix, projection),
+                clipRight,
+                work,
+                out,
+                why);
 }
 
 } // namespace spyro::world_hq_refinement

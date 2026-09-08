@@ -4,6 +4,8 @@
 #include "fx_paired_actor.h"
 #include "presentation_owner.h"
 #include "runtime_run.h"
+#include "temporal_scene.h"
+#include "world_temporal.h"
 
 class Core;
 
@@ -13,6 +15,8 @@ struct SpyroContext {
   spyro::ArchiveTransfer archiveTransfer{};
   spyro::RuntimeRun run{};
   SpyroPairedActorFrameState pairedActor{};
+  spyro::world_temporal::History worldTemporal{};
+  SpyroTemporalSceneAdmission temporalAdmission{};
   SpyroPresentationOwner presentationOwner{};
 };
 

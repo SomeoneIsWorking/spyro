@@ -15,6 +15,7 @@ enum class Status : uint8_t { Ready, ValidEmpty, InvalidCore, AnimationRefused, 
 struct Frame {
   field_environment::Invocation invocation{};
   world_scene::AnimationResult animation{};
+  world_source::Source source{};
   world_recipe::Recipe world{};
 };
 

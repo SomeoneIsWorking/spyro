@@ -101,6 +101,8 @@ Success conditions:
 - Packaged first launch provides a file picker for the player's game files, authenticates the
   complete install, preserves a previous valid selection on failure, and persists selection and
   saves through the host's user-data APIs. Browser selection imports files into browser storage.
+- Touch-enabled releases provide an authored SVG control overlay through the same action policy as
+  physical controllers, with multi-touch, safe areas, cancellation and controller-aware visibility.
 - Releases and the GitHub Pages deployment contain only redistributable product/runtime inputs;
   players supply their own ROM/disc, with no game assets in CI or release archives.
 - Hermetic, runtime, registry, and negative-case checks print their exercised denominators and refuse

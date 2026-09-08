@@ -71,7 +71,7 @@ void Spyro1Runtime::pacePresentation(Core &core, int fields, int parts) {
 
 std::unique_ptr<TemporalFramePresentation>
 Spyro1Runtime::createTemporalFramePresentation(Game &game) {
-  return std::make_unique<Fps60>(game, spyro_temporal_scene_source());
+  return std::make_unique<Fps60>(game, spyro_temporal_scene_source(game));
 }
 
 namespace {

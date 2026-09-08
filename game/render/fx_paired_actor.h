@@ -2,6 +2,7 @@
 
 #include "paired_actor_decode.h"
 #include "paired_actor_temporal_evidence.h"
+#include "scene_camera_inputs.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -15,6 +16,7 @@ struct SpyroPairedGpuSnapshot {
 };
 
 struct SpyroPairedActorTransform {
+  spyro::SceneCameraInputs sceneCamera{};
   std::array<std::array<uint32_t, 8>, 3> layer_cr{};
   std::array<int32_t, 3> base_mac{};
   std::array<std::array<int32_t, 3>, 2> root_input{};
@@ -30,6 +32,7 @@ struct SpyroPairedActorTransform {
 struct SpyroPairedFrame {
   bool valid = false;
   bool culled = false;
+  uint64_t frameSerial = 0;
   uint64_t epoch = 0;
   uint64_t topology = 0;
   std::array<uint32_t, 3> layer_counts{};
@@ -74,6 +77,11 @@ bool spyro_paired_actor_submit_field(Core *c, SpyroPairedActorFrameState &state)
 enum class SpyroPairedRebuildResult : uint8_t { Refused, NoOutput, Emitted };
 SpyroPairedRebuildResult
 spyro_paired_actor_rebuild_endpoint(Core *c, RenderQueue &target, const SpyroPairedFrame &frame);
+SpyroPairedRebuildResult spyro_paired_actor_rebuild_sample(Core *core,
+                                                           RenderQueue &target,
+                                                           const SpyroPairedFrame &previous,
+                                                           const SpyroPairedFrame &current,
+                                                           float t);
 void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
                                     bool state2,
                                     bool reference_leg,

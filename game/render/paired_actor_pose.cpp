@@ -287,9 +287,18 @@ bool build_transform(Core *c, SpyroPairedActorTransform &out) {
     packed[i] = c->mem_r32(camera + i * 4u);
   }
   Mat3i m = unpack_matrix(packed);
-  const int32_t dx = (int32_t)((uint32_t)c->mem_r32(instance + 0u) - c->mem_r32(camera + 40u));
-  const int32_t dy = (int32_t)((uint32_t)c->mem_r32(camera + 44u) - c->mem_r32(instance + 4u));
-  const int32_t dz = (int32_t)((uint32_t)c->mem_r32(camera + 48u) - c->mem_r32(instance + 8u));
+  std::array<int32_t, 3> cameraPosition{};
+  for (uint32_t i = 0; i < 3; ++i) {
+    cameraPosition[i] = (int32_t)c->mem_r32(camera + 40u + i * 4u);
+    for (uint32_t j = 0; j < 3; ++j) {
+      out.sceneCamera.matrix[i][j] = (int16_t)m.v[i][j];
+    }
+  }
+  out.sceneCamera.position = cameraPosition;
+  out.sceneCamera.valid = true;
+  const int32_t dx = (int32_t)(c->mem_r32(instance) - (uint32_t)cameraPosition[0]);
+  const int32_t dy = (int32_t)((uint32_t)cameraPosition[1] - c->mem_r32(instance + 4u));
+  const int32_t dz = (int32_t)((uint32_t)cameraPosition[2] - c->mem_r32(instance + 8u));
   const std::array<int32_t, 3> delta = {(int16_t)dy, (int16_t)dz, (int16_t)dx};
   const auto tr = mvmva_r_mac(m, delta);
   out.base_mac = tr;

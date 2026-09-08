@@ -18,6 +18,7 @@
 #include "proj_vtx.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "spyro_context.h"
 
 #include <algorithm>
 #include <array>
@@ -621,6 +622,7 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   }
   SpyroPairedFrame captured{};
   captured.valid = true;
+  captured.frameSerial = spyro_context(*c).worldTemporal.frameSerial();
   captured.epoch = state.stage2_epoch;
   captured.layer_counts = decoded;
   captured.authored_replay = authoredReplay;
@@ -775,6 +777,14 @@ void spyro_paired_actor_fps60_rotate(Core *c) {
   state.endpoints_compatible = false;
 }
 
+SpyroPairedRebuildResult spyro_paired_actor_rebuild_sample(Core *core,
+                                                           RenderQueue &target,
+                                                           const SpyroPairedFrame &previous,
+                                                           const SpyroPairedFrame &current,
+                                                           float t) {
+  return emit_interpolated(core, target, previous, current, t);
+}
+
 void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
   if (!c || !c->game || !c->game->rqRedirect) {
     lucent::error("pairedactor", "FATAL: fps60 paired pass has no redirected sink");
@@ -787,7 +797,7 @@ void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
   }
   RenderQueue &sink = *c->game->rqRedirect;
   const int before = sink.n;
-  const auto result = emit_interpolated(c, sink, state.previous, state.current, t);
+  const auto result = spyro_paired_actor_rebuild_sample(c, sink, state.previous, state.current, t);
   ++state.temporal.calls;
   if (t == 0.0f || t == 1.0f) {
     ++state.temporal.endpoint_calls;

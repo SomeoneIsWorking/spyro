@@ -10,7 +10,6 @@
 namespace spyro::world_scene_prepare {
 namespace {
 
-using psxport::native_projection::ProjectionParams;
 using spyro::world_chunk_codec::RamView;
 
 bool horizontalInside(int32_t extent, int32_t depth, int32_t width) {
@@ -40,9 +39,24 @@ bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width
          32 * (std::abs(y) + hy) - 17 * (z - yz) < 0;
 }
 
+psxport::native_projection::ModelVertex cullingInput(const world_source::Selection &selection,
+                                                     uint8_t index) {
+  const auto &header = *selection.sectors[index];
+  const int32_t cameraX = selection.camera.position[0] >> 4;
+  const int32_t cameraY = selection.camera.position[1] >> 4;
+  const int32_t cameraZ = selection.camera.position[2] >> 4;
+  // Sector culling narrows each component independently. Packed VXY borrowing belongs only
+  // to the subsequent LQ/HQ vertex projection streams.
+  return {(int16_t)(cameraY - (int32_t)(uint16_t)header.center),
+          (int16_t)(cameraZ - (int32_t)(uint16_t)(header.extent >> 16)),
+          (int16_t)((int32_t)(uint16_t)(header.center >> 16) - cameraX)};
+}
+
 } // namespace
 
-bool prepare(const world_source::Selection &selection,
+bool prepare(const world_source::Selection &previous,
+             const world_source::Selection &selection,
+             const world_projection_math::ProjectionStream &culling,
              int32_t horizontalWidth,
              Prepared &out,
              const char *&why,
@@ -52,32 +66,27 @@ bool prepare(const world_source::Selection &selection,
     why = "clip_width";
     return false;
   }
-  if (!selection.valid) {
-    why = selection.refusal;
+  if (!previous.valid || !selection.valid) {
+    why = previous.valid ? selection.refusal : previous.refusal;
     return false;
   }
   out.selectedSectors = (uint32_t)selection.occurrences.size();
-  const auto &cullMatrix = selection.camera.cullingMatrix;
-  const int32_t cameraX = selection.camera.position[0] >> 4;
-  const int32_t cameraY = selection.camera.position[1] >> 4;
-  const int32_t cameraZ = selection.camera.position[2] >> 4;
   const uint32_t lod = selection.lodDistance >> 4;
-  const ProjectionParams unused{};
   for (uint8_t index : selection.occurrences) {
-    if (!selection.sectors[index]) {
+    if (!selection.sectors[index] || !previous.sectors[index]) {
       why = "sector_bounds";
       return false;
     }
     const auto &header = *selection.sectors[index];
     const uint32_t sector = header.address;
-    const uint32_t h0 = header.center, h1 = header.extent;
+    const uint32_t h1 = header.extent;
     const auto transformed =
-        psxport::native_projection::project(cullMatrix,
-                                            unused,
-                                            {(int16_t)(cameraY - (int32_t)(uint16_t)h0),
-                                             (int16_t)(cameraZ - (int32_t)(uint16_t)(h1 >> 16)),
-                                             (int16_t)((int32_t)(uint16_t)(h0 >> 16) - cameraX)});
-    const int32_t x = transformed.ir[0], y = transformed.ir[1], z = transformed.ir[2];
+        culling.project(cullingInput(previous, index), cullingInput(selection, index));
+    if (!transformed) {
+      why = "culling_projection_sample";
+      return false;
+    }
+    const int32_t x = transformed->ir[0], y = transformed->ir[1], z = transformed->ir[2];
     const int32_t radius = h1 & 0x1fffu;
     if (!broadCull(x, y, z, radius, horizontalWidth)) {
       continue;
@@ -104,14 +113,25 @@ bool prepare(const world_source::Selection &selection,
       out.animations.push_back({sector, active});
       continue;
     }
+    const uint32_t previousActive = previous.sectors[index]->animation | activeMask;
     for (uint32_t channel = 0; channel < 4; ++channel) {
-      if ((uint8_t)(active >> (channel * 8u)) < 0x80u) {
+      if ((uint8_t)(active >> (channel * 8u)) < 0x80u ||
+          (uint8_t)(previousActive >> (channel * 8u)) < 0x80u) {
         why = "active_animation";
         return false;
       }
     }
   }
   return true;
+}
+
+bool prepare(const world_source::Selection &selection,
+             int32_t horizontalWidth,
+             Prepared &out,
+             const char *&why,
+             bool decodingAnimation) {
+  const world_projection_math::ProjectionStream culling(selection.camera.cullingMatrix, {});
+  return prepare(selection, selection, culling, horizontalWidth, out, why, decodingAnimation);
 }
 
 bool prepare(const RamView &ram,

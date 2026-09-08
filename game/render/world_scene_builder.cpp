@@ -8,7 +8,9 @@
 #include "world_hq_recipe.h"
 #include "world_lq_recipe.h"
 #include "world_scene_prepare.h"
+#include "world_source_pair.h"
 
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -121,12 +123,29 @@ Recipe build(Core *core,
   return build(capture(core, selection, cullingDistance), audit);
 }
 
-Recipe build(const world_source::Source &source, world_hq_recipe::Audit *audit) {
+namespace {
+Recipe reconstruct(const world_source::Source &previous,
+                   const world_source::Source &source,
+                   std::optional<double> t,
+                   world_hq_recipe::Audit *audit) {
+  using world_projection_math::ProjectionStream;
+  const ProjectionStream culling = t ? ProjectionStream(previous.selection.camera.cullingMatrix,
+                                                        source.selection.camera.cullingMatrix,
+                                                        {},
+                                                        *t)
+                                     : ProjectionStream(source.selection.camera.cullingMatrix, {});
+  const ProjectionStream projection =
+      t ? ProjectionStream(previous.selection.camera.projectionMatrix,
+                           source.selection.camera.projectionMatrix,
+                           source.projection,
+                           *t)
+        : ProjectionStream(source.selection.camera.projectionMatrix, source.projection);
   Recipe out{};
   const int clipRight = source.clipRight;
   world_scene_prepare::Prepared prepared{};
   const char *why = "none";
-  if (!world_scene_prepare::prepare(source.selection, clipRight, prepared, why)) {
+  if (!world_scene_prepare::prepare(
+          previous.selection, source.selection, culling, clipRight, prepared, why)) {
     const Status status = why == std::string_view("active_animation") ? Status::ActiveAnimation
                                                                       : Status::InvalidSelection;
     return refuse(std::move(out), status, why);
@@ -136,14 +155,38 @@ Recipe build(const world_source::Source &source, world_hq_recipe::Audit *audit) 
   out.lowSectors = (uint32_t)prepared.low.size();
   out.highSectors = (uint32_t)prepared.high.size();
 
-  const ProjectionParams &params = source.projection;
   const uint32_t farLimit = source.selection.cullingDistance >> 7;
-  if (!world_lq_recipe::append(source, prepared, params, clipRight, farLimit, out, why) ||
-      !world_hq_recipe::append(source, prepared, params, clipRight, out, why, audit)) {
+  if (!world_lq_recipe::append(
+          previous, source, prepared, projection, clipRight, farLimit, out, why) ||
+      !world_hq_recipe::append(
+          previous, source, prepared, projection, clipRight, out, why, audit)) {
     return refuse(std::move(out), refusalStatus(why), why);
   }
   out.status = out.faces.empty() ? Status::ValidEmpty : Status::Ready;
   return out;
+}
+
+} // namespace
+
+Recipe build(const world_source::Source &source, world_hq_recipe::Audit *audit) {
+  return reconstruct(source, source, std::nullopt, audit);
+}
+
+Recipe sample(const world_source::Source &previous, const world_source::Source &current, double t) {
+  if (!std::isfinite(t) || t < 0.0 || t > 1.0) {
+    return refuse({}, Status::InvalidSelection, "sample_t");
+  }
+  if (t == 0.0) {
+    return build(previous);
+  }
+  if (t == 1.0) {
+    return build(current);
+  }
+  const char *why = "none";
+  if (!world_source_pair::compatible(previous, current, why)) {
+    return refuse({}, Status::InvalidSelection, why);
+  }
+  return reconstruct(previous, current, t, nullptr);
 }
 
 } // namespace spyro::world_scene

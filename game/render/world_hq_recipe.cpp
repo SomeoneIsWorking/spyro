@@ -119,40 +119,64 @@ AuditEntry auditEntry(const Parent &parent,
   return entry;
 }
 
-bool classify(const world_source::Source &input,
+world_hq_refinement::Position projectionPosition(const world_chunk_codec::HighChunk &chunk,
+                                                 const world_source::Camera &camera,
+                                                 uint32_t packed) {
+  const int32_t cameraX = camera.position[0] >> 2;
+  const int32_t cameraY = camera.position[1] >> 2;
+  const int32_t cameraZ = camera.position[2] >> 2;
+  const int32_t x =
+      (int32_t)(chunk.originWord >> 14) - cameraX + (int32_t)((packed >> 19) & 0x1ffcu);
+  const int32_t y =
+      cameraY - (int32_t)((chunk.originWord & 0xffffu) << 2) - (int32_t)((packed >> 8) & 0x1ffcu);
+  const int32_t z =
+      cameraZ - (int32_t)(chunk.originAndOffset >> 14) - (int32_t)((packed << 2) & 0x0ffcu);
+  return {y, z, x};
+}
+
+bool classify(const world_source::Source &previous,
+              const world_source::Source &input,
               const world_scene_prepare::Prepared &prepared,
-              const ProjectionParams &projection,
+              const world_projection_math::ProjectionStream &stream,
               int clipRight,
               Work &work,
               Recipe &out,
               const char *&why,
               Audit *audit) {
-  const auto cameraMatrix = input.selection.camera.projectionMatrix;
-  const int32_t cameraX = input.selection.camera.position[0] >> 2;
-  const int32_t cameraY = input.selection.camera.position[1] >> 2;
-  const int32_t cameraZ = input.selection.camera.position[2] >> 2;
+  const auto &cameraMatrix = stream.currentMatrix();
+  const auto &projection = stream.parameters();
   const uint32_t lodDistance = input.selection.lodDistance;
   const uint32_t textureCount = input.materials.count();
   const uint32_t lqTextures = input.materials.lowBase();
   uint32_t ordinal = (uint32_t)out.faces.size();
   for (const world_scene_prepare::TaggedSector &selected : prepared.high) {
     const auto &sector = input.sectors[selected.index];
-    if (!sector || sector->highStatus != world_chunk_codec::Status::Ok) {
+    const auto &previousSector = previous.sectors[selected.index];
+    if (!sector || !previousSector || sector->highStatus != world_chunk_codec::Status::Ok ||
+        previousSector->highStatus != world_chunk_codec::Status::Ok) {
       why = "high_chunk_decode";
       return false;
     }
     const auto &chunk = sector->high;
+    const auto &previousChunk = previousSector->high;
+    if (previousChunk.vertices.size() != chunk.vertices.size()) {
+      why = "high_vertex_count";
+      return false;
+    }
     std::vector<HighVertex> vertices;
     vertices.reserve(chunk.vertices.size());
-    for (uint32_t packed : chunk.vertices) {
-      const int32_t x =
-          (int32_t)(chunk.originWord >> 14) - cameraX + (int32_t)((packed >> 19) & 0x1ffcu);
-      const int32_t y = cameraY - (int32_t)((chunk.originWord & 0xffffu) << 2) -
-                        (int32_t)((packed >> 8) & 0x1ffcu);
-      const int32_t z =
-          cameraZ - (int32_t)(chunk.originAndOffset >> 14) - (int32_t)((packed << 2) & 0x0ffcu);
-      vertices.push_back(world_hq_refinement::projectVertex(
-          cameraMatrix, projection, {y, z, x}, selected.tags, clipRight));
+    for (size_t i = 0; i < chunk.vertices.size(); ++i) {
+      const auto projected = world_hq_refinement::projectVertex(
+          stream,
+          projectionPosition(previousChunk, previous.selection.camera, previousChunk.vertices[i]),
+          projectionPosition(chunk, input.selection.camera, chunk.vertices[i]),
+          selected.tags,
+          clipRight);
+      if (!projected) {
+        why = "high_projection_sample";
+        return false;
+      }
+      vertices.push_back(*projected);
     }
 
     uint8_t chunkCommon = 0xffu;
@@ -290,9 +314,10 @@ bool classify(const world_source::Source &input,
 
 } // namespace
 
-bool append(const world_source::Source &input,
+bool append(const world_source::Source &previous,
+            const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
-            const ProjectionParams &projection,
+            const world_projection_math::ProjectionStream &projection,
             int clipRight,
             Recipe &out,
             const char *&why,
@@ -301,14 +326,20 @@ bool append(const world_source::Source &input,
   if (audit) {
     audit->clear();
   }
-  return classify(input, prepared, projection, clipRight, work, out, why, audit) &&
-         world_hq_refinement::append(input.materials,
-                                     input.selection.camera.projectionMatrix,
-                                     projection,
-                                     clipRight,
-                                     work,
-                                     out,
-                                     why);
+  return classify(previous, input, prepared, projection, clipRight, work, out, why, audit) &&
+         world_hq_refinement::append(input.materials, projection, clipRight, work, out, why);
+}
+
+bool append(const world_source::Source &input,
+            const world_scene_prepare::Prepared &prepared,
+            const ProjectionParams &projection,
+            int clipRight,
+            Recipe &out,
+            const char *&why,
+            Audit *audit) {
+  const world_projection_math::ProjectionStream stream(input.selection.camera.projectionMatrix,
+                                                       projection);
+  return append(input, input, prepared, stream, clipRight, out, why, audit);
 }
 
 } // namespace spyro::world_hq_recipe

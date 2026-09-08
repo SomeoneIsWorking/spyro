@@ -11,10 +11,13 @@ constexpr uint32_t kParticleTextures = 0x80076278u;
 constexpr uint32_t kRecordSize = 0x20u;
 constexpr uint32_t kRecordCapacity = 256u;
 
-Recipe refuse(Recipe out, Status status, const char *why) {
+Recipe refuse(Recipe out, Status status, const char *why, int32_t type = -1, uint32_t address = 0) {
   out.status = status;
   out.refusal = why;
+  out.refusedType = type;
+  out.refusedAddress = address;
   out.points.clear();
+  out.lines.clear();
   out.texturedQuads.clear();
   return out;
 }
@@ -48,6 +51,30 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
     if (type == -2) {
       continue;
     }
+    if (type == 1) {
+      // Six contiguous halfwords hold the two endpoints in the same (x, y, z) order the type-0 arm
+      // uses for its single point, so the first spans words 4/8 and the second words 8/0xC.
+      const uint32_t xy0 = ram.r32(address + 4u);
+      const uint32_t z0x1 = ram.r32(address + 8u);
+      const uint32_t yz1 = ram.r32(address + 0xcu);
+      const uint32_t color0 = ram.r32(address + 0x10u);
+      const uint32_t color1 = ram.r32(address + 0x14u);
+      out.lines.push_back(Line{address,
+                               (int16_t)xy0,
+                               (int16_t)(xy0 >> 16),
+                               (int16_t)z0x1,
+                               (int16_t)(z0x1 >> 16),
+                               (int16_t)yz1,
+                               (int16_t)(yz1 >> 16),
+                               (uint8_t)(color1 >> 24),
+                               (uint8_t)color0,
+                               (uint8_t)(color0 >> 8),
+                               (uint8_t)(color0 >> 16),
+                               (uint8_t)color1,
+                               (uint8_t)(color1 >> 8),
+                               (uint8_t)(color1 >> 16)});
+      continue;
+    }
     if (type == 2) {
       const uint32_t textureTableAddress = kParticleTextures + (uint32_t)ram.r8(address) * 4u;
       if (!ram.contains(textureTableAddress, 4u)) {
@@ -75,7 +102,7 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
       continue;
     }
     if (type != 0) {
-      return refuse(std::move(out), Status::UnsupportedType, "particle_type");
+      return refuse(std::move(out), Status::UnsupportedType, "particle_type", type, address);
     }
     const uint32_t xy = ram.r32(address + 4u);
     const uint32_t zAndBias = ram.r32(address + 8u);
@@ -89,8 +116,9 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
                                (uint8_t)(color >> 8),
                                (uint8_t)(color >> 16)});
   }
-  out.status =
-      (out.points.empty() && out.texturedQuads.empty()) ? Status::ValidEmpty : Status::Ready;
+  out.status = (out.points.empty() && out.lines.empty() && out.texturedQuads.empty())
+                   ? Status::ValidEmpty
+                   : Status::Ready;
   return out;
 }
 

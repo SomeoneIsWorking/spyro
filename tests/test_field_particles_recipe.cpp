@@ -84,6 +84,31 @@ void testUnsupportedTypeRefusal() {
   require(recipe.points.empty(), "atomic refusal");
 }
 
+void testTypeOneDecode() {
+  std::array<uint8_t, 0x200000> bytes{};
+  put32(bytes, 0x80075824u, kBase);
+  bytes[kBase - 0x80000000u + 1u] = 1u;
+  put32(bytes, kBase + 4u, 0x02220111u);
+  put32(bytes, kBase + 8u, 0x04440333u);
+  put32(bytes, kBase + 0xcu, 0x06660555u);
+  put32(bytes, kBase + 0x10u, 0x00112233u);
+  put32(bytes, kBase + 0x14u, 0x07445566u);
+  put32(bytes, kBase + 0x20u, 0xffffffffu);
+
+  const auto recipe = spyro::field_particles_recipe::derive(
+      spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
+  require(recipe.status == spyro::field_particles_recipe::Status::Ready, "type one status");
+  require(recipe.records == 1u, "type one record count");
+  require(recipe.lines.size() == 1u, "type one count");
+  const auto &line = recipe.lines[0];
+  require(line.x0 == 0x0111 && line.y0 == 0x0222 && line.z0 == 0x0333, "type one first endpoint");
+  require(line.x1 == 0x0444 && line.y1 == 0x0555 && line.z1 == 0x0666, "type one second endpoint");
+  require(line.r0 == 0x33u && line.g0 == 0x22u && line.b0 == 0x11u, "type one first colour");
+  require(line.r1 == 0x66u && line.g1 == 0x55u && line.b1 == 0x44u, "type one second colour");
+  // The second colour word's command byte is unused by LINE_G2 and carries the shared depth bias.
+  require(line.depthBias == 0x07u, "type one depth bias");
+}
+
 void testTypeTwoDecode() {
   std::array<uint8_t, 0x200000> bytes{};
   put32(bytes, 0x80075824u, kBase);
@@ -134,8 +159,9 @@ int main() {
   testTypeZeroDecode();
   testCursorIsNotListEnd();
   testUnsupportedTypeRefusal();
+  testTypeOneDecode();
   testTypeTwoDecode();
   testTypeTwoRejectsMissingTexture();
-  std::cout << "field_particles_recipe: PASS (type-0/type-2 decode + atomic refusal)\n";
+  std::cout << "field_particles_recipe: PASS (type-0/type-1/type-2 decode + atomic refusal)\n";
   return 0;
 }

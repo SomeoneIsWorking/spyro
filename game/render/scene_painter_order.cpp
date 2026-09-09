@@ -6,14 +6,19 @@ namespace {
 constexpr uint32_t kPhaseShift = 29u;
 constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 
+// Ascending in the order the guest LINKS each producer's packets, which the framework replays
+// descending. 0x80059F8C runs after the shaded pass and before Spyro's model, so MobyShadow sits
+// between SecondaryActor and PairedActor; every other phase keeps its existing relative position,
+// and eight values still fit the three bits above kPhaseShift.
 enum class LinkPhase : uint32_t {
   Cyclorama = 0,
   SpyroShadow = 1,
-  PairedActor = 2,
-  SecondaryActor = 3,
-  Actor = 4,
-  QueuedWorld = 5,
-  World = 6
+  MobyShadow = 2,
+  PairedActor = 3,
+  SecondaryActor = 4,
+  Actor = 5,
+  QueuedWorld = 6,
+  World = 7
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -78,6 +83,17 @@ PainterReplayOrder spyroShadow(uint16_t otBin, uint32_t fanOrdinal) {
   // order within each OT bin, so the fan ordinal is the chain suborder rather than an inverted
   // allocation index.
   return {kActorWorldTerrainDomain, {otBin, linkOrdinal(LinkPhase::SpyroShadow, 0u), fanOrdinal}};
+}
+
+PainterReplayOrder mobyShadow(uint16_t otBin, uint32_t shadowOrdinal, uint32_t fanOrdinal) {
+  if (shadowOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x80059F8C walks its shadow list front to back and links each fan in ascending packet order, so
+  // later shadows sit deeper in the chain and the source ordinal is inverted the way the actor
+  // chains invert theirs.
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::MobyShadow, kOrdinalMask - shadowOrdinal), fanOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

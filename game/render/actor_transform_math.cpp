@@ -31,24 +31,6 @@ void replaceColumns(Matrix &matrix,
   }
 }
 
-void rotateY(Core *core, Matrix &matrix, uint32_t offset) {
-  const int16_t sine = (int16_t)core->mem_r16(kSin + offset);
-  const int16_t cosine = (int16_t)core->mem_r16(kCos + offset);
-  replaceColumns(matrix, 0, {cosine, 0, sine}, 2, {(int16_t)-sine, 0, cosine});
-}
-
-void rotateX(Core *core, Matrix &matrix, uint32_t offset) {
-  const int16_t sine = (int16_t)core->mem_r16(kSin + offset);
-  const int16_t cosine = (int16_t)core->mem_r16(kCos + offset);
-  replaceColumns(matrix, 1, {0, cosine, sine}, 2, {0, (int16_t)-sine, cosine});
-}
-
-void rotateZ(Core *core, Matrix &matrix, uint32_t offset) {
-  const int16_t sine = (int16_t)core->mem_r16(kSin + offset);
-  const int16_t cosine = (int16_t)core->mem_r16(kCos + offset);
-  replaceColumns(matrix, 0, {cosine, sine, 0}, 1, {(int16_t)-sine, cosine, 0});
-}
-
 } // namespace
 
 Matrix readCameraMatrix(Core *core) {
@@ -81,15 +63,32 @@ std::array<int32_t, 3> transform(const Matrix &matrix, std::array<int32_t, 3> ve
   return result;
 }
 
+Matrix rotateAxis(Core *core, Matrix matrix, Axis axis, uint32_t tableByteOffset) {
+  const int16_t sine = (int16_t)core->mem_r16(kSin + tableByteOffset);
+  const int16_t cosine = (int16_t)core->mem_r16(kCos + tableByteOffset);
+  switch (axis) {
+  case Axis::X:
+    replaceColumns(matrix, 1, {0, cosine, sine}, 2, {0, (int16_t)-sine, cosine});
+    break;
+  case Axis::Y:
+    replaceColumns(matrix, 0, {cosine, 0, sine}, 2, {(int16_t)-sine, 0, cosine});
+    break;
+  case Axis::Z:
+    replaceColumns(matrix, 0, {cosine, sine, 0}, 1, {(int16_t)-sine, cosine, 0});
+    break;
+  }
+  return matrix;
+}
+
 Matrix rotateForMoby(Core *core, Matrix matrix, uint32_t packedAngles) {
   if (const uint32_t angle = (packedAngles >> 15) & 0x1feu) {
-    rotateY(core, matrix, angle);
+    matrix = rotateAxis(core, matrix, Axis::Y, angle);
   }
   if (const uint32_t angle = (packedAngles & 0xff00u) >> 7) {
-    rotateX(core, matrix, angle);
+    matrix = rotateAxis(core, matrix, Axis::X, angle);
   }
   if (const uint32_t angle = (packedAngles & 0xffu) << 1) {
-    rotateZ(core, matrix, angle);
+    matrix = rotateAxis(core, matrix, Axis::Z, angle);
   }
   return matrix;
 }

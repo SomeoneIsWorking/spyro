@@ -18,6 +18,7 @@
 #include "fx_field_player_actor.h"
 #include "fx_field_shadow.h"
 #include "fx_field_tracers.h"
+#include "fx_glow_sparkle.h"
 #include "fx_moby_shadow.h"
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
@@ -178,14 +179,26 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     if (!spyro_flame_submit(mC)) {
       abortUnimplemented(sc, "Spyro flame producer 0x80058D64 refused its atomic recipe");
     }
+    // The last call of 0x80019698: glow halos then sparkles. The sparkle half also ages and kills
+    // its own records, so this must run every field, not only when something is visible.
+    if (!glow_sparkle_submit(mC)) {
+      abortUnimplemented(sc, "glow/sparkle producer 0x80058BA8 refused its atomic recipe");
+    }
     // Diagnostic only and a no-op unless PSXPORT_ACTOR_SCENE_ORACLE=1. It runs retail's moby-chain
     // walker over the state the native producers have just read, so it must sit after every
     // producer that walker covers, and must never be armed on a shipping frame. Retail draws the
     // player and its shadow as ordinary mobys, so those two producers are part of the comparison
     // even though the port owns them separately — which is why the call is here and not before
     // them. The printed painter histogram is what makes the five-way split readable.
-    static constexpr std::array<uint32_t, 7> kActorPainters = {
-        0x8001F798u, 0x80020F34u, 0x80022A2Cu, 0x80023AC4u, 0x80059A48u, 0x80059F8Cu, 0x80058D64u};
+    static constexpr std::array<uint32_t, 9> kActorPainters = {0x8001F798u,
+                                                               0x80020F34u,
+                                                               0x80022A2Cu,
+                                                               0x80023AC4u,
+                                                               0x80059A48u,
+                                                               0x80059F8Cu,
+                                                               0x80058D64u,
+                                                               0x800580F4u,
+                                                               0x800584C4u};
     spyro::actor_scene_oracle::compare(mC, 0x80019698u, kActorPainters, "actor-scene-oracle");
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");

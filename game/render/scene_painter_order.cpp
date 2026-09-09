@@ -10,20 +10,23 @@ constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 // descending. 0x80059F8C runs after the shaded pass and before Spyro's model, so MobyShadow sits
 // between SecondaryActor and PairedActor. 0x80058D64 is called after Spyro's shadow and appends to
 // the same OT tails, so Flame replays after SpyroShadow and before the cyclorama that patches the
-// tail last. 0x80058BA8 is the last call of 0x80019698, after the flame, so Glow sits between the
-// two. Ten phases no longer fit three bits, so the field is four bits wide; the ordinal range that
-// leaves is still four orders of magnitude above any producer's record count.
+// tail last. 0x80058BA8 is the last call of 0x80019698, after the flame, and it links its glows
+// (0x800580F4) before its sparkles (0x800584C4), so Sparkle is the last phase linked before the
+// cyclorama patches the tail. Eleven phases no longer fit three bits, so the field is four bits
+// wide; the ordinal range that leaves is still four orders of magnitude above any producer's
+// record count.
 enum class LinkPhase : uint32_t {
   Cyclorama = 0,
-  Glow = 1,
-  Flame = 2,
-  SpyroShadow = 3,
-  MobyShadow = 4,
-  PairedActor = 5,
-  SecondaryActor = 6,
-  Actor = 7,
-  QueuedWorld = 8,
-  World = 9
+  Sparkle = 1,
+  Glow = 2,
+  Flame = 3,
+  SpyroShadow = 4,
+  MobyShadow = 5,
+  PairedActor = 6,
+  SecondaryActor = 7,
+  Actor = 8,
+  QueuedWorld = 9,
+  World = 10
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -120,6 +123,17 @@ PainterReplayOrder glow(uint16_t otBin, uint32_t recordOrdinal, uint32_t fanOrdi
   // earlier record sits deeper in the chain than a later one.
   return {kActorWorldTerrainDomain,
           {otBin, linkOrdinal(LinkPhase::Glow, kOrdinalMask - recordOrdinal), fanOrdinal}};
+}
+
+PainterReplayOrder sparkle(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal) {
+  if (recordOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x800584C4 walks its eight records in ascending order and appends both of each sparkle's line
+  // packets, so an earlier record sits deeper in the chain than a later one. The two lines of one
+  // sparkle keep their own linked order through the chain suborder.
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::Sparkle, kOrdinalMask - recordOrdinal), chainOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

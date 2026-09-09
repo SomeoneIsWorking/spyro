@@ -104,7 +104,7 @@ the transition has now been removed, and the product reaches the exact stage-0 n
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
 the completed-gem text branch), regular actors, the visible normal Spyro model arm, the composed
 secondary/shaded actor pass, the source-grounded Spyro shadow fan, environment, cyclorama, type-0/type-2
-particles, fade, border, and tracers. Glow/sparkle effects are not called yet, and other scene arms and live
+particles, fade, border, and tracers, plus the glow and sparkle effects. Other scene arms and live
 producer variants remain unowned, so the complete game remains partial. The actor composition's first
 live route ran 3,700 presented fields with 1,910 reconciled logic frames and no render refusal; that
 route had a valid-empty secondary list and emitted roughly 110–120 shaded faces per FIELD frame.
@@ -287,11 +287,22 @@ renderer `0x800580F4` and then the sparkle renderer `0x800584C4`. The glow half 
 semi-transparent additive Gouraud triangles from one bright projected centre out to a ring of black
 points whose screen offsets are scaled by radius over depth, with retail's own delta pre-scaling,
 four-edge outcode reject, and the `>> 7` ordering-table bin that steps 0x40 further back past 0xFF.
-Six focused tests pass. It is NOT called yet, because `0x80058BA8` also draws the sparkles and a
-producer that owned only half of it would silently drop the other half; the sparkle half additionally
-draws GP0 line primitives, which the framework's painter object currently refuses (`validateFace`
-admits three and four vertices only). Sparkles are the remaining gap, and that framework admission is
-part of it.
+Six focused tests pass. The sparkle half is now owned too, by `game/render/sparkle_recipe.*` /
+`sparkle_submitter.*`: eight records at `0x80077108`, each projected once for its centre and then a
+second time through a diagonal matrix whose scale is its own view depth, which cancels the
+perspective shrink so a spark keeps a constant screen size, and emitted as two crossed GP0 line
+primitives. It is the one render producer in the port that also WRITES guest state — it burns each
+lifetime by `g_DeltaTime` at `0x800756CC`, spins the angle byte, and kills a sparkle it declines to
+draw — so the derivation stays pure and hands those writes to a named `commit`. Eight focused tests
+pass, including the distinguishing case that a culled sparkle keeps its newly spun angle while its
+lifetime is zeroed. Lines required a framework admission: psxport's `validateFace` admitted three and
+four vertices only, and now admits two as well, untextured only, because a GP0 line carries no
+texture word (psxport `25a432e3`, 145/145 tests).
+
+`0x80058BA8` is wired as the last FIELD producer via `game/render/fx_glow_sparkle.*`. Measured live in
+Artisans: one active glow record fanning 4–8 faces per field, one live sparkle emitting two lines and
+then aging out to `alive=0` on its own schedule, `dt=2`, no refusal and no Lightrec fallback over
+20.5 M translated blocks.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

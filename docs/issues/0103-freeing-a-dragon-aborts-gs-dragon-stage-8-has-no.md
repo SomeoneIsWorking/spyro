@@ -109,9 +109,8 @@ pass and Spyro's own model and the port's FIELD composition had every other laye
 Staging was independently broken — see `docs/project-state.md` for the `0x1200` sign — so no Moby had
 cast a shadow in this port at all.
 
-One further layer of `0x80019698` is still missing from FIELD and is NOT covered by the abort,
-because nothing calls it: glows/sparkles `0x80058BA8` (`asm/renderers/r_particles.s`); its glow half
-is now ported, see below.
+Every layer of `0x80019698` is now owned and wired into FIELD, including glows/sparkles
+`0x80058BA8` (`asm/renderers/r_particles.s`); see below.
 
 ## Flame `0x80058D64` ported, wired, and the cross-producer publication it needed
 
@@ -159,7 +158,7 @@ Other reachable gamestates with no native producer, same abort: 1 (GS_LevelTrans
 and inventory, already recorded), 9 (GS_EntranceAnimation), 10 (GS_ExitLevel), 11 (GS_Fairy),
 12 (GS_Balloonist), 15 (GS_Credits).
 
-## Glows `0x800580F4` ported; sparkles `0x800584C4` are what is left
+## Glows `0x800580F4` and sparkles `0x800584C4` ported, and `0x80058BA8` wired
 
 `0x80058BA8` is a two-line C function: `func_800580F4()` then `func_800584C4(g_DeltaTime)`.
 
@@ -180,9 +179,44 @@ centre and both ring points.
 Note the packed vector word is built with `or` over a masked low half here, not the `add` the world
 and actor paths use, so a negative X does not borrow into Y. Six focused tests pass.
 
-It is not called yet. `0x80058BA8` draws both halves, and an owner of one half would silently drop
-the other. Sparkles (`0x800584C4`) are eight records of 0x18 bytes at `g_Sparkles`, each advancing
-its own lifetime and spin from `g_DeltaTime` before drawing, and each emitting TWO GP0 0x40 line
-primitives forming a rotated cross. Those lines are the blocker: `RenderQueue` carries `nv = 2` for a
-line, but `painter_object_layer.cpp`'s `validateFace` admits three and four vertices only, so a
-framework admission for line primitives is part of the sparkle work.
+`game/render/sparkle_recipe.*` and `sparkle_submitter.*` port the second half. Eight records of 0x18
+bytes at `g_Sparkles` = `0x80077108` (`asm/data/game.bss.s`), read as a life byte at `+0x0C`, a total
+lifetime at `+0x0D` used as the fade denominator, an angle at `+0x0E`, a signed spin rate at `+0x0F`,
+a colour at `+0x10`, a size multiplier at the low byte of `+0x14`, and a far-depth limit at its
+second byte. `g_DeltaTime` is `0x800756CC` (`lui 0x8007` / `lw 0x56CC`, `asm/data/game.sbss.s`).
+
+Per record: `remaining = life - deltaTime`, and a sparkle that runs out is killed on the spot with no
+angle write. Otherwise the life and the spun angle are stored, `fade = (|total - remaining| << 8) /
+total`, and the position is projected — packed with `or`, like the glow and unlike the world path, so
+no borrow. Four kill-and-skip tests follow, each of which also zeroes the lifetime: the depth
+reaching the record's own far limit, the depth inside `0x80`, and the packed `SXY2` word leaving the
+retained window on either axis.
+
+The cross itself is the interesting part. `GPF 0` scales the sine/cosine pair by
+`(0x100 - fade) * size` to give one arm's reach, and the four corners are then projected a SECOND
+time through a matrix `ctc2`'d from `max(MAC3, 0x1000)` — the view depth, floored — with a
+translation of twice the view position. The doubling cancels in the perspective divide and the depth
+scale cancels the perspective shrink, so a sparkle holds a constant screen size until it comes
+closer than the floor. Those corner words use `add`, so they DO borrow. Retail then builds two
+packets in one 0x20-byte pool slot and links the second into the bin, whose tag points at the first,
+so the corner 1-2 stroke is ahead of the corner 0-3 stroke. Bin is `(SZ3 >> 5) - 6`, floored at zero
+and stepped 0x46 further back past 0x100.
+
+`0x800584C4` writes guest state, which no other producer in this port does. The derivation stays pure
+and returns the lifetime/angle writes; `fx_glow_sparkle.cpp` commits them at one named call, only
+once the frame is certain to be accepted, so a refused submission cannot silently age every sparkle.
+A zero total lifetime would be a hardware divide by zero, which is undefined rather than reproducible
+— that record keeps retail's advance and produces no line, counted as `no_lifetime`. Eight focused
+tests pass.
+
+The lines needed a framework admission: `RenderQueue` has always carried `nv = 2` and `emitItem` has
+always had a `gpu_vk_draw_line` path, but `painter_object_layer.cpp`'s `validateFace` admitted three
+and four vertices only. It now admits two, untextured only, because a GP0 line carries no texture
+word on the hardware and a textured line would be drawn with its material silently dropped (psxport
+`25a432e3`, 145/145 tests, positive and negative cases plus one proving a queued line does not
+refuse the next producer's preflight).
+
+`fx_glow_sparkle.*` owns `0x80058BA8` and is called last in the FIELD sequence, with a new `Sparkle`
+link phase below `Glow`. Measured live in Artisans: one active glow record fanning 4–8 faces per
+field, one live sparkle emitting two lines and aging out to `alive=0` on its own schedule at `dt=2`,
+no refusal, and no Lightrec fallback across 20.5 M translated blocks.

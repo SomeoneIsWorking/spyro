@@ -152,6 +152,10 @@ bool build_source(Core *c,
 
 } // namespace
 
+bool stages_shadow(int32_t shadowWord, int32_t viewZ) {
+  return shadowWord < 0 && viewZ < kShadowStagingDepth;
+}
+
 bool build_source_record(Core *c,
                          uint32_t moby,
                          actor_recipe_capture::SourceRecord &source,
@@ -212,7 +216,7 @@ Status build_scene(Core *c, Frame &frame, bool captureShadows) {
     // 0x8001F158 appends this entry after the source has passed its projected cull. The model byte
     // is the same descriptor-relative shadow selector used by 0x800208FC, so both regular and
     // secondary paths name the identical AnimationFrame::m_Shadow byte.
-    if (captureShadows && (int32_t)c->mem_r32(moby + 0x1Cu) < 0 && source.tz < -0x1200) {
+    if (captureShadows && stages_shadow((int32_t)c->mem_r32(moby + 0x1Cu), source.tz)) {
       const uint32_t texture = source.descriptor + 0x2Au + (uint32_t)c->mem_r8(moby + 0x3Eu) * 8u;
       if (!actor_recipe_capture::physical_span(texture & ~3u, 4u) ||
           !actor_recipe_capture::physical_span(

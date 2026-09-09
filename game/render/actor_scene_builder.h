@@ -54,6 +54,13 @@ bool build_source_record(Core *c,
 Status build_frame(Core *c, Frame &frame);
 void commit(Core *c, const Frame &frame);
 
+// 0x8001F344 and 0x8001F350 guard the shadow-list append with two `bgez` branches that both SKIP:
+// the Moby's m_ShadowDistance must be negative, and its view depth must be nearer than the staging
+// limit. The depth is a positive quantity, so the sign belongs on the limit rather than on the
+// depth; negating it instead makes the pair unsatisfiable and silently stages no shadow at all.
+bool stages_shadow(int32_t shadowWord, int32_t viewZ);
+constexpr int32_t kShadowStagingDepth = 0x1200;
+
 // Builds the regular-actor semantic records directly from the level Moby array, camera, model
 // table, and animation state. It replaces 0x800521C0 + 0x8001F158 without running either guest body
 // or materializing their temporary guest lists.

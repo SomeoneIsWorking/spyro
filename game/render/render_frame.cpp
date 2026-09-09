@@ -18,6 +18,7 @@
 #include "fx_field_player_actor.h"
 #include "fx_field_shadow.h"
 #include "fx_field_tracers.h"
+#include "fx_moby_shadow.h"
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
 #include "fx_screen_fade.h"
@@ -160,6 +161,11 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
                          "secondary/shaded actor producers 0x80020F34/0x80022A2C refused their "
                          "combined atomic recipe");
     }
+    // 0x80019698 draws the moby shadows between the shaded pass and Spyro's own model, so this
+    // layer belongs here rather than beside the Spyro shadow it superficially resembles.
+    if (!spyro_moby_shadow_submit(mC)) {
+      abortUnimplemented(sc, "moby shadow producer 0x80059F8C refused its atomic recipe");
+    }
     if (!spyro_field_player_submit(mC, spyro_paired_actor_state(mC))) {
       abortUnimplemented(sc, "Spyro actor producer 0x80023AC4 refused its atomic recipe");
     }
@@ -172,8 +178,8 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     // player and its shadow as ordinary mobys, so those two producers are part of the comparison
     // even though the port owns them separately — which is why the call is here and not before
     // them. The printed painter histogram is what makes the five-way split readable.
-    static constexpr std::array<uint32_t, 5> kActorPainters = {
-        0x8001F798u, 0x80020F34u, 0x80022A2Cu, 0x80023AC4u, 0x80059A48u};
+    static constexpr std::array<uint32_t, 6> kActorPainters = {
+        0x8001F798u, 0x80020F34u, 0x80022A2Cu, 0x80023AC4u, 0x80059A48u, 0x80059F8Cu};
     spyro::actor_scene_oracle::compare(mC, 0x80019698u, kActorPainters, "actor-scene-oracle");
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");

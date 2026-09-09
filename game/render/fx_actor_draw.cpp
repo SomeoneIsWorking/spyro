@@ -40,9 +40,11 @@ bool spyro_actor_submit(Core *c) {
   for (uint32_t index = 0; index < records.size(); ++index) {
     const auto &input = records[index].input;
     lucent::debug("actordirect",
-                  "semantic record={} view=({},{},{}) vertices={} header=0x{:08X} "
-                  "matrix={:08X},{:08X},{:08X},{:08X},{:08X}",
+                  "semantic record={} moby=0x{:08X} shadow_word=0x{:08X} view=({},{},{}) "
+                  "vertices={} header=0x{:08X} matrix={:08X},{:08X},{:08X},{:08X},{:08X}",
                   index,
+                  records[index].moby,
+                  c->mem_r32(records[index].moby + 0x1Cu),
                   input.tx,
                   input.ty,
                   input.tz,

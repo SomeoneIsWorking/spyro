@@ -19,6 +19,7 @@
 #include "render_queue.h"
 #include "scene_painter_order.h"
 #include "spyro_context.h"
+#include "spyro_flame_matrix.h"
 
 #include <algorithm>
 #include <array>
@@ -557,6 +558,15 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
     state.culled = true;
     return true;
   }
+  // 0x80024110 hands the composed matrix to the flame renderer, past the cull test above and before
+  // the layer 2 rotation restores the layer 0 matrix, so layer 1 is the state retail publishes.
+  const bool flameMatrix = spyro_flame_matrix_publish(c,
+                                                      {transform.layer_cr[1][0],
+                                                       transform.layer_cr[1][1],
+                                                       transform.layer_cr[1][2],
+                                                       transform.layer_cr[1][3],
+                                                       transform.layer_cr[1][4]});
+  lucent::debug("pairedroot", "0x80024110 flame matrix published={}", flameMatrix);
   std::vector<spyro::paired_actor::ProjectedVertex> projected;
   projected.reserve(vertexCount);
   for (uint32_t layer = 0; layer < kLayers; ++layer) {

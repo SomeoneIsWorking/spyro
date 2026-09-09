@@ -49,7 +49,7 @@ bool spyro_flame_submit(Core *core) {
     return false;
   }
   RenderQueue &queue = core->game->rq;
-  const auto plan = spyro::flame_submitter::prepare(queue, recipe.faces.size());
+  const auto plan = spyro::flame_submitter::prepare(queue, recipe);
   if (plan.status != spyro::flame_submitter::Status::Ready) {
     lucent::Line line;
     line.add("REFUSED submitter status={}", (int)plan.status);

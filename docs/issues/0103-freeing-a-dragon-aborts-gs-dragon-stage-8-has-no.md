@@ -5,7 +5,7 @@ status: open
 symptom: the port aborts during Artisans gameplay with 'NATIVE RENDER NOT IMPLEMENTED — stage selector = 8 (no producer is registered for this stage)'; reported by the operator as a crash when Spyro breathes fire
 tags: render,field,cutscene,dragon,producer,crash
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 ## Symptom
@@ -109,13 +109,10 @@ pass and Spyro's own model and the port's FIELD composition had every other laye
 Staging was independently broken — see `docs/project-state.md` for the `0x1200` sign — so no Moby had
 cast a shadow in this port at all.
 
-Two further layers of `0x80019698` are still missing from FIELD and are NOT covered by the abort,
-because nothing calls them: flame `0x80058D64` (`asm/renderers/r_flame.s`, 487 lines, gated on
-`g_SpyroFlame.m_IsFlameActive`) and glows/sparkles `0x80058BA8` (`asm/renderers/r_particles.s`).
-The operator's "crashes when you breathe fire" names the same moment from the other side: the abort
-is the dragon cutscene, and the flame that precedes it is silently absent.
+One further layer of `0x80019698` is still missing from FIELD and is NOT covered by the abort,
+because nothing calls it: glows/sparkles `0x80058BA8` (`asm/renderers/r_particles.s`).
 
-## Flame `0x80058D64` ported, and the cross-producer publication it needs
+## Flame `0x80058D64` ported, wired, and the cross-producer publication it needed
 
 `game/render/spyro_flame_recipe.*`, `spyro_flame_submitter.*` and `fx_spyro_flame.*` port the
 handwritten routine: eight parts walked last to first, each a tip fan of four untextured Gouraud
@@ -128,14 +125,32 @@ four bits wide.
 Measured on a live flame in Artisans: parts 8, tips 8, ribbon quads rising 15 -> 155 as the flame
 extends, with the empty-part, past-limit and tip-backfacing rejections all observed.
 
-It is NOT wired into the FIELD composition, because the geometry is degenerate. `0x80023AC4`
-publishes its live GTE rotation matrix into `g_SpyroFlame+0xB8..+0xC8` at `0x80024110`, gated on
-`g_SpyroFlame+0x9A`, and the port's native Spyro producer replaced that routine without carrying the
-publication over. The five words are zero at runtime while the flame position updates correctly, so
-every flame-local point projects onto the flame origin and the entire ribbon collapses onto one
-pixel — measured: all four tip triangles of all eight parts have `NCLIP == 0` at screen (342,117).
-The remaining work is to publish that matrix from the native Spyro owner and then wire the flame
-call in after `0x80059A48`.
+It was first held out of the FIELD composition because the geometry was degenerate. `0x80023AC4`
+reads its live GTE rotation matrix back at `0x8002401C` and publishes it into `g_SpyroFlame+0xB8..+0xC8`
+at `0x80024110`, gated on `g_SpyroFlame+0x9A`, and the port's native Spyro producer replaced that
+routine without carrying the publication over. The five words were zero at runtime while the flame
+position updated correctly, so every flame-local point projected onto the flame origin and the entire
+ribbon collapsed onto one pixel — measured: all four tip triangles of all eight parts had `NCLIP == 0`
+at screen (342,117).
+
+`game/render/spyro_flame_matrix.*` now carries that publication and the FIELD composition calls the
+flame after `0x80059A48`. The matrix published is the port's layer 1 matrix: retail loads the camera
+rotation into the GTE at `0x80023F18`, composes `g_Spyro+0x0C`, publishes, and only then composes
+`g_Spyro+0x10` for layer 1 — but layer 1 is computed from the same parent matrix and the same angle
+word, so the two agree, and layer 2 is wrong because `0x80024148` restores the layer 0 matrix first.
+
+Wiring it in exposed a second defect that made the port abort on a producer the flame does not touch.
+The tip fan is untextured and the submitter named that with colour mode -1; the queue's untextured
+sentinel is 3 and `validateFace` rejects any mode outside 0..3, so the flame's items poisoned the
+painter-object preflight of the NEXT producer and the frame aborted with "environment producer
+0x8002B9CC refused its atomic recipe". A textured face whose colour mode reads 3 is now an atomic
+`InvalidMaterial` refusal in `prepare` rather than a face silently skipped during emission.
+
+Measured after both fixes, over one breath in Artisans: parts 8, tips 8, ribbon quads 8..160, tip
+rejections 0..24 of 32, and the census decaying back to zero as the flame dies. `scratch/screenshots/
+flame.ppm` shows the flame drawn in front of Spyro. The operator's "crashes when you breathe fire" is
+still the stage-8 abort below, not this one — the flame was not wired in when they saw it — but a
+player who breathes fire now gets a flame instead of nothing.
 
 ## Related
 

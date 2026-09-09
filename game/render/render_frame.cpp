@@ -22,6 +22,7 @@
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
 #include "fx_screen_fade.h"
+#include "fx_spyro_flame.h"
 #include "fx_world_draw.h"
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "gpu_vk.h"     // measured native/wide engine extents for the product-path announcement
@@ -172,14 +173,19 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     if (!spyro_field_shadow_submit(mC)) {
       abortUnimplemented(sc, "Spyro shadow producer 0x80059A48 refused its atomic recipe");
     }
+    // 0x80019698 calls the flame last of the model layers, only while the flame is active, and
+    // after Spyro's own producer has published the orientation it reads.
+    if (!spyro_flame_submit(mC)) {
+      abortUnimplemented(sc, "Spyro flame producer 0x80058D64 refused its atomic recipe");
+    }
     // Diagnostic only and a no-op unless PSXPORT_ACTOR_SCENE_ORACLE=1. It runs retail's moby-chain
     // walker over the state the native producers have just read, so it must sit after every
     // producer that walker covers, and must never be armed on a shipping frame. Retail draws the
     // player and its shadow as ordinary mobys, so those two producers are part of the comparison
     // even though the port owns them separately — which is why the call is here and not before
     // them. The printed painter histogram is what makes the five-way split readable.
-    static constexpr std::array<uint32_t, 6> kActorPainters = {
-        0x8001F798u, 0x80020F34u, 0x80022A2Cu, 0x80023AC4u, 0x80059A48u, 0x80059F8Cu};
+    static constexpr std::array<uint32_t, 7> kActorPainters = {
+        0x8001F798u, 0x80020F34u, 0x80022A2Cu, 0x80023AC4u, 0x80059A48u, 0x80059F8Cu, 0x80058D64u};
     spyro::actor_scene_oracle::compare(mC, 0x80019698u, kActorPainters, "actor-scene-oracle");
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");

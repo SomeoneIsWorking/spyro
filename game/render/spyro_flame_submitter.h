@@ -14,6 +14,7 @@ enum class Status : std::uint8_t {
   Ready,
   NothingToDraw,
   QueueCapacityExceeded,
+  InvalidMaterial,
 };
 
 struct Plan {
@@ -21,7 +22,7 @@ struct Plan {
   painter_submission::Plan admission{};
 };
 
-Plan prepare(const RenderQueue &queue, std::size_t faceCount);
+Plan prepare(const RenderQueue &queue, const flame_recipe::Recipe &recipe);
 void submit(Core *core, RenderQueue &queue, const flame_recipe::Recipe &recipe, const Plan &plan);
 
 } // namespace spyro::flame_submitter

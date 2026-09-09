@@ -16,13 +16,23 @@ constexpr std::uint32_t kProducerKey = 0x80058D64u;
 
 } // namespace
 
-Plan prepare(const RenderQueue &queue, std::size_t faceCount) {
+Plan prepare(const RenderQueue &queue, const flame_recipe::Recipe &recipe) {
   Plan plan{};
-  if (faceCount == 0u) {
+  if (recipe.faces.empty()) {
     return plan;
   }
+  for (const auto &face : recipe.faces) {
+    // The ribbon's Tiledef is always textured, so a textured face whose colour mode reads 3 means
+    // the flame's UV pair has not been published yet. The whole recipe is refused here rather than
+    // dropped face by face during emission, because 3 is also the queue's untextured sentinel and a
+    // painter object accepts no other value.
+    if (face.textured && ((face.tpage >> 7) & 3u) == 3u) {
+      plan.status = Status::InvalidMaterial;
+      return plan;
+    }
+  }
   plan.admission = painter_submission::preflight(
-      queue, kProducerKey, faceCount, scene_painter_order::kActorWorldTerrainDomain);
+      queue, kProducerKey, recipe.faces.size(), scene_painter_order::kActorWorldTerrainDomain);
   if (!plan.admission.ready) {
     plan.status = Status::QueueCapacityExceeded;
     return plan;
@@ -59,14 +69,13 @@ void submit(Core *core, RenderQueue &queue, const flame_recipe::Recipe &recipe, 
       green[v] = face.green[v];
       blue[v] = face.blue[v];
     }
-    // The tip fan is an untextured Gouraud triangle, which the queue names with a negative mode.
-    int mode = -1;
+    // The tip fan is an untextured Gouraud triangle, which the queue names with colour mode 3.
+    // A painter object refuses any other value, so a negative sentinel here would have the whole
+    // frame rejected at the next producer's preflight rather than at this one.
+    int mode = 3;
     int tpX = 0, tpY = 0, clutX = 0, clutY = 0, blend = 0, dither = 0;
     if (face.textured) {
       mode = (int)((face.tpage >> 7) & 3u);
-      if (mode == 3) {
-        continue;
-      }
       tpX = (int)(face.tpage & 0x0fu) * 64;
       tpY = (int)((face.tpage >> 4) & 1u) * 256;
       clutX = (int)(face.clut & 0x3fu) * 16;

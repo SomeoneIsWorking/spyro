@@ -91,7 +91,7 @@ painter order in `game/render/field_shadow_recipe.*` / `field_shadow_submitter.*
 it after the player model. The first native face matches the retained source capture exactly
 (anchor `00A70064/065E`, points `009A0064/0742` and `009E0055/0713`, bucket 10); the recipe and
 focused painter-order tests pass. This is geometry/queue evidence, not complete visual or full
-packet-byte parity. Moby shadows and flame/glow/sparkle effects remain unowned, and portal
+packet-byte parity. Glow/sparkle effects remain unowned, and portal
 traversal remains outside this control milestone.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
@@ -104,7 +104,7 @@ the transition has now been removed, and the product reaches the exact stage-0 n
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
 the completed-gem text branch), regular actors, the visible normal Spyro model arm, the composed
 secondary/shaded actor pass, the source-grounded Spyro shadow fan, environment, cyclorama, type-0/type-2
-particles, fade, border, and tracers. Moby shadow packets, flame/glow/sparkle effect arms, other scene arms, and live
+particles, fade, border, and tracers. Glow/sparkle effect arms, other scene arms, and live
 producer variants remain unowned, so the complete game remains partial. The actor composition's first
 live route ran 3,700 presented fields with 1,910 reconciled logic frames and no render refusal; that
 route had a valid-empty secondary list and emitted roughly 110–120 shaded faces per FIELD frame.
@@ -267,14 +267,21 @@ is nearer than `0x1200`, and the port negated that limit, which no visible Moby 
 list was always empty. Measured over a walk through Artisans after the fix: entries 1..5, drawn up to
 2, faces up to 8, with every rejection reason (no plane, far, backfacing, off screen) observed at
 least once. Spyro shadow `0x80059A48` is owned by the separate native fan recipe and submitter.
-Flame `0x80058D64` is now owned by `game/render/spyro_flame_recipe.*` / `spyro_flame_submitter.*` /
-`fx_spyro_flame.*` and measured on a live flame (8 parts, 8 tips, 15..155 ribbon quads), but it is
-deliberately NOT called yet: `0x80023AC4` publishes its live GTE rotation matrix into
-`g_SpyroFlame+0xB8` and the native Spyro producer that replaced it dropped that publication, so the
-five words are zero and every flame point collapses onto the flame origin. Publishing that matrix
-from the native Spyro owner is the remaining gap. Glow/sparkle `0x80058BA8` remains UNOWNED and, like
-the flame today, is not called at all, so it fails silently rather than aborting. `0x80019698` calls
-both, so they are part of the FIELD composition's authored order.
+Flame `0x80058D64` is owned by `game/render/spyro_flame_recipe.*` / `spyro_flame_submitter.*` /
+`fx_spyro_flame.*` and is now called by the stage-0 seam after Spyro's shadow, in its authored
+position. Its missing input is resolved: `0x80023AC4` reads its live GTE rotation matrix back at
+`0x8002401C` and publishes it into `g_SpyroFlame+0xB8` at `0x80024110`, gated on `g_SpyroFlame+0x9A`,
+and the native Spyro producer that replaced it had dropped that publication, leaving the five words
+zero and every flame point collapsed onto the flame origin. `game/render/spyro_flame_matrix.*` now
+carries it, publishing the composed layer 1 matrix — the camera rotation composed with `g_Spyro+0x0C`
+and then `g_Spyro+0x10` — because retail publishes between those two composition steps. Measured over
+a live breath in Artisans: parts 8, tips 8, ribbon quads 8..160, and the census decays back to zero as
+the flame dies. The flame's tip fan is untextured, and a first pass named that with a negative colour
+mode; the queue's untextured sentinel is 3, and a painter object rejects anything else, so the next
+producer's preflight refused the whole frame and the port aborted on the environment producer instead
+of on the flame. That is the crash on breathing fire. Glow/sparkle `0x80058BA8` remains UNOWNED and is
+not called at all, so it fails silently rather than aborting; `0x80019698` calls it, so it is part of
+the FIELD composition's authored order.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

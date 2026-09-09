@@ -65,10 +65,10 @@ void logNative(Core *core, std::span<const uint32_t> painterKeys) {
                   emitted,
                   item.nv,
                   item.semi,
-                  // A negative colour mode is this queue's untextured sentinel; retail says the
-                  // same thing with its 0x34/0x3C texture bit, so the two streams can be compared
-                  // on whether a primitive carries a texture at all.
-                  item.mode < 0 ? 0 : 1,
+                  // Colour mode 3 is this queue's untextured sentinel; retail says the same thing
+                  // with its 0x34/0x3C texture bit, so the two streams can be compared on whether a
+                  // primitive carries a texture at all.
+                  item.mode == 3 ? 0 : 1,
                   // The normalized depth this item will be drawn at. Retail says the same thing
                   // with the OT bin it linked the packet into, so a primitive that matches on
                   // pixels but disagrees here is a depth fault and nothing else.

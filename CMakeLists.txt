@@ -101,7 +101,8 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/field_shadow_recipe.cpp
   game/render/field_shadow_submitter.cpp
   game/render/moby_shadow_recipe.cpp
-  game/render/spyro_flame_recipe.cpp
+  game/render/spyro_flame_matrix.cpp
+    game/render/spyro_flame_recipe.cpp
   game/render/spyro_flame_submitter.cpp
   game/render/fx_spyro_flame.cpp
   game/render/moby_shadow_submitter.cpp
@@ -197,7 +198,7 @@ if(BUILD_TESTING)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)
-  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe temporal_scene world_source_pair world_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe field_particles_recipe actor_global_order field_scheduler transition_skip)
+  foreach(test_name IN ITEMS native_render_producers secondary_actor_recipe temporal_scene world_source_pair world_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix field_particles_recipe actor_global_order field_scheduler transition_skip)
     add_executable(test_${test_name} tests/test_${test_name}.cpp)
     target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
     target_link_libraries(test_${test_name} PRIVATE spyro_runtime)

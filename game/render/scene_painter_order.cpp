@@ -3,22 +3,25 @@
 namespace spyro::scene_painter_order {
 namespace {
 
-constexpr uint32_t kPhaseShift = 29u;
+constexpr uint32_t kPhaseShift = 28u;
 constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 
 // Ascending in the order the guest LINKS each producer's packets, which the framework replays
 // descending. 0x80059F8C runs after the shaded pass and before Spyro's model, so MobyShadow sits
-// between SecondaryActor and PairedActor; every other phase keeps its existing relative position,
-// and eight values still fit the three bits above kPhaseShift.
+// between SecondaryActor and PairedActor. 0x80058D64 is called after Spyro's shadow and appends to
+// the same OT tails, so Flame replays after SpyroShadow and before the cyclorama that patches the
+// tail last. Nine phases no longer fit three bits, so the field is four bits wide; the ordinal
+// range that leaves is still four orders of magnitude above any producer's record count.
 enum class LinkPhase : uint32_t {
   Cyclorama = 0,
-  SpyroShadow = 1,
-  MobyShadow = 2,
-  PairedActor = 3,
-  SecondaryActor = 4,
-  Actor = 5,
-  QueuedWorld = 6,
-  World = 7
+  Flame = 1,
+  SpyroShadow = 2,
+  MobyShadow = 3,
+  PairedActor = 4,
+  SecondaryActor = 5,
+  Actor = 6,
+  QueuedWorld = 7,
+  World = 8
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -94,6 +97,17 @@ PainterReplayOrder mobyShadow(uint16_t otBin, uint32_t shadowOrdinal, uint32_t f
   // chains invert theirs.
   return {kActorWorldTerrainDomain,
           {otBin, linkOrdinal(LinkPhase::MobyShadow, kOrdinalMask - shadowOrdinal), fanOrdinal}};
+}
+
+PainterReplayOrder flame(uint16_t otBin, uint32_t partOrdinal, uint32_t faceOrdinal) {
+  if (partOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x80058D64 walks its eight flame parts from the last to the first and appends every packet, so
+  // an earlier-walked part sits deeper in the chain. The walk order is already the inverse of the
+  // part index, so the ordinal is used directly rather than inverted a second time.
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::Flame, partOrdinal), faceOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

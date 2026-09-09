@@ -115,6 +115,28 @@ because nothing calls them: flame `0x80058D64` (`asm/renderers/r_flame.s`, 487 l
 The operator's "crashes when you breathe fire" names the same moment from the other side: the abort
 is the dragon cutscene, and the flame that precedes it is silently absent.
 
+## Flame `0x80058D64` ported, and the cross-producer publication it needs
+
+`game/render/spyro_flame_recipe.*`, `spyro_flame_submitter.*` and `fx_spyro_flame.*` port the
+handwritten routine: eight parts walked last to first, each a tip fan of four untextured Gouraud
+triangles followed by a ribbon of Gouraud textured quads walking backward through the part's
+cross-section array, with retail's own ring scales, five-per-row grey ramp, half-step closing pair,
+and the two ordering-table shifts (7 for the tip, 8 for the ribbon). A new `Flame` link phase sits
+between `SpyroShadow` and `Cyclorama`; nine phases no longer fit three bits, so the phase field is
+four bits wide.
+
+Measured on a live flame in Artisans: parts 8, tips 8, ribbon quads rising 15 -> 155 as the flame
+extends, with the empty-part, past-limit and tip-backfacing rejections all observed.
+
+It is NOT wired into the FIELD composition, because the geometry is degenerate. `0x80023AC4`
+publishes its live GTE rotation matrix into `g_SpyroFlame+0xB8..+0xC8` at `0x80024110`, gated on
+`g_SpyroFlame+0x9A`, and the port's native Spyro producer replaced that routine without carrying the
+publication over. The five words are zero at runtime while the flame position updates correctly, so
+every flame-local point projects onto the flame origin and the entire ribbon collapses onto one
+pixel — measured: all four tip triangles of all eight parts have `NCLIP == 0` at screen (342,117).
+The remaining work is to publish that matrix from the native Spyro owner and then wire the flame
+call in after `0x80059A48`.
+
 ## Related
 
 Other reachable gamestates with no native producer, same abort: 1 (GS_LevelTransition), 2/3 (pause

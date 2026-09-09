@@ -21,6 +21,15 @@ std::array<int32_t, 3> transform(const Matrix &matrix, std::array<int32_t, 3> ve
 // helper below derives it from packed angle bytes, while the Moby-shadow renderer 0x80059F8C scales
 // its two six-bit plane angles by eight.
 enum class Axis : uint8_t { X, Y, Z };
+
+// The shared 256-entry table at 0x8006CBF8, cosine one quarter turn later at +0x80. Callers reach
+// their entry at a BYTE offset because they scale their angles differently.
+struct SineCosine {
+  int16_t sine = 0;
+  int16_t cosine = 0;
+};
+SineCosine sineCosine(Core *core, uint32_t tableByteOffset);
+
 Matrix rotateAxis(Core *core, Matrix matrix, Axis axis, uint32_t tableByteOffset);
 
 Matrix rotateForMoby(Core *core, Matrix matrix, uint32_t packedAngles);

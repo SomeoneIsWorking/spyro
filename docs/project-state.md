@@ -267,9 +267,14 @@ is nearer than `0x1200`, and the port negated that limit, which no visible Moby 
 list was always empty. Measured over a walk through Artisans after the fix: entries 1..5, drawn up to
 2, faces up to 8, with every rejection reason (no plane, far, backfacing, off screen) observed at
 least once. Spyro shadow `0x80059A48` is owned by the separate native fan recipe and submitter.
-Flame `0x80058D64` and glow/sparkle `0x80058BA8` remain UNOWNED and, unlike an unported stage, are
-not called at all, so they fail silently rather than aborting: Spyro's flame is invisible in the
-native picture. `0x80019698` calls both, so they are part of the FIELD composition's authored order.
+Flame `0x80058D64` is now owned by `game/render/spyro_flame_recipe.*` / `spyro_flame_submitter.*` /
+`fx_spyro_flame.*` and measured on a live flame (8 parts, 8 tips, 15..155 ribbon quads), but it is
+deliberately NOT called yet: `0x80023AC4` publishes its live GTE rotation matrix into
+`g_SpyroFlame+0xB8` and the native Spyro producer that replaced it dropped that publication, so the
+five words are zero and every flame point collapses onto the flame origin. Publishing that matrix
+from the native Spyro owner is the remaining gap. Glow/sparkle `0x80058BA8` remains UNOWNED and, like
+the flame today, is not called at all, so it fails silently rather than aborting. `0x80019698` calls
+both, so they are part of the FIELD composition's authored order.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

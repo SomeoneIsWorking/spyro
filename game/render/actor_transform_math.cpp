@@ -63,9 +63,13 @@ std::array<int32_t, 3> transform(const Matrix &matrix, std::array<int32_t, 3> ve
   return result;
 }
 
+SineCosine sineCosine(Core *core, uint32_t tableByteOffset) {
+  return {(int16_t)core->mem_r16(kSin + tableByteOffset),
+          (int16_t)core->mem_r16(kCos + tableByteOffset)};
+}
+
 Matrix rotateAxis(Core *core, Matrix matrix, Axis axis, uint32_t tableByteOffset) {
-  const int16_t sine = (int16_t)core->mem_r16(kSin + tableByteOffset);
-  const int16_t cosine = (int16_t)core->mem_r16(kCos + tableByteOffset);
+  const auto [sine, cosine] = sineCosine(core, tableByteOffset);
   switch (axis) {
   case Axis::X:
     replaceColumns(matrix, 1, {0, cosine, sine}, 2, {0, (int16_t)-sine, cosine});

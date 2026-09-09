@@ -91,7 +91,7 @@ painter order in `game/render/field_shadow_recipe.*` / `field_shadow_submitter.*
 it after the player model. The first native face matches the retained source capture exactly
 (anchor `00A70064/065E`, points `009A0064/0742` and `009E0055/0713`, bucket 10); the recipe and
 focused painter-order tests pass. This is geometry/queue evidence, not complete visual or full
-packet-byte parity. Glow/sparkle effects remain unowned, and portal
+packet-byte parity. Sparkle effects remain unowned, and portal
 traversal remains outside this control milestone.
 
 S005 remains partial: title modes 0 through 2 are native, wide, and frame-owned. The stage 14 /
@@ -104,7 +104,7 @@ the transition has now been removed, and the product reaches the exact stage-0 n
 FIELD now has a wired stage-0 producer sequence for the reached Artisans frame: collectables (including
 the completed-gem text branch), regular actors, the visible normal Spyro model arm, the composed
 secondary/shaded actor pass, the source-grounded Spyro shadow fan, environment, cyclorama, type-0/type-2
-particles, fade, border, and tracers. Glow/sparkle effect arms, other scene arms, and live
+particles, fade, border, and tracers. Glow/sparkle effects are not called yet, and other scene arms and live
 producer variants remain unowned, so the complete game remains partial. The actor composition's first
 live route ran 3,700 presented fields with 1,910 reconciled logic frames and no render refusal; that
 route had a valid-empty secondary list and emitted roughly 110–120 shaded faces per FIELD frame.
@@ -279,9 +279,19 @@ a live breath in Artisans: parts 8, tips 8, ribbon quads 8..160, and the census 
 the flame dies. The flame's tip fan is untextured, and a first pass named that with a negative colour
 mode; the queue's untextured sentinel is 3, and a painter object rejects anything else, so the next
 producer's preflight refused the whole frame and the port aborted on the environment producer instead
-of on the flame. That is the crash on breathing fire. Glow/sparkle `0x80058BA8` remains UNOWNED and is
-not called at all, so it fails silently rather than aborting; `0x80019698` calls it, so it is part of
-the FIELD composition's authored order.
+of on the flame. That is the crash on breathing fire.
+
+`0x80058BA8`, the last call of `0x80019698`, is a two-line C function calling the handwritten glow
+renderer `0x800580F4` and then the sparkle renderer `0x800584C4`. The glow half is now owned by
+`game/render/glow_recipe.*` / `glow_submitter.*`: sixteen fixed records at `0x80078800`, each fanning
+semi-transparent additive Gouraud triangles from one bright projected centre out to a ring of black
+points whose screen offsets are scaled by radius over depth, with retail's own delta pre-scaling,
+four-edge outcode reject, and the `>> 7` ordering-table bin that steps 0x40 further back past 0xFF.
+Six focused tests pass. It is NOT called yet, because `0x80058BA8` also draws the sparkles and a
+producer that owned only half of it would silently drop the other half; the sparkle half additionally
+draws GP0 line primitives, which the framework's painter object currently refuses (`validateFace`
+admits three and four vertices only). Sparkles are the remaining gap, and that framework admission is
+part of it.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

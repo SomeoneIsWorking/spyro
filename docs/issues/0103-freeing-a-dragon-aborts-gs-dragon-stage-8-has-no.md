@@ -110,7 +110,8 @@ Staging was independently broken — see `docs/project-state.md` for the `0x1200
 cast a shadow in this port at all.
 
 One further layer of `0x80019698` is still missing from FIELD and is NOT covered by the abort,
-because nothing calls it: glows/sparkles `0x80058BA8` (`asm/renderers/r_particles.s`).
+because nothing calls it: glows/sparkles `0x80058BA8` (`asm/renderers/r_particles.s`); its glow half
+is now ported, see below.
 
 ## Flame `0x80058D64` ported, wired, and the cross-producer publication it needed
 
@@ -157,3 +158,31 @@ player who breathes fire now gets a flame instead of nothing.
 Other reachable gamestates with no native producer, same abort: 1 (GS_LevelTransition), 2/3 (pause
 and inventory, already recorded), 9 (GS_EntranceAnimation), 10 (GS_ExitLevel), 11 (GS_Fairy),
 12 (GS_Balloonist), 15 (GS_Credits).
+
+## Glows `0x800580F4` ported; sparkles `0x800584C4` are what is left
+
+`0x80058BA8` is a two-line C function: `func_800580F4()` then `func_800584C4(g_DeltaTime)`.
+
+`game/render/glow_recipe.*` and `glow_submitter.*` port the first. Sixteen records of 0x24 bytes at
+`0x80078800`, cleared by `func_80058B68`, each holding a point count at `+0x00`, a screen-space
+direction table at `+0x04` (pairs of words, stride 8), a followed world position at `+0x08`, a colour
+at `+0x0C`, a radius at `+0x10`, a world offset at `+0x14`, and an ordering-table bias at `+0x20`.
+Per record: subtract the camera, scale the whole delta down by `min(manhattan >> 13, 4)` so the GTE's
+16-bit vector registers cannot overflow, project, restore the depth by the same shift, then
+`IR0 = (radius << 12) / depth` and multiply each direction pair by it with `GPF 1` to get screen
+offsets from the centre. The triangles are GP0 0x32 — untextured, semi-transparent — with the centre
+carrying the record's colour and both ring vertices black, headed by an `0xE1000220` draw-mode packet
+that selects blend mode 1 (additive) and dithering. N ring points give N-1 triangles; the direction
+table repeats its own first entry when the author wanted a closed halo. Rejects: an empty record, a
+zero restored depth, a bin at or in front of the table's front, and the four-edge outcode AND across
+centre and both ring points.
+
+Note the packed vector word is built with `or` over a masked low half here, not the `add` the world
+and actor paths use, so a negative X does not borrow into Y. Six focused tests pass.
+
+It is not called yet. `0x80058BA8` draws both halves, and an owner of one half would silently drop
+the other. Sparkles (`0x800584C4`) are eight records of 0x18 bytes at `g_Sparkles`, each advancing
+its own lifetime and spin from `g_DeltaTime` before drawing, and each emitting TWO GP0 0x40 line
+primitives forming a rotated cross. Those lines are the blocker: `RenderQueue` carries `nv = 2` for a
+line, but `painter_object_layer.cpp`'s `validateFace` admits three and four vertices only, so a
+framework admission for line primitives is part of the sparkle work.

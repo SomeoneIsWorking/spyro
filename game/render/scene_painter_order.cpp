@@ -10,18 +10,20 @@ constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 // descending. 0x80059F8C runs after the shaded pass and before Spyro's model, so MobyShadow sits
 // between SecondaryActor and PairedActor. 0x80058D64 is called after Spyro's shadow and appends to
 // the same OT tails, so Flame replays after SpyroShadow and before the cyclorama that patches the
-// tail last. Nine phases no longer fit three bits, so the field is four bits wide; the ordinal
-// range that leaves is still four orders of magnitude above any producer's record count.
+// tail last. 0x80058BA8 is the last call of 0x80019698, after the flame, so Glow sits between the
+// two. Ten phases no longer fit three bits, so the field is four bits wide; the ordinal range that
+// leaves is still four orders of magnitude above any producer's record count.
 enum class LinkPhase : uint32_t {
   Cyclorama = 0,
-  Flame = 1,
-  SpyroShadow = 2,
-  MobyShadow = 3,
-  PairedActor = 4,
-  SecondaryActor = 5,
-  Actor = 6,
-  QueuedWorld = 7,
-  World = 8
+  Glow = 1,
+  Flame = 2,
+  SpyroShadow = 3,
+  MobyShadow = 4,
+  PairedActor = 5,
+  SecondaryActor = 6,
+  Actor = 7,
+  QueuedWorld = 8,
+  World = 9
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -108,6 +110,16 @@ PainterReplayOrder flame(uint16_t otBin, uint32_t partOrdinal, uint32_t faceOrdi
   // part index, so the ordinal is used directly rather than inverted a second time.
   return {kActorWorldTerrainDomain,
           {otBin, linkOrdinal(LinkPhase::Flame, partOrdinal), faceOrdinal}};
+}
+
+PainterReplayOrder glow(uint16_t otBin, uint32_t recordOrdinal, uint32_t fanOrdinal) {
+  if (recordOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x800580F4 walks its sixteen records in ascending order and appends every packet, so an
+  // earlier record sits deeper in the chain than a later one.
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::Glow, kOrdinalMask - recordOrdinal), fanOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

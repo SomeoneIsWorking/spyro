@@ -60,11 +60,27 @@ NOT automatically a bug — but it is exactly the shape a depth complaint would 
 only divergence this frame contains. Naming the two mobys and deciding whether their retail OT bias
 is presentation the port must preserve is the open question.
 
-## What this frame does NOT settle
+## Gems: measured, and why the frame could not show one
 
-The captured frame is the Artisans start point. If a gem is not among these 19 instances, a gem
-colour or depth fault cannot appear in it. Re-run the oracle on a frame with gems in view before
-concluding anything about gems specifically.
+`PSXPORT_ACTOR_SCENE_ORACLE_CLASS=<n>` holds the dump until a Moby of that class is drawn. Spyro 1's
+gems are classes 83..87 (`external/spyro-1` `include/moby.h`).
+
+Every armed frame also prints two censuses, whether or not it dumps, because "no gem appeared" has
+two very different causes and only one of them is a port fault:
+
+    drawn classes (9): 10 114 120 194 331 336 342 421 501
+    level moby classes (live=175 distinct=33): 1 10* 11 18 49 83 84 110 114* 120* ...  (* = drawn)
+
+**Gem classes 83 and 84 are live in the level and were never drawn** — across the settled frame and
+300-frame walks left, right and back. That is not a drop: the oracle's own retail side did not draw
+them either (2 retail-only primitives, both shadow-fan pieces), so the port and retail agree the gems
+are culled. The nearest gem is 8,335/30,622/-2,314 from the camera; the rest are 15k-57k away. They
+are simply not in the starting view.
+
+So no gem colour or depth claim can be made from any capture taken so far, in either direction.
+Reaching one needs the port to survive the walk, and walking forward from the start enters
+`GS_Dragon` (stage 8), which still aborts — issue 0103. That producer is the blocker for the gem
+question, not a separate errand.
 
 ## Per-instance identity
 

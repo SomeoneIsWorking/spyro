@@ -22,6 +22,13 @@ constexpr uint32_t kPoolCursor = 0x800757B0u;
 constexpr uint32_t kPacketCount = 0x800758B0u;
 constexpr uint32_t kOtBins = 0x800u;
 constexpr uint32_t kMaxChain = 65536u;
+// Moby::m_Class and the instance size, from external/spyro-1's byte-identical struct.
+constexpr uint32_t kMobyClass = 54u;
+constexpr uint32_t kMobyBytes = 0x58u;
+constexpr uint32_t kMobyState = 72u;
+constexpr uint32_t kLevelMobys = 0x80075828u;
+constexpr uint32_t kMaxLevelMobys = 1024u;
+constexpr uint32_t kCamera = 0x80076DD0u;
 
 constexpr uint32_t kseg(uint32_t address) {
   return 0x80000000u | (address & 0x1fffffu);
@@ -104,6 +111,40 @@ void logNative(Core *core, std::span<const uint32_t> painterKeys) {
   for (const auto &[key, count] : byPainter) {
     lucent::debug("actororacle", "native painter 0x{:08X}: items={}", key, count);
   }
+  // One line per drawn Moby instance with the model it selected. Without it an instance that
+  // disagrees with retail on depth is an anonymous address and cannot be named as a gem, an NPC or
+  // scenery, which is the whole question a depth or colour report asks.
+  std::vector<std::pair<uint32_t, uint32_t>> byInstance;
+  for (int i = 0; i < queue.n; ++i) {
+    const uint32_t node = queue.items[i].dbg_node;
+    if (node == 0u) {
+      continue;
+    }
+    auto found = std::find_if(byInstance.begin(), byInstance.end(), [node](const auto &entry) {
+      return entry.first == node;
+    });
+    if (found == byInstance.end()) {
+      byInstance.emplace_back(node, 1u);
+    } else {
+      ++found->second;
+    }
+  }
+  for (const auto &[node, count] : byInstance) {
+    if (!ramSpan(node, 0x58u)) {
+      lucent::debug(
+          "actororacle", "native instance 0x{:08X}: faces={} model=unreadable", node, count);
+      continue;
+    }
+    lucent::debug("actororacle",
+                  "native instance 0x{:08X}: faces={} class={} state=0x{:08X} pos=({},{},{})",
+                  node,
+                  count,
+                  core->mem_r16(node + 54u),
+                  core->mem_r32(node + 72u),
+                  (int32_t)core->mem_r32(node + 12u),
+                  (int32_t)core->mem_r32(node + 16u),
+                  (int32_t)core->mem_r32(node + 20u));
+  }
   lucent::debug("actororacle",
                 "native side: painters={} scanned_queue={} emitted={} distinct_painters={}",
                 painterKeys.size(),
@@ -155,6 +196,117 @@ bool walkOt(Core *core, uint32_t poolFrom, std::vector<Retail> &out, const char 
   return true;
 }
 
+void logDrawnClasses(Core *core, int wantedClass) {
+  const RenderQueue &queue = core->game->rq;
+  std::vector<uint32_t> classes;
+  for (int i = 0; i < queue.n; ++i) {
+    const uint32_t node = queue.items[i].dbg_node;
+    if (node == 0u || !ramSpan(node, kMobyBytes)) {
+      continue;
+    }
+    const uint32_t drawn = core->mem_r16(node + kMobyClass);
+    if (std::find(classes.begin(), classes.end(), drawn) == classes.end()) {
+      classes.push_back(drawn);
+    }
+  }
+  std::sort(classes.begin(), classes.end());
+  lucent::Line line;
+  line.add("drawn classes ({}):", classes.size());
+  for (const uint32_t drawn : classes) {
+    line.add(" {}", drawn);
+  }
+  line.flush_debug("actororacle");
+
+  // The level's own Moby array, independently of what was drawn. "No gem appeared" has two very
+  // different causes — no gem is in the level, or a gem is in the level and the port did not draw
+  // it — and only the second is a port fault. Reporting the drawn set alone cannot tell them apart.
+  const uint32_t first = core->mem_r32(kLevelMobys);
+  if (!ramSpan(first, kMobyBytes)) {
+    lucent::debug("actororacle", "level moby array unreadable at 0x{:08X}", first);
+    return;
+  }
+  std::vector<uint32_t> present;
+  uint32_t scanned = 0;
+  for (uint32_t i = 0, moby = first; i < kMaxLevelMobys; ++i, moby += kMobyBytes) {
+    if (!ramSpan(moby, kMobyBytes)) {
+      break;
+    }
+    const uint32_t state = core->mem_r32(moby + kMobyState);
+    if ((int8_t)state < 0) {
+      if ((state & 0xffu) == 0xffu) {
+        break;
+      }
+      continue;
+    }
+    ++scanned;
+    const uint32_t held = core->mem_r16(moby + kMobyClass);
+    if (std::find(present.begin(), present.end(), held) == present.end()) {
+      present.push_back(held);
+    }
+  }
+  std::sort(present.begin(), present.end());
+  lucent::Line level;
+  level.add("level moby classes (live={} distinct={}):", scanned, present.size());
+  for (const uint32_t held : present) {
+    level.add(
+        " {}{}", held, std::find(classes.begin(), classes.end(), held) == classes.end() ? "" : "*");
+  }
+  level.add("   (* = drawn this frame)");
+  level.flush_debug("actororacle");
+
+  if (wantedClass < 0) {
+    return;
+  }
+  // Where the instances under investigation actually are, relative to the camera, so a run that
+  // never draws one says whether it was culled at a plausible distance or lost.
+  const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 40u);
+  const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 44u);
+  const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 48u);
+  for (uint32_t i = 0, moby = first; i < kMaxLevelMobys; ++i, moby += kMobyBytes) {
+    if (!ramSpan(moby, kMobyBytes)) {
+      break;
+    }
+    const uint32_t state = core->mem_r32(moby + kMobyState);
+    if ((int8_t)state < 0) {
+      if ((state & 0xffu) == 0xffu) {
+        break;
+      }
+      continue;
+    }
+    if ((int)core->mem_r16(moby + kMobyClass) != wantedClass) {
+      continue;
+    }
+    lucent::debug("actororacle",
+                  "class {} instance 0x{:08X} pos=({},{},{}) from_camera=({},{},{})",
+                  wantedClass,
+                  moby,
+                  (int32_t)core->mem_r32(moby + 12u),
+                  (int32_t)core->mem_r32(moby + 16u),
+                  (int32_t)core->mem_r32(moby + 20u),
+                  (int32_t)core->mem_r32(moby + 12u) - cameraX,
+                  (int32_t)core->mem_r32(moby + 16u) - cameraY,
+                  (int32_t)core->mem_r32(moby + 20u) - cameraZ);
+  }
+}
+
+// Is a Moby of the requested class among the instances the native producers just drew?
+//
+// The oracle otherwise dumps whichever frame the driver happens to settle on, and a fault in an
+// object that is not on screen cannot appear in it — the first Artisans capture contained no gem at
+// all, so it could not have shown a gem fault whether or not one exists. Gating on the class turns
+// "walk around and hope" into "dump the frame that contains the thing under investigation".
+bool drawsClass(Core *core, int wantedClass) {
+  const RenderQueue &queue = core->game->rq;
+  for (int i = 0; i < queue.n; ++i) {
+    const uint32_t node = queue.items[i].dbg_node;
+    if (node != 0u && ramSpan(node, kMobyBytes) &&
+        (int)core->mem_r16(node + kMobyClass) == wantedClass) {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace
 
 void compare(Core *core,
@@ -162,6 +314,15 @@ void compare(Core *core,
              std::span<const uint32_t> nativePainterKeys,
              const char *site) {
   if (core == nullptr || !cfg_on("PSXPORT_ACTOR_SCENE_ORACLE")) {
+    return;
+  }
+  // PSXPORT_ACTOR_SCENE_ORACLE_CLASS holds the dump until a Moby of that class is on screen; the
+  // Spyro 1 gems are classes 83, 84, 85, 86 and 87. Unset means dump every frame.
+  const int wantedClass = cfg_int("PSXPORT_ACTOR_SCENE_ORACLE_CLASS", -1);
+  // Printed on every armed frame, before the gate, so a run that never dumps still says WHICH
+  // classes it did draw. Without it a zero-dump run is indistinguishable from a broken filter.
+  logDrawnClasses(core, wantedClass);
+  if (wantedClass >= 0 && !drawsClass(core, wantedClass)) {
     return;
   }
   logNative(core, nativePainterKeys);

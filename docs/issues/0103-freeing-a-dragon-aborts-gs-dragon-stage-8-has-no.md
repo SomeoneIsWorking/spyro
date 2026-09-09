@@ -101,6 +101,20 @@ So the shape mirrors `field_shadow_recipe` closely enough to follow its structur
 and distance-faded where Spyro's shadow is a flat `0x808060`, and it iterates a list of mobys rather
 than one actor.
 
+## `0x80059F8C` landed, and what the FIELD path was missing with it
+
+The producer is implemented (`game/render/moby_shadow_recipe.*`, `moby_shadow_submitter.*`,
+`fx_moby_shadow.*`) and wired into stage 0, since `0x80019698` draws Moby shadows between the shaded
+pass and Spyro's own model and the port's FIELD composition had every other layer of that routine.
+Staging was independently broken — see `docs/project-state.md` for the `0x1200` sign — so no Moby had
+cast a shadow in this port at all.
+
+Two further layers of `0x80019698` are still missing from FIELD and are NOT covered by the abort,
+because nothing calls them: flame `0x80058D64` (`asm/renderers/r_flame.s`, 487 lines, gated on
+`g_SpyroFlame.m_IsFlameActive`) and glows/sparkles `0x80058BA8` (`asm/renderers/r_particles.s`).
+The operator's "crashes when you breathe fire" names the same moment from the other side: the abort
+is the dragon cutscene, and the flame that precedes it is silently absent.
+
 ## Related
 
 Other reachable gamestates with no native producer, same abort: 1 (GS_LevelTransition), 2/3 (pause

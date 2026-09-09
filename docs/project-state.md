@@ -259,9 +259,17 @@ also Ready on that snapshot after issue 0094's Plain descriptor-pair correction:
 with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces. The next authored
 actor-pass gap is Moby shadows: the regular native builder now stages the source-backed list entries
 from fixed start `0x800724F4` and commits the shared cursor at `0x80075F00` after actor admission,
-but the native actor builders/renderers do not yet own the complete Moby shadow result. The retained
-Moby shadow consumer `0x80059F8C` and flame/glow/sparkle effects remain unowned; Spyro shadow
-`0x80059A48` is now owned by the separate native fan recipe and submitter.
+but the native actor builders/renderers do not yet own the complete Moby shadow result. Moby shadow consumer `0x80059F8C` is now owned by
+`game/render/moby_shadow_recipe.*` / `moby_shadow_submitter.*` and is called by the stage-0 seam in
+its authored position, between the shaded pass and Spyro's model. Its staging was separately broken:
+`0x8001F344`/`0x8001F350` admit an entry only when `m_ShadowDistance` is negative AND the view depth
+is nearer than `0x1200`, and the port negated that limit, which no visible Moby can satisfy — so the
+list was always empty. Measured over a walk through Artisans after the fix: entries 1..5, drawn up to
+2, faces up to 8, with every rejection reason (no plane, far, backfacing, off screen) observed at
+least once. Spyro shadow `0x80059A48` is owned by the separate native fan recipe and submitter.
+Flame `0x80058D64` and glow/sparkle `0x80058BA8` remain UNOWNED and, unlike an unported stage, are
+not called at all, so they fail silently rather than aborting: Spyro's flame is invisible in the
+native picture. `0x80019698` calls both, so they are part of the FIELD composition's authored order.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

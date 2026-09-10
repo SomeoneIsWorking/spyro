@@ -33,13 +33,22 @@ void replaceColumns(Matrix &matrix,
 
 } // namespace
 
+Matrix unpackMatrix(std::array<uint32_t, 5> w) {
+  return {{{{(int16_t)w[0], (int16_t)(w[0] >> 16), (int16_t)w[1]},
+            {(int16_t)(w[1] >> 16), (int16_t)w[2], (int16_t)(w[2] >> 16)},
+            {(int16_t)w[3], (int16_t)(w[3] >> 16), (int16_t)w[4]}}}};
+}
+
+Matrix readMatrix(Core *core, uint32_t address) {
+  return unpackMatrix({core->mem_r32(address),
+                       core->mem_r32(address + 4u),
+                       core->mem_r32(address + 8u),
+                       core->mem_r32(address + 12u),
+                       core->mem_r32(address + 16u)});
+}
+
 Matrix readCameraMatrix(Core *core) {
-  const uint32_t w0 = core->mem_r32(kCamera), w1 = core->mem_r32(kCamera + 4u),
-                 w2 = core->mem_r32(kCamera + 8u), w3 = core->mem_r32(kCamera + 12u),
-                 w4 = core->mem_r32(kCamera + 16u);
-  return {{{{(int16_t)w0, (int16_t)(w0 >> 16), (int16_t)w1},
-            {(int16_t)(w1 >> 16), (int16_t)w2, (int16_t)(w2 >> 16)},
-            {(int16_t)w3, (int16_t)(w3 >> 16), (int16_t)w4}}}};
+  return readMatrix(core, kCamera);
 }
 
 std::array<int32_t, 3> cameraRelativePosition(Core *core, uint32_t moby) {
@@ -108,6 +117,22 @@ std::array<uint32_t, 5> packMatrix(const Matrix &matrix, int16_t cr30) {
           pair(matrix.value[2][2], cr30)};
 }
 
+std::array<int32_t, 3> scaledTranslation(const std::array<int32_t, 3> &doubled, uint8_t scale) {
+  // A zero byte means "this actor is not scaled", so retail branches around the multiply entirely
+  // (0x80022CDC, 0x8001F868) rather than collapsing the actor onto the camera.
+  if (scale == 0u) {
+    return doubled;
+  }
+  // GPF with sf=0 multiplies each IR by IR0 with no pre-shift and both renderers read MAC back with
+  // `sra 5`. mtc2 into IR1..IR3 keeps only the low 16 bits, so a far enough actor wraps here
+  // exactly as it does on hardware; widening it would silently disagree with the guest on the same
+  // input.
+  const auto component = [scale](int32_t value) {
+    return (int32_t)((int32_t)(int16_t)value * (int32_t)scale) >> 5;
+  };
+  return {component(doubled[0]), component(doubled[1]), component(doubled[2])};
+}
+
 psxport::native_projection::FixedAffine
 worldAffine(Core *core, uint32_t moby, const Matrix &camera, std::array<int32_t, 3> &view) {
   const auto relative = cameraRelativePosition(core, moby);
@@ -116,7 +141,8 @@ worldAffine(Core *core, uint32_t moby, const Matrix &camera, std::array<int32_t,
   const Matrix rotated = rotateForMoby(core, camera, core->mem_r32(moby + 0x44u));
   psxport::native_projection::FixedAffine affine{};
   affine.m = rotated.value;
-  affine.t = {view[0] * 2, view[1] * 2, view[2] * 2};
+  affine.t = scaledTranslation({view[0] * 2, view[1] * 2, view[2] * 2},
+                               (uint8_t)core->mem_r8(moby + kMobyScaleByte));
   return affine;
 }
 

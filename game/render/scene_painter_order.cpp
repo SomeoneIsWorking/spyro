@@ -12,21 +12,25 @@ constexpr uint32_t kOrdinalMask = (1u << kPhaseShift) - 1u;
 // the same OT tails, so Flame replays after SpyroShadow and before the cyclorama that patches the
 // tail last. 0x80058BA8 is the last call of 0x80019698, after the flame, and it links its glows
 // (0x800580F4) before its sparkles (0x800584C4), so Sparkle is the last phase linked before the
-// cyclorama patches the tail. Eleven phases no longer fit three bits, so the field is four bits
-// wide; the ordinal range that leaves is still four orders of magnitude above any producer's
-// record count.
+// cyclorama patches the tail. 0x800573C8 is called after the cyclorama and links through the same
+// append idiom (0x80057724 writes the new packet into the bin head and threads the previous head
+// forward to it), so the particles are the very last thing added to a bin and replay on top of
+// everything else in it. Twelve phases no longer fit three bits, so the field is four bits wide;
+// the ordinal range that leaves is still four orders of magnitude above any producer's record
+// count.
 enum class LinkPhase : uint32_t {
-  Cyclorama = 0,
-  Sparkle = 1,
-  Glow = 2,
-  Flame = 3,
-  SpyroShadow = 4,
-  MobyShadow = 5,
-  PairedActor = 6,
-  SecondaryActor = 7,
-  Actor = 8,
-  QueuedWorld = 9,
-  World = 10
+  Particle = 0,
+  Cyclorama = 1,
+  Sparkle = 2,
+  Glow = 3,
+  Flame = 4,
+  SpyroShadow = 5,
+  MobyShadow = 6,
+  PairedActor = 7,
+  SecondaryActor = 8,
+  Actor = 9,
+  QueuedWorld = 10,
+  World = 11
 };
 
 constexpr uint32_t linkOrdinal(LinkPhase phase, uint32_t ordinal) {
@@ -134,6 +138,18 @@ PainterReplayOrder sparkle(uint16_t otBin, uint32_t recordOrdinal, uint32_t chai
   // sparkle keep their own linked order through the chain suborder.
   return {kActorWorldTerrainDomain,
           {otBin, linkOrdinal(LinkPhase::Sparkle, kOrdinalMask - recordOrdinal), chainOrdinal}};
+}
+
+PainterReplayOrder particle(uint16_t otBin, uint32_t scanOrdinal, uint32_t chainOrdinal) {
+  if (scanOrdinal > kOrdinalMask) {
+    return {};
+  }
+  // 0x800573C8 walks the emit list once in slot order and appends every arm's packet from that one
+  // scan, so the ordinal has to be the record's position in that scan rather than its position
+  // within its own arm — the three arms interleave, and sorting each separately would reorder
+  // overlapping particles against the guest.
+  return {kActorWorldTerrainDomain,
+          {otBin, linkOrdinal(LinkPhase::Particle, kOrdinalMask - scanOrdinal), chainOrdinal}};
 }
 
 PainterReplayOrder cyclorama(uint32_t chainOrdinal) {

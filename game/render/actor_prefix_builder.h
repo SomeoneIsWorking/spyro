@@ -47,7 +47,6 @@ struct Input {
 enum class Status : uint8_t {
   Ok,
   Expansion,
-  TransformBlend,
   CountZero,
   Stream,
   NegativeBlend,

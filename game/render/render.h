@@ -12,6 +12,7 @@ class Core;
 constexpr uint32_t kStageField = 0u;
 constexpr uint32_t kStageRespawn = 4u;
 constexpr uint32_t kStageGameOver = 5u;
+constexpr uint32_t kStageDragon = 8u;
 constexpr uint32_t kStageFrontEnd = 13u;
 constexpr uint32_t kStageCutscene = 14u;
 

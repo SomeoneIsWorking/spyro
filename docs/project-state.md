@@ -299,6 +299,23 @@ lifetime is zeroed. Lines required a framework admission: psxport's `validateFac
 four vertices only, and now admits two as well, untextured only, because a GP0 line carries no
 texture word (psxport `25a432e3`, 145/145 tests).
 
+The dragon-rescue cutscene renderer `0x8001CFDC` (stage 8, `GS_Dragon`) is owned by
+`game/render/dragon_scene_recipe.*` and `fx_dragon_scene.*`, with the burst star `0x80058864` in
+`dragon_burst_recipe.*` / `fx_dragon_burst.*`. The recipe derives which of the eight
+`g_DragonCutscene.m_State` branches applies and returns it as a plan — producer list, the two Moby
+lists to publish, and which source the regular actor pass reads — so the branch table is one
+structure rather than eight compositions. State 0 shares FIELD's model chain through
+`field_model_chain.*`. Twenty focused tests cover the recipe and the burst. Reaching it live also
+fixed four defects outside the new code: the paired-actor ownership gate aborted bare because its
+scene predicate did not know the cutscene draws Spyro; the Moby scale byte at `+0x57` was refused by
+both actor renderers and is now implemented once in `actor_transform_math::scaledTranslation`, which
+is what retail's `GPF`/`sra 5` idiom does at `0x80022CCC` and `0x8001F864`; the particle producer
+`0x800573C8` emitted unordered world items and now publishes a painter object on the new
+`LinkPhase::Particle` phase 0, ordered by its record's position in the guest's single emit-list scan;
+and the cutscene's Spyro producer no longer applies a hide gate only `0x80019698` owns. Measured in
+Artisans: the cutscene composes end to end through states 0, 1, 2, 3 and 4 with no refusal and no
+abort. States 5, 6 and 7 are derived and tested but not yet reached live.
+
 `0x80058BA8` is wired as the last FIELD producer via `game/render/fx_glow_sparkle.*`. Measured live in
 Artisans: one active glow record fanning 4–8 faces per field, one live sparkle emitting two lines and
 then aging out to `alive=0` on its own schedule, `dt=2`, no refusal and no Lightrec fallback over

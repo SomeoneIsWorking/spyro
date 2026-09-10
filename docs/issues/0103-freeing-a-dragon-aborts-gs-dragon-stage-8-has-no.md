@@ -220,3 +220,54 @@ refuse the next producer's preflight).
 link phase below `Glow`. Measured live in Artisans: one active glow record fanning 4–8 faces per
 field, one live sparkle emitting two lines and aging out to `alive=0` on its own schedule at `dt=2`,
 no refusal, and no Lightrec fallback across 20.5 M translated blocks.
+
+## The stage-8 producer landed, and the four defects it uncovered
+
+`game/render/dragon_scene_recipe.*` derives the branch `0x8001CFDC` will take from
+`g_DragonCutscene` and `fx_dragon_scene.*` applies it. The recipe is a plan — a producer list, the
+two Moby lists to publish, and which source the regular actor pass reads from — so the eight-branch
+state table is one readable structure instead of eight copies of a composition. Fourteen focused
+tests cover it. State 0 shares FIELD's model chain through the extracted
+`game/render/field_model_chain.*` rather than a second copy of those seven layers.
+
+Two owners the branch needed and did not have:
+
+- `0x80058864`, the burst star, drawn before every branch when `D_80076248`'s enable word is set.
+  It is armed in the real cutscene. `dragon_burst_recipe.*` / `fx_dragon_burst.*` port it: eight
+  spokes, an inner and an outer sine-table ring around one projected origin at shifts 12 and 10, the
+  last inner point copied in front of the first so the ring closes, and two triangles per spoke — one
+  out to the outer point, one back to the shared centre. It links into the HUD table, not the world
+  one. Six focused tests.
+- `0x80018728` (the "Rescued ..." text mobys) and `0x80018880` (the HUD-moby copy) emit no GPU
+  primitives at all; they build guest lists. They execute through Lightrec, which is what the product
+  architecture is for.
+
+Driving into the cutscene then found four real defects, none of them in the new code:
+
+1. **The paired-actor ownership gate aborted with no message.** `drawFrame` asserts exactly one
+   invocation of `0x80023AC4` when the scene draws Spyro and exactly zero when it does not, and its
+   scene predicate knew only about FIELD and the front end. The dragon states draw Spyro too, so the
+   gate failed and `drawFrame` called a bare `abort()` — a fatal with no diagnostic. The predicate
+   now asks the dragon state table itself (`spyro_dragon_scene_draws_player`).
+2. **The Moby scale byte at `+0x57` was unimplemented.** The shaded queue refused any actor carrying
+   one; the regular actor pass refused it too, under the misleading name `TransformBlend`, because
+   the byte arrives in the low bits of the record header. Both retail renderers do the same thing
+   with it (`0x80022CCC` and `0x8001F864`): run the shifted view translation through `GPF` with the
+   byte in IR0 and read MAC back with `sra 5`, leaving the rotation and the depth key untouched. A
+   zero byte means "unscaled" and skips the multiply. `actor_transform_math::scaledTranslation` is
+   the one implementation; the scaled path in `0x8001F798` additionally drops a record whose scaled
+   depth passes `0xF618`, which is a per-record cull, not a refusal.
+3. **Particles emitted unordered world items.** `0x800573C8` published no painter object, and the
+   queue refuses a world run that mixes ordered and unordered items — it had simply never yet met a
+   frame with particles alive alongside another world producer. `0x80057724` links each packet into
+   the bin head and threads the previous head forward to it, so the emit list replays in scan order
+   and on top of everything else in its bin; `LinkPhase::Particle` is the new phase 0. The ordinal
+   has to be the record's position in the guest's single scan, because the three arms interleave
+   there and are split into three lists here, so `field_particles_recipe` now carries `scanOrdinal`.
+4. **`spyro_field_player_submit` applied a hide gate the cutscene does not have.** Only state 0
+   reaches Spyro through `0x80019698`, which owns that gate; every other branch calls `0x80023AC4`
+   directly.
+
+Measured after all four: the Artisans dragon cutscene composes end to end with no refusal and no
+abort, through states 0 (with its fade ramp 0 -> 255), 1, 2, 3 and 4. States 5, 6 and 7 are derived
+and tested but have not yet been reached live.

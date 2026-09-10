@@ -19,9 +19,9 @@ constexpr uint32_t kProducerKey = 0x8001F798u;
 
 } // namespace
 
-bool spyro_actor_submit(Core *c) {
+bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
   spyro::actor_scene::Frame sceneFrame{};
-  const auto sceneStatus = spyro::actor_scene::build_frame(c, sceneFrame);
+  const auto sceneStatus = spyro::actor_scene::build_frame(c, sceneFrame, source);
   auto &records = sceneFrame.records;
   const auto &census = sceneFrame.census;
   if (sceneStatus != spyro::actor_scene::Status::Ready) {

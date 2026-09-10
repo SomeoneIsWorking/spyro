@@ -6,6 +6,7 @@ namespace {
 
 Recipe uniform(uint32_t fade,
                uint32_t colourShift,
+               uint8_t blendMode,
                int32_t drawOffsetX,
                int32_t drawOffsetY,
                int32_t renderWidth) {
@@ -21,7 +22,7 @@ Recipe uniform(uint32_t fade,
           .r = colour,
           .g = colour,
           .b = colour,
-          .blendMode = 2u};
+          .blendMode = blendMode};
 }
 
 } // namespace
@@ -30,11 +31,15 @@ Recipe uniform(uint32_t fade,
 // external/spyro-1/src/gamestates/draw.c. The focused test verifies its mode-2 colour/extent
 // behavior; isolated real-disc runtime and visual evidence remains a documented gap.
 Recipe cutscene(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
-  return uniform(fade, 4u, drawOffsetX, drawOffsetY, renderWidth);
+  return uniform(fade, 4u, 2u, drawOffsetX, drawOffsetY, renderWidth);
 }
 
 Recipe field(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
-  return uniform(fade, 3u, drawOffsetX, drawOffsetY, renderWidth);
+  return uniform(fade, 3u, 2u, drawOffsetX, drawOffsetY, renderWidth);
+}
+
+Recipe dragon(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
+  return uniform(fade, 0u, 1u, drawOffsetX, drawOffsetY, renderWidth);
 }
 
 } // namespace spyro::screen_fade_recipe

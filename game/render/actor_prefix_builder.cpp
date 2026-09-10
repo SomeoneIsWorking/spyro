@@ -1,4 +1,5 @@
 #include "actor_prefix_builder.h"
+#include "actor_transform_math.h"
 #include "wide_clip_plan.h"
 
 #include <algorithm>
@@ -29,9 +30,14 @@ psxport::native_projection::FixedAffine affineFrom(const Input &input,
                {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
                {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}}};
   const uint8_t shift = input.transformShift & 31u;
-  affine.t = {{sar32((uint32_t)input.tx << 2, shift),
-               sar32((uint32_t)input.ty << 2, shift),
-               sar32((uint32_t)input.tz << 2, shift)}};
+  // 0x8001F84C shifts the view translation into model space and then, at 0x8001F864, scales it by
+  // the Moby's own byte — the same field and the same GPF idiom the shaded renderer 0x80022A2C
+  // uses. The depth key CR14 above is deliberately taken from the UNSCALED depth, exactly as retail
+  // computes it before this ladder.
+  affine.t = actor_transform_math::scaledTranslation({{sar32((uint32_t)input.tx << 2, shift),
+                                                       sar32((uint32_t)input.ty << 2, shift),
+                                                       sar32((uint32_t)input.tz << 2, shift)}},
+                                                     (uint8_t)(input.header & 0xffu));
   for (unsigned i = 0; i < 5; ++i) {
     controls[i] = input.matrixWords[i];
   }
@@ -66,10 +72,6 @@ Output build(const Input &input) {
     out.status = Status::CountZero;
     return out;
   }
-  if ((input.header & 0xffu) != 0) {
-    out.status = Status::TransformBlend;
-    return out;
-  }
   if (input.colorArm == ColorArm::NegativeBlend) {
     out.status = Status::NegativeBlend;
     return out;
@@ -87,6 +89,13 @@ Output build(const Input &input) {
     cr14 = (int32_t)((uint32_t)cr14 + 32u);
   }
   const auto affine = affineFrom(input, out.controls);
+  // 0x8001F8A0: having scaled the translation, retail re-tests the depth it just produced and drops
+  // the record when it passes 0xF618. Only a scaled record reaches that test, so an unscaled actor
+  // keeps whatever depth the ladder gave it.
+  if ((input.header & 0xffu) != 0u && affine.t[2] > 0xF618) {
+    out.status = Status::VisibilityRejected;
+    return out;
+  }
   out.controls[13] = (coordShift & 31u) + ((uint32_t)input.transformShift << 8);
   out.controls[14] = (uint32_t)cr14;
   out.controls[15] = (uint32_t)wrapSub(affine.t[2], 512u << (coordShift & 31u));

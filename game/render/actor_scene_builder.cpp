@@ -18,6 +18,9 @@ constexpr uint32_t kModels = 0x80076378u;
 constexpr uint32_t kCamera = 0x80076DD0u;
 constexpr uint32_t kMobySize = 0x58u;
 constexpr uint32_t kMaxMobys = 4096u;
+// g_SonyImage.u.m_Draw.m_Moby holds 0x240 pointers; a list that is not terminated inside it is a
+// corrupt input rather than a longer list.
+constexpr uint32_t kMaxDrawList = 0x240u;
 constexpr uint32_t kShadowListStart = 0x800724F4u;
 constexpr uint32_t kShadowCursor = 0x80075F00u;
 
@@ -165,24 +168,47 @@ bool build_source_record(Core *c,
       c, moby, actor_transform_math::readCameraMatrix(c), source, census, horizontalVisibleOut);
 }
 
-Status build_scene(Core *c, Frame &frame, bool captureShadows) {
-  frame = {};
-  if (captureShadows) {
-    // 0x8001F158 resets the temporary shadow cursor to the fixed list start on every call. The
-    // later secondary/shaded passes consume the cursor it publishes at 0x80075F00.
-    frame.shadowCursor = kShadowListStart;
+// One entry's worth of the pass, shared by the level scan and the explicit list so their culling,
+// capture and shadow staging cannot drift apart.
+Status capture_entry(
+    Core *c, uint32_t moby, const Matrix &cameraMatrix, bool captureShadows, Frame &frame) {
+  actor_recipe_capture::SourceRecord source{};
+  if (!build_source(c, moby, cameraMatrix, source, frame.census)) {
+    ++frame.census.culled;
+    return Status::Ready;
   }
-  if (captureShadows && !actor_recipe_capture::physical_span(frame.shadowCursor, 8u)) {
-    return Status::InvalidShadowCursor;
+  if (frame.records.size() == actor_recipe_capture::kDurableRecords) {
+    return Status::RecordCapacityExceeded;
   }
+  actor_recipe_capture::Record record{};
+  if (!actor_recipe_capture::capture_source(c, source, record)) {
+    return Status::RecordCaptureRefused;
+  }
+  frame.records.push_back(std::move(record));
+  ++frame.census.queued;
+
+  // 0x8001F158 appends this entry after the source has passed its projected cull. The model byte
+  // is the same descriptor-relative shadow selector used by 0x800208FC, so both regular and
+  // secondary paths name the identical AnimationFrame::m_Shadow byte.
+  if (captureShadows && stages_shadow((int32_t)c->mem_r32(moby + 0x1Cu), source.tz)) {
+    const uint32_t texture = source.descriptor + 0x2Au + (uint32_t)c->mem_r8(moby + 0x3Eu) * 8u;
+    if (!actor_recipe_capture::physical_span(texture & ~3u, 4u) ||
+        !actor_recipe_capture::physical_span(
+            frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
+      return Status::InvalidShadowCursor;
+    }
+    frame.shadows.push_back({.moby = moby, .modelByte = c->mem_r8(texture)});
+  }
+  return Status::Ready;
+}
+
+Status scan_level_array(Core *c, const Matrix &cameraMatrix, bool captureShadows, Frame &frame) {
   const uint32_t first = c->mem_r32(kLevelMobys);
   if (!actor_recipe_capture::physical_span(first, kMobySize)) {
     return Status::InvalidMobyArray;
   }
-  const Matrix cameraMatrix = actor_transform_math::readCameraMatrix(c);
   for (uint32_t i = 0, moby = first; i < kMaxMobys; ++i, moby += kMobySize) {
     if (!actor_recipe_capture::physical_span(moby, kMobySize)) {
-      frame = {};
       return Status::InvalidMobyArray;
     }
     const uint32_t state = c->mem_r32(moby + 72u);
@@ -196,48 +222,63 @@ Status build_scene(Core *c, Frame &frame, bool captureShadows) {
     if (!regular_list_member(c, state)) {
       continue;
     }
-    actor_recipe_capture::SourceRecord source{};
-    if (!build_source(c, moby, cameraMatrix, source, frame.census)) {
-      ++frame.census.culled;
-      continue;
-    }
-    actor_recipe_capture::Record record{};
-    if (frame.records.size() == actor_recipe_capture::kDurableRecords) {
-      frame = {};
-      return Status::RecordCapacityExceeded;
-    }
-    if (!actor_recipe_capture::capture_source(c, source, record)) {
-      frame = {};
-      return Status::RecordCaptureRefused;
-    }
-    frame.records.push_back(std::move(record));
-    ++frame.census.queued;
-
-    // 0x8001F158 appends this entry after the source has passed its projected cull. The model byte
-    // is the same descriptor-relative shadow selector used by 0x800208FC, so both regular and
-    // secondary paths name the identical AnimationFrame::m_Shadow byte.
-    if (captureShadows && stages_shadow((int32_t)c->mem_r32(moby + 0x1Cu), source.tz)) {
-      const uint32_t texture = source.descriptor + 0x2Au + (uint32_t)c->mem_r8(moby + 0x3Eu) * 8u;
-      if (!actor_recipe_capture::physical_span(texture & ~3u, 4u) ||
-          !actor_recipe_capture::physical_span(
-              frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
-        frame = {};
-        return Status::InvalidShadowCursor;
-      }
-      frame.shadows.push_back({.moby = moby, .modelByte = c->mem_r8(texture)});
+    const Status status = capture_entry(c, moby, cameraMatrix, captureShadows, frame);
+    if (status != Status::Ready) {
+      return status;
     }
   }
-  frame = {};
   return Status::UnterminatedMobyArray;
 }
 
-Status build_frame(Core *c, Frame &frame) {
+Status walk_explicit_list(
+    Core *c, uint32_t list, const Matrix &cameraMatrix, bool captureShadows, Frame &frame) {
+  for (uint32_t i = 0; i < kMaxDrawList; ++i) {
+    if (!actor_recipe_capture::physical_span(list + i * 4u, 4u)) {
+      return Status::InvalidMobyArray;
+    }
+    const uint32_t moby = c->mem_r32(list + i * 4u);
+    if (moby == 0u) {
+      return Status::Ready;
+    }
+    if (!actor_recipe_capture::physical_span(moby, kMobySize)) {
+      return Status::InvalidMobyArray;
+    }
+    ++frame.census.scanned;
+    const Status status = capture_entry(c, moby, cameraMatrix, captureShadows, frame);
+    if (status != Status::Ready) {
+      return status;
+    }
+  }
+  return Status::UnterminatedMobyArray;
+}
+
+Status build_scene(Core *c, Frame &frame, bool captureShadows, Source source) {
+  frame = {};
+  if (captureShadows) {
+    // 0x8001F158 resets the temporary shadow cursor to the fixed list start on every call. The
+    // later secondary/shaded passes consume the cursor it publishes at 0x80075F00.
+    frame.shadowCursor = kShadowListStart;
+  }
+  if (captureShadows && !actor_recipe_capture::physical_span(frame.shadowCursor, 8u)) {
+    return Status::InvalidShadowCursor;
+  }
+  const Matrix cameraMatrix = actor_transform_math::readCameraMatrix(c);
+  const Status status =
+      source.kind == Source::Kind::ExplicitList
+          ? walk_explicit_list(c, source.list, cameraMatrix, captureShadows, frame)
+          : scan_level_array(c, cameraMatrix, captureShadows, frame);
+  if (status != Status::Ready) {
+    frame = {};
+  }
+  return status;
+}
+
+Status build_frame(Core *c, Frame &frame, Source source) {
   if (c == nullptr) {
     frame = {};
     return Status::InvalidMobyArray;
   }
-  const Status status = build_scene(c, frame, true);
-  return status;
+  return build_scene(c, frame, true, source);
 }
 
 void commit(Core *c, const Frame &frame) {
@@ -258,7 +299,7 @@ Status build_records(Core *c, std::vector<actor_recipe_capture::Record> &records
   // Preserve the historical record-only helper contract for its unit callers. The shipping owner
   // uses build_frame so shadow state is staged from the same culling pass rather than rescanned.
   Frame frame{};
-  const Status status = build_scene(c, frame, false);
+  const Status status = build_scene(c, frame, false, {});
   records = std::move(frame.records);
   census = frame.census;
   return status;

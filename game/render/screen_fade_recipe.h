@@ -24,4 +24,8 @@ Recipe cutscene(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t
 // Stage 0 calls the same producer as (mode=2, r=g=b=g_Fade*8).
 Recipe field(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth);
 
+// The dragon cutscene 0x8001CFDC calls it as (mode=1, r=g=b=m_Fade) — the fade value unscaled and
+// the other blend mode, so neither of the two above can stand in for it.
+Recipe dragon(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth);
+
 } // namespace spyro::screen_fade_recipe

@@ -49,9 +49,20 @@ bool build_source_record(Core *c,
                          Census &census,
                          bool *horizontalVisibleOut = nullptr);
 
+// Where the regular-actor pass takes its Moby pointers from. FIELD reproduces 0x800521C0's own
+// classification of the level array inline, because that is what fills the draw list it would then
+// walk. The dragon cutscene 0x8001CFDC instead writes an explicit terminated pointer list into
+// g_SonyImage.u.m_Draw.m_Moby and calls 0x8001F158 straight over it, so the category filter that
+// belongs to 0x800521C0 must NOT be applied to those entries — retail already decided them.
+struct Source {
+  enum class Kind : uint8_t { LevelArray, ExplicitList };
+  Kind kind = Kind::LevelArray;
+  uint32_t list = 0; // guest address of the null-terminated pointer array, ExplicitList only
+};
+
 // Builds the regular-actor records and the shadow-list entries produced by the same retail
 // culling pass. The frame is inert until commit succeeds in the owning submitter.
-Status build_frame(Core *c, Frame &frame);
+Status build_frame(Core *c, Frame &frame, Source source = {});
 void commit(Core *c, const Frame &frame);
 
 // 0x8001F344 and 0x8001F350 guard the shadow-list append with two `bgez` branches that both SKIP:

@@ -23,6 +23,7 @@ PainterReplayOrder mobyShadow(uint16_t otBin, uint32_t shadowOrdinal, uint32_t f
 PainterReplayOrder flame(uint16_t otBin, uint32_t partOrdinal, uint32_t faceOrdinal);
 PainterReplayOrder glow(uint16_t otBin, uint32_t recordOrdinal, uint32_t fanOrdinal);
 PainterReplayOrder sparkle(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal);
+PainterReplayOrder particle(uint16_t otBin, uint32_t scanOrdinal, uint32_t chainOrdinal);
 PainterReplayOrder cyclorama(uint32_t chainOrdinal);
 PainterReplayOrder cycloramaPortal(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);
 PainterReplayOrder cycloramaMask(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);

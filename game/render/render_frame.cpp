@@ -3,14 +3,14 @@
 // Spyro1FrameDriver calls this title seam directly. Scene producers feed one render queue, and
 // frame_commit owns the presentation fence. GameHooks::drawOTag remains unset to avoid a second
 // presentation route.
-#include "actor_scene_oracle.h"
 #include "core.h"
 #include "cutscene_scene_recipe.h"
 #include "field_moby_lists.h"
+#include "field_model_chain.h"
 #include "fps60.h"     // checked access to Spyro 1's title-owned temporal presentation product
 #include "frame_env.h" // nativeFrameBegin/End — the frame the native producers draw into
 #include "fx_actor_draw.h"
-#include "fx_field_actor_composition.h"
+#include "fx_dragon_scene.h"
 #include "fx_field_collectables.h"
 #include "fx_field_cyclorama.h"
 #include "fx_field_environment.h"
@@ -18,12 +18,9 @@
 #include "fx_field_player_actor.h"
 #include "fx_field_shadow.h"
 #include "fx_field_tracers.h"
-#include "fx_glow_sparkle.h"
-#include "fx_moby_shadow.h"
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
 #include "fx_screen_fade.h"
-#include "fx_spyro_flame.h"
 #include "fx_world_draw.h"
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "gpu_vk.h"     // measured native/wide engine extents for the product-path announcement
@@ -49,6 +46,41 @@ constexpr uint32_t kStateSwitch = 0x8007579Cu;
 constexpr uint32_t kLoadStage = 0x80075864u;
 constexpr uint32_t kGameplayDrawFrame = 0x8007593Cu;
 
+// One message per layer of 0x80019698, so the abort still names the exact producer that refused
+// now that the chain has its own owner.
+const char *modelChainRefusal(unsigned producer) {
+  switch (producer) {
+  case 0x8001F798u:
+    return "actor producer 0x8001F798 refused its atomic recipe";
+  case 0x80020F34u:
+    return "secondary/shaded actor producers 0x80020F34/0x80022A2C refused their combined atomic "
+           "recipe";
+  case 0x80059F8Cu:
+    return "moby shadow producer 0x80059F8C refused its atomic recipe";
+  case 0x80023AC4u:
+    return "Spyro actor producer 0x80023AC4 refused its atomic recipe";
+  case 0x80059A48u:
+    return "Spyro shadow producer 0x80059A48 refused its atomic recipe";
+  case 0x80058D64u:
+    return "Spyro flame producer 0x80058D64 refused its atomic recipe";
+  case 0x80058BA8u:
+    return "glow/sparkle producer 0x80058BA8 refused its atomic recipe";
+  default:
+    return "a producer of 0x80019698 refused its atomic recipe";
+  }
+}
+
+// The dragon owner reports a guest address, or 1 when the composition itself could not be derived.
+const char *dragonRefusal(unsigned producer) {
+  if (producer == 0x80058864u) {
+    return "dragon burst producer 0x80058864 is armed and has no native owner";
+  }
+  if (producer == 1u) {
+    return "dragon cutscene producer 0x8001CFDC refused its atomic composition";
+  }
+  return modelChainRefusal(producer);
+}
+
 bool isFieldStage(uint32_t stage) {
   return stage == kStageField || stage == kStageRespawn || stage == kStageGameOver;
 }
@@ -58,7 +90,11 @@ bool pairedActorScene(Core *core, const Scene &scene) {
                         core->mem_r32(0x80078D7Cu) == 2u;
   const bool respawnFading = (scene.stage == kStageRespawn || scene.stage == kStageGameOver) &&
                              core->mem_r32(kGameplayDrawFrame) != 0u;
-  return frontend ||
+  // The dragon cutscene draws Spyro too — through the shared field chain in its state 0 and
+  // through 0x80023AC4 directly in most of the rest — so it arms the same ownership gate. Its own
+  // state table answers, rather than a second copy of it here.
+  const bool dragon = scene.stage == kStageDragon && spyro_dragon_scene_draws_player(core);
+  return frontend || dragon ||
          (isFieldStage(scene.stage) && !respawnFading && spyro_field_player_visible(core));
 }
 } // namespace
@@ -155,51 +191,9 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
         abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
       }
     }
-    if (!spyro_actor_submit(mC)) {
-      abortUnimplemented(sc, "actor producer 0x80019698 refused its atomic recipe");
+    if (const unsigned refused = spyro_field_model_chain_submit(mC); refused != 0u) {
+      abortUnimplemented(sc, modelChainRefusal(refused));
     }
-    if (!spyro_field_actor_composition_submit(mC)) {
-      abortUnimplemented(sc,
-                         "secondary/shaded actor producers 0x80020F34/0x80022A2C refused their "
-                         "combined atomic recipe");
-    }
-    // 0x80019698 draws the moby shadows between the shaded pass and Spyro's own model, so this
-    // layer belongs here rather than beside the Spyro shadow it superficially resembles.
-    if (!spyro_moby_shadow_submit(mC)) {
-      abortUnimplemented(sc, "moby shadow producer 0x80059F8C refused its atomic recipe");
-    }
-    if (!spyro_field_player_submit(mC, spyro_paired_actor_state(mC))) {
-      abortUnimplemented(sc, "Spyro actor producer 0x80023AC4 refused its atomic recipe");
-    }
-    if (!spyro_field_shadow_submit(mC)) {
-      abortUnimplemented(sc, "Spyro shadow producer 0x80059A48 refused its atomic recipe");
-    }
-    // 0x80019698 calls the flame last of the model layers, only while the flame is active, and
-    // after Spyro's own producer has published the orientation it reads.
-    if (!spyro_flame_submit(mC)) {
-      abortUnimplemented(sc, "Spyro flame producer 0x80058D64 refused its atomic recipe");
-    }
-    // The last call of 0x80019698: glow halos then sparkles. The sparkle half also ages and kills
-    // its own records, so this must run every field, not only when something is visible.
-    if (!glow_sparkle_submit(mC)) {
-      abortUnimplemented(sc, "glow/sparkle producer 0x80058BA8 refused its atomic recipe");
-    }
-    // Diagnostic only and a no-op unless PSXPORT_ACTOR_SCENE_ORACLE=1. It runs retail's moby-chain
-    // walker over the state the native producers have just read, so it must sit after every
-    // producer that walker covers, and must never be armed on a shipping frame. Retail draws the
-    // player and its shadow as ordinary mobys, so those two producers are part of the comparison
-    // even though the port owns them separately — which is why the call is here and not before
-    // them. The printed painter histogram is what makes the five-way split readable.
-    static constexpr std::array<uint32_t, 9> kActorPainters = {0x8001F798u,
-                                                               0x80020F34u,
-                                                               0x80022A2Cu,
-                                                               0x80023AC4u,
-                                                               0x80059A48u,
-                                                               0x80059F8Cu,
-                                                               0x80058D64u,
-                                                               0x800580F4u,
-                                                               0x800584C4u};
-    spyro::actor_scene_oracle::compare(mC, 0x80019698u, kActorPainters, "actor-scene-oracle");
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");
     }
@@ -221,6 +215,15 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     }
     if (!spyro_field_tracers_submit(mC)) {
       abortUnimplemented(sc, "tracers producer 0x800189F0 refused its atomic recipe");
+    }
+    return;
+  }
+  if (sc.stage == kStageDragon) {
+    // 0x8001CFDC. The composition is one of eight authored branches selected by the cutscene's own
+    // state, so the owner reports which layer refused rather than returning a bare false.
+    const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+    if (const unsigned refused = dragon_scene_submit(mC, ofsX, ofsY, renderWidth); refused != 0u) {
+      abortUnimplemented(sc, dragonRefusal(refused));
     }
     return;
   }

@@ -16,7 +16,6 @@ enum class Status : uint8_t {
   InvalidActor,
   InvalidMesh,
   InvalidShadowCursor,
-  UnsupportedTransformScale,
   UnsupportedVertexLighting,
 };
 

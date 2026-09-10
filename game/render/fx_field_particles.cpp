@@ -8,9 +8,11 @@
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
+#include "scene_painter_order.h"
 #include "world_chunk_codec.h"
 #include "world_projection_math.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <lucent/log.h>
 #include <span>
@@ -50,7 +52,8 @@ void emitLine(Core *core,
               const unsigned char (&rs)[2],
               const unsigned char (&gs)[2],
               const unsigned char (&bs)[2],
-              float ord) {
+              float ord,
+              const PainterReplayOrder &order) {
   RenderQueue &queue = core->game->rq;
   const GpuState &gpu = core->game->gpu;
   const int us[2] = {}, vs[2] = {};
@@ -86,7 +89,13 @@ void emitLine(Core *core,
                     gpu.s_da_y0,
                     gpu.s_da_x1,
                     gpu.s_da_y1,
-                    0);
+                    0,
+                    nullptr,
+                    -1,
+                    0.0f,
+                    0,
+                    0,
+                    order);
 }
 
 } // namespace
@@ -119,6 +128,10 @@ bool spyro_field_particles_submit(Core *core) {
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "particles:emitlist");
+  // Every other world producer publishes a painter object, and the queue refuses a flush that mixes
+  // ordered and unordered items in one world run. Particles emitted unordered, which only stayed
+  // invisible while no frame reached this producer with any of the others alive at the same time.
+  RenderQueue::PainterObjectScope painter(core->game->rq, kProducerKey);
   for (const auto &point : recipe.points) {
     const auto input = spyro::world_projection_math::packProjectionInput(
         cameraY - point.y, cameraZ - point.z, point.x - cameraX);
@@ -136,7 +149,15 @@ bool spyro_field_particles_submit(Core *core) {
     const unsigned char rs[2] = {point.r, point.r};
     const unsigned char gs[2] = {point.g, point.g};
     const unsigned char bs[2] = {point.b, point.b};
-    emitLine(core, xs, ys, rs, gs, bs, core->rsub.projParams.pzToOrd(projected.pz));
+    emitLine(core,
+             xs,
+             ys,
+             rs,
+             gs,
+             bs,
+             core->rsub.projParams.pzToOrd(projected.pz),
+             spyro::scene_painter_order::particle(
+                 (uint16_t)std::clamp<int32_t>(otDepth, 0, 2047), point.scanOrdinal, 0u));
   }
   for (const auto &line : recipe.lines) {
     // The guest clips and depth-sorts the type-1 primitive on its first endpoint alone; the second
@@ -164,10 +185,18 @@ bool spyro_field_particles_submit(Core *core) {
     const unsigned char rs[2] = {line.r0, line.r1};
     const unsigned char gs[2] = {line.g0, line.g1};
     const unsigned char bs[2] = {line.b0, line.b1};
-    emitLine(core, xs, ys, rs, gs, bs, core->rsub.projParams.pzToOrd(first.pz));
+    emitLine(core,
+             xs,
+             ys,
+             rs,
+             gs,
+             bs,
+             core->rsub.projParams.pzToOrd(first.pz),
+             spyro::scene_painter_order::particle(
+                 (uint16_t)std::clamp<int32_t>(otDepth, 0, 2047), line.scanOrdinal, 0u));
   }
-  for (unsigned ordinal = 0; ordinal < recipe.texturedQuads.size(); ++ordinal) {
-    if (!spyro_field_particle_type2_submit(core, recipe.texturedQuads[ordinal], ordinal)) {
+  for (const auto &quad : recipe.texturedQuads) {
+    if (!spyro_field_particle_type2_submit(core, quad)) {
       return false;
     }
   }

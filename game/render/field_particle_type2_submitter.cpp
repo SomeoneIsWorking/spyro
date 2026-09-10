@@ -8,9 +8,11 @@
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
+#include "scene_painter_order.h"
 #include "world_chunk_codec.h"
 #include "world_projection_math.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <lucent/log.h>
@@ -38,9 +40,8 @@ int16_t angleValue(uint16_t angle) {
 
 } // namespace
 
-bool spyro_field_particle_type2_submit(Core *core,
-                                       const spyro::field_particles_recipe::TexturedQuad &particle,
-                                       unsigned ordinal) {
+bool spyro_field_particle_type2_submit(
+    Core *core, const spyro::field_particles_recipe::TexturedQuad &particle) {
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   const int clipRight = gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
@@ -112,48 +113,50 @@ bool spyro_field_particle_type2_submit(Core *core,
 
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "particles:type2");
   core->game->gpu.s_seen3d = 1;
-  core->game->rq.emitOrQueue(core,
-                             1,
-                             RQ_WORLD,
-                             RQ_OM_DEPTH,
-                             4,
-                             ((particle.colorCommand >> 24) & 0x20u) != 0,
-                             0,
-                             xs,
-                             ys,
-                             nullptr,
-                             nullptr,
-                             us,
-                             vs,
-                             rs,
-                             gs,
-                             bs,
-                             depth,
-                             mode,
-                             (tpage & 0xf) * 64,
-                             ((tpage >> 4) & 1) * 256,
-                             (clut & 0x3f) * 16,
-                             (clut >> 6) & 0x1ff,
-                             core->game->gpu.s_tw_mx,
-                             core->game->gpu.s_tw_my,
-                             core->game->gpu.s_tw_ox,
-                             core->game->gpu.s_tw_oy,
-                             core->game->gpu.s_da_x0,
-                             core->game->gpu.s_da_y0,
-                             core->game->gpu.s_da_x1,
-                             core->game->gpu.s_da_y1,
-                             (tpage >> 5) & 3,
-                             nullptr,
-                             -1,
-                             core->rsub.projParams.pzToOrd(center.pz),
-                             0,
-                             0,
-                             {},
-                             0,
-                             (uint32_t)otDepth);
+  core->game->rq.emitOrQueue(
+      core,
+      1,
+      RQ_WORLD,
+      RQ_OM_DEPTH,
+      4,
+      ((particle.colorCommand >> 24) & 0x20u) != 0,
+      0,
+      xs,
+      ys,
+      nullptr,
+      nullptr,
+      us,
+      vs,
+      rs,
+      gs,
+      bs,
+      depth,
+      mode,
+      (tpage & 0xf) * 64,
+      ((tpage >> 4) & 1) * 256,
+      (clut & 0x3f) * 16,
+      (clut >> 6) & 0x1ff,
+      core->game->gpu.s_tw_mx,
+      core->game->gpu.s_tw_my,
+      core->game->gpu.s_tw_ox,
+      core->game->gpu.s_tw_oy,
+      core->game->gpu.s_da_x0,
+      core->game->gpu.s_da_y0,
+      core->game->gpu.s_da_x1,
+      core->game->gpu.s_da_y1,
+      (tpage >> 5) & 3,
+      nullptr,
+      -1,
+      core->rsub.projParams.pzToOrd(center.pz),
+      0,
+      0,
+      spyro::scene_painter_order::particle(
+          (uint16_t)std::clamp<int32_t>(otDepth, 0, 2047), particle.scanOrdinal, 0u),
+      0,
+      (uint32_t)otDepth);
   lucent::debug("particles",
                 "type2 ordinal={} address=0x{:08x} depth={}",
-                ordinal,
+                particle.scanOrdinal,
                 particle.address,
                 otDepth);
   return true;

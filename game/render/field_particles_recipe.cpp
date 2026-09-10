@@ -60,6 +60,7 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
       const uint32_t color0 = ram.r32(address + 0x10u);
       const uint32_t color1 = ram.r32(address + 0x14u);
       out.lines.push_back(Line{address,
+                               i,
                                (int16_t)xy0,
                                (int16_t)(xy0 >> 16),
                                (int16_t)z0x1,
@@ -89,6 +90,7 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
       const uint32_t xy = ram.r32(address + 4u);
       const uint32_t zAndSizeAngle = ram.r32(address + 8u);
       out.texturedQuads.push_back(TexturedQuad{address,
+                                               i,
                                                ram.r8(address),
                                                (int16_t)xy,
                                                (int16_t)(xy >> 16),
@@ -108,6 +110,7 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
     const uint32_t zAndBias = ram.r32(address + 8u);
     const uint32_t color = ram.r32(address + 0xcu);
     out.points.push_back(Point{address,
+                               i,
                                (int16_t)xy,
                                (int16_t)(xy >> 16),
                                (int16_t)zAndBias,

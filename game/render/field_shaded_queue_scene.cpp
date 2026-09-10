@@ -178,10 +178,6 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
       ++frame.culled;
       continue;
     }
-    if (core->mem_r8(actor + 0x57u) != 0u) {
-      return reset(frame, Status::UnsupportedTransformScale);
-    }
-
     field_shaded_queue_recipe::Record record{.actor = actor,
                                              .actorOrdinal = qi,
                                              .meshIndex = mesh->index,
@@ -253,8 +249,6 @@ const char *statusName(Status status) {
     return "invalid mesh";
   case Status::InvalidShadowCursor:
     return "invalid shadow cursor";
-  case Status::UnsupportedTransformScale:
-    return "unsupported transform scale";
   case Status::UnsupportedVertexLighting:
     return "unsupported vertex lighting";
   }

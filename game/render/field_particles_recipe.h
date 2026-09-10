@@ -16,6 +16,10 @@ enum class Status : uint8_t {
 
 struct Point {
   uint32_t address = 0;
+  // Position in the guest's single scan of the emit list. The three arms interleave in that scan
+  // and are linked into the ordering table from it, so the draw order between a point, a line and a
+  // textured quad is this number and not the order of the three lists below.
+  uint32_t scanOrdinal = 0;
   int16_t x = 0;
   int16_t y = 0;
   int16_t z = 0;
@@ -30,6 +34,7 @@ struct Point {
 // its own vertex colour, whose unused command byte carries the shared depth bias.
 struct Line {
   uint32_t address = 0;
+  uint32_t scanOrdinal = 0;
   int16_t x0 = 0;
   int16_t y0 = 0;
   int16_t z0 = 0;
@@ -47,6 +52,7 @@ struct Line {
 
 struct TexturedQuad {
   uint32_t address = 0;
+  uint32_t scanOrdinal = 0;
   uint8_t textureClass = 0;
   int16_t x = 0;
   int16_t y = 0;

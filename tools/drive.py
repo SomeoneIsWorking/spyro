@@ -136,6 +136,19 @@ class Port:
         w = self.words(G_TITLESCREEN, 6)
         return TitleState(w[0], w[1], w[2], w[3], w[4], w[5])
 
+    def gates(self) -> None:
+        """Ask the port to list this level's gates, their target levels and path nodes."""
+        self._send("gates")
+
+    def gate_teleport(self, gate: int, node: int) -> None:
+        """Place Spyro on a gate's own path node, through the port's existing gate diagnostic.
+
+        Walking to an Artisans portal stalls about 11k view units out: the portals sit above the
+        hub and the steering loop has no climb. This is the diagnostic route the port already
+        provides for reaching one, and it is a driving aid, never something a product path may do.
+        """
+        self._send(f"gate-teleport {gate} {node}")
+
     def shot(self, path: str) -> None:
         Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)
         self._send(f"shot {path}")
@@ -261,6 +274,10 @@ class Seeker:
     # Steps of no progress before the walk starts hopping. Portals sit on raised platforms, so
     # steering alone circles the base forever; a jump is ordinary traversal, not a state write.
     JUMP_AFTER = 3
+    # Bearing offsets tried in turn once the straight line stops closing the gap. Walking around an
+    # obstacle is what a player does; pressing harder into the same wall is not. Index 0 is the
+    # straight line, so an unobstructed walk never detours.
+    DETOURS = (0, 60, -60, 120, -120)
 
     # 0 deg is straight ahead and +90 is screen-right, so these are the pad's own compass sectors.
     SECTORS = (
@@ -321,11 +338,14 @@ class Seeker:
                     best, stalled = None, 0
                     continue
             hop = stalled >= self.JUMP_AFTER
+            detour = self.DETOURS[stalled % len(self.DETOURS)] if stalled else 0
+            steered = (bearing + detour + 180.0) % 360.0 - 180.0
             print(
-                f"seek: {distance} away, bearing {bearing:+.0f}{' (hopping)' if hop else ''}",
+                f"seek: {distance} away, bearing {bearing:+.0f}"
+                f"{f' detour {detour:+d}' if detour else ''}{' (hopping)' if hop else ''}",
                 file=sys.stderr,
             )
-            buttons = self._sector(bearing)
+            buttons = self._sector(steered)
             for button in buttons:
                 self._port.press(button)
             if hop:
@@ -550,6 +570,13 @@ def main() -> int:
         "guest camera each step; Spyro 1's gems are classes 83..87",
     )
     parser.add_argument(
+        "--gate-teleport",
+        default="",
+        metavar="GATE:NODE",
+        help="place Spyro on that gate's path node before anything else, using the port's own "
+        "gate diagnostic; the walk cannot climb to a portal",
+    )
+    parser.add_argument(
         "--seek-portal",
         action="store_true",
         help="walk to the nearest level portal instead, which is how a homeworld route reaches a "
@@ -575,6 +602,13 @@ def main() -> int:
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
         if args.settle:
             port.run(args.settle)
+        if args.gate_teleport:
+            gate, separator, node = args.gate_teleport.partition(":")
+            if not separator:
+                parser.error(f"--gate-teleport expects GATE:NODE, got {args.gate_teleport!r}")
+            port.gates()
+            port.gate_teleport(int(gate), int(node))
+            port.run(args.settle or 1)
         if args.seek_class >= 0 and args.seek_portal:
             parser.error("--seek-class and --seek-portal name two different destinations")
         if args.seek_class >= 0:

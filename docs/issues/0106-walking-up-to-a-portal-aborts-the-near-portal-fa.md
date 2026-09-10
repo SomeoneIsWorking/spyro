@@ -1,6 +1,6 @@
 # 0106 — Walking up to a portal aborts: the near-portal family emits no faces
 
-Status: fixed (mesh visibility); the mask still clips against the mesh aperture
+Status: open — the facing test now blocks the portal route; mesh visibility fixed; the mask still clips against the mesh aperture
 Affects: `docs/project-state.md` — homeworld portal presentation; blocks reaching a level on foot,
 and with it live observation of the stage-10 return-home cancellation (`0104` is unrelated).
 
@@ -83,6 +83,33 @@ native-render abort. Two unit tests cover it, one built from the measured points
 The `s1 == 2` sub-case — the aperture qualifies but no point is on screen, and the portal is closer
 than `0x1000` — needs the camera-facing dot product retail builds through `RotVec8ToMatrix`, which
 is not recovered. That path refuses by name (`FacingTestUnrecovered`) rather than guessing.
+
+## The route now reaches the portal, and stops on the unrecovered facing test
+
+`game/core/spyro_gate_debug.cpp` had a `gates` / `gate-teleport` REPL pair that nothing could reach:
+no runtime overrode `GameRuntime::replCommand`, so the REPL answered `? gate-teleport`. Wiring it
+through `Spyro1Runtime::replCommand` makes it work, and it lists Artisans' five gates with their
+target levels and two path nodes each. Teleporting onto gate 0's first node puts Spyro about 1,000
+view units from the portal, which the seeker closes to 696 — the walk alone stalls at 11,272 because
+the portals sit above the hub and the steering loop cannot climb.
+
+At that range the frame refuses by name, as designed:
+
+    [fieldsky] REFUSED status=invalid portal recipe reason=portal_recipe portals=5 active=1 valid_empty=0
+
+That is `FacingTestUnrecovered`: the aperture qualifies, no point is on screen, and the portal is
+inside `0x1000`, which is retail's `s1 == 2` case. Recovering it is now the top blocker for reaching
+a level on foot, and with it for observing the stage-10 return-home cancellation live.
+
+`RotVec8ToMatrix` (`0x80016D2C`) is what it needs. Read: it is GTE-based, starting from the identity
+(or a caller-supplied base in `a2`) and composing one axis at a time with `MVMVA 1,0,0,3,0`, taking
+each angle byte as a `*2` index into the sine table `D_8006CBF8` and the cosine table `D_8006CC78`
+(the same `kSineTable` the port already uses, offset 0x80). The angle order is yaw, then pitch, then
+roll — `(at >> 15) & 0x1FE` selects byte 2 first, `(at & 0xFF00) >> 8 << 1` byte 1 next. The caller
+at `0x80051DB4` feeds it the camera's three angles shifted right by 4, rotates `(0x1000, 0, 0)` by
+the result, and drops the portal when that vector's dot product with `firstPoint - camera` is
+negative. Do NOT reuse `portalMatrices`' X*Y*Z composition for this: it is a different routine and
+the order is not the same.
 
 ## What is still open
 

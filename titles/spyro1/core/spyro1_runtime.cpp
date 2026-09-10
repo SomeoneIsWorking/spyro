@@ -8,6 +8,7 @@
 #include "spyro1_frame_driver.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
+#include "spyro_gate_debug.h"
 #include "temporal_scene.h"
 #include "temporal_scene_source.h"
 
@@ -129,6 +130,10 @@ const GuestPadBufferLayout *Spyro1Runtime::guestPadBufferLayout() const {
       .slotPointerStride = 4u,
   };
   return &layout;
+}
+
+bool Spyro1Runtime::replCommand(Core &core, const char *command, const char *line) {
+  return spyro::gate_debug::replCommand(&core, command, line);
 }
 
 } // namespace spyro1

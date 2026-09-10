@@ -25,6 +25,10 @@ public:
   const GuestPadBufferLayout *guestPadBufferLayout() const override;
   std::unique_ptr<TemporalFramePresentation> createTemporalFramePresentation(Game &game) override;
   const PlatformHlePlan *platformHlePlan() const override;
+  // The title's own developer commands. `gates` and `gate-teleport` were written and then never
+  // reachable, because nothing overrode this boundary: the REPL answered "? gate-teleport" and the
+  // only route to a level portal stayed unavailable.
+  bool replCommand(Core &core, const char *command, const char *line) override;
 
 private:
   static const GuestProgramImage programImage_;

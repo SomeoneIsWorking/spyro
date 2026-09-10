@@ -9,7 +9,47 @@
 #include "spyro_game.h"
 
 #include <lucent/log.h>
+
+#include <cstddef>
+#include <span>
 #include <vector>
+
+namespace {
+
+// Names every draw the plan looked at, not just the plan's own verdict. A submitter status like
+// "invalid recipe" is a class of causes — an unbuildable frame, a refusing recipe, a non-finite
+// vertex — and reading it without the per-draw refusal cannot tell them apart.
+void reportDraws(const char *which,
+                 std::span<const spyro::cyclorama_portal_submitter::Draw> draws) {
+  for (std::size_t index = 0; index < draws.size(); ++index) {
+    const auto &draw = draws[index];
+    if (draw.frame == nullptr || draw.recipe == nullptr) {
+      lucent::debug("fieldsky", "  {} draw {}: null frame or recipe", which, index);
+      continue;
+    }
+    lucent::debug("fieldsky",
+                  "  {} draw {}: portal={} frame={}/{} recipe={}/{} faces={} distance={} mask={} "
+                  "objects={}/{} candidates={} box_rejected={} aperture_rejected={} accepted={}",
+                  which,
+                  index,
+                  draw.frame->portalOrdinal,
+                  spyro::cyclorama_portal_mesh::statusName(draw.frame->status),
+                  draw.frame->refusal,
+                  spyro::cyclorama_portal_mesh::statusName(draw.recipe->status),
+                  draw.recipe->refusal,
+                  draw.recipe->faces.size(),
+                  draw.frame->distance,
+                  draw.frame->maskVisible,
+                  draw.recipe->survivingObjects,
+                  draw.recipe->assetObjects,
+                  draw.recipe->candidates,
+                  draw.recipe->boxRejected,
+                  draw.recipe->apertureRejected,
+                  draw.recipe->sourceAccepted);
+  }
+}
+
+} // namespace
 
 bool spyro_field_cyclorama_submit(Core *core) {
   const auto recipe = spyro::cyclorama_scene_recipe::prepare(core);
@@ -60,12 +100,29 @@ bool spyro_field_cyclorama_submit(Core *core) {
       core, core->game->rq, spyro::cyclorama_portal_mesh::kProducerKey, farDraws);
   if (farPlan.status != spyro::cyclorama_portal_submitter::Status::Ready &&
       farPlan.status != spyro::cyclorama_portal_submitter::Status::ValidEmpty) {
+    // Named, because these three refusals used to return false in silence: the frame aborted with
+    // only the producer key, and the last thing this channel had printed was the PREVIOUS frame's
+    // PASS. Walking a portal into view is exactly the case they exist to catch.
+    lucent::debug("fieldsky",
+                  "REFUSED far-portal status={} draws={} near_draws={} frames={}",
+                  spyro::cyclorama_portal_submitter::statusName(farPlan.status),
+                  farDraws.size(),
+                  nearDraws.size(),
+                  recipe.portalFrames.size());
+    reportDraws("far", farDraws);
     return false;
   }
   const auto nearPlan = spyro::cyclorama_portal_submitter::prepare(
       core, core->game->rq, spyro::cyclorama_portal_mesh::kNearProducerKey, nearDraws);
   if (nearPlan.status != spyro::cyclorama_portal_submitter::Status::Ready &&
       nearPlan.status != spyro::cyclorama_portal_submitter::Status::ValidEmpty) {
+    lucent::debug("fieldsky",
+                  "REFUSED near-portal status={} draws={} far_draws={} frames={}",
+                  spyro::cyclorama_portal_submitter::statusName(nearPlan.status),
+                  nearDraws.size(),
+                  farDraws.size(),
+                  recipe.portalFrames.size());
+    reportDraws("near", nearDraws);
     return false;
   }
   spyro::cyclorama_mask_submitter::submit(core, core->game->rq, maskDraws, maskPlan);
@@ -75,6 +132,11 @@ bool spyro_field_cyclorama_submit(Core *core) {
                             recipe.mainSelection,
                             spyro::cyclorama_scene_recipe::kCamera + 0x14u,
                             spyro::cyclorama_scene_recipe::kCamera)) {
+    lucent::debug("fieldsky",
+                  "REFUSED terrain selection={} portals={} active={}",
+                  recipe.mainSelection,
+                  recipe.portalCount,
+                  recipe.activePortals);
     return false;
   }
   spyro::cyclorama_scene_recipe::publishSpin(core, recipe);

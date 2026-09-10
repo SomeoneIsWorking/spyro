@@ -129,7 +129,9 @@ DISPATCHES the guest's own `0x8002C664` — the same call the sequence makes on 
 wrap — rather than transcribing its ten globals, so there is no hand-written second copy to drift.
 Six focused tests cover the classification, including that the glide is not gated on the tally flag.
 The glide cancellation is unit-tested but NOT yet observed live: reaching stage 10 needs a portal
-entry from Artisans followed by pause-menu Quit, which the driver cannot yet reach.
+entry from Artisans followed by pause-menu Quit. `tools/drive.py gameplay --seek-portal` now reads
+the six `g_Portals` records and walks to the nearest one, hopping when steering alone stalls, but the
+approach aborts at portal distance `0x13CC` on the near-portal family — issue 0106.
 
 The level entrance sweep (stage 9, `func_8002E000`) is deliberately still absent. Its exit is inside
 its own update — `g_Gamestate = GS_Playing` once `g_Camera.m_Rotation.y` has swept below `-0x200`,
@@ -363,7 +365,12 @@ near-family recipe produces 94 clipped triangles. The source-backed `0x8004FEA0`
 two clipped full-screen triangles through a dedicated painter object; a controlled Left route runs
 through the visible-portal path, and the gate-teleport route advances to the non-type-0 particle
 refusal. The production-compiled `0x80050240` recipe and family submitter remain ready for a future
-mid-distance portal frame. The current replay reaches this complete
+mid-distance portal frame. Walking up to a portal instead reaches the near family and aborts: the
+recipe examines 893 candidates over 10 surviving objects and the aperture rejects 738 of them with
+zero accepted, which the submitter reads as an invalid recipe (issue 0106). The `fieldsky` channel
+now names each refusing draw with its frame/recipe status, refusal string and reject counters, so
+the three previously silent `return false` paths in `fx_field_cyclorama.cpp` no longer abort a frame
+without saying why. The current replay reaches this complete
 stage-0 composition without a native-render refusal;
 the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
 variants. A normal paced audio run after the shared CDC filter fix (`scratch/logs/spyro-xa-after-filter-20260828.log`)

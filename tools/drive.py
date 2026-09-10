@@ -62,6 +62,9 @@ MOBY_BYTES = 0x58
 MOBY_CLASS_WORD = 52         # the class is the high half of this word
 MOBY_STATE = 72
 MAX_LEVEL_MOBYS = 1024
+G_PORTALS = 0x80078640       # six Portal pointers
+G_PORTAL_COUNT = 0x800758BC
+PORTAL_CENTER = 0x20         # Portal::m_Center, after the skybox pointer, counts and world sector
 
 
 def signed(value: int) -> int:
@@ -181,21 +184,83 @@ class Port:
 
 
 
+def moby_class_targets(port: "Port", wanted_class: int) -> list[tuple[int, int, int]]:
+    """World positions of every live Moby of a class. Read once: level Mobys do not walk away."""
+    first = port.word(G_LEVEL_MOBYS)
+    if not (0x80000000 <= first < 0x80200000):
+        raise Refusal(f"g_LevelMobys holds 0x{first:08X}, which is not a RAM address")
+    words: list[int] = []
+    found: list[tuple[int, int, int]] = []
+    index = 0
+    while index < MAX_LEVEL_MOBYS:
+        need = (index + 1) * MOBY_BYTES // 4 + 1
+        while len(words) < need:
+            words.extend(port.words(first + len(words) * 4, 64))
+        base = index * MOBY_BYTES // 4
+        state = words[base + MOBY_STATE // 4]
+        if state & 0x80:
+            if (state & 0xFF) == 0xFF:
+                break
+            index += 1
+            continue
+        if (words[base + MOBY_CLASS_WORD // 4] >> 16) & 0xFFFF == wanted_class:
+            found.append(tuple(signed(words[base + 3 + i]) for i in range(3)))
+        index += 1
+    return found
+
+
+def portal_targets(port: "Port") -> list[tuple[int, int, int]]:
+    """Centres of the level's portals, which are a loaded table rather than Mobys.
+
+    A homeworld's portals are the only way into a level, and reaching a level is what the
+    return-home glide needs. g_Portals holds up to six pointers and g_PortalCount says how many are
+    live; each Portal carries its own centre after the skybox pointer, point count, unknown vector
+    and world sector.
+    """
+    count = port.word(G_PORTAL_COUNT)
+    if not 0 <= count <= 6:
+        raise Refusal(f"g_PortalCount holds {count}, which is outside the table's six slots")
+    found: list[tuple[int, int, int]] = []
+    for index in range(count):
+        portal = port.word(G_PORTALS + index * 4)
+        if not (0x80000000 <= portal < 0x80200000):
+            raise Refusal(
+                f"g_Portals[{index}] holds 0x{portal:08X}, which is not a RAM address, so the "
+                "portal table was read before the level finished loading"
+            )
+        center = tuple(signed(v) for v in port.words(portal + PORTAL_CENTER, 3))
+        # Printed per portal, not just counted: a centre in the wrong units or read from the wrong
+        # field looks exactly like an unreachable destination once the walk starts.
+        print(
+            f"seek: portal {index} at 0x{portal:08X} level {signed(port.word(portal + 0x1C))} "
+            f"center {center}",
+            file=sys.stderr,
+        )
+        found.append(center)
+    return found
+
+
 class Seeker:
-    """Walk to the nearest live Moby of a class, steering from the guest's own camera each step.
+    """Walk to the nearest of a set of world positions, steering from the guest's own camera.
 
     Holding one direction cannot reach anything: the pad is camera-relative, and Artisans' gems sit
     50k units away on a bearing the start position does not face. A fixed input list cannot reach
     them either, for the same reason every fixed route in this file was replaced. So this reads the
-    level's Moby array once, then each step re-reads the camera, converts the targets into view
-    space exactly as the renderer does, and presses the eight-way pad direction whose sector
-    contains the nearest one's bearing.
+    targets once, then each step re-reads the camera, converts them into view space exactly as the
+    renderer does, and presses the eight-way pad direction whose sector contains the nearest one's
+    bearing.
+
+    The targets themselves come from a named source (`moby_class_targets`, `portal_targets`) so a
+    new destination is a reader, not a second copy of the steering loop.
     """
 
     STEP = 24  # frames per steering decision; a whole walk cycle, short enough to correct a wall
     ARRIVED = 500  # view-space units (~1/4 of world scale); close enough to be on screen
-    STALL_STEPS = 15  # steps without closing the gap before the walk is refused by name
+    STALL_STEPS = 15  # steps without closing the gap before this target is abandoned
     PROGRESS = 200  # view-space units that count as having closed the gap
+    # Steps of no progress before the walk starts hopping. Portals sit on raised platforms, so
+    # steering alone circles the base forever; a jump is ordinary traversal, not a state write.
+    JUMP_AFTER = 3
 
     # 0 deg is straight ahead and +90 is screen-right, so these are the pad's own compass sectors.
     SECTORS = (
@@ -209,22 +274,21 @@ class Seeker:
         (157.5, ("down",)),
     )
 
-    def __init__(self, port: "Port", wanted_class: int, budget: int = 6000):
+    def __init__(self, port: "Port", what: str, targets, budget: int = 6000):
         self._port = port
-        self._class = wanted_class
+        self._what = what
+        self._targets = list(targets)
         self._budget = budget
 
     def walk(self) -> int:
         """Returns the view-space distance actually reached, or refuses by name."""
-        targets = self._scan()
+        targets = self._targets
         if not targets:
             raise Refusal(
-                f"no live Moby of class {self._class} is in this level; the class is wrong, or "
+                f"nothing to seek: this level carries no {self._what}, so the target is wrong or "
                 "this is not the level that carries it"
             )
-        print(
-            f"seek: {len(targets)} live instance(s) of class {self._class}", file=sys.stderr
-        )
+        print(f"seek: {len(targets)} live {self._what} target(s)", file=sys.stderr)
         remaining = list(targets)
         best = None
         stalled = 0
@@ -232,13 +296,13 @@ class Seeker:
         while spent < self._budget:
             if not remaining:
                 raise Refusal(
-                    f"every live instance of class {self._class} is unreachable from the start: "
-                    "each one stalled at a fixed distance, so the route needs a jump or a different "
-                    "level entry, not more walking"
+                    f"every {self._what} target is unreachable from the start: each one stalled at "
+                    "a fixed distance, so the route needs a jump or a different level entry, not "
+                    "more walking"
                 )
             index, distance, bearing = self._nearest(remaining)
             if distance <= self.ARRIVED:
-                print(f"seek: reached class {self._class} at {distance}", file=sys.stderr)
+                print(f"seek: reached {self._what} at {distance}", file=sys.stderr)
                 return distance
             if best is None or distance < best - self.PROGRESS:
                 best, stalled = distance, 0
@@ -249,50 +313,33 @@ class Seeker:
                     # gems around one hub, so abandoning this one and taking the next nearest is a
                     # real route, where pressing harder into the same wall is not.
                     print(
-                        f"seek: instance {index} stuck at {distance}; trying the next nearest",
+                        f"seek: {self._what} target {index} stuck at {distance}; trying the next "
+                        "nearest",
                         file=sys.stderr,
                     )
                     remaining.pop(index)
                     best, stalled = None, 0
                     continue
-            print(f"seek: {distance} away, bearing {bearing:+.0f}", file=sys.stderr)
+            hop = stalled >= self.JUMP_AFTER
+            print(
+                f"seek: {distance} away, bearing {bearing:+.0f}{' (hopping)' if hop else ''}",
+                file=sys.stderr,
+            )
             buttons = self._sector(bearing)
             for button in buttons:
                 self._port.press(button)
+            if hop:
+                self._port.tap("cross", 8)
             self._port.run(self.STEP)
             for button in buttons:
                 self._port.release(button)
             spent += self.STEP
         raise Refusal(
-            f"class {self._class} was still about {best} away after {self._budget} steering frames"
+            f"the nearest {self._what} was still about {best} away after {self._budget} steering "
+            "frames"
         )
 
     # -- observation --------------------------------------------------------
-
-    def _scan(self) -> list[tuple[int, int, int]]:
-        """World positions of every live instance. Read once: level Mobys do not walk away."""
-        first = self._port.word(G_LEVEL_MOBYS)
-        if not (0x80000000 <= first < 0x80200000):
-            raise Refusal(f"g_LevelMobys holds 0x{first:08X}, which is not a RAM address")
-        words: list[int] = []
-        found: list[tuple[int, int, int]] = []
-        index = 0
-        while index < MAX_LEVEL_MOBYS:
-            need = (index + 1) * MOBY_BYTES // 4 + 1
-            while len(words) < need:
-                chunk = self._port.words(first + len(words) * 4, 64)
-                words.extend(chunk)
-            base = index * MOBY_BYTES // 4
-            state = words[base + MOBY_STATE // 4]
-            if state & 0x80:
-                if (state & 0xFF) == 0xFF:
-                    break
-                index += 1
-                continue
-            if (words[base + MOBY_CLASS_WORD // 4] >> 16) & 0xFFFF == self._class:
-                found.append(tuple(signed(words[base + 3 + i]) for i in range(3)))
-            index += 1
-        return found
 
     def _matrix(self, words: list[int]) -> list[list[int]]:
         def half(value: int, high: bool) -> int:
@@ -502,6 +549,12 @@ def main() -> int:
         help="walk to the nearest live Moby of this class before the holds/taps, steering from the "
         "guest camera each step; Spyro 1's gems are classes 83..87",
     )
+    parser.add_argument(
+        "--seek-portal",
+        action="store_true",
+        help="walk to the nearest level portal instead, which is how a homeworld route reaches a "
+        "level; mutually exclusive with --seek-class",
+    )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     args = parser.parse_args()
 
@@ -522,8 +575,12 @@ def main() -> int:
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
         if args.settle:
             port.run(args.settle)
+        if args.seek_class >= 0 and args.seek_portal:
+            parser.error("--seek-class and --seek-portal name two different destinations")
         if args.seek_class >= 0:
-            Seeker(port, args.seek_class).walk()
+            Seeker(port, f"class {args.seek_class}", moby_class_targets(port, args.seek_class)).walk()
+        elif args.seek_portal:
+            Seeker(port, "portal", portal_targets(port)).walk()
         for button in args.hold:
             port.press(button)
         if args.hold:

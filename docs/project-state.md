@@ -319,7 +319,14 @@ Artisans: the cutscene runs to completion through all eight `m_State` branches â
 `0x80058BA8` is wired as the last FIELD producer via `game/render/fx_glow_sparkle.*`. Measured live in
 Artisans: one active glow record fanning 4â€“8 faces per field, one live sparkle emitting two lines and
 then aging out to `alive=0` on its own schedule, `dt=2`, no refusal and no Lightrec fallback over
-20.5 M translated blocks.
+20.5 M translated blocks. Its screen-edge outcode carried retail's fixed 512 right edge, which in a
+684-wide widescreen frame put every vertex of a glow past x=512 outside the same edge and dropped the
+whole fan: the gem halo the seeker walks to sits there, so the gem lost its glow. `outcode` now takes
+the frame's own right edge. Measured with `tools/actor_oracle_diff.py` over a seeked Artisans capture:
+the glow producer `0x800580F4` went from 0 of 37 oracle frames to 37 of 37, the `offscreen` reject
+census over the walk fell 79 to 14, and the retail-only primitives on the final frame fell 6 to 2 (0 on
+frame -20). The 2 that remain are a second, smaller `608080` fan retail registers inside `0x80019698`
+itself, after the port's producers have already read the record table.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

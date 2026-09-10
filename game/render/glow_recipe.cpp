@@ -2,6 +2,7 @@
 
 #include "actor_transform_math.h"
 #include "core.h"
+#include "gpu_vk.h"
 #include "proj_params.h"
 
 #include <algorithm>
@@ -37,7 +38,7 @@ bool span(std::uint32_t address, std::uint32_t bytes) {
 
 } // namespace
 
-std::uint32_t outcode(std::int32_t x, std::int32_t y) {
+std::uint32_t outcode(std::int32_t x, std::int32_t y, std::int32_t right) {
   std::uint32_t code = 0;
   if (y <= 1) {
     code |= 1u;
@@ -45,7 +46,7 @@ std::uint32_t outcode(std::int32_t x, std::int32_t y) {
   if (y >= 0x100) {
     code |= 2u;
   }
-  if (x >= 0x200) {
+  if (x >= right) {
     code |= 4u;
   }
   if (x <= 0) {
@@ -94,6 +95,10 @@ Recipe derive(Core *core) {
 
   psxport::native_projection::FixedAffine affine{};
   affine.m = actor_transform_math::readCameraMatrix(core).value;
+  // Retail's right edge is the console's 512; a widescreen frame is wider, and a glow between 512
+  // and that width is on screen. Reading it here keeps the whole fan on one edge policy.
+  const std::int32_t clipRight =
+      gpu_vk_wide_engine(core) ? (std::int32_t)gpu_vk_wide_engine_w(core) : 512;
   const std::int32_t cameraX = (std::int32_t)core->mem_r32(kCamera + 0x28u);
   const std::int32_t cameraY = (std::int32_t)core->mem_r32(kCamera + 0x2Cu);
   const std::int32_t cameraZ = (std::int32_t)core->mem_r32(kCamera + 0x30u);
@@ -156,7 +161,7 @@ Recipe derive(Core *core) {
     const std::int16_t scale =
         (std::int16_t)(((std::int32_t)core->mem_r32(record + kRadius) << 12) / (std::int32_t)viewZ);
     const std::uint32_t colour = core->mem_r32(record + kColour) & 0x00ffffffu;
-    const std::uint32_t centreCode = outcode(centre.sx, centre.sy);
+    const std::uint32_t centreCode = outcode(centre.sx, centre.sy, clipRight);
     const Vertex centreVertex{
         centre.sx, centre.sy, centre.px, centre.py, centre.pz * (float)(1 << shift)};
 
@@ -167,7 +172,7 @@ Recipe derive(Core *core) {
       const std::int32_t y = (std::int32_t)(((std::int64_t)ir2 * scale) >> 12) + centre.sy;
       return std::pair<Vertex, std::uint32_t>{
           Vertex{(std::int16_t)x, (std::int16_t)y, (float)x, (float)y, centreVertex.viewZ},
-          outcode(x, y)};
+          outcode(x, y, clipRight)};
     };
 
     // The fan is open: N ring points give N-1 triangles, because the direction table already

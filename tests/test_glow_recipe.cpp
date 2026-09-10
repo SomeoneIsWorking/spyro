@@ -109,11 +109,23 @@ void test_a_bias_past_the_front_of_the_table_drops_the_record() {
 }
 
 void test_outcode_names_each_screen_edge_separately() {
-  CHECK_EQ(spyro::glow_recipe::outcode(100, 100), 0u);
-  CHECK_EQ(spyro::glow_recipe::outcode(100, 1), 1u);
-  CHECK_EQ(spyro::glow_recipe::outcode(100, 0x100), 2u);
-  CHECK_EQ(spyro::glow_recipe::outcode(0x200, 100), 4u);
-  CHECK_EQ(spyro::glow_recipe::outcode(0, 100), 8u);
+  CHECK_EQ(spyro::glow_recipe::outcode(100, 100, 0x200), 0u);
+  CHECK_EQ(spyro::glow_recipe::outcode(100, 1, 0x200), 1u);
+  CHECK_EQ(spyro::glow_recipe::outcode(100, 0x100, 0x200), 2u);
+  CHECK_EQ(spyro::glow_recipe::outcode(0x200, 100, 0x200), 4u);
+  CHECK_EQ(spyro::glow_recipe::outcode(0, 100, 0x200), 8u);
+}
+
+// A widescreen frame is wider than the console's 512, so the pixels between 512 and that width are
+// on screen. Measured in Artisans: the gem glow's centre projects past 512 in a 684-wide frame, and
+// a fixed 512 edge put all three vertices of every triangle outside the same edge, so the whole fan
+// was dropped and the gem lost its halo while every retail glow triangle showed up as retail-only
+// in the actor oracle.
+void test_the_right_edge_follows_the_widescreen_frame() {
+  CHECK_EQ(spyro::glow_recipe::outcode(0x250, 100, 684), 0u);
+  CHECK_EQ(spyro::glow_recipe::outcode(684, 100, 684), 4u);
+  // Widening the horizontal edge must not move the vertical one.
+  CHECK_EQ(spyro::glow_recipe::outcode(0x250, 0x100, 684), 2u);
 }
 
 // The far half of the table is stretched by 0x40 bins past 0xFF and stops at the last bin, so two
@@ -134,6 +146,7 @@ int main() {
   RUN(a_zero_point_count_is_an_empty_record_not_a_refusal);
   RUN(a_bias_past_the_front_of_the_table_drops_the_record);
   RUN(outcode_names_each_screen_edge_separately);
+  RUN(the_right_edge_follows_the_widescreen_frame);
   RUN(ot_bin_steps_past_the_near_half_and_clamps_at_the_last_bin);
   return pt_summary();
 }

@@ -29,6 +29,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import subprocess
@@ -53,6 +54,18 @@ GS_CUTSCENE = 14
 GS_CREDITS = 15
 
 TSM_INIT, TSM_MENU, TSM_LOADING, TSM_DEMO = 0, 1, 2, 3
+
+# Steering inputs, from external/spyro-1 the same way the state words above are.
+G_CAMERA = 0x80076DD0        # 5 packed matrix words, then the position at +0x28
+G_LEVEL_MOBYS = 0x80075828   # pointer to the level's Moby array
+MOBY_BYTES = 0x58
+MOBY_CLASS_WORD = 52         # the class is the high half of this word
+MOBY_STATE = 72
+MAX_LEVEL_MOBYS = 1024
+
+
+def signed(value: int) -> int:
+    return value - 0x100000000 if value >= 0x80000000 else value
 
 
 class Refusal(RuntimeError):
@@ -165,6 +178,162 @@ class Port:
         for _ in self._lines():
             pass
         self._log.close()
+
+
+
+class Seeker:
+    """Walk to the nearest live Moby of a class, steering from the guest's own camera each step.
+
+    Holding one direction cannot reach anything: the pad is camera-relative, and Artisans' gems sit
+    50k units away on a bearing the start position does not face. A fixed input list cannot reach
+    them either, for the same reason every fixed route in this file was replaced. So this reads the
+    level's Moby array once, then each step re-reads the camera, converts the targets into view
+    space exactly as the renderer does, and presses the eight-way pad direction whose sector
+    contains the nearest one's bearing.
+    """
+
+    STEP = 24  # frames per steering decision; a whole walk cycle, short enough to correct a wall
+    ARRIVED = 500  # view-space units (~1/4 of world scale); close enough to be on screen
+    STALL_STEPS = 15  # steps without closing the gap before the walk is refused by name
+    PROGRESS = 200  # view-space units that count as having closed the gap
+
+    # 0 deg is straight ahead and +90 is screen-right, so these are the pad's own compass sectors.
+    SECTORS = (
+        (-157.5, ("down", "left")),
+        (-112.5, ("left",)),
+        (-67.5, ("up", "left")),
+        (-22.5, ("up",)),
+        (22.5, ("up", "right")),
+        (67.5, ("right",)),
+        (112.5, ("down", "right")),
+        (157.5, ("down",)),
+    )
+
+    def __init__(self, port: "Port", wanted_class: int, budget: int = 6000):
+        self._port = port
+        self._class = wanted_class
+        self._budget = budget
+
+    def walk(self) -> int:
+        """Returns the view-space distance actually reached, or refuses by name."""
+        targets = self._scan()
+        if not targets:
+            raise Refusal(
+                f"no live Moby of class {self._class} is in this level; the class is wrong, or "
+                "this is not the level that carries it"
+            )
+        print(
+            f"seek: {len(targets)} live instance(s) of class {self._class}", file=sys.stderr
+        )
+        remaining = list(targets)
+        best = None
+        stalled = 0
+        spent = 0
+        while spent < self._budget:
+            if not remaining:
+                raise Refusal(
+                    f"every live instance of class {self._class} is unreachable from the start: "
+                    "each one stalled at a fixed distance, so the route needs a jump or a different "
+                    "level entry, not more walking"
+                )
+            index, distance, bearing = self._nearest(remaining)
+            if distance <= self.ARRIVED:
+                print(f"seek: reached class {self._class} at {distance}", file=sys.stderr)
+                return distance
+            if best is None or distance < best - self.PROGRESS:
+                best, stalled = distance, 0
+            else:
+                stalled += 1
+                if stalled >= self.STALL_STEPS:
+                    # Blocked by geometry or standing under a ledge. Retail levels put dozens of
+                    # gems around one hub, so abandoning this one and taking the next nearest is a
+                    # real route, where pressing harder into the same wall is not.
+                    print(
+                        f"seek: instance {index} stuck at {distance}; trying the next nearest",
+                        file=sys.stderr,
+                    )
+                    remaining.pop(index)
+                    best, stalled = None, 0
+                    continue
+            print(f"seek: {distance} away, bearing {bearing:+.0f}", file=sys.stderr)
+            buttons = self._sector(bearing)
+            for button in buttons:
+                self._port.press(button)
+            self._port.run(self.STEP)
+            for button in buttons:
+                self._port.release(button)
+            spent += self.STEP
+        raise Refusal(
+            f"class {self._class} was still about {best} away after {self._budget} steering frames"
+        )
+
+    # -- observation --------------------------------------------------------
+
+    def _scan(self) -> list[tuple[int, int, int]]:
+        """World positions of every live instance. Read once: level Mobys do not walk away."""
+        first = self._port.word(G_LEVEL_MOBYS)
+        if not (0x80000000 <= first < 0x80200000):
+            raise Refusal(f"g_LevelMobys holds 0x{first:08X}, which is not a RAM address")
+        words: list[int] = []
+        found: list[tuple[int, int, int]] = []
+        index = 0
+        while index < MAX_LEVEL_MOBYS:
+            need = (index + 1) * MOBY_BYTES // 4 + 1
+            while len(words) < need:
+                chunk = self._port.words(first + len(words) * 4, 64)
+                words.extend(chunk)
+            base = index * MOBY_BYTES // 4
+            state = words[base + MOBY_STATE // 4]
+            if state & 0x80:
+                if (state & 0xFF) == 0xFF:
+                    break
+                index += 1
+                continue
+            if (words[base + MOBY_CLASS_WORD // 4] >> 16) & 0xFFFF == self._class:
+                found.append(tuple(signed(words[base + 3 + i]) for i in range(3)))
+            index += 1
+        return found
+
+    def _matrix(self, words: list[int]) -> list[list[int]]:
+        def half(value: int, high: bool) -> int:
+            part = (value >> 16) & 0xFFFF if high else value & 0xFFFF
+            return part - 0x10000 if part >= 0x8000 else part
+
+        return [
+            [half(words[0], False), half(words[0], True), half(words[1], False)],
+            [half(words[1], True), half(words[2], False), half(words[2], True)],
+            [half(words[3], False), half(words[3], True), half(words[4], False)],
+        ]
+
+    def _nearest(self, targets) -> tuple[int, int, float]:
+        observed = self._port.words(G_CAMERA, 14)
+        matrix = self._matrix(observed)
+        camera = [signed(observed[10 + i]) for i in range(3)]
+        best = None
+        for index, position in enumerate(targets):
+            view = self._view(matrix, camera, position)
+            distance = int(math.hypot(view[0], view[2]))
+            if best is None or distance < best[1]:
+                best = (index, distance, math.degrees(math.atan2(view[0], view[2])))
+        return best
+
+    @staticmethod
+    def _view(matrix, camera, position) -> list[int]:
+        # The renderer's own packing: X is target-minus-camera, Y and Z are camera-minus-target, all
+        # arithmetic-shifted down two, and the matrix rows consume them in Y/Z/X order.
+        relative = (
+            (position[0] - camera[0]) >> 2,
+            (camera[1] - position[1]) >> 2,
+            (camera[2] - position[2]) >> 2,
+        )
+        source = (relative[1], relative[2], relative[0])
+        return [sum(matrix[row][i] * source[i] for i in range(3)) >> 12 for row in range(3)]
+
+    def _sector(self, bearing: float) -> tuple[str, ...]:
+        for limit, buttons in self.SECTORS:
+            if bearing <= limit:
+                return buttons
+        return ("down", "left")  # past +157.5 the compass wraps back to the first sector
 
 
 class Navigator:
@@ -326,6 +495,13 @@ def main() -> int:
     parser.add_argument(
         "--repeat", type=int, default=1, help="how many times to repeat the tap/after cycle"
     )
+    parser.add_argument(
+        "--seek-class",
+        type=int,
+        default=-1,
+        help="walk to the nearest live Moby of this class before the holds/taps, steering from the "
+        "guest camera each step; Spyro 1's gems are classes 83..87",
+    )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     args = parser.parse_args()
 
@@ -346,6 +522,8 @@ def main() -> int:
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
         if args.settle:
             port.run(args.settle)
+        if args.seek_class >= 0:
+            Seeker(port, args.seek_class).walk()
         for button in args.hold:
             port.press(button)
         if args.hold:

@@ -64,8 +64,10 @@ struct Recipe {
 };
 
 // The screen-edge outcode retail builds per vertex and then ANDs across the triangle: a non-zero
-// result means all three are outside one edge and the triangle is dropped.
-std::uint32_t outcode(std::int32_t x, std::int32_t y);
+// result means all three are outside one edge and the triangle is dropped. `right` is the screen's
+// own right edge: retail's is always 512, but a widescreen frame is wider and a glow past 512 is
+// then on screen, not off it.
+std::uint32_t outcode(std::int32_t x, std::int32_t y, std::int32_t right);
 // The ordering-table bin: the restored view depth shifted right seven, biased by the record's own
 // offset, pushed 0x40 further back past 0xFF and clamped at the table's last bin.
 std::int32_t otBin(std::uint32_t viewZ, std::int32_t bias);

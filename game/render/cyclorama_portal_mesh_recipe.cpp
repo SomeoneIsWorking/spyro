@@ -347,6 +347,9 @@ PortalFrame prepareFrame(
     }
   }
 
+  frame.centreX = averageX;
+  frame.centreY = averageY;
+
   const Point3 normal = point(ram, portal + kPortalNormal);
   const Point3 first = point(ram, portal + kPortalPoints + 12u);
   const int64_t orientation = (int64_t)(first.x - cameraPosition.x) * normal.x +
@@ -563,6 +566,16 @@ Recipe build(Core *core, const PortalFrame &frame) {
   out.status = out.faces.empty() ? Status::ValidEmpty : Status::Ready;
   out.refusal = "none";
   return out;
+}
+
+uint32_t edgesKeepingCentre(const PortalFrame &frame) {
+  uint32_t keeping = 0;
+  for (const ClipEdge &edge : frame.edges) {
+    if (side(edge, (double)frame.centreX, (double)frame.centreY) > 0.0) {
+      ++keeping;
+    }
+  }
+  return keeping;
 }
 
 const char *statusName(Status status) {

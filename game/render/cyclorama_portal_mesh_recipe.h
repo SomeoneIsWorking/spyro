@@ -79,6 +79,10 @@ struct PortalFrame {
   int32_t clipTop = 0;
   int32_t clipRight = 0;
   int32_t clipBottom = 0;
+  // The projected aperture's centroid. It is inside the aperture by construction, so it is the
+  // discriminator for whether a retained half-plane keeps the aperture or its complement.
+  int32_t centreX = 0;
+  int32_t centreY = 0;
   uint16_t otBin = 0;
   psxport::native_projection::FixedAffine cullMatrix{};
   psxport::native_projection::FixedAffine projectionMatrix{};
@@ -112,6 +116,11 @@ PortalFrame prepareFrame(
 // Pure/read-only native recipe for the tinted static mesh family 0x80050240.
 // Source faces are clipped to the prepared portal aperture before publication.
 Recipe build(Core *core, const PortalFrame &frame);
+
+// How many of the frame's retained half-planes keep the aperture's own centroid. Anything less
+// than every edge means at least one half-plane is inverted: it discards the inside of the portal
+// and keeps the outside. Exposed rather than asserted so a refusal can report the count.
+uint32_t edgesKeepingCentre(const PortalFrame &frame);
 
 const char *statusName(Status status);
 

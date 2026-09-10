@@ -58,6 +58,25 @@ bounding box is the whole frame, which is what a portal filling the view looks l
 half-plane that rejects 738 of 893 candidates is what an INVERTED half-plane looks like: it keeps the
 outside and discards the inside.
 
+## The orientation discriminator was run, and it is inconclusive here
+
+`edgesKeepingCentre` reports how many retained half-planes keep the aperture's own projected
+centroid; an inverted half-plane keeps the complement, so 0 of 1 would normally convict it. Measured:
+
+    edges=1 keeping_centre=0 centre=(-283,-205) clip=(0,0)-(684,240)
+
+The centroid projects to `(-283,-205)`, off the screen entirely, while the aperture's bounding box
+covers the whole frame. At this distance the camera is close enough that aperture points straddle the
+projection's near boundary, so the projected centroid is no longer an interior point and the test
+cannot separate an inverted half-plane from a degenerate projection. Recorded as a negative rather
+than deleted: the coordinates are what showed the degeneracy.
+
+Structure confirmed from `func_80050BD0.s` meanwhile: retail writes `1` into each accepted record's
+first word at `ordinal * 0x18` (`0x8005143C`, `0x80051BD8`) and a terminating `0` at the count's
+own `0x18` stride (`0x80051854`, `0x80051EE0`). So the port's edge vector has the right shape and the
+disagreement, if any, is in WHICH segments retail accepts — its filter at `0x800513F4` also collapses
+a segment whose `|dx|` or `|dy|` is under 3, which the port's `crossesScreen` transcription does not.
+
 ## Next discriminator
 
 Compare the two poses directly: dump `frame.edges`, the clip rectangle, and the projected aperture

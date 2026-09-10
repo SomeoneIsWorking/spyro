@@ -120,9 +120,24 @@ field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. SBS now com
 PCM reports after rebinding each core's isolated SPU output state: a 120-frame oracle run produced
 240 reports with no audio mismatch. This is audio-field parity only; the run still has known
 non-audio boot/state divergence, and complete visual/oracle parity remains open. The former title-card
-and level-transition tally shortcuts wrote guest timer/state values directly. They are removed; the
-product now exposes only existing guest-owned Start routes while a complete title-owned
-cancellation/transition path remains unimplemented.
+and level-transition tally shortcuts wrote guest timer/state values directly. They are removed, and
+`titles/spyro1/core/spyro1_transition_skip.*` now owns cancellation properly: a Start or Cross press
+performs exactly the terminal transition the screen's own guest owner performs and nothing else.
+Two screens are covered. The level-transition tally (stage 1) clears `g_LevelTransHudActive`, which
+is the whole of `func_8002DA74`'s ending. The return-home glide (stage 10, `func_8002E084`)
+DISPATCHES the guest's own `0x8002C664` — the same call the sequence makes on its second counter
+wrap — rather than transcribing its ten globals, so there is no hand-written second copy to drift.
+Six focused tests cover the classification, including that the glide is not gated on the tally flag.
+The glide cancellation is unit-tested but NOT yet observed live: reaching stage 10 needs a portal
+entry from Artisans followed by pause-menu Quit, which the driver cannot yet reach.
+
+The level entrance sweep (stage 9, `func_8002E000`) is deliberately still absent. Its exit is inside
+its own update — `g_Gamestate = GS_Playing` once `g_Camera.m_Rotation.y` has swept below `-0x200`,
+or immediately when the level uses the `D_8006CA84` entrance preset — so there is no recovered
+terminal function to dispatch. Writing the gamestate directly would leave the camera mid-sweep, and
+writing the preset pointer would install High Caves' entrance on every level. A cancellation here
+needs the camera's settled gameplay pose recovered first; approximating it is exactly the shortcut
+that was removed.
 
 ## Capability details
 

@@ -18,6 +18,7 @@ struct TransitionState {
 enum class Cancellation : std::uint8_t {
   None,
   LevelTransitionTally,
+  ReturnHomeSequence,
 };
 
 // Decide which transition screen, if any, the current state authorises cancelling. Pure so the

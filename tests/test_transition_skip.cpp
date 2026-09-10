@@ -11,6 +11,7 @@ using spyro1::classify;
 constexpr std::uint32_t kPlaying = 0u;
 constexpr std::uint32_t kLevelTransition = 1u;
 constexpr std::uint32_t kPauseMenu = 2u;
+constexpr std::uint32_t kExitLevel = 10u;
 
 void require(bool condition, const char *what) {
   if (!condition) {
@@ -49,6 +50,25 @@ void testRequiresAPress() {
           "the tally runs to its natural end without a press");
 }
 
+// The return-home glide owns the whole of stage 10, so unlike the tally it has no separate
+// liveness flag. The flag must therefore not gate it: reading a stale g_LevelTransHudActive of 0
+// and refusing the cancellation would make the glide unskippable on exactly the common path, since
+// the previous transition's tally clears that flag on its way out.
+void testCancelsTheReturnHomeGlideWhateverTheTallyFlagSays() {
+  require(classify({.stage = kExitLevel, .levelTransHudActive = 0u, .skipPressed = true}) ==
+              Cancellation::ReturnHomeSequence,
+          "a Start press during the return-home glide cancels it with the tally flag clear");
+  require(classify({.stage = kExitLevel, .levelTransHudActive = 1u, .skipPressed = true}) ==
+              Cancellation::ReturnHomeSequence,
+          "a Start press during the return-home glide cancels it with the tally flag set");
+}
+
+void testTheReturnHomeGlideAlsoRequiresAPress() {
+  require(classify({.stage = kExitLevel, .levelTransHudActive = 0u, .skipPressed = false}) ==
+              Cancellation::None,
+          "the return-home glide runs to its natural end without a press");
+}
+
 } // namespace
 
 int main() {
@@ -56,6 +76,8 @@ int main() {
   testIgnoresAnEndedTally();
   testLeavesGameplayAndMenuInputAlone();
   testRequiresAPress();
-  std::cout << "transition_skip: PASS (tally cancellation is scoped to the displayed screen)\n";
+  testCancelsTheReturnHomeGlideWhateverTheTallyFlagSays();
+  testTheReturnHomeGlideAlsoRequiresAPress();
+  std::cout << "transition_skip: PASS (each cancellation is scoped to its own displayed screen)\n";
   return 0;
 }

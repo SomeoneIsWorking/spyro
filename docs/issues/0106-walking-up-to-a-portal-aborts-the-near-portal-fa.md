@@ -77,28 +77,35 @@ own `0x18` stride (`0x80051854`, `0x80051EE0`). So the port's edge vector has th
 disagreement, if any, is in WHICH segments retail accepts — its filter at `0x800513F4` also collapses
 a segment whose `|dx|` or `|dy|` is under 3, which the port's `crossesScreen` transcription does not.
 
-## Retail builds the aperture TWICE per portal, and the port builds it once
+## Retail builds the aperture twice per portal — corrected reading
 
-Read from `func_80050BD0.s`, per portal, in order:
+Read end to end from `func_80050BD0.s`, per portal:
 
-1. an edge loop writing `D_80077EA0` (flag store `0x8005143C`, terminator `0x80051854`), then
-   `jal func_8004FEA0` at `0x800518C4` — the MASK;
-2. a second, different edge loop writing the same `D_80077EA0` (flag store `0x80051BD8`,
-   terminator `0x80051EE0`), then `jal func_80050240` at `0x80051F38` and `jal func_8004F4BC` at
-   `0x80051F54` — the far and near MESHES.
+1. the points are projected into `D_80078DD8` (X), `D_80078DDC` (Y), `D_80078DE0` (Z), stride 12;
+2. edge loop 1 fills `D_80077EA0` from those UNCONTRACTED points, with a collapse for any segment
+   whose `|dx|` or `|dy|` is under 3 (`0x80051410`, `0x8005142C`), then `jal func_8004FEA0` at
+   `0x800518C4` draws the MASK;
+3. `0x80051934`-`0x800519E4` contracts every point by ±2 toward the centroid IN PLACE, rewriting
+   `D_80078DD8`/`D_80078DDC`, and recomputes the bounding box from scratch with the extents
+   initialised to `0`/`0x200` and `0`/`0xF0`;
+4. edge loop 2 refills `D_80077EA0` from the now-contracted points, with no sub-3 collapse, and
+   accepts a segment unless both endpoints are off the same side (`X < 0x200`, `X > 0`, `Y < 0xF0`,
+   `Y > 0`); then `jal func_80050240` and `jal func_8004F4BC` draw the far and near MESHES.
 
-The two loops are not the same code. Loop 1 accumulates the point sums into stack slots `0x128`
-and `0x130` and publishes `D_80075934`; loop 2 reads `D_80075934` instead and indexes its records
-from `D_80077EAC`. Loop 1 collapses a segment whose `|dx|` or `|dy|` is under 3 — two
-`slti $v0, $v0, 0x3` sites at `0x80051410` and `0x8005142C`; loop 2 contains no such test at all
-(measured: 2 occurrences in loop 1's range, 0 in loop 2's).
+An earlier revision of this issue had the two loops the wrong way round. The port's single edge loop
+is loop 2: it runs after the contraction, has no sub-3 collapse, and its `crossesScreen` test is
+loop 2's both-endpoints-off-one-side test. So the mesh aperture is the one the port transcribed, and
+it is the MASK that is being handed the wrong list — a real defect, but not this one, and consistent
+with the mask still rendering.
 
-The port has ONE `frame.edges`, built by `prepareFrame`, and `cyclorama_mask_recipe` and
-`cyclorama_portal_mesh::build` both clip against it. The centroid accumulation and the sub-3
-collapse in that transcription come from loop 1, so what the port feeds the near mesh is the MASK's
-aperture, not the mesh aperture retail hands `0x8004F4BC`. That is the leading explanation for one
-retained half-plane discarding 738 of 893 candidates, and it is why the mask keeps rendering
-correctly on the same frame the meshes go empty.
+Two smaller divergences fall out of the same read and are worth fixing with it: the port derives its
+clip rectangle from the points BEFORE the contraction, where retail recomputes it after; and retail
+tests the segment against `0x200`, where the port widens to the widescreen frame.
+
+So the near mesh's emptiness is NOT explained by aperture provenance. What remains is either that
+zero accepted faces is the correct answer for this pose and the submitter must not abort on it, or a
+fault in the projection feeding both. Note the pose is degenerate — the aperture centroid projects to
+`(-283,-205)`, off screen — so the projection is the first thing to rule out.
 
 ## Next discriminator
 

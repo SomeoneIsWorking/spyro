@@ -29,7 +29,8 @@ void reportDraws(const char *which,
     }
     lucent::debug("fieldsky",
                   "  {} draw {}: portal={} frame={}/{} recipe={}/{} faces={} distance={} mask={} "
-                  "objects={}/{} candidates={} box_rejected={} aperture_rejected={} accepted={}",
+                  "objects={}/{} candidates={} box_rejected={} aperture_rejected={} accepted={} "
+                  "edges={} clip=({},{})-({},{})",
                   which,
                   index,
                   draw.frame->portalOrdinal,
@@ -45,7 +46,12 @@ void reportDraws(const char *which,
                   draw.recipe->candidates,
                   draw.recipe->boxRejected,
                   draw.recipe->apertureRejected,
-                  draw.recipe->sourceAccepted);
+                  draw.recipe->sourceAccepted,
+                  draw.frame->edges.size(),
+                  draw.frame->clipLeft,
+                  draw.frame->clipTop,
+                  draw.frame->clipRight,
+                  draw.frame->clipBottom);
   }
 }
 

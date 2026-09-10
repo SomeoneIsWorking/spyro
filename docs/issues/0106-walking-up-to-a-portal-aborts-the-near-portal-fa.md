@@ -40,6 +40,24 @@ all-clipped recipe (`refusal = "none"`, a legitimate outcome), but
 this by accepting the empty recipe: an empty near portal in the player's face is wrong output, and
 accepting it would replace a loud abort with a silently missing portal.
 
+## What retail does, read from the routine
+
+`func_8004F4BC` references `D_80077EA0` — the aperture half-plane class — and reaches it through
+`func_8004F7E8`, which is the clipper: it loads the record's first word, treats zero as the end of
+the list (`beqz` to the unclipped emit at `.L8004FC3C`), loads the segment's two packed `SXY`
+endpoints, and runs `NCLIP` against each of the triangle's three vertices to build a three-bit side
+mask that indexes the `D_8004F890` jump table; the recursion advances `$t2` by `0x18` per record.
+
+So the near family clips against the SAME half-plane list as the mid/far path, and an EMPTY list
+means "emit whole", not "emit nothing". The assumption recorded in `cyclorama_portal_mesh_recipe.cpp`
+is therefore right about the clip SOURCE, and the fault is in the list this frame carries or in how
+the port applies it — not in the choice of clipper.
+
+Measured for the aborting frame: `edges=1 clip=(0,0)-(684,240)`. One half-plane, and the aperture's
+bounding box is the whole frame, which is what a portal filling the view looks like. A single
+half-plane that rejects 738 of 893 candidates is what an INVERTED half-plane looks like: it keeps the
+outside and discards the inside.
+
 ## Next discriminator
 
 Compare the two poses directly: dump `frame.edges`, the clip rectangle, and the projected aperture

@@ -313,8 +313,8 @@ is what retail's `GPF`/`sra 5` idiom does at `0x80022CCC` and `0x8001F864`; the 
 `0x800573C8` emitted unordered world items and now publishes a painter object on the new
 `LinkPhase::Particle` phase 0, ordered by its record's position in the guest's single emit-list scan;
 and the cutscene's Spyro producer no longer applies a hide gate only `0x80019698` owns. Measured in
-Artisans: the cutscene composes end to end through states 0, 1, 2, 3 and 4 with no refusal and no
-abort. States 5, 6 and 7 are derived and tested but not yet reached live.
+Artisans: the cutscene runs to completion through all eight `m_State` branches — 0, 1, 2, 3, 4, 5,
+6 and 7 — with no refusal and no abort, ending on state 7's fade-out.
 
 `0x80058BA8` is wired as the last FIELD producer via `game/render/fx_glow_sparkle.*`. Measured live in
 Artisans: one active glow record fanning 4–8 faces per field, one live sparkle emitting two lines and

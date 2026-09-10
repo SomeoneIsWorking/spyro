@@ -268,6 +268,11 @@ Driving into the cutscene then found four real defects, none of them in the new 
    reaches Spyro through `0x80019698`, which owns that gate; every other branch calls `0x80023AC4`
    directly.
 
-Measured after all four: the Artisans dragon cutscene composes end to end with no refusal and no
-abort, through states 0 (with its fade ramp 0 -> 255), 1, 2, 3 and 4. States 5, 6 and 7 are derived
-and tested but have not yet been reached live.
+Measured after all four: the Artisans dragon cutscene runs to completion with no refusal and no
+abort. One walk covered every branch, with the frame counts each held:
+
+    state 0: 23   state 1: 48   state 2: 8    state 3: 12
+    state 4: 527  state 5: 13   state 6: 48   state 7: 16
+
+State 0's fade ramps 0 -> 255 into state 1, and state 7 fades back out to 31 as the cutscene ends,
+so the whole sequence is covered rather than sampled at its start.

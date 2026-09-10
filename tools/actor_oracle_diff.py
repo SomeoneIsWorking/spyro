@@ -19,6 +19,7 @@ which refuses by name instead.
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import sys
 from collections import Counter
@@ -65,6 +66,11 @@ class Primitive:
 class Frame:
     native: list[Primitive] = field(default_factory=list)
     retail: list[Primitive] = field(default_factory=list)
+    # node -> "class N scale M". A depth complaint about an anonymous guest address cannot be acted
+    # on; the scale byte in particular multiplies the view translation, so it moves depth.
+    instances: dict[str, str] = field(default_factory=dict)
+    positions: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    camera: tuple[int, int, int] | None = None
 
 
 def _vertices(groups: list[str], count: int) -> tuple[tuple[int, int, str], ...]:
@@ -73,6 +79,13 @@ def _vertices(groups: list[str], count: int) -> tuple[tuple[int, int, str], ...]
         x, y, rgb = groups[i * 3], groups[i * 3 + 1], groups[i * 3 + 2]
         out.append((int(x), int(y), rgb))
     return tuple(out)
+
+
+INSTANCE = re.compile(
+    r"native instance 0x([0-9A-F]{8}): faces=\d+ class=(\d+) state=0x[0-9A-F]+ scale=(\d+)"
+    r" pos=\((-?\d+),(-?\d+),(-?\d+)\)"
+)
+CAMERA = re.compile(r"native side:.*camera=\((-?\d+),(-?\d+),(-?\d+)\)")
 
 
 def parse(path: str) -> list[Frame]:
@@ -106,6 +119,12 @@ def parse(path: str) -> list[Frame]:
                     textured=1 if (code & 4) else 0,
                 )
             )
+        elif match := INSTANCE.search(line):
+            node, held, scale, x, y, z = match.groups()
+            current.positions[node] = (int(x), int(y), int(z))
+            current.instances[node] = f"class {held} scale {scale}"
+        elif match := CAMERA.search(line):
+            current.camera = tuple(int(v) for v in match.groups())
         elif "retail side:" in line:
             # The retail summary closes a frame: both streams for it have now been printed.
             frames.append(current)
@@ -176,7 +195,7 @@ def report(frame: Frame, show: int, dx: int) -> int:
     print(f"matched           : {matched}")
     print(f"retail only       : {len(retail_only)}")
     print(f"native only       : {native_only}")
-    report_depth(pairs)
+    report_depth(pairs, frame.instances, frame.positions, frame.camera)
     print(f"  of which same shape, different colour : {len(recoloured)}")
     print(f"  of which absent from the native stream: {len(retail_only)}")
     if recoloured:
@@ -212,7 +231,12 @@ def report(frame: Frame, show: int, dx: int) -> int:
     return 0
 
 
-def report_depth(pairs: list[tuple[Primitive, Primitive]]) -> None:
+def report_depth(
+    pairs: list[tuple[Primitive, Primitive]],
+    instances: dict[str, str],
+    positions: dict[str, tuple[int, int, int]],
+    camera: tuple[int, int, int] | None,
+) -> None:
     """Does the native depth agree with the OT bin retail sorted the same primitive into?
 
     Matching on pixels says two primitives cover the same area in the same colours; it says nothing
@@ -257,8 +281,25 @@ def report_depth(pairs: list[tuple[Primitive, Primitive]]) -> None:
         key=lambda e: -e[0],
     )[:8]
     for span, r, n, r2, n2 in worst:
+        def describe(node: str) -> str:
+            """The instance's identity plus its true distance from the camera.
+
+            Retail's OT bin and the port's depth are two OPINIONS; the world positions are the
+            fact. Printing the distance is what lets a disagreement be attributed rather than
+            merely counted -- whichever side disagrees with the geometry is the one at fault.
+            """
+            text = instances.get(node, "unknown")
+            position = positions.get(node)
+            if position is None or camera is None:
+                return text
+            offset = [position[i] - camera[i] for i in range(3)]
+            return f"{text} dist {int(math.sqrt(sum(v * v for v in offset)))}"
+
+        first = describe(n.node)
+        second = describe(n2.node)
         print(f"  bins {r.ot_bin} vs {r2.ot_bin} (span {span}) but native depth "
-              f"{n.order:.6f} vs {n2.order:.6f} (nodes {n.node}/{n2.node})")
+              f"{n.order:.6f} vs {n2.order:.6f} "
+              f"({n.node} {first} / {n2.node} {second})")
 
 
 def main() -> int:

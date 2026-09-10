@@ -135,22 +135,34 @@ void logNative(Core *core, std::span<const uint32_t> painterKeys) {
           "actororacle", "native instance 0x{:08X}: faces={} model=unreadable", node, count);
       continue;
     }
+    // The scale byte at +0x57 multiplies the view-space translation, so it moves an instance's
+    // depth as well as its size. A depth report that names an instance without it cannot tell a
+    // projection fault from a correctly scaled model.
     lucent::debug("actororacle",
-                  "native instance 0x{:08X}: faces={} class={} state=0x{:08X} pos=({},{},{})",
+                  "native instance 0x{:08X}: faces={} class={} state=0x{:08X} scale={} "
+                  "pos=({},{},{})",
                   node,
                   count,
                   core->mem_r16(node + 54u),
                   core->mem_r32(node + 72u),
+                  core->mem_r8(node + 0x57u),
                   (int32_t)core->mem_r32(node + 12u),
                   (int32_t)core->mem_r32(node + 16u),
                   (int32_t)core->mem_r32(node + 20u));
   }
+  // The camera position closes the loop on the per-instance lines above: without it an instance's
+  // world position cannot be turned into a distance, so a depth disagreement cannot be checked
+  // against the geometry that produced it and only retail's own answer is available to compare to.
   lucent::debug("actororacle",
-                "native side: painters={} scanned_queue={} emitted={} distinct_painters={}",
+                "native side: painters={} scanned_queue={} emitted={} distinct_painters={} "
+                "camera=({},{},{})",
                 painterKeys.size(),
                 queue.n,
                 emitted,
-                byPainter.size());
+                byPainter.size(),
+                (int32_t)core->mem_r32(kCamera + 0x28u),
+                (int32_t)core->mem_r32(kCamera + 0x2Cu),
+                (int32_t)core->mem_r32(kCamera + 0x30u));
 }
 
 bool walkOt(Core *core, uint32_t poolFrom, std::vector<Retail> &out, const char *&refusal) {

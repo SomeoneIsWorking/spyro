@@ -327,6 +327,14 @@ the glow producer `0x800580F4` went from 0 of 37 oracle frames to 37 of 37, the 
 census over the walk fell 79 to 14, and the retail-only primitives on the final frame fell 6 to 2 (0 on
 frame -20). The 2 that remain are a second, smaller `608080` fan retail registers inside `0x80019698`
 itself, after the port's producers have already read the record table.
+The same capture leaves an open depth question, issue 0105: 9.93% of ordered actor primitive pairs
+sort against retail, and for the worst pair the port places the farther moby in front. The oracle
+now prints each drawn instance's `+0x57` scale byte and the camera position, and
+`actor_oracle_diff.py` turns those into a distance, so the geometry is a third opinion rather than
+retail's word against the port's — measured 11706 versus 7245 units, which is the order retail sorts
+them in and the opposite of the port's. Two causes are already refused by measurement: the scale byte
+reads 0 on both instances, and re-normalising `pz` by the model descriptor's own exponent raised the
+disagreement rate to 14.63% rather than lowering it.
 The separate `0x8002B9CC`
 environment/world owner now participates in FIELD composition: on the recorded snapshot it derives selection 17,
 distance `0x28000`, 86 sectors (20 low / 29 high), 1,376 candidates, 1,039 rejected, and 413 final

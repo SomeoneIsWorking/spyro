@@ -365,9 +365,12 @@ near-family recipe produces 94 clipped triangles. The source-backed `0x8004FEA0`
 two clipped full-screen triangles through a dedicated painter object; a controlled Left route runs
 through the visible-portal path, and the gate-teleport route advances to the non-type-0 particle
 refusal. The production-compiled `0x80050240` recipe and family submitter remain ready for a future
-mid-distance portal frame. Walking up to a portal instead reaches the near family and aborts: the
-recipe examines 893 candidates over 10 surviving objects and the aperture rejects 738 of them with
-zero accepted, which the submitter reads as an invalid recipe (issue 0106). The `fieldsky` channel
+mid-distance portal frame. Walking up to a portal used to abort the frame: the aperture passes behind the
+camera, every projected point saturates off screen with a negative view Z, and the mesh recipe
+clipped all 893 candidates away into an empty recipe the submitter read as invalid. `meshVisibility`
+now carries retail's own gate from `0x80051D0C`-`0x80051E70`, so such a portal contributes nothing
+exactly as retail skips it; a portal walk runs 1,684 frames with no refusal. The mask still clips
+against the mesh aperture rather than its own (issue 0106). The `fieldsky` channel
 now names each refusing draw with its frame/recipe status, refusal string and reject counters, so
 the three previously silent `return false` paths in `fx_field_cyclorama.cpp` no longer abort a frame
 without saying why. The current replay reaches this complete

@@ -27,6 +27,12 @@ void reportDraws(const char *which,
       lucent::debug("fieldsky", "  {} draw {}: null frame or recipe", which, index);
       continue;
     }
+    lucent::Line points;
+    points.add("  {} draw {} points ({}):", which, index, draw.frame->points.size());
+    for (const auto &point : draw.frame->points) {
+      points.add(" ({},{},{})", point[0], point[1], point[2]);
+    }
+    points.flush_debug("fieldsky");
     lucent::debug("fieldsky",
                   "  {} draw {}: portal={} frame={}/{} recipe={}/{} faces={} distance={} mask={} "
                   "objects={}/{} candidates={} box_rejected={} aperture_rejected={} accepted={} "

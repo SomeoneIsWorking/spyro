@@ -1,6 +1,6 @@
 # 0106 — Walking up to a portal aborts: the near-portal family emits no faces
 
-Status: open
+Status: fixed (mesh visibility); the mask still clips against the mesh aperture
 Affects: `docs/project-state.md` — homeworld portal presentation; blocks reaching a level on foot,
 and with it live observation of the stage-10 return-home cancellation (`0104` is unrelated).
 
@@ -58,7 +58,40 @@ bounding box is the whole frame, which is what a portal filling the view looks l
 half-plane that rejects 738 of 893 candidates is what an INVERTED half-plane looks like: it keeps the
 outside and discards the inside.
 
-## The orientation discriminator was run, and it is inconclusive here
+## Cause, found
+
+Dumping the aperture's projected points for the aborting frame settled it:
+
+    near draw 0 points (5): (-1022,1021,-4508) (-1022,-1022,-5124) (-908,-1022,-5055)
+      (623,-1022,-4824) (913,1021,-4134)
+
+Every point saturates at the GTE's screen clamp and every view Z is NEGATIVE: walking up to a portal
+puts its aperture behind the camera. Retail handles that explicitly. At `0x80051D0C`-`0x80051E70`
+it computes a visibility flag from the post-contraction extents, the summed view Z in `D_80075934`
+and the retained edge count, and `beqz $s1, .L80051F5C` skips BOTH mesh calls when it is zero; the
+same gate at `0x800517DC` skips the mask. For this frame the summed Z is negative, so retail draws
+nothing for the portal.
+
+The port had no such gate. It built an aperture out of the saturated points, handed it to the mesh
+recipe, which clipped all 893 candidates away and returned an empty recipe, which the submitter then
+read as an invalid one and aborted the frame on.
+
+`meshVisibility` now carries retail's decision and `prepareFrame` returns `ValidEmpty` when it says
+hidden. Measured after the fix: the same portal walk runs 1,684 frames with zero refusals and no
+native-render abort. Two unit tests cover it, one built from the measured points above.
+
+The `s1 == 2` sub-case — the aperture qualifies but no point is on screen, and the portal is closer
+than `0x1000` — needs the camera-facing dot product retail builds through `RotVec8ToMatrix`, which
+is not recovered. That path refuses by name (`FacingTestUnrecovered`) rather than guessing.
+
+## What is still open
+
+The mask. Retail builds its aperture from the UNCONTRACTED points with a sub-3 segment collapse
+(loop 1) and the meshes' from the contracted points without it (loop 2); the port has only loop 2
+and gives it to both. Also, the port derives its clip rectangle before the contraction where retail
+recomputes it after, and it widens the segment test to the widescreen frame where retail uses 0x200.
+
+## The orientation discriminator was run## The orientation discriminator was run, and it is inconclusive here
 
 `edgesKeepingCentre` reports how many retained half-planes keep the aperture's own projected
 centroid; an inverted half-plane keeps the complement, so 0 of 1 would normally convict it. Measured:

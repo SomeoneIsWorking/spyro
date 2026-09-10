@@ -33,6 +33,7 @@ enum class Status : uint8_t {
   InvalidFaceSpan,
   InvalidFaceIndex,
   InvalidClipRegion,
+  FacingTestUnrecovered,
   NearFamilyUnsupported,
   CapacityExceeded,
 };
@@ -87,6 +88,11 @@ struct PortalFrame {
   psxport::native_projection::FixedAffine cullMatrix{};
   psxport::native_projection::FixedAffine projectionMatrix{};
   std::vector<ClipEdge> edges;
+  // The aperture's projected points as the edge loop saw them, after the +-2 contraction. Kept so
+  // a refusal can say whether the aperture projected to a sane screen shape at all; a pose close
+  // enough to the portal plane can put points arbitrarily far off screen, and an aperture built
+  // from those is degenerate rather than merely small.
+  std::vector<std::array<int32_t, 3>> points;
 };
 
 struct Recipe {
@@ -121,6 +127,20 @@ Recipe build(Core *core, const PortalFrame &frame);
 // than every edge means at least one half-plane is inverted: it discards the inside of the portal
 // and keeps the outside. Exposed rather than asserted so a refusal can report the count.
 uint32_t edgesKeepingCentre(const PortalFrame &frame);
+
+// Retail's own decision, read from 0x80051D0C-0x80051E70, about whether a portal's meshes are
+// drawn at all. A portal that fails it contributes nothing — no mask and no mesh — which is
+// what happens when the player walks into a portal and its aperture passes behind the camera.
+enum class MeshVisibility : uint8_t {
+  Hidden,
+  // The aperture qualifies, but no single point is on screen in front of the camera. Retail then
+  // tests the portal against the camera's facing direction, but only when it is very close.
+  QualifiedNoPointOnScreen,
+  Visible,
+};
+
+MeshVisibility
+meshVisibility(const PortalFrame &frame, int32_t screenRight, int64_t sumZ, bool anyPointOnScreen);
 
 const char *statusName(Status status);
 

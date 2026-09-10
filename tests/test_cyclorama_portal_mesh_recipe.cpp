@@ -155,11 +155,54 @@ void inspectSnapshotIfRequested() {
   CHECK(!recipe.faces.empty());
 }
 
+// A portal the player has walked into projects every aperture point off screen with a negative view
+// Z. Retail draws nothing for it; the port used to build an aperture out of those saturated points
+// and hand it to the mesh recipe, which then clipped every candidate away and aborted the frame.
+void test_a_portal_behind_the_camera_is_hidden() {
+  using spyro::cyclorama_portal_mesh::MeshVisibility;
+  PortalFrame frame{};
+  frame.edges.push_back({0, 0, 10, 10});
+  // The measured points from the aborting Artisans frame, saturated at the GTE's screen clamp.
+  frame.points = {{-1022, 1021, -4508},
+                  {-1022, -1022, -5124},
+                  {-908, -1022, -5055},
+                  {623, -1022, -4824},
+                  {913, 1021, -4134}};
+  CHECK(spyro::cyclorama_portal_mesh::meshVisibility(frame, 684, -23645, false) ==
+        MeshVisibility::Hidden);
+  // The same aperture in FRONT of the camera qualifies: it encloses every screen edge, which is how
+  // a portal the camera is inside still draws even though no edge crosses the screen.
+  for (auto &point : frame.points) {
+    point[2] = -point[2];
+  }
+  CHECK(spyro::cyclorama_portal_mesh::meshVisibility(frame, 684, 23645, false) ==
+        MeshVisibility::QualifiedNoPointOnScreen);
+  CHECK(spyro::cyclorama_portal_mesh::meshVisibility(frame, 684, 23645, true) ==
+        MeshVisibility::Visible);
+}
+
+// An ordinary mid-distance portal: a small aperture on screen, in front, with edges.
+void test_a_portal_on_screen_is_visible() {
+  using spyro::cyclorama_portal_mesh::MeshVisibility;
+  PortalFrame frame{};
+  frame.edges.push_back({100, 100, 200, 100});
+  frame.points = {{100, 100, 4000}, {200, 100, 4000}, {150, 180, 4000}};
+  CHECK(spyro::cyclorama_portal_mesh::meshVisibility(frame, 684, 12000, true) ==
+        MeshVisibility::Visible);
+  // With no edge retained it falls through to the whole-screen test, which this small aperture
+  // fails, so it is hidden rather than silently drawn against an empty half-plane list.
+  frame.edges.clear();
+  CHECK(spyro::cyclorama_portal_mesh::meshVisibility(frame, 684, 12000, true) ==
+        MeshVisibility::Hidden);
+}
+
 } // namespace
 
 int main() {
   RUN(frame_refuses_unset_projection_and_bad_shape);
   RUN(build_refusal_is_atomic);
+  RUN(a_portal_behind_the_camera_is_hidden);
+  RUN(a_portal_on_screen_is_visible);
   inspectSnapshotIfRequested();
   return pt_summary();
 }

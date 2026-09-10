@@ -29,6 +29,8 @@ constexpr uint32_t kPortalPointCount = 0x04u;
 constexpr uint32_t kPortalNormal = 0x08u;
 constexpr uint32_t kPortalPoints = 0x20u;
 constexpr uint32_t kNearDistanceEnd = 0x3000u;
+// Below this retail additionally tests the portal against the camera's facing direction.
+constexpr uint32_t kFacingTestDistance = 0x1000u;
 constexpr uint32_t kPortalDistanceEnd = 0x4000u;
 
 struct Point3 {
@@ -347,6 +349,7 @@ PortalFrame prepareFrame(
     }
   }
 
+  frame.points = projected;
   frame.centreX = averageX;
   frame.centreY = averageY;
 
@@ -392,6 +395,29 @@ PortalFrame prepareFrame(
           : (frame.distance >= kPortalDistanceEnd
                  ? animated
                  : colorLerp(baseColor, animated, (int16_t)(frame.distance - kNearDistanceEnd)));
+  const bool anyPointOnScreen =
+      std::any_of(frame.points.begin(), frame.points.end(), [&](const auto &point) {
+        // Retail: X-1 unsigned below the screen width less one, Y-1 below 0xEF, and a positive view
+        // Z.
+        return point[0] >= 1 && point[0] < screenRight && point[1] >= 1 && point[1] < 240 &&
+               point[2] > 0;
+      });
+  switch (meshVisibility(frame, screenRight, sumZ, anyPointOnScreen)) {
+  case MeshVisibility::Hidden:
+    frame.status = Status::ValidEmpty;
+    frame.refusal = "none";
+    return frame;
+  case MeshVisibility::QualifiedNoPointOnScreen:
+    if (frame.distance < kFacingTestDistance) {
+      // Retail rotates (0x1000,0,0) by the camera's own RotVec8ToMatrix orientation and drops the
+      // portal when that forward vector points away from it. That matrix build is not recovered
+      // here, so refuse loudly rather than guess a visibility the player would see.
+      return refuse(std::move(frame), Status::FacingTestUnrecovered, "camera_facing_test");
+    }
+    break;
+  case MeshVisibility::Visible:
+    break;
+  }
   if (!frame.maskVisible || frame.distance >= kPortalDistanceEnd) {
     frame.status = Status::ValidEmpty;
     frame.refusal = "none";
@@ -568,6 +594,33 @@ Recipe build(Core *core, const PortalFrame &frame) {
   return out;
 }
 
+MeshVisibility
+meshVisibility(const PortalFrame &frame, int32_t screenRight, int64_t sumZ, bool anyPointOnScreen) {
+  // Retail's post-contraction extents, with its own initialisation: the maxima start at 0 and the
+  // minima at the screen's own right/bottom edge, so an aperture entirely off one side keeps the
+  // initial value rather than reporting a real coordinate.
+  int32_t maxX = 0;
+  int32_t minX = screenRight;
+  int32_t maxY = 0;
+  int32_t minY = 240;
+  for (const auto &point : frame.points) {
+    maxX = std::max(maxX, point[0]);
+    minX = std::min(minX, point[0]);
+    maxY = std::max(maxY, point[1]);
+    minY = std::min(minY, point[1]);
+  }
+  const bool inFront = sumZ > 0;
+  if (maxX > 0 && maxY > 0 && inFront && !frame.edges.empty()) {
+    return anyPointOnScreen ? MeshVisibility::Visible : MeshVisibility::QualifiedNoPointOnScreen;
+  }
+  // Otherwise the aperture only counts when it covers the whole screen, which is how a portal the
+  // camera is inside still draws: no edge crosses, but every screen edge is enclosed.
+  if (minX > 0 || minY > 0 || maxX < screenRight || maxY < 240 || !inFront) {
+    return MeshVisibility::Hidden;
+  }
+  return anyPointOnScreen ? MeshVisibility::Visible : MeshVisibility::QualifiedNoPointOnScreen;
+}
+
 uint32_t edgesKeepingCentre(const PortalFrame &frame) {
   uint32_t keeping = 0;
   for (const ClipEdge &edge : frame.edges) {
@@ -604,6 +657,8 @@ const char *statusName(Status status) {
     return "invalid face index";
   case Status::InvalidClipRegion:
     return "invalid clip region";
+  case Status::FacingTestUnrecovered:
+    return "facing test unrecovered";
   case Status::NearFamilyUnsupported:
     return "near family unsupported";
   case Status::CapacityExceeded:

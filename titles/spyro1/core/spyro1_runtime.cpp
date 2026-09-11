@@ -81,8 +81,14 @@ constexpr std::uint32_t kGpuTimeoutDeadlineVar = 0x80074B7Cu;
 constexpr std::uint32_t kGpuTimeoutFlagVar = 0x80074B80u;
 constexpr std::uint32_t kGpuTimeoutArm = 0x80062090u;
 constexpr std::uint32_t kGpuTimeoutCheck = 0x800620C4u;
+// The three libcd control entries, read from external/spyro-1's own labels in asm/psyq.s. They are
+// NOT interchangeable: CdControl and CdControlB take (com, param, result), but CdControlF takes
+// only (com, param), so at its call sites a2 is the caller's leftover register and must never be
+// written through. This binding named 0x80063D80 CdControlB and gave it the result-writing owner,
+// which wrote 8 bytes at whatever a2 held — 0x09B30000 on the level load after a portal entry.
 constexpr std::uint32_t kCdControl = 0x80063C48u;
-constexpr std::uint32_t kCdControlB = 0x80063D80u;
+constexpr std::uint32_t kCdControlF = 0x80063D80u;
+constexpr std::uint32_t kCdControlB = 0x80063EACu;
 constexpr std::uint32_t kCdSync = 0x800647A0u;
 constexpr std::uint32_t kCdCw = 0x80064CECu;
 constexpr std::uint32_t kCdDataSync = 0x800655A0u;
@@ -111,10 +117,11 @@ const PlatformHlePlan *Spyro1Runtime::platformHlePlan() const {
     p.bindings[2] = {kCdDataSync, syncComplete};
     p.bindings[3] = {kCdInitHandshake, syncComplete};
     p.bindings[4] = {kCdControl, cd_control_sync};
-    p.bindings[5] = {kCdControlB, cd_control_sync};
-    p.bindings[6] = {kCdSync, cd_sync_stock_sync};
-    p.bindings[7] = {kCdCw, cd_command_stock_sync};
-    p.bindingCount = 8;
+    p.bindings[5] = {kCdControlF, cd_control_fire_sync};
+    p.bindings[6] = {kCdControlB, cd_control_sync};
+    p.bindings[7] = {kCdSync, cd_sync_stock_sync};
+    p.bindings[8] = {kCdCw, cd_command_stock_sync};
+    p.bindingCount = 9;
     p.windowLo[0] = 0x8005B000u;
     p.windowHi[0] = 0x80066000u;
     return p;

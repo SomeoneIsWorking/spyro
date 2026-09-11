@@ -119,14 +119,23 @@ nulling a vector, adding every portal point and dividing by the count; `prepareF
 accumulates it in the same projection loop.
 
 Measured after this: the same walk reports **zero** cyclorama refusals, and the port runs through
-portal entry into level loading, where it now faults on an unmapped RAM write during the CD
-transfer:
+portal entry into level loading. Two further defects were behind it, both now fixed:
 
-    [mem:error] FATAL: UNMAPPED RAM write8 @ 0x09B30000 (phys 0x09B30000) — fail-fast.
+`executor-pc=0x80063D80` is **CdControlF**, not CdControlB — external/spyro-1's `asm/psyq.s` labels
+`CdControl` 0x80063C48, `CdControlF` 0x80063D80 and `CdControlB` 0x80063EAC. CdControlF takes only
+`(com, param)`, so at its call sites a2 holds the caller's leftover register; the plan named that
+address kCdControlB and bound it to the result-writing owner, which wrote 8 bytes at 0x09B30000. The
+framework now has `cd_control_fire_sync` for the no-result entry, and the title binds all three
+addresses to the right owners. The real CdControlB had been bound to nothing at all.
 
-with `a0=0x11`, `a2=0x09B30000`, guest `executor-pc=0x80063D80 ra=0x8002BEA4`, through
-`Core::io_write` -> `cd_command_stock_sync` -> `cd_control_sync`. That is a separate, deeper defect
-and belongs in its own issue; it is recorded here only as evidence the portal was actually crossed.
+Adding the ninth binding then exposed that psxport's direct-runtime binding loop clamped to
+`kMaxBindings` and silently dropped the rest, which would have left a hardware entry executing guest
+code with no owner. It refuses by name now.
+
+With both fixed the portal is crossed and the level load runs to **stage 1 (GS_LevelTransition),
+load stage 2**, where the render stops on its own honest boundary: no native producer is registered
+for that stage. That is the next porting task, and it is the same screen the Start-cancellation work
+targets.
 
 ## A test file that had never been compiled
 

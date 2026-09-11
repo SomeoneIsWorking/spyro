@@ -939,17 +939,20 @@ bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState &state,
   const bool validZero = expect_group && (state.culled || state.faces == 0) && state.groups == 0;
   const bool ok = !state.refusal && (state.groups == expected || validZero) &&
                   state.invocations == (expect_group ? 1u : 0u);
-  lucent::debug("pairedactor",
-                "ownership gate: leg={} armed_groups={}/{} invocations={} faces={} culled={} "
-                "refusal={} => {}",
-                reference_leg ? "reference" : "native",
-                state.groups,
-                expected,
-                state.invocations,
-                state.faces,
-                state.culled,
-                state.refusal ? state.refusal : "none",
-                ok ? "PASS" : "FAIL");
+  // The caller aborts on a false, so the failing gate must say why at a level the default run
+  // prints; as a debug-only line it made that abort read as a bare crash with no diagnosis.
+  lucent::log(ok ? lucent::Level::Debug : lucent::Level::Error,
+              "pairedactor",
+              lucent::format("ownership gate: leg={} armed_groups={}/{} invocations={} faces={} "
+                             "culled={} refusal={} => {}",
+                             reference_leg ? "reference" : "native",
+                             state.groups,
+                             expected,
+                             state.invocations,
+                             state.faces,
+                             state.culled,
+                             state.refusal ? state.refusal : "none",
+                             ok ? "PASS" : "FAIL"));
   return ok;
 }
 

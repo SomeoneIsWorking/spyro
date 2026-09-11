@@ -3,6 +3,7 @@
 #include "actor_model_codec.h"
 #include "core.h"
 #include "gpu_vk.h"
+#include "guest_trig.h"
 #include "world_chunk_codec.h"
 #include "world_projection_math.h"
 
@@ -69,24 +70,12 @@ Point3 point(const RamView &ram, uint32_t address) {
       (int32_t)ram.r32(address), (int32_t)ram.r32(address + 4u), (int32_t)ram.r32(address + 8u)};
 }
 
-int32_t trig(const RamView &ram, uint32_t base, int32_t angle) {
-  const uint32_t wrapped = (uint32_t)angle & 0xfffu;
-  const uint32_t index = wrapped >> 4;
-  const uint32_t fraction = wrapped & 0xfu;
-  const int32_t first = (int16_t)ram.r16(base + index * 2u);
-  if (fraction == 0u) {
-    return first;
-  }
-  const int32_t second = (int16_t)ram.r16(base + (index + 1u) * 2u);
-  return first + (fraction * (second - first) >> 4);
-}
-
 int32_t sine(const RamView &ram, int32_t angle) {
-  return trig(ram, kSineTable, angle);
+  return spyro::guest_trig::sine(ram, angle);
 }
 
 int32_t cosine(const RamView &ram, int32_t angle) {
-  return trig(ram, kSineTable + 0x80u, angle);
+  return spyro::guest_trig::cosine(ram, angle);
 }
 
 FixedAffine multiply(const FixedAffine &left, const FixedAffine &right) {

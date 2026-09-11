@@ -10,9 +10,12 @@ class Core;
 
 // Stage selectors whose reached recipes have native owners.
 constexpr uint32_t kStageField = 0u;
+constexpr uint32_t kStageLevelTransition = 1u;
 constexpr uint32_t kStageRespawn = 4u;
 constexpr uint32_t kStageGameOver = 5u;
 constexpr uint32_t kStageDragon = 8u;
+// GS_EntranceAnimation. draw.c:2693 dispatches it to func_8001A050, the same producer as stage 1.
+constexpr uint32_t kStageEntranceAnimation = 9u;
 constexpr uint32_t kStageFrontEnd = 13u;
 constexpr uint32_t kStageCutscene = 14u;
 

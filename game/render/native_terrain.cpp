@@ -106,16 +106,16 @@ TerrainDirectVertex terrain_project(int vx, int vy, int vz) {
   return out;
 }
 
-bool terrain_build_direct(
-    Core *c, int32_t selector, uint32_t mat1, uint32_t mat2, TerrainDirectRecipe &out) {
+bool terrain_build_direct(Core *c,
+                          int32_t selector,
+                          const std::array<uint32_t, 5> &mat1,
+                          const std::array<uint32_t, 5> &mat2,
+                          TerrainDirectRecipe &out) {
   auto refuse = [&](const char *why) {
     out.refusal = why;
     out.faces.clear();
     return false;
   };
-  if (!terrain_ram(mat1, 20) || !terrain_ram(mat2, 20)) {
-    return refuse("matrix_bounds");
-  }
   int32_t rightClip = spyro::wide::kNativeClipWidth;
   if (gpu_vk_wide_engine(c)) {
     const int nw = gpu_vk_wide_engine_w(c);
@@ -123,9 +123,9 @@ bool terrain_build_direct(
     gte_write_ctrl(24u, (uint32_t)((nw / 2) << 16));
     c->rsub.projParams.setGeomOfxForAspect((float)(nw / 2));
   }
-  auto load_matrix = [&](uint32_t p) {
+  auto load_matrix = [&](const std::array<uint32_t, 5> &words) {
     for (uint32_t i = 0; i < 5; ++i) {
-      gte_write_ctrl(i, c->mem_r32(p + i * 4));
+      gte_write_ctrl(i, words[i]);
     }
     gte_write_ctrl(5, 0);
     gte_write_ctrl(6, 0);
@@ -271,7 +271,10 @@ bool terrain_build_direct(
   return true;
 }
 
-bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint32_t mat2) {
+bool terrain_submit_direct(Core *c,
+                           int32_t selector,
+                           const std::array<uint32_t, 5> &mat1,
+                           const std::array<uint32_t, 5> &mat2) {
   TerrainGteGuard preserveGte(c);
   TerrainDirectRecipe recipe{};
   if (!terrain_build_direct(c, selector, mat1, mat2, recipe)) {
@@ -384,6 +387,37 @@ bool terrain_submit_direct(Core *c, int32_t selector, uint32_t mat1, uint32_t ma
 
 } // namespace
 
+namespace {
+
+// The guest passes two SHORTMATRIX POINTERS; the renderer itself only ever needs their five packed
+// words. Reading them here keeps the bounds check at the one boundary that has an address to check.
+std::optional<std::array<uint32_t, 5>> readMatrixWords(Core *c, uint32_t address) {
+  if (!terrain_ram(address, 20)) {
+    return std::nullopt;
+  }
+  std::array<uint32_t, 5> words{};
+  for (uint32_t i = 0; i < words.size(); ++i) {
+    words[i] = c->mem_r32(address + i * 4u);
+  }
+  return words;
+}
+
+} // namespace
+
 bool spyro_terrain_submit(Core *c, int32_t selector, uint32_t mat1, uint32_t mat2) {
-  return terrain_submit_direct(c, selector, mat1, mat2);
+  const auto view = readMatrixWords(c, mat1);
+  const auto projection = readMatrixWords(c, mat2);
+  if (!view || !projection) {
+    lucent::error(
+        "terraindirect", "REFUSED matrix_bounds view=0x{:08X} projection=0x{:08X}", mat1, mat2);
+    return false;
+  }
+  return terrain_submit_direct(c, selector, *view, *projection);
+}
+
+bool spyro_terrain_submit_matrices(Core *c,
+                                   int32_t selector,
+                                   const std::array<uint32_t, 5> &view,
+                                   const std::array<uint32_t, 5> &projection) {
+  return terrain_submit_direct(c, selector, view, projection);
 }

@@ -25,6 +25,7 @@
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "gpu_vk.h"     // measured native/wide engine extents for the product-path announcement
 #include "guest_call.h" // Bounded runtime execution of the retained reference driver.
+#include "level_transition_scene.h"
 #include "presentation_owner.h"
 #include "render.h"
 #include "screen_fade_recipe.h"
@@ -94,7 +95,11 @@ bool pairedActorScene(Core *core, const Scene &scene) {
   // through 0x80023AC4 directly in most of the rest — so it arms the same ownership gate. Its own
   // state table answers, rather than a second copy of it here.
   const bool dragon = scene.stage == kStageDragon && spyro_dragon_scene_draws_player(core);
-  return frontend || dragon ||
+  // src/gamestates/draw.c:816 — func_8001A050 calls 0x80023AC4 unconditionally, so both stages it
+  // serves always arm the same ownership gate as a field stage.
+  const bool levelTransition =
+      scene.stage == kStageLevelTransition || scene.stage == kStageEntranceAnimation;
+  return frontend || dragon || levelTransition ||
          (isFieldStage(scene.stage) && !respawnFading && spyro_field_player_visible(core));
 }
 } // namespace
@@ -138,7 +143,8 @@ void SpyroRenderer::referenceOtWalk() const {
 // printed turns the porting backlog into a crash sequence in dependency order.
 //
 void SpyroRenderer::prepareScene(const Scene &sc) const {
-  if (sc.stage == kStageCutscene) {
+  if (sc.stage == kStageCutscene || sc.stage == kStageLevelTransition ||
+      sc.stage == kStageEntranceAnimation) {
     const auto state = spyro::cutscene_scene_recipe::read(mC);
     spyro::cutscene_scene_recipe::prepareFrame(mC, state);
   }
@@ -215,6 +221,17 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     }
     if (!spyro_field_tracers_submit(mC)) {
       abortUnimplemented(sc, "tracers producer 0x800189F0 refused its atomic recipe");
+    }
+    return;
+  }
+  // STAGES 1 (GS_LevelTransition) and 9 (GS_EntranceAnimation), func_8001A050. Its whole
+  // composition — the cleared Sony image, the tally, the shaded HUD mobys, the Spyro actor and the
+  // cyclorama (through substitute matrices while the level-entrance sweep is still winding down) —
+  // belongs to its own owner.
+  if (sc.stage == kStageLevelTransition || sc.stage == kStageEntranceAnimation) {
+    const auto refusal = spyro::level_transition_scene::submit(mC);
+    if (refusal != spyro::level_transition_scene::Refusal::None) {
+      abortUnimplemented(sc, spyro::level_transition_scene::refusalName(refusal));
     }
     return;
   }

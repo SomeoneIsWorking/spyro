@@ -133,8 +133,11 @@ followed by pause-menu Quit. `tools/drive.py gameplay --gate-teleport 0:0 --seek
 six `g_Portals` records, teleports onto a gate's own path node through the port's gate diagnostic and
 walks the rest, hopping and detouring when steering alone stalls. That route now CROSSES the portal:
 the cyclorama refusals of issue 0106 are gone, and the CdControlF mis-binding behind them is fixed
-(see below). It reaches stage 1 with load stage 2 and stops there, because stage 1 has no native
-render producer — issue 0107, which is the same screen the tally cancellation targets.
+(see below). Stages 1 and 9 now have their native producer — `game/render/level_transition_scene`
+over `level_transition_tally_recipe` and the HUD text builder, closing issue 0107 — so the route
+renders the transition and the entrance animation and reaches gameplay in the destination level. It
+stops there on the next unrelated boundary: the field's Spyro shadow producer `0x80059A48` refuses
+its recipe in that level. Observing either cancellation live now needs only that refusal cleared.
 
 The level entrance sweep (stage 9, `func_8002E000`) is deliberately still absent. Its exit is inside
 its own update — `g_Gamestate = GS_Playing` once `g_Camera.m_Rotation.y` has swept below `-0x200`,

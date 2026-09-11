@@ -1,7 +1,7 @@
 ---
 id: 107
 title: Entering a level aborts — stage 1 (GS_LevelTransition) has no native producer, and its one missing piece is the HUD text builder
-status: open
+status: resolved
 symptom: crossing a portal reaches the level-transition tally screen and the renderer aborts with "no producer is registered for this stage"
 tags: render,transition,hud,text
 created: 2026-09-11
@@ -76,12 +76,37 @@ The Moby offsets it writes are anchored by three constants already in this tree 
 (`actor_scene_builder`) — and the derivation from `include/moby.h` reproduces `m_State` 0x48
 independently, so the layout is not a guess.
 
-## What remains for stage 1
+## Resolved — stages 1 and 9 render
 
-`func_8001973C`'s own schedule — the caption text selection from `g_NextLevelId`, the `SINE_8` ease
-in and out keyed to `g_LevelTransTicks`, the "TREASURE FOUND" / "TOTAL TREASURE" phase changes, the
-running gem counter — plus the per-glyph rotation post-pass, and then the stage-1 arm in
-`renderScene` composing it with the three already-owned producers.
+`game/render/level_transition_tally_recipe.{h,cpp}` owns `func_8001973C`'s schedule (caption
+selection from `g_NextLevelId`, both `SINE_8` eases keyed to `g_LevelTransTicks`, the
+TREASURE FOUND / TOTAL TREASURE phase changes, the counter, the gem sprites and the chest) on top of
+the HUD text builder, and `game/render/level_transition_scene.{h,cpp}` owns the whole of
+`func_8001A050`. `renderScene` is one call into it. Because `GamestateDraw` sends **both**
+`GS_LevelTransition` and `GS_EntranceAnimation` to that producer, wiring it gave stage 9 a producer
+at the same time.
+
+Two things the static reading got wrong, both found by the live run rather than by argument:
+
+- **`D_80075910` is NOT zero on arrival at stage 1.** The entrance sweep really is winding down
+  during a level transition, so the substitute view/projection pair had to be ported rather than
+  refused. `sweepSkyMatrices` builds it, and `native_terrain` grew
+  `spyro_terrain_submit_matrices` for the caller that built its matrices instead of finding them in
+  guest RAM.
+- **`Memset(&g_SonyImage, 0, 0x900)` does not clear the shaded queue.** That clear covers
+  `m_Draw.m_Moby` only; `m_ShadedMobys` lives at +0x2400, which is why `func_8001973C` ends with an
+  explicit `g_SonyImage.m_ShadedMobys[0] = 0`. Omitting it left the previous field frame's 256
+  entries in place and the shaded producer refused with `unterminated queue`.
+
+Also fixed on the way: `spyro_paired_actor_frame_finish` logged its ownership gate at debug and the
+caller `abort()`ed on a false, so a failing gate read as a bare crash with no diagnosis. It now logs
+at error when it fails. Stage 1 arms that gate because `func_8001A050` calls `0x80023AC4`
+unconditionally.
+
+Live route `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal --skip-transitions --after
+1500` now crosses the portal, renders the transition and the entrance animation, and reaches
+gameplay in the destination level, where it stops on the next unrelated boundary: the field's Spyro
+shadow producer `0x80059A48` refusing its recipe in that level.
 
 ## Why this is the next task
 

@@ -3,6 +3,7 @@
 #include "core.h"
 #include "field_collectables_recipe.h"
 #include "game.h"
+#include "hud_text_builder.h"
 #include "producer_scope.h"
 #include "render_queue.h"
 
@@ -25,8 +26,8 @@ constexpr uint32_t kShadedMobyQueue = 0x800720f4u;
 constexpr uint32_t kShadedMobyCapacity = 256u;
 constexpr uint32_t kSpecularTime = 0x800770f4u;
 constexpr uint32_t kCosine = 0x8006cc78u;
-constexpr uint32_t kHudMobyCursor = 0x80075710u;
-constexpr uint32_t kMobySize = 0x58u;
+constexpr uint32_t kGemSteadyTicks = 0x0Cu;
+constexpr uint32_t kMobyRotationZ = 0x46u;
 constexpr uint32_t kMaxCompletedTextCount = 15u; // source text buffer is char text[16]
 
 State readState(Core *core) {
@@ -67,13 +68,6 @@ std::string completedGemText(Core *core) {
   return std::to_string(gemCount) + "/" + std::to_string(gemCount);
 }
 
-bool validMobyCursor(uint32_t cursor, uint32_t count) {
-  constexpr uint32_t kRamBegin = 0x80010000u;
-  constexpr uint32_t kRamEnd = 0x80200000u;
-  const uint64_t bytes = (uint64_t)count * kMobySize;
-  return cursor >= kRamBegin && cursor < kRamEnd && bytes <= cursor - kRamBegin;
-}
-
 bool preflight(Core *core, const Recipe &recipe, uint32_t &queueEnd) {
   if (recipe.status != Status::Ready && recipe.status != Status::CompletedGemText) {
     return false;
@@ -89,7 +83,7 @@ bool preflight(Core *core, const Recipe &recipe, uint32_t &queueEnd) {
   }
   if (recipe.status == Status::CompletedGemText &&
       (completedText == 0u || completedText > kMaxCompletedTextCount ||
-       !validMobyCursor(core->mem_r32(kHudMobyCursor), completedText))) {
+       !spyro::hud_text::fits(core, completedText))) {
     return false;
   }
   const RenderQueue &queue = core->game->rq;
@@ -106,29 +100,20 @@ bool preflight(Core *core, const Recipe &recipe, uint32_t &queueEnd) {
   return true;
 }
 
+// The guest's own completed-gem tally, src/gamestates/draw.c around g_Hud.m_GemDisplayState == 4:
+// "<gems>/<gems>" laid out through 0x80017FE4 at (90, 36, 2880) with a 28-unit pitch and shade 11,
+// then every glyph it just appended gets a wobble from the gem-steady tick count and goes into the
+// shaded queue, newest first. This used to be hand-written here and had drifted: every glyph was
+// written at x = 90, so the whole string stacked in one column, and the wobble was missing.
 void appendCompletedGemText(Core *core, uint32_t &queueEnd) {
-  const std::string text = completedGemText(core);
-  uint32_t cursor = core->mem_r32(kHudMobyCursor);
-  for (const char ch : text) {
-    cursor -= kMobySize;
-    for (uint32_t offset = 0; offset < kMobySize; offset += 4u) {
-      core->mem_w32(cursor + offset, 0u);
-    }
-    core->mem_w32(cursor + 0x0cu, 90u);
-    core->mem_w32(cursor + 0x10u, 36u);
-    core->mem_w32(cursor + 0x14u, 2880u);
-    uint32_t mobyClass = 327u; // func_80017FE4's fallback period class
-    if (ch >= '0' && ch <= '9') {
-      mobyClass = 260u + (uint32_t)(ch - '0');
-    } else if (ch == '/') {
-      mobyClass = 277u;
-    }
-    core->mem_w16(cursor + 0x36u, (uint16_t)mobyClass);
-    core->mem_w8(cursor + 0x47u, 0x7Fu);
-    core->mem_w8(cursor + 0x4Fu, 11u);
-    core->mem_w8(cursor + 0x50u, 0xFFu);
-    core->mem_w32(0x80075710u, cursor);
-    core->mem_w32(0x800720F4u + queueEnd * 4u, cursor);
+  const auto layout = spyro::hud_text::layoutCounter(completedGemText(core), {90, 36, 2880}, 28);
+  const auto written = spyro::hud_text::append(core, layout, 11u);
+  const int32_t ticks = (int32_t)core->mem_r32(kHud + kGemSteadyTicks);
+  for (uint32_t i = 0; i < written.size(); ++i) {
+    const uint32_t phase = (uint32_t)((ticks * 4 + (int32_t)i * 12) & 0xFF);
+    const int32_t wobble = (int32_t)core->mem_r16s(kCosine + phase * 2u) >> 7;
+    core->mem_w8(written[i] + kMobyRotationZ, (uint8_t)(int8_t)wobble);
+    core->mem_w32(kShadedMobyQueue + queueEnd * 4u, written[i]);
     ++queueEnd;
   }
 }

@@ -56,6 +56,33 @@ After `func_800181AC` returns, `func_8001973C` walks back over the mobys it just
 each one's `m_Rotation.z` from `COSINE_8(g_LevelTransTicks * 2 + i * 12 & 0xFF) >> 7` — the
 per-character wobble. That per-glyph post-pass is part of the tally, not of the text builder.
 
+## The builder is ported, and it found a live bug
+
+`game/render/hud_text_builder.{h,cpp}` owns both guest builders. They are deliberately two
+functions, not one with a flag: `layoutCounter` (0x80017FE4) is fixed pitch and knows `/`, `%`, `^`
+and `+`; `layoutCaption` (0x800181AC) is proportional, carries a full-width/narrow run across
+characters, and knows `!`, `,`, `?` and `.`. Merging their class tables would put a slash in a
+caption and an apostrophe in a counter. The layout half is pure and unit-tested; `append` performs
+the guest's descending arena writes and refuses atomically when the arena cannot hold the string.
+
+Consolidating it exposed a real defect. `fx_field_collectables.cpp` had a hand-written partial copy
+of the counter builder for the completed-gem tally, and it had drifted from
+`func_80017FE4("%d/%d", &vec{90,36,2880}, 28, 11)`: it wrote **every** glyph at x = 90, so the whole
+string stacked into one column, and it omitted the per-glyph `m_Rotation.z` wobble the guest applies
+from `g_Hud.m_GemSteadyTicks`. Both are fixed by routing it through the shared owner.
+
+The Moby offsets it writes are anchored by three constants already in this tree — `m_Class` 0x36
+(`actor_scene_oracle`), `m_DepthOffset` 0x47 (`moby_shadow_recipe`), `sizeof(Moby)` 0x58
+(`actor_scene_builder`) — and the derivation from `include/moby.h` reproduces `m_State` 0x48
+independently, so the layout is not a guess.
+
+## What remains for stage 1
+
+`func_8001973C`'s own schedule — the caption text selection from `g_NextLevelId`, the `SINE_8` ease
+in and out keyed to `g_LevelTransTicks`, the "TREASURE FOUND" / "TOTAL TREASURE" phase changes, the
+running gem counter — plus the per-glyph rotation post-pass, and then the stage-1 arm in
+`renderScene` composing it with the three already-owned producers.
+
 ## Why this is the next task
 
 It is the screen the Start-cancellation work targets. `spyro1_transition_skip` already classifies and

@@ -81,10 +81,10 @@ hidden. Measured after the fix: the same portal walk runs 1,684 frames with zero
 native-render abort. Two unit tests cover it, one built from the measured points above.
 
 The `s1 == 2` sub-case — the aperture qualifies but no point is on screen, and the portal is closer
-than `0x1000` — needs the camera-facing dot product retail builds through `RotVec8ToMatrix`, which
-is not recovered. That path refuses by name (`FacingTestUnrecovered`) rather than guessing.
+than `0x1000` — needs the camera-facing dot product retail builds through `RotVec8ToMatrix`. That is
+now recovered too, below, so the port no longer has an unrecovered cyclorama path.
 
-## The route now reaches the portal, and stops on the unrecovered facing test
+## The route reaches the portal, and now crosses it
 
 `game/core/spyro_gate_debug.cpp` had a `gates` / `gate-teleport` REPL pair that nothing could reach:
 no runtime overrode `GameRuntime::replCommand`, so the REPL answered `? gate-teleport`. Wiring it
@@ -97,19 +97,43 @@ At that range the frame refuses by name, as designed:
 
     [fieldsky] REFUSED status=invalid portal recipe reason=portal_recipe portals=5 active=1 valid_empty=0
 
-That is `FacingTestUnrecovered`: the aperture qualifies, no point is on screen, and the portal is
-inside `0x1000`, which is retail's `s1 == 2` case. Recovering it is now the top blocker for reaching
-a level on foot, and with it for observing the stage-10 return-home cancellation live.
+That was retail's `s1 == 2` case: the aperture qualifies, no point is on screen, and the portal is
+inside `0x1000`.
 
-`RotVec8ToMatrix` (`0x80016D2C`) is what it needs. Read: it is GTE-based, starting from the identity
-(or a caller-supplied base in `a2`) and composing one axis at a time with `MVMVA 1,0,0,3,0`, taking
-each angle byte as a `*2` index into the sine table `D_8006CBF8` and the cosine table `D_8006CC78`
-(the same `kSineTable` the port already uses, offset 0x80). The angle order is yaw, then pitch, then
-roll — `(at >> 15) & 0x1FE` selects byte 2 first, `(at & 0xFF00) >> 8 << 1` byte 1 next. The caller
-at `0x80051DB4` feeds it the camera's three angles shifted right by 4, rotates `(0x1000, 0, 0)` by
-the result, and drops the portal when that vector's dot product with `firstPoint - camera` is
-negative. Do NOT reuse `portalMatrices`' X*Y*Z composition for this: it is a different routine and
-the order is not the same.
+`RotVec8ToMatrix` (`0x80016D2C`) is what it needs, and it is now ported as
+`cyclorama_portal_mesh::rotVec8ToMatrix`. Read: it is GTE-based, starting from the identity (or a
+caller-supplied base in `a2`) and composing one axis at a time on the RIGHT with `MVMVA 1,0,0,3,0`,
+taking each angle byte as a `*2` index into the sine table `D_8006CBF8` and the cosine table
+`D_8006CC78` (the same `kSineTable` the port already uses, offset 0x80, so a byte `b` is exactly the
+entry the port's interpolating helpers return for `b << 4`). The order is yaw about Y, then pitch
+about X, then roll about Z, and a zero byte skips its rotation. Do NOT reuse `portalMatrices`' X*Y*Z
+composition for this: it is a different guest routine and the order is not the same. A unit test
+pins the order by checking the forward vector at quarter turns, where each axis gives a different
+answer.
+
+The caller at `0x80051D98`-`0x80051E6C` feeds it the camera's three angles at `g_Camera+0x4C/0x4E/
+0x50`, each `>> 4`, rotates `(0x1000, 0, 0)` by the result — which, for a 1.12 fixed-point matrix,
+is just its first column — and drops the portal when the dot product with `worldCentre - camera` is
+negative. `worldCentre` is the portal's WORLD centroid, which retail builds at `0x8005102C` by
+nulling a vector, adding every portal point and dividing by the count; `prepareFrame` now
+accumulates it in the same projection loop.
+
+Measured after this: the same walk reports **zero** cyclorama refusals, and the port runs through
+portal entry into level loading, where it now faults on an unmapped RAM write during the CD
+transfer:
+
+    [mem:error] FATAL: UNMAPPED RAM write8 @ 0x09B30000 (phys 0x09B30000) — fail-fast.
+
+with `a0=0x11`, `a2=0x09B30000`, guest `executor-pc=0x80063D80 ra=0x8002BEA4`, through
+`Core::io_write` -> `cd_command_stock_sync` -> `cd_control_sync`. That is a separate, deeper defect
+and belongs in its own issue; it is recorded here only as evidence the portal was actually crossed.
+
+## A test file that had never been compiled
+
+`tests/test_cyclorama_portal_mesh_recipe.cpp` existed but was in no `add_test` list, so neither it
+nor the two visibility tests added with `meshVisibility` had ever run. It is registered now and runs
+with the rest. A test that is not in the suite is not coverage, and nothing reported its absence —
+the suite counted 30 tests and none of them was this one.
 
 ## What is still open
 

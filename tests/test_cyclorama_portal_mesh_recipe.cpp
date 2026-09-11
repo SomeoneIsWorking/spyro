@@ -2,6 +2,8 @@
 #include "cyclorama_portal_mesh_recipe.h"
 #include "testutil.h"
 
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
@@ -196,6 +198,33 @@ void test_a_portal_on_screen_is_visible() {
         MeshVisibility::Hidden);
 }
 
+// The composition order is the whole point of the routine: yaw about Y first, then pitch about X,
+// then roll about Z, each applied on the right. A wrong axis or a wrong order still produces a
+// plausible matrix, so this checks the forward vector — the matrix's first column, which is what
+// rotating (0x1000,0,0) by it yields — at quarter turns where each axis gives a different answer.
+void test_rot_vec8_composes_yaw_then_pitch_then_roll() {
+  Harness h;
+  // The guest's own 256-entry sine table, one full turn, 1.12 fixed point.
+  for (uint32_t entry = 0; entry <= 256u; ++entry) {
+    const double radians = 2.0 * 3.14159265358979323846 * (double)(entry % 256u) / 256.0;
+    h.core->mem_w16(0x8006CBF8u + entry * 2u,
+                    (uint16_t)(int16_t)std::lround(std::sin(radians) * 4096.0));
+  }
+  const auto column = [](const psxport::native_projection::FixedAffine &m) {
+    return std::array<int, 3>{m.m[0][0], m.m[1][0], m.m[2][0]};
+  };
+  const std::array<int, 3> identity{4096, 0, 0};
+  CHECK(column(spyro::cyclorama_portal_mesh::rotVec8ToMatrix(h.core.get(), 0, 0, 0)) == identity);
+  // A quarter turn of yaw swings the forward vector onto +Z and leaves Y alone.
+  CHECK(column(spyro::cyclorama_portal_mesh::rotVec8ToMatrix(h.core.get(), 0, 0, 64)) ==
+        (std::array<int, 3>{0, 0, 4096}));
+  // A quarter turn of roll swings it onto +Y instead, which is how the two are told apart.
+  CHECK(column(spyro::cyclorama_portal_mesh::rotVec8ToMatrix(h.core.get(), 64, 0, 0)) ==
+        (std::array<int, 3>{0, 4096, 0}));
+  // Pitch alone turns about X, which the forward vector lies on, so it does not move it.
+  CHECK(column(spyro::cyclorama_portal_mesh::rotVec8ToMatrix(h.core.get(), 0, 64, 0)) == identity);
+}
+
 } // namespace
 
 int main() {
@@ -203,6 +232,7 @@ int main() {
   RUN(build_refusal_is_atomic);
   RUN(a_portal_behind_the_camera_is_hidden);
   RUN(a_portal_on_screen_is_visible);
+  RUN(rot_vec8_composes_yaw_then_pitch_then_roll);
   inspectSnapshotIfRequested();
   return pt_summary();
 }

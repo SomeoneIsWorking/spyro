@@ -33,7 +33,6 @@ enum class Status : uint8_t {
   InvalidFaceSpan,
   InvalidFaceIndex,
   InvalidClipRegion,
-  FacingTestUnrecovered,
   NearFamilyUnsupported,
   CapacityExceeded,
 };
@@ -127,6 +126,12 @@ Recipe build(Core *core, const PortalFrame &frame);
 // than every edge means at least one half-plane is inverted: it discards the inside of the portal
 // and keeps the outside. Exposed rather than asserted so a refusal can report the count.
 uint32_t edgesKeepingCentre(const PortalFrame &frame);
+
+// RotVec8ToMatrix (0x80016D2C) over the guest's own sine table. Exposed so its composition order —
+// yaw about Y, then pitch about X, then roll about Z, each applied on the right — is testable
+// against known angles rather than argued about; a wrong axis still yields a plausible matrix.
+psxport::native_projection::FixedAffine
+rotVec8ToMatrix(Core *core, uint32_t roll, uint32_t pitch, uint32_t yaw);
 
 // Retail's own decision, read from 0x80051D0C-0x80051E70, about whether a portal's meshes are
 // drawn at all. A portal that fails it contributes nothing — no mask and no mesh — which is

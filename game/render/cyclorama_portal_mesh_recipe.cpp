@@ -103,6 +103,63 @@ FixedAffine multiply(const FixedAffine &left, const FixedAffine &right) {
   return out;
 }
 
+// RotVec8ToMatrix, 0x80016D2C, for the three camera angles the facing test uses.
+//
+// It starts from the identity and composes one axis at a time on the RIGHT, each step feeding the
+// GTE two column vectors through MVMVA 1,0,0,3,0 and writing the two columns that change. The
+// angles are byte indices into the same sine table this file already reads, with the cosine table
+// one quarter turn (0x80 bytes) along, so a byte b is the exact table entry our interpolating
+// helpers return for b << 4. The order is yaw about Y, then pitch about X, then roll about Z, and a
+// zero byte skips its rotation. This is NOT portalMatrices' X*Y*Z composition; that is a different
+// guest routine and reusing it here would silently rotate the wrong way.
+FixedAffine rotVec8ToMatrix(const RamView &ram, uint32_t roll, uint32_t pitch, uint32_t yaw) {
+  FixedAffine out{};
+  out.m = {{{4096, 0, 0}, {0, 4096, 0}, {0, 0, 4096}}};
+  const auto compose = [&](uint32_t angleByte, int axis) {
+    if (angleByte == 0u) {
+      return;
+    }
+    const int32_t angle = (int32_t)(angleByte << 4);
+    const auto c = (int16_t)cosine(ram, angle);
+    const auto s = (int16_t)sine(ram, angle);
+    FixedAffine rotation{};
+    switch (axis) {
+    case 0: // X: columns 1 and 2 turn.
+      rotation.m = {{{4096, 0, 0}, {0, c, (int16_t)-s}, {0, s, c}}};
+      break;
+    case 1: // Y: columns 0 and 2 turn.
+      rotation.m = {{{c, 0, (int16_t)-s}, {0, 4096, 0}, {s, 0, c}}};
+      break;
+    default: // Z: columns 0 and 1 turn.
+      rotation.m = {{{c, (int16_t)-s, 0}, {s, c, 0}, {0, 0, 4096}}};
+      break;
+    }
+    out = multiply(out, rotation);
+  };
+  compose(yaw, 1);
+  compose(pitch, 0);
+  compose(roll, 2);
+  return out;
+}
+
+// Retail's last word on a portal it is almost touching, 0x80051D98-0x80051E6C: rotate (0x1000,0,0)
+// by the camera's own orientation and drop the portal when that forward vector points away from its
+// centre. Rotating (0x1000,0,0) by a matrix whose entries are 1.12 fixed point is that matrix's
+// first column, so no separate vector rotation is needed.
+bool facesCamera(const RamView &ram, const Point3 &worldCentre) {
+  const Point3 cameraPosition = point(ram, kCamera + 0x28u);
+  // The camera's three angles as retail passes them: the raw 12-bit angle shifted right by 4, which
+  // is the byte index the sine tables are addressed by.
+  const FixedAffine facing = rotVec8ToMatrix(ram,
+                                             ((uint32_t)ram.r16(kCamera + 0x4cu) >> 4) & 0xffu,
+                                             ((uint32_t)ram.r16(kCamera + 0x4eu) >> 4) & 0xffu,
+                                             ((uint32_t)ram.r16(kCamera + 0x50u) >> 4) & 0xffu);
+  const int64_t dot = (int64_t)facing.m[0][0] * (worldCentre.x - cameraPosition.x) +
+                      (int64_t)facing.m[1][0] * (worldCentre.y - cameraPosition.y) +
+                      (int64_t)facing.m[2][0] * (worldCentre.z - cameraPosition.z);
+  return dot >= 0;
+}
+
 std::pair<FixedAffine, FixedAffine>
 portalMatrices(const RamView &ram, uint32_t nextYaw, int32_t nextPitch) {
   const int32_t roll = (int16_t)ram.r16(kCamera + 0x4cu);
@@ -320,8 +377,15 @@ PortalFrame prepareFrame(
   std::vector<std::array<int32_t, 3>> projected;
   projected.reserve(frame.pointCount);
   int64_t sumX = 0, sumY = 0, sumZ = 0;
+  // The portal's centre in WORLD space, which is what the facing test measures against the camera.
+  // Retail builds it the same way, at 0x8005102C: null a vector, add every portal point, divide by
+  // the count.
+  int64_t worldX = 0, worldY = 0, worldZ = 0;
   for (uint32_t i = 0; i < frame.pointCount; ++i) {
     const Point3 world = point(ram, portal + kPortalPoints + i * 12u);
+    worldX += world.x;
+    worldY += world.y;
+    worldZ += world.z;
     const NativeProjectedVertex p =
         projectPortalPoint(cameraMatrix, projection, cameraPosition, world, frame.distanceShift);
     projected.push_back({p.sx, p.sy, (int32_t)p.raw_view[2] << frame.distanceShift});
@@ -395,6 +459,9 @@ PortalFrame prepareFrame(
           : (frame.distance >= kPortalDistanceEnd
                  ? animated
                  : colorLerp(baseColor, animated, (int16_t)(frame.distance - kNearDistanceEnd)));
+  const Point3 worldCentre{(int32_t)(worldX / (int32_t)frame.pointCount),
+                           (int32_t)(worldY / (int32_t)frame.pointCount),
+                           (int32_t)(worldZ / (int32_t)frame.pointCount)};
   const bool anyPointOnScreen =
       std::any_of(frame.points.begin(), frame.points.end(), [&](const auto &point) {
         // Retail: X-1 unsigned below the screen width less one, Y-1 below 0xEF, and a positive view
@@ -408,11 +475,10 @@ PortalFrame prepareFrame(
     frame.refusal = "none";
     return frame;
   case MeshVisibility::QualifiedNoPointOnScreen:
-    if (frame.distance < kFacingTestDistance) {
-      // Retail rotates (0x1000,0,0) by the camera's own RotVec8ToMatrix orientation and drops the
-      // portal when that forward vector points away from it. That matrix build is not recovered
-      // here, so refuse loudly rather than guess a visibility the player would see.
-      return refuse(std::move(frame), Status::FacingTestUnrecovered, "camera_facing_test");
+    if (frame.distance < kFacingTestDistance && !facesCamera(ram, worldCentre)) {
+      frame.status = Status::ValidEmpty;
+      frame.refusal = "none";
+      return frame;
     }
     break;
   case MeshVisibility::Visible:
@@ -621,6 +687,12 @@ meshVisibility(const PortalFrame &frame, int32_t screenRight, int64_t sumZ, bool
   return anyPointOnScreen ? MeshVisibility::Visible : MeshVisibility::QualifiedNoPointOnScreen;
 }
 
+psxport::native_projection::FixedAffine
+rotVec8ToMatrix(Core *core, uint32_t roll, uint32_t pitch, uint32_t yaw) {
+  const RamView ram(std::span<const uint8_t>(core->ram, sizeof(core->ram)));
+  return rotVec8ToMatrix(ram, roll, pitch, yaw);
+}
+
 uint32_t edgesKeepingCentre(const PortalFrame &frame) {
   uint32_t keeping = 0;
   for (const ClipEdge &edge : frame.edges) {
@@ -657,8 +729,6 @@ const char *statusName(Status status) {
     return "invalid face index";
   case Status::InvalidClipRegion:
     return "invalid clip region";
-  case Status::FacingTestUnrecovered:
-    return "facing test unrecovered";
   case Status::NearFamilyUnsupported:
     return "near family unsupported";
   case Status::CapacityExceeded:

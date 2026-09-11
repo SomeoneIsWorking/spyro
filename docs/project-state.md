@@ -128,10 +128,13 @@ is the whole of `func_8002DA74`'s ending. The return-home glide (stage 10, `func
 DISPATCHES the guest's own `0x8002C664` — the same call the sequence makes on its second counter
 wrap — rather than transcribing its ten globals, so there is no hand-written second copy to drift.
 Six focused tests cover the classification, including that the glide is not gated on the tally flag.
-The glide cancellation is unit-tested but NOT yet observed live: reaching stage 10 needs a portal
-entry from Artisans followed by pause-menu Quit. `tools/drive.py gameplay --seek-portal` now reads
-the six `g_Portals` records and walks to the nearest one, hopping when steering alone stalls, but the
-approach aborts at portal distance `0x13CC` on the near-portal family — issue 0106.
+Neither cancellation has yet been observed live: reaching stage 10 needs a portal entry from Artisans
+followed by pause-menu Quit. `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal` now reads the
+six `g_Portals` records, teleports onto a gate's own path node through the port's gate diagnostic and
+walks the rest, hopping and detouring when steering alone stalls. That route now CROSSES the portal:
+the cyclorama refusals of issue 0106 are gone, and the CdControlF mis-binding behind them is fixed
+(see below). It reaches stage 1 with load stage 2 and stops there, because stage 1 has no native
+render producer — issue 0107, which is the same screen the tally cancellation targets.
 
 The level entrance sweep (stage 9, `func_8002E000`) is deliberately still absent. Its exit is inside
 its own update — `g_Gamestate = GS_Playing` once `g_Camera.m_Rotation.y` has swept below `-0x200`,
@@ -370,7 +373,13 @@ camera, every projected point saturates off screen with a negative view Z, and t
 clipped all 893 candidates away into an empty recipe the submitter read as invalid. `meshVisibility`
 now carries retail's own gate from `0x80051D0C`-`0x80051E70`, so such a portal contributes nothing
 exactly as retail skips it; a portal walk runs 1,684 frames with no refusal. The mask still clips
-against the mesh aperture rather than its own (issue 0106). The `fieldsky` channel
+against the mesh aperture rather than its own (issue 0106). Retail's last cyclorama decision is
+recovered too: `RotVec8ToMatrix` (`0x80016D2C`, yaw about Y then pitch about X then roll about Z,
+each composed on the right) and the camera-facing dot test at `0x80051D98`-`0x80051E6C`, so no
+cyclorama path is left unrecovered. Two defects behind that route are also fixed: `0x80063D80` is
+CdControlF, not CdControlB, and its two-argument ABI has no result buffer, so the result-writing
+owner it was bound to wrote 8 bytes at whatever a2 held; and psxport's direct-runtime binding loop
+silently dropped bindings past `kMaxBindings` instead of refusing. The `fieldsky` channel
 now names each refusing draw with its frame/recipe status, refusal string and reject counters, so
 the three previously silent `return false` paths in `fx_field_cyclorama.cpp` no longer abort a frame
 without saying why. The current replay reaches this complete

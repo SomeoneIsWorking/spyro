@@ -481,3 +481,44 @@ tick once per update. The earlier native first-game-tick level ticks 5/7 versus 
 147/150 game-tick values at level tick 300 are consistent with different handoff timing, but do
 not prove which transition predicate or field boundary first differs. No new retail process was
 launched for this static discriminator.
+
+### Exact-PC observation boundary and bounded console plan
+
+The pinned console observer can take pre-instruction snapshots at exact guest PCs,
+including selected RAM ranges, but its ABI accepts only **4 PC targets**, **8 RAM
+ranges**, and **128 queued records** per configuration. The proposed read-only
+comparison therefore needs two predetermined console arms from the same saved
+pre-handoff state, each stopping at the first stage-0 game-tick store:
+
+- Reset arm: `0x80013698` (before level-tick zero store), `0x8001369C`
+  (after it), `0x800136A0` (before game-tick zero store), and `0x800136A4`
+  (after it).
+- Handoff arm: `0x8002E070`/`0x8002E074` (before/after the stage-9-to-0
+  store), then `0x80033A6C`/`0x80033A70` (before/after the first stage-0
+  game-tick store).
+
+Set `follow_return=false`, drain between fields to avoid the 128-record cap,
+and report per-target entries, scanned, retained, dropped, and the reached
+field denominator, including **zero** if a target was never reached. Sample
+`g_Gamestate`, `g_LevelTicks`, `g_GameTick`, camera rotation Y, spherical
+preset pointer, camera state, target state, and delivered-field counter as the
+eight bounded RAM ranges. A third identically bounded sentinel arm targets
+unreachable `0xFFFFFFFC`; it must report zero hits with a nonzero scanned
+denominator. These are planned controls, not observed runtime results. No
+console arm has been run for this handoff comparison.
+
+The matching **native exact-PC arm cannot yet be implemented title-locally**
+without changing execution semantics. `Core::pcObserver` exists, but the
+production Lightrec path never calls `pc_observer_at`; it executes a translated
+segment and synchronizes `Core::pc` only on return. `Core::storeWatchCb` receives
+address/value/width, not the translated instruction PC, so pairing that callback
+with `Core::pc` would falsely attribute an interior store to the segment exit.
+The title's StageUpdate call observer similarly sees an outer call boundary,
+not the nested reset or store instruction. A shared Lightrec debug seam would
+have to report selected guest instruction PCs and pre/post state at the
+translated execution boundary while leaving unarmed execution unchanged. Its
+synthetic qualification needs a reached translated-store positive, an
+unreachable-PC zero-hit negative with scanned denominator, unchanged guest
+output with observation on/off, and zero interpreter substitution. Until such
+a seam is reviewed and implemented in `psxport`, the console-only arms cannot
+yield a paired lifecycle verdict.

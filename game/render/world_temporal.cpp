@@ -1,5 +1,6 @@
 #include "world_temporal.h"
 
+#include "content_identity.h"
 #include "core.h"
 #include "fx_paired_actor.h"
 #include "producer_scope.h"
@@ -11,6 +12,7 @@
 #include "world_source_pair.h"
 
 #include <algorithm>
+#include <array>
 #include <lucent/log.h>
 #include <span>
 #include <tuple>
@@ -19,9 +21,19 @@
 namespace spyro::world_temporal {
 namespace {
 
+std::string digestResource(const Core &core, GuestAddressRange range) {
+  const std::span<const uint8_t> ram(core.ram);
+  if (!range.valid() || range.end > ram.size()) {
+    return {};
+  }
+  return sha256(ram.subspan(range.begin, range.end - range.begin));
+}
+
 bool resident(const Core &core, const Frame &frame) {
   for (const auto &resource : frame.resources) {
-    if (core.currentImageIdentity(resource.range) != resource.image) {
+    if (core.currentImageIdentity(resource.range) != resource.image ||
+        (!resource.contentDigest.empty() &&
+         digestResource(core, resource.range) != resource.contentDigest)) {
       return false;
     }
   }
@@ -36,7 +48,7 @@ bool sameResources(const Frame &a, const Frame &b) {
     const auto &left = a.resources[i];
     const auto &right = b.resources[i];
     if (left.range.begin != right.range.begin || left.range.end != right.range.end ||
-        left.image != right.image) {
+        left.image != right.image || left.contentDigest != right.contentDigest) {
       return false;
     }
   }
@@ -70,16 +82,42 @@ bool cameraMatches(const Frame &world, const SpyroPairedFrame &paired) {
 
 void sortResources(std::vector<Resource> &resources) {
   std::sort(resources.begin(), resources.end(), [](const Resource &a, const Resource &b) {
-    return std::tie(a.range.begin, a.range.end, a.image.id, a.image.generation) <
-           std::tie(b.range.begin, b.range.end, b.image.id, b.image.generation);
+    const auto order = [](const Resource &resource) {
+      return std::tuple{resource.range.begin,
+                        resource.range.end,
+                        resource.image.has_value(),
+                        resource.image ? resource.image->id : 0u,
+                        resource.image ? resource.image->generation : 0u,
+                        resource.contentDigest};
+    };
+    return order(a) < order(b);
   });
   resources.erase(std::unique(resources.begin(),
                               resources.end(),
                               [](const Resource &a, const Resource &b) {
                                 return a.range.begin == b.range.begin &&
-                                       a.range.end == b.range.end && a.image == b.image;
+                                       a.range.end == b.range.end && a.image == b.image &&
+                                       a.contentDigest == b.contentDigest;
                               }),
                   resources.end());
+}
+
+bool matchesCaptured(const Core &core,
+                     const world_animation::Plan &plan,
+                     const PendingChannel &captured) {
+  if (plan.resources.size() != captured.resources.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < plan.resources.size(); ++i) {
+    const auto &range = plan.resources[i];
+    const auto &resource = captured.resources[i];
+    if (range.begin != resource.range.begin || range.end != resource.range.end ||
+        core.currentImageIdentity(range) != resource.image ||
+        digestResource(core, range) != resource.contentDigest) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool applyAnimationPlan(Frame &frame,
@@ -230,7 +268,56 @@ bool History::retain(const Core &core,
     }
     resources.push_back({range, *image});
   }
-  current_ = Frame{std::move(source), draw, std::move(resources), serial_};
+  std::vector<PendingChannel> pendingChannels;
+  const world_chunk_codec::RamView ram(std::span<const uint8_t>(core.ram));
+  std::array<bool, 256> visited{};
+  for (const uint8_t sectorIndex : source.selection.occurrences) {
+    if (visited[sectorIndex]) {
+      continue;
+    }
+    visited[sectorIndex] = true;
+    const auto &header = source.selection.sectors[sectorIndex];
+    if (!header) {
+      continue;
+    }
+    for (uint8_t channel = 0; channel < 4u; ++channel) {
+      const uint8_t index = (uint8_t)(header->animation >> (channel * 8u));
+      if (index >= 0x80u) {
+        continue;
+      }
+      const uint32_t active =
+          (0xffffffffu & ~(0xffu << (channel * 8u))) | ((uint32_t)index << (channel * 8u));
+      world_animation::Plan plan{};
+      const char *reason = nullptr;
+      if (!world_animation::collectSectorResources(ram, header->address, active, plan, reason) ||
+          plan.channels != 1u) {
+        lucent::debug("worldtemporal",
+                      "pending animation inputs unavailable frame={} sector={:08X} channel={} "
+                      "reason={}",
+                      serial_,
+                      header->address,
+                      channel,
+                      reason ? reason : "plan_shape");
+        continue; // A later-visible channel requires a complete retained descriptor to enter.
+      }
+      PendingChannel captured{sectorIndex, channel, {}};
+      bool complete = true;
+      for (const auto range : plan.resources) {
+        const auto image = core.currentImageIdentity(range);
+        const auto digest = digestResource(core, range);
+        if (digest.empty()) {
+          complete = false;
+          break;
+        }
+        captured.resources.push_back({range, image, digest});
+      }
+      if (complete) {
+        pendingChannels.push_back(std::move(captured));
+      }
+    }
+  }
+  current_ =
+      Frame{std::move(source), draw, std::move(resources), std::move(pendingChannels), serial_};
   return true;
 }
 
@@ -282,19 +369,29 @@ bool History::materializePending(Core &core, const char *&why) {
                     index,
                     active);
       world_animation::Plan plan{};
-      if (!world_animation::appendSector(ram, animation.address, active, plan, why) ||
-          !applyAnimationPlan(staged, animation, channel, plan, why)) {
+      if (!world_animation::appendSector(ram, animation.address, active, plan, why)) {
+        return false;
+      }
+      const auto captured =
+          std::find_if(previous_->pendingChannels.begin(),
+                       previous_->pendingChannels.end(),
+                       [&](const PendingChannel &candidate) {
+                         return candidate.sector == animation.index && candidate.channel == channel;
+                       });
+      if (captured == previous_->pendingChannels.end()) {
+        why = "animation_resource_unretained";
+        return false;
+      }
+      if (!matchesCaptured(core, plan, *captured)) {
+        why = "animation_resource_changed";
+        return false;
+      }
+      if (!applyAnimationPlan(staged, animation, channel, plan, why)) {
         return false;
       }
       previousHeader->animation |= 0xffu << (channel * 8u);
-      for (const auto range : plan.resources) {
-        const auto image = core.currentImageIdentity(range);
-        if (!image) {
-          why = "animation_resource_residency";
-          return false;
-        }
-        pendingResources.push_back({range, *image});
-      }
+      pendingResources.insert(
+          pendingResources.end(), captured->resources.begin(), captured->resources.end());
     }
   }
   staged.resources.insert(staged.resources.end(), pendingResources.begin(), pendingResources.end());

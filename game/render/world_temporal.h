@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 class Core;
@@ -19,13 +20,21 @@ inline constexpr uint32_t kProducerKey = 0x800258f0u;
 
 struct Resource {
   GuestAddressRange range;
-  psx::cpu::ImageIdentity image;
+  std::optional<psx::cpu::ImageIdentity> image;
+  std::string contentDigest;
+};
+
+struct PendingChannel {
+  uint8_t sector = 0;
+  uint8_t channel = 0;
+  std::vector<Resource> resources;
 };
 
 struct Frame {
   world_source::Source source;
   world_scene_submitter::DrawState draw;
   std::vector<Resource> resources;
+  std::vector<PendingChannel> pendingChannels;
   uint64_t serial = 0;
 };
 

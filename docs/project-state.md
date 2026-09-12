@@ -553,7 +553,11 @@ and the explicitly owned shadow projection are documented in
 Issue [0102](issues/0102-native-delivered-fields-undercount-guest-vblank.md) resolves duplicate
 VBlank delivery and records the exact comparison: native boot/title and Artisans counter deltas
 now equal delivered fields; Left for 60 fields ends within 1–2 guest units per player axis of the
-oracle. Camera state still differs, so this is not exact-state or complete visual parity. The run
+oracle. A newer authentic-console comparison at the same Artisans level tick and player position
+found the native game tick three behind and a different camera state before Left input. Issue
+[0110](issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md) records the reached
+CameraUpdate observer and the first-divergence target; camera state still differs, so this is not
+exact-state or complete visual parity. The run
 exits 0 after 4,061 fields / 2,062 product steps and fences, with nonzero JIT execution, zero faults
 and zero fallback. Paired temporal emission remains positive. Complete FIELD interpolation,
 paced audio/performance and all released hosts remain unqualified. The console reference uses an
@@ -702,12 +706,18 @@ particles and other unowned temporal sources lack complete matching-source inter
 The endpoint lifecycle is now owned for visible world animation channels. When a previous source
 contains a pending channel, temporal admission decodes that channel through the same pure animation
 plan used by the frame producer, applies its writes to the retained endpoint arrays, retires only
-the endpoint stamp, and records every animation table/header/keyframe/payload span in the residency
-identity. Hidden channels still refuse when they become newly visible, and failed multi-channel
-materialization is atomic. Focused animation and temporal tests pass (62 and 135 checks). A fresh
-Artisans route reached 3,161 post-entry fields with 2,386 admitted world intervals and zero
-`active_animation` or endpoint-materialization refusals; the shipping JIT executed with zero
-fallback. This is live route and source-oracle-path evidence, not full retail packet parity.
+the endpoint stamp, and records every animation table/header/keyframe/payload span. Hidden channels
+still refuse when they become newly visible, and failed multi-channel materialization is atomic.
+Pending-channel inputs are captured at the earlier frame's retain boundary without decoding hidden
+geometry. Each span retains its image generation when owned and an exact SHA-256 content digest,
+including for global animation-set pointers outside the image catalog. Midpoint preparation refuses
+a replaced image, changed bytes, or changed source range before changing the retained endpoint.
+Focused animation and temporal tests pass (68 and 162 checks), including image replacement,
+same-generation content mutation, and newly acquired image ownership negatives. A fresh Artisans
+route reached 3,161 post-entry fields
+with 2,386 admitted world intervals and zero `active_animation`, animation-resource, or
+endpoint-materialization refusals; the shipping JIT executed with zero fallback. This is live route
+and source-oracle-path evidence, not full retail packet parity.
 
 Gap: regular actors, shadows, particles and other unowned temporal sources lack complete matching-
 source interpolation, and full-scene independent-console oracle parity remains open.

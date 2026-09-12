@@ -51,6 +51,15 @@ bool appendSector(const world_chunk_codec::RamView &ram,
                   Plan &plan,
                   const char *&why);
 
+// Capture the exact authored inputs a pending channel would read, without decoding or advancing
+// geometry. Temporal history uses this at retain time so a later-visible channel cannot silently
+// take its resource identity from the newer frame.
+bool collectSectorResources(const world_chunk_codec::RamView &ram,
+                            uint32_t sector,
+                            uint32_t active,
+                            Plan &plan,
+                            const char *&why);
+
 // The two GTE operations the interpolated channels use, derived from the hardware reference so
 // the blended forms are exact rather than close. sf=1, lm=0, which is what the guest encodes.
 struct Vector3 {

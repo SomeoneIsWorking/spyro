@@ -289,8 +289,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   for (uint32_t i = 0; i < 4u; ++i) {
     w32(payload + i * 4u, 0x11111111u + i);
   }
-  core.imageCatalog().activate(
-      "synthetic animation set", {animationSetSlot, animationSetSlot + 4u}, 2u);
+  // The global set slot is authored RAM data, not part of an activated executable image.
   core.imageCatalog().activate("synthetic animation data", {animationSet, payload + 16u}, 2u);
   auto previous = f.source;
   auto current = f.source;
@@ -308,6 +307,39 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   CHECK_EQ(retained->source.sectors[0]->low.vertices[3], 0x11111114u);
   CHECK(spyro::world_scene::sample(retained->source, f.context.worldTemporal.current()->source, 0.5)
             .status == spyro::world_recipe::Status::Ready);
+
+  // A pending channel's authored inputs belong to the retained endpoint. Replacing its image
+  // between that retain and midpoint preparation must refuse without altering the old source.
+  f.retain(previous);
+  f.context.worldTemporal.rotate();
+  const auto unchanged = f.context.worldTemporal.previous()->source.sectors[0]->low.vertices;
+  core.imageCatalog().activate(
+      "synthetic animation data reload", {animationSet, payload + 16u}, 2u);
+  f.retain(current);
+  spyro_temporal_scene_prepare(core);
+  CHECK(!f.context.worldTemporal.eligible);
+  CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == unchanged);
+  CHECK_EQ(f.context.worldTemporal.previous()->source.selection.sectors[0]->animation, 0xffffff00u);
+  CHECK(std::equal(before.begin(), before.end(), std::begin(core.ram)));
+
+  f.retain(previous);
+  f.context.worldTemporal.rotate();
+  const auto beforeMutation = f.context.worldTemporal.previous()->source.sectors[0]->low.vertices;
+  core.ram[payload] ^= 1u; // Content changes without an image-generation change.
+  f.retain(current);
+  spyro_temporal_scene_prepare(core);
+  CHECK(!f.context.worldTemporal.eligible);
+  CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == beforeMutation);
+
+  f.retain(previous);
+  f.context.worldTemporal.rotate();
+  const auto beforeOwnership = f.context.worldTemporal.previous()->source.sectors[0]->low.vertices;
+  core.imageCatalog().activate(
+      "new animation slot owner", {animationSetSlot, animationSetSlot + 4u}, 2u);
+  f.retain(current);
+  spyro_temporal_scene_prepare(core);
+  CHECK(!f.context.worldTemporal.eligible);
+  CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == beforeOwnership);
 }
 
 } // namespace

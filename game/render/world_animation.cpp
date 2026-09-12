@@ -114,6 +114,24 @@ bool readable(const RamView &ram, const Header &header, bool blended, const char
   return true;
 }
 
+bool readChannel(const RamView &ram,
+                 uint32_t channel,
+                 uint32_t index,
+                 Header &header,
+                 Plan &plan,
+                 const char *&why) {
+  if (!readHeader(ram, channel, index, header, plan, why)) {
+    return false;
+  }
+  const uint32_t stride = channel == 3u ? 8u : 4u;
+  if (!checkStride(header, stride, why) || !readable(ram, header, header.factor != 0, why)) {
+    return false;
+  }
+  return retainResource(ram, header.sourceA, header.size, plan, "animation_payload", why) &&
+         (header.factor == 0 ||
+          retainResource(ram, header.sourceB, header.size, plan, "animation_payload", why));
+}
+
 Vector3 unpackVertex(uint32_t word) {
   return {(int32_t)(word >> 21), (int32_t)((word >> 10) & 0x7ffu), (int32_t)(word & 0x3ffu)};
 }
@@ -280,16 +298,7 @@ bool appendSector(
       continue;
     }
     Header header{};
-    if (!readHeader(ram, channel, index, header, plan, why)) {
-      return false;
-    }
-    const uint32_t stride = channel == 3u ? 8u : 4u;
-    if (!checkStride(header, stride, why) || !readable(ram, header, header.factor != 0, why)) {
-      return false;
-    }
-    if (!retainResource(ram, header.sourceA, header.size, plan, "animation_payload", why) ||
-        (header.factor != 0 &&
-         !retainResource(ram, header.sourceB, header.size, plan, "animation_payload", why))) {
+    if (!readChannel(ram, channel, index, header, plan, why)) {
       return false;
     }
     switch (channel) {
@@ -313,6 +322,26 @@ bool appendSector(
     // frame being re-applied on every later pass over this sector.
     plan.writes.push_back({sector + 24u + channel, kIdle, 1u});
     plan.channels++;
+  }
+  return true;
+}
+
+bool collectSectorResources(
+    const RamView &ram, uint32_t sector, uint32_t active, Plan &plan, const char *&why) {
+  if (!ram.contains(sector, 28u)) {
+    why = "animation_sector_bounds";
+    return false;
+  }
+  for (uint32_t channel = 0; channel < 4u; ++channel) {
+    const uint32_t index = (active >> (channel * 8u)) & 0xffu;
+    if (index >= 0x80u) {
+      continue;
+    }
+    Header header{};
+    if (!readChannel(ram, channel, index, header, plan, why)) {
+      return false;
+    }
+    ++plan.channels;
   }
   return true;
 }

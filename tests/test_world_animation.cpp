@@ -7,6 +7,7 @@
 // letting a green run imply coverage it does not have.
 #include "world_animation.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -35,6 +36,16 @@ void checkResource(
   if (index < plan.resources.size()) {
     check(plan.resources[index].begin == begin && plan.resources[index].end == begin + size, what);
   }
+}
+
+bool sameResourceRanges(const Plan &left, const Plan &right) {
+  return std::equal(left.resources.begin(),
+                    left.resources.end(),
+                    right.resources.begin(),
+                    right.resources.end(),
+                    [](const auto &a, const auto &b) {
+                      return a.begin == b.begin && a.end == b.end;
+                    });
 }
 
 constexpr uint32_t kAnimationSets = 0x78560u + 20u;
@@ -135,6 +146,12 @@ void test_channel0_direct_copies_vertices() {
   checkResource(plan, 2u, kAnimation, 12u, "header resource");
   checkResource(plan, 3u, kAnimation + 12u, 8u, "keyframe resource");
   checkResource(plan, 4u, kAnimation + kPayload, 12u, "direct payload resource");
+  Plan retained{};
+  check(spyro::world_animation::collectSectorResources(
+            RamView(ram), kSector, activeFor(0u, 3u), retained, why),
+        "collects direct inputs without advancing");
+  check(retained.channels == 1u && retained.writes.empty(), "resource capture is read-only");
+  check(sameResourceRanges(retained, plan), "resource capture matches direct decode");
 }
 
 void test_channel0_blended_interpolates_toward_the_second_keyframe() {
@@ -165,6 +182,12 @@ void test_channel0_blended_interpolates_toward_the_second_keyframe() {
   check(farPlan.resources.size() == 6u, "blended resource count");
   checkResource(farPlan, 4u, kAnimation + kPayload, 4u, "blended source A resource");
   checkResource(farPlan, 5u, kAnimation + kPayload + 4u, 4u, "blended source B resource");
+  Plan retained{};
+  check(spyro::world_animation::collectSectorResources(
+            RamView(far), kSector, activeFor(0u, 1u), retained, why),
+        "collects blended inputs without advancing");
+  check(retained.channels == 1u && retained.writes.empty(), "blended capture is read-only");
+  check(sameResourceRanges(retained, farPlan), "resource capture matches blended decode");
 }
 
 void test_channel1_walks_colours_by_the_encoded_delta() {

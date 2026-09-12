@@ -156,11 +156,36 @@ shipping tree; its bounded raw diagnostics remain gitignored in
 
 ## Next discriminator
 
-Resolve native observation before inferring gameplay parity. Arm an observer
-through an immutable startup configuration boundary before REPL command timing,
-or build an independent Lightrec guest-PC/return trace with synchronized
-architectural state; the dormant `Core::pcObserver` is not wired into the
-shipping executor. Require reached and unreachable controls and identical
-native RAM, frame, and audio hashes from identical pre-arm state. Then compare
-a truly matched pre-update New Game handoff, before the first stage-0 game
-tick. Do not change camera math or scheduler timing to fit unmatched endpoints.
+The title now has a startup-configured (`PSXPORT_DEBUG=stage-observe`), read-only
+observer at the completed outer `StageUpdate` return. It starts before any REPL
+command and records at most the first 128 stage-0 returns, with scanned,
+matched, gameplay, recorded, and omitted denominators at shutdown. A focused
+synthetic test exercises reached, unreachable, disabled, and non-gameplay
+returns through the shipping sampler. A real-product state-driven New Game run
+reached stage 0 and reported 3,017 completed returns, 3,017 matches, 63
+stage-0 samples, zero omissions, 20,339,081 Lightrec blocks executed, and zero
+fallback blocks/instructions. Its first sampled game tick 1 occurred at level
+tick 23, while earlier REPL probes first sampled it at ticks 8 and 19. This
+observer fixes the **sample location within one native run**, not the variable
+New Game handoff across runs.
+
+Three fresh no-input controls used the identical first-prompt command sequence
+and 600 delivered fields, with observation disabled twice and enabled once.
+One triplet had identical 2 MiB pre-command RAM, final RAM, frame, and WAV
+hashes; the enabled arm positively scanned and matched 83 returns. In another
+triplet, the pre-command RAM and final frame matched, but enabled versus
+disabled final RAM differed by two bytes at `0x80075950/54`: each `VSync(-1)`
+sample read 600 rather than 599. WAV hashes differed too. An earlier triplet
+also had different final RAM between **two disabled** arms, despite matching
+pre-command RAM and frames. These observations show output is not uniformly
+repeatable under the current REPL control and do not isolate observer impact.
+The saved bounded controls are in gitignored
+`scratch/oracle-comparison/stage_startup_control_*`.
+
+Resolve the VSync/output variance and align the pre-update New Game handoff
+before inferring native/full-console camera parity. Require reached and
+unreachable observations and identical native RAM, frame, and audio hashes
+from identical initial state under a control that reproduces without the
+observer. Compare the paired **outer-return** phase before pursuing a nested
+`CameraUpdate` return. Do not change camera math or scheduler timing to fit
+unmatched endpoints.

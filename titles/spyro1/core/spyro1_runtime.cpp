@@ -1,6 +1,7 @@
 #include "spyro1_runtime.h"
 
 #include "cd_control.h"
+#include "cfg.h"
 #include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
@@ -58,7 +59,7 @@ void Spyro1Runtime::bootInit(Core &core) {
 }
 
 std::unique_ptr<FrameDriver> Spyro1Runtime::createFrameDriver(Game &game) {
-  return std::make_unique<Spyro1FrameDriver>(game);
+  return std::make_unique<Spyro1FrameDriver>(game, cfg_dbg("stage-observe") != 0);
 }
 
 bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {

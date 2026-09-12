@@ -5,6 +5,7 @@
 #include "spyro1_field_scheduler.h"
 #include "spyro1_frame_policy.h"
 #include "spyro1_transition_skip.h"
+#include "stage_update_observer.h"
 
 #include <cstdint>
 #include <memory>
@@ -16,7 +17,7 @@ namespace spyro1 {
 
 class Spyro1FrameDriver final : public FrameDriver {
 public:
-  explicit Spyro1FrameDriver(Game &game);
+  Spyro1FrameDriver(Game &game, bool observeStageUpdate);
   ~Spyro1FrameDriver() override;
 
   void initialize(Core &core);
@@ -29,6 +30,7 @@ private:
   FieldScheduler fields_;
   BootSequence boot_;
   TransitionSkip transitions_;
+  StageUpdateObserver stageObserver_;
   std::unique_ptr<SpyroRenderer> renderer_;
   std::uint32_t gameplayFrame_ = 0;
 };

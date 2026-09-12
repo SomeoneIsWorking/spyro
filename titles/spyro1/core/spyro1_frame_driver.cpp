@@ -56,11 +56,14 @@ private:
 
 } // namespace
 
-Spyro1FrameDriver::Spyro1FrameDriver(Game &game)
+Spyro1FrameDriver::Spyro1FrameDriver(Game &game, bool observeStageUpdate)
     : fields_(game), boot_(fields_), transitions_(fields_),
+      stageObserver_(observeStageUpdate, kFrameUpdate),
       renderer_(std::make_unique<SpyroRenderer>(&game.core)) {}
 
-Spyro1FrameDriver::~Spyro1FrameDriver() = default;
+Spyro1FrameDriver::~Spyro1FrameDriver() {
+  stageObserver_.report();
+}
 
 void Spyro1FrameDriver::initialize(Core &core) {
   SpyroRenderer::installModeFromConfig(&core);
@@ -96,6 +99,7 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
                                    kFrameUpdate,
                                    psx::cpu::ExecutionBudget::fromCycles(kFrameBudgetCycles),
                                    "frame-update");
+  stageObserver_.afterReturn(core, kFrameUpdate);
   state.openInputLatch();
   state.setFrameStep(std::clamp(state.elapsedFields(), kFrameStepMin, kFrameStepMax));
   const bool suppressed = state.renderSuppressed();

@@ -177,6 +177,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/spyro1_boot_sequence.cpp
   titles/spyro1/core/spyro1_field_scheduler.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
+  titles/spyro1/core/stage_update_observer.cpp
   titles/spyro1/core/spyro1_transition_skip.cpp
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro2/core/spyro2_gpu_sync.cpp
@@ -221,6 +222,10 @@ if(BUILD_TESTING)
   add_executable(test_runtime_run tests/test_runtime_run.cpp)
   target_link_libraries(test_runtime_run PRIVATE spyro_runtime)
   add_test(NAME runtime_run COMMAND test_runtime_run)
+  add_executable(test_stage_update_observer tests/test_stage_update_observer.cpp)
+  target_include_directories(test_stage_update_observer PRIVATE ${PSXPORT_DIR}/tests)
+  target_link_libraries(test_stage_update_observer PRIVATE spyro_runtime)
+  add_test(NAME stage_update_observer COMMAND test_stage_update_observer)
   add_executable(test_guest_execution tests/test_guest_execution.cpp)
   target_link_libraries(test_guest_execution PRIVATE spyro_runtime)
   add_test(NAME guest_execution COMMAND test_guest_execution)

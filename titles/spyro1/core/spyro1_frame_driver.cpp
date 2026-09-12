@@ -59,7 +59,8 @@ private:
 Spyro1FrameDriver::Spyro1FrameDriver(Game &game, bool observeStageUpdate)
     : fields_(game), boot_(fields_), transitions_(fields_),
       stageObserver_(observeStageUpdate, kFrameUpdate),
-      renderer_(std::make_unique<SpyroRenderer>(&game.core)) {}
+      renderer_(std::make_unique<SpyroRenderer>(&game.core,
+                                                observeStageUpdate ? &stageObserver_ : nullptr)) {}
 
 Spyro1FrameDriver::~Spyro1FrameDriver() {
   stageObserver_.report();

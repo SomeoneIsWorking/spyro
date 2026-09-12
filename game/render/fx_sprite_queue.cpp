@@ -2,13 +2,15 @@
 //
 // This is a NATIVE PRODUCER: it reads the game's actor queue and mesh streams and submits resolved
 // untextured polygons directly to RenderQueue. It never reads the GTE screen FIFO, ordering table,
-// packet pool, or GP0 output. The platform GTE is used only for the game's lighting calculation —
-// the same legitimate hardware-math boundary used by game/core/native_gte.cpp.
+// packet pool, or GP0 output. The platform GTE executes the actor transform, projection, clipping,
+// and lighting operations that the guest producer uses; its queue-exit register state also matters
+// to the next guest camera update.
 //
 // Scope proven by C176 and the follow-up stage census: byte +0x50's sign bit selects this semantic
 // class. A 7,000-present reference run exercised 12,092 such records and all of stage-13/mode-3's
 // 4,294 records; that stage used only the flat bit01 primitive variant (134,528 faces). World-space
 // records and the other three variants remain a loud gap, not a fallback through guest packets.
+#include "fx_sprite_queue.h"
 #include "cfg.h"
 #include "core.h"
 #include "fx_paired_actor.h"
@@ -40,12 +42,18 @@ constexpr uint32_t kContinueFlag = 0x80078E78u;
 constexpr uint32_t kGuestProducer = 0x80022A2Cu;
 constexpr uint32_t kActorSize = 0x58u;
 constexpr uint32_t kQueueCapacity = 256u;
+// SCUS_942.28 0x800232A8 branches to 0x80023958 after the last queue entry. That exit arm writes
+// these values to CR24/25 at 0x8002395C/64 before continuing with the queue tail. They are not a
+// projection adjustment: every completed traversal restores the guest's screen center, including a
+// traversal whose unsupported actor/primitive makes this native producer report incomplete.
+constexpr uint32_t kQueueExitOfx = 0x01000000u;
+constexpr uint32_t kQueueExitOfy = 0x00780000u;
 
 int32_t sx8(uint8_t v) {
   return (int32_t)(int8_t)v;
 }
 
-bool setup_screen_gte(Core *c, uint32_t actor) {
+bool setup_screen_gte(Core *c, uint32_t actor, spyro::render::SpriteQueueOffsetObserver *observer) {
   const uint32_t flags = c->mem_r32(actor + 0x44u);
   // Stage-13 text animates only byte +0x46. The other two rotation arms are live elsewhere and are
   // deliberately left for the generic screen-class producer rather than guessed here.
@@ -55,8 +63,15 @@ bool setup_screen_gte(Core *c, uint32_t actor) {
 
   // Screen-class arm 0x80022C84..22DA0: actor X/Y replace OFX/OFY, actor Z/2 is TRZ, and the base
   // rotation scales local Y by 0xA00/0x1000. DQA=1 is the guest's screen-class marker.
+  spyro::render::GteOffsetSample before{};
+  if (observer) {
+    before = {gte_read_ctrl(24u), gte_read_ctrl(25u)};
+  }
   gte_write_ctrl(24, c->mem_r32(actor + 0x0Cu) << 16);
   gte_write_ctrl(25, c->mem_r32(actor + 0x10u) << 16);
+  if (observer) {
+    observer->spriteActorWrite(actor, before, {gte_read_ctrl(24u), gte_read_ctrl(25u)});
+  }
   gte_write_ctrl(5, 0);
   gte_write_ctrl(6, 0);
   gte_write_ctrl(7, (uint32_t)((int32_t)c->mem_r32(actor + 0x14u) >> 1));
@@ -234,7 +249,10 @@ void append_pending_actors(Core *c) {
   }
 }
 
-bool emit_screen_queue(Core *c) {
+} // namespace
+
+bool spyro::render::emitScreenQueue(Core &core, SpriteQueueOffsetObserver *observer) {
+  Core *c = &core;
   const ProjParams &pp = c->rsub.projParams;
   float ofx, ofy, H;
   pp.requireGeom("Spyro screen sprite queue", ofx, ofy, H);
@@ -242,6 +260,9 @@ bool emit_screen_queue(Core *c) {
   (void)ofy;
   (void)H; // screen actors program OFX/OFY; RTPS reads the game's H from GTE
   GpuState &gs = c->game->gpu;
+  if (observer) {
+    observer->beginSpriteQueue(*c, {gte_read_ctrl(24u), gte_read_ctrl(25u)});
+  }
   ProducerScope producer(
       &c->rsub.producerScope, kGuestProducer, "spriteq:RasterizeSpritePrimQueue.screen");
   uint64_t emitted = 0, rejected_world = 0, rejected_variant = 0;
@@ -276,7 +297,7 @@ bool emit_screen_queue(Core *c) {
       lucent::error("spriteq", "mesh {} has {} vertices, native cap is 128", mesh_index, nvtx);
       continue;
     }
-    if (!setup_screen_gte(c, actor)) {
+    if (!setup_screen_gte(c, actor, observer)) {
       rejected_variant += nprim;
       continue;
     }
@@ -458,8 +479,15 @@ bool emit_screen_queue(Core *c) {
                 emitted ? min_y : 0,
                 emitted ? max_x : 0,
                 emitted ? max_y : 0);
+  gte_write_ctrl(24u, kQueueExitOfx);
+  gte_write_ctrl(25u, kQueueExitOfy);
+  if (observer) {
+    observer->endSpriteQueue({gte_read_ctrl(24u), gte_read_ctrl(25u)});
+  }
   return rejected_world == 0 && rejected_variant == 0;
 }
+
+namespace {
 
 void trace_reference_faces(Core *c) {
   if (!cfg_str("PSXPORT_SPRITE_QUEUE_FACE_TRACE") || (int32_t)c->mem_r32(kStage13Timer) != 171) {
@@ -477,7 +505,7 @@ void trace_reference_faces(Core *c) {
     records++;
     const uint16_t mesh_index = c->mem_r16(actor + 0x36u);
     const uint32_t mesh = c->mem_r32(kMeshTable + (uint32_t)mesh_index * 4u);
-    if (!mesh || !setup_screen_gte(c, actor)) {
+    if (!mesh || !setup_screen_gte(c, actor, nullptr)) {
       continue;
     }
     const uint32_t nvtx = c->mem_r8(mesh + 0u);
@@ -664,7 +692,7 @@ bool SpyroRenderer::stage13Mode3Render() const {
   }
   c->mem_w32(kQueue, 0);
   append_pending_actors(c);
-  const bool complete_queue = emit_screen_queue(c);
+  const bool complete_queue = spyro::render::emitScreenQueue(*c, mQueueObserver);
 
   const bool complete_paired =
       state != 2u || spyro_paired_actor_submit(c, spyro_paired_actor_state(c));

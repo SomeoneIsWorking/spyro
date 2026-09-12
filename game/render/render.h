@@ -8,6 +8,25 @@
 #include <cstdint>
 class Core;
 
+namespace spyro::render {
+
+struct GteOffsetSample {
+  std::uint32_t ofx = 0;
+  std::uint32_t ofy = 0;
+};
+
+// Optional read-only sink for the native screen-sprite queue's GTE offset boundary.
+class SpriteQueueOffsetObserver {
+public:
+  virtual ~SpriteQueueOffsetObserver() = default;
+  virtual void beginSpriteQueue(Core &core, GteOffsetSample entry) = 0;
+  virtual void
+  spriteActorWrite(std::uint32_t actor, GteOffsetSample before, GteOffsetSample after) = 0;
+  virtual void endSpriteQueue(GteOffsetSample exit) = 0;
+};
+
+} // namespace spyro::render
+
 // Stage selectors whose reached recipes have native owners.
 constexpr uint32_t kStageField = 0u;
 constexpr uint32_t kStageLevelTransition = 1u;
@@ -54,7 +73,8 @@ struct Scene {
 // logic-frame boundaries without file-static or guest-memory state.
 class SpyroRenderer {
 public:
-  explicit SpyroRenderer(Core *c) : mC(c) {}
+  explicit SpyroRenderer(Core *c,
+                         spyro::render::SpriteQueueOffsetObserver *queueObserver = nullptr);
 
   // Announce the title's native-render policy after the framework installs RenderMode.
   static void installModeFromConfig(Core *c);
@@ -100,6 +120,7 @@ private:
   bool stage13Mode3Render() const;
 
   Core *mC;
+  spyro::render::SpriteQueueOffsetObserver *mQueueObserver;
   // The DRAWENV this frame is being drawn with, set by drawFrame()'s call to nativeFrameBegin() on
   // the native leg only. 0 on the reference leg, where the guest's own driver owns the env.
   uint32_t mEnv = 0;

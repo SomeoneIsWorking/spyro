@@ -563,6 +563,11 @@ and zero fallback. Paired temporal emission remains positive. Complete FIELD int
 paced audio/performance and all released hosts remain unqualified. The console reference uses an
 independent CPU/scheduler but shares Beetle device lineage, so it cannot exclude all common defects.
 
+The title-native screen-actor queue now executes its authenticated GTE offset restore at completion.
+A reached retail queue previously left OFX=100 and projected camera X=100 at the first gameplay
+tick; after the restore, the same actor write was reached, the queue exited at OFX=256, and the
+camera projected X=256. New Game handoff timing and full independent output parity remain open.
+
 The post-entry shadow boundary is now exercised on the same real portal route. After rebuilding the
 native target, `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal --skip-transitions
 --after 1200` reached the destination level and exited 0; the field shadow producer reported 16

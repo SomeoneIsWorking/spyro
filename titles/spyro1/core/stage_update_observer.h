@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -8,6 +10,18 @@
 class Core;
 
 namespace spyro1 {
+
+struct SpriteQueueOffsetSample {
+  std::uint64_t ordinal = 0;
+  std::uint32_t stage = 0;
+  std::uint32_t gameTick = 0;
+  std::uint32_t actor = 0;
+  std::uint32_t actorWrites = 0;
+  spyro::render::GteOffsetSample entry{};
+  spyro::render::GteOffsetSample actorBefore{};
+  spyro::render::GteOffsetSample actorAfter{};
+  spyro::render::GteOffsetSample exit{};
+};
 
 struct CameraProjectionSample {
   std::uint32_t candidates = 0;
@@ -19,6 +33,12 @@ struct CameraProjectionSample {
   std::uint32_t lookMode = 0;
   std::uint32_t playerCameraGate = 0;
   std::uint32_t cameraBlock = 0;
+  spyro::render::GteOffsetSample offset{};
+  std::uint32_t h = 0;
+  SpriteQueueOffsetSample precedingQueue{};
+  std::uint64_t precedingActorWrites = 0;
+  std::uint64_t precedingOfx100Writes = 0;
+  std::uint64_t precedingSentinelHits = 0;
 };
 
 // Diagnostic record at the completed outer StageUpdate return. This does not observe nested camera
@@ -41,13 +61,37 @@ struct StageUpdateSample {
   std::array<std::int32_t, 3> camera{};
 };
 
-class StageUpdateObserver {
+class StageUpdateObserver final : public spyro::render::SpriteQueueOffsetObserver {
 public:
   StageUpdateObserver(bool enabled, std::uint32_t target);
 
   void beginStage(Core &core, std::uint32_t entry);
   void afterReturn(Core &core, std::uint32_t entry);
+  void beginSpriteQueue(Core &core, spyro::render::GteOffsetSample entry) override;
+  void spriteActorWrite(std::uint32_t actor,
+                        spyro::render::GteOffsetSample before,
+                        spyro::render::GteOffsetSample after) override;
+  void endSpriteQueue(spyro::render::GteOffsetSample exit) override;
   void report() const;
+
+  bool enabled() const {
+    return enabled_;
+  }
+  std::uint64_t queueCalls() const {
+    return queueCalls_;
+  }
+  std::uint64_t actorWrites() const {
+    return actorWrites_;
+  }
+  std::uint64_t ofx100Writes() const {
+    return ofx100Writes_;
+  }
+  std::uint64_t sentinelHits() const {
+    return sentinelHits_;
+  }
+  const SpriteQueueOffsetSample &lastQueue() const {
+    return lastQueue_;
+  }
 
   std::uint64_t scanned() const {
     return scanned_;
@@ -91,6 +135,14 @@ private:
   std::uint64_t pendingProjectionOrdinal_ = 0;
   CameraProjectionSample stageProjection_{};
   std::uint64_t stageGteOps_ = 0;
+  std::uint64_t queueCalls_ = 0;
+  std::uint64_t queueExits_ = 0;
+  std::uint64_t actorWrites_ = 0;
+  std::uint64_t ofx100Writes_ = 0;
+  std::uint64_t sentinelHits_ = 0;
+  bool queueActive_ = false;
+  SpriteQueueOffsetSample activeQueue_{};
+  SpriteQueueOffsetSample lastQueue_{};
 };
 
 } // namespace spyro1

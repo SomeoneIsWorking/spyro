@@ -104,6 +104,9 @@ bool pairedActorScene(Core *core, const Scene &scene) {
 }
 } // namespace
 
+SpyroRenderer::SpyroRenderer(Core *c, spyro::render::SpriteQueueOffsetObserver *queueObserver)
+    : mC(c), mQueueObserver(queueObserver) {}
+
 // The framework owns configuration; this entry announces the title's render policy.
 void SpyroRenderer::installModeFromConfig(Core *c) {
   if (!c->rsub.mode.psxRender()) {

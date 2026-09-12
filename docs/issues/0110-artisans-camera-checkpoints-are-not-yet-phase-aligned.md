@@ -370,7 +370,7 @@ gitignored under `scratch/oracle-comparison/stage_gte_console_*` and
 on/off output-hash comparison; these snapshots qualify the registers at the
 stop, not the subsequent field schedule or rendered/audio output.
 
-## OFX writer source discriminator (reach still open)
+## OFX writer source discriminator
 
 The authenticated local `SCUS_942.28` SHA-256
 `a533d75cab8afaae6107ec35a02a9a5fe979a92c7c955f9cf1ee50f693a1b998`
@@ -388,13 +388,11 @@ The queue's authenticated assembly writes an actor's X to OFX at
 `0x80022D2C` and has an exit arm at `0x80023958..80023964` that writes
 `0x01000000` (256) to OFX and `0x00780000` (120) to OFY. The native
 `fx_sprite_queue.cpp::setup_screen_gte` likewise writes the actor's X to
-OFX, but its containing `emit_screen_queue` returns without restoring the
+OFX, but its containing `emit_screen_queue` returned without restoring the
 screen center. Its stage-13 mode-3 text builder has an `x = 100` branch and
 stores that X in the actor field later consumed by `setup_screen_gte`.
-This is a concrete **restore-contract hypothesis** for the native tick-1
-OFX=100, separate from guest `SetGeomOffset` HLE. The branch and final actor
-must still be shown reached on the captured route before naming it the last
-writer or changing behavior.
+This formed a concrete restore-contract hypothesis for the native tick-1
+OFX=100, separate from guest `SetGeomOffset` HLE.
 
 A first-prompt GDB hardware watchpoint on per-Core CR24 started at
 `0x01000000` against the existing pinned Spyro/psxport `e747e9d3` build.
@@ -403,7 +401,49 @@ the allotted retail slot. The run was terminated before its fixed route
 endpoint, without a retry or cap extension; it produced no writer-event
 denominator or new parity claim. Its driver truncated the earlier
 `stage_gte_native_tick1.log`; the parsed JSON and issue values above remain,
-but that earlier raw native log is no longer available. The next trace should
-arm around the stage-13 mode-3 queue return and the first camera RTPS, logging only changed
-CR24 values and the boundary that wrote them, with a reached actor write
-and an unreachable target control in the same bounded window.
+but that earlier raw native log is no longer available.
+
+The replacement trace sampled the native stage-13 mode-3 queue's actual actor-write and exit
+boundaries, then the first camera RTPS on the same state-driven route. The bounded shipping run
+used the authenticated local `SCUS_942.28` named above and opened the configured USA CHD; the
+comparison console provenance above includes the CHD SHA-256 and admitted BIOS SHA-1. It reached
+`GS_Playing` at frame 6361 and exited normally after 6362 delivered fields, 17,970,369 executed
+Lightrec blocks, and zero fallback blocks/instructions. With the opt-in `stage-observe` sink,
+**771/771** native sprite queues exited, **9610** actor OFX writes were observed, **244/9610**
+wrote `0x00640000` (100), and unreachable actor sentinel `0xFFFFFFFC` matched **0/9610**.
+Completed StageUpdate returns were **2959/2959** matched, with **4/4** gameplay samples and
+**1/1** unique camera projection among 373 RTPS operations. The raw read-only run log is
+gitignored at `scratch/oracle-comparison/stage_ofx_queue_live.log`.
+
+The last reached stage-13 queue, ordinal 771, contained 21 actor writes. It **entered already at**
+CR24 `0x00640000`, CR25 `0x00780000`; the preceding actor left CR24 `0x00740000`, then final
+actor `0x801A3B58` wrote it back to `0x00640000`. The native queue exited at the same value. At
+the immediately following unique stage-0/game-tick-1 camera RTPS, CR24 remained `0x00640000`,
+CR25 was `0x00780000`, H was `0x155`, and projected X was 100. Thus this route proves a reached
+native actor write **kept** OFX at 100 and the native queue failed to restore it. It does not prove
+how OFX first became 100 before queue 771, nor enumerate all possible intervening CR24 writers;
+the guest `SetGeomOffset` HLE is distinct from these title-native producer writes.
+
+The authenticated `r_moby.s` loop branches from `0x800232A8` to `0x80023958` on queue completion.
+The latter arm writes CR24=`0x01000000` at `0x8002395C` and CR25=`0x00780000` at `0x80023964`
+before subsequent queue-tail work. That control flow and register contract, together with the
+reached native missing restore above, grounds the title-local native `emitScreenQueue` exit write.
+The production queue now restores both registers on completion regardless of whether a native
+actor/primitive variant was refused; it reports that refusal separately. A focused shipping-path
+synthetic test reaches the actor transform with OFX=100, checks exit OFX=256 and OFY=120, then
+checks a refused transform and an empty queue: zero actor writes in each, the same guest exit values,
+and an empty-queue entry of 321 that cannot pass through a saved-entry restore. The combined Clang
+gate passed 35/35 tests and checked 162 first-party translation units.
+
+One post-change state-driven retail run reached `GS_Playing` at the same frame 6361 as the prior
+run and exited normally after 6362 fields. The queue again entered/exited **771/771** times with
+**9610** actor writes, **244/9610** at OFX=100, and **0/9610** sentinel hits. Queue 771's final
+actor `0x801A3B58` still wrote OFX=100, but its exit was now `0x01000000`; the unique first
+stage-0/game-tick-1 camera RTPS read that value and projected X=256. Player
+`(84992,47125,9570)` and camera `(84992,45595,9953)` matched the earlier native tick-1 sample;
+Y=171 and depth=1510 also matched it. That pairs the X correction with the reached source write
+and guest-grounded exit restore. The New Game handoff still varied (native level tick 5 before,
+7 after at game tick 1), and this run did not compare full RAM, frame, or audio output with an
+independent console. It therefore proves the local CR24/projection contract, not complete camera or
+visual parity. The raw logs are `scratch/oracle-comparison/stage_ofx_queue_live.prev.log` before
+and `stage_ofx_queue_live.log` after; both are gitignored.

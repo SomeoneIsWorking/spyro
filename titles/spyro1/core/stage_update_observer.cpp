@@ -23,6 +23,8 @@ constexpr std::uint32_t kLookMode = 0x8007592Cu;
 constexpr std::uint32_t kCameraEntranceTimer = 0x80075938u;
 constexpr std::uint32_t kPlayerCameraGate = 0x80078BECu;
 constexpr std::uint32_t kProjectionRtps = 0x4A180001u; // func_80017AA4 at 0x80017B20
+constexpr std::uint32_t kUnreachableActor = 0xFFFFFFFCu;
+constexpr std::uint32_t kObservedOfx100 = 100u << 16u;
 
 std::array<std::int32_t, 3> position(Core &core, std::uint32_t address) {
   return {static_cast<std::int32_t>(core.mem_r32(address)),
@@ -34,6 +36,54 @@ std::array<std::int32_t, 3> position(Core &core, std::uint32_t address) {
 
 StageUpdateObserver::StageUpdateObserver(bool enabled, std::uint32_t target)
     : enabled_(enabled), target_(target) {}
+
+void StageUpdateObserver::beginSpriteQueue(Core &core, spyro::render::GteOffsetSample entry) {
+  if (!enabled_) {
+    return;
+  }
+  if (queueActive_) {
+    lucent::error("stage-observe", "sprite queue observer entered twice without an exit");
+    std::abort();
+  }
+  queueActive_ = true;
+  activeQueue_ = {.ordinal = ++queueCalls_,
+                  .stage = core.mem_r32(kStage),
+                  .gameTick = core.mem_r32(kGameTick),
+                  .entry = entry};
+}
+
+void StageUpdateObserver::spriteActorWrite(std::uint32_t actor,
+                                           spyro::render::GteOffsetSample before,
+                                           spyro::render::GteOffsetSample after) {
+  if (!enabled_) {
+    return;
+  }
+  if (!queueActive_) {
+    lucent::error("stage-observe", "sprite actor OFX write occurred outside an observed queue");
+    std::abort();
+  }
+  ++actorWrites_;
+  ++activeQueue_.actorWrites;
+  ofx100Writes_ += after.ofx == kObservedOfx100 ? 1u : 0u;
+  sentinelHits_ += actor == kUnreachableActor ? 1u : 0u;
+  activeQueue_.actor = actor;
+  activeQueue_.actorBefore = before;
+  activeQueue_.actorAfter = after;
+}
+
+void StageUpdateObserver::endSpriteQueue(spyro::render::GteOffsetSample exit) {
+  if (!enabled_) {
+    return;
+  }
+  if (!queueActive_) {
+    lucent::error("stage-observe", "sprite queue observer exit has no entry");
+    std::abort();
+  }
+  activeQueue_.exit = exit;
+  lastQueue_ = activeQueue_;
+  ++queueExits_;
+  queueActive_ = false;
+}
 
 void StageUpdateObserver::beginStage(Core &core, std::uint32_t entry) {
   if (!enabled_) {
@@ -101,6 +151,12 @@ void StageUpdateObserver::beforeGte(
   observer.stageProjection_.lookMode = core->mem_r32(kLookMode);
   observer.stageProjection_.playerCameraGate = core->mem_r32(kPlayerCameraGate);
   observer.stageProjection_.cameraBlock = core->mem_r32(kCameraBlock);
+  observer.stageProjection_.offset = {gte_read_ctrl(24u), gte_read_ctrl(25u)};
+  observer.stageProjection_.h = gte_read_ctrl(26u);
+  observer.stageProjection_.precedingQueue = observer.lastQueue_;
+  observer.stageProjection_.precedingActorWrites = observer.actorWrites_;
+  observer.stageProjection_.precedingOfx100Writes = observer.ofx100Writes_;
+  observer.stageProjection_.precedingSentinelHits = observer.sentinelHits_;
 }
 
 void StageUpdateObserver::afterGte(
@@ -181,6 +237,34 @@ void StageUpdateObserver::report() const {
       rtpsOps_,
       projectionCandidates_,
       uniqueProjections_);
+  lucent::info("stage-observe",
+               "sprite-queue entered={} exited={} actor_writes={} ofx100_writes={} "
+               "sentinel_actor=0x{:08X} sentinel_hits={} last_queue={} active={}",
+               queueCalls_,
+               queueExits_,
+               actorWrites_,
+               ofx100Writes_,
+               kUnreachableActor,
+               sentinelHits_,
+               lastQueue_.ordinal,
+               queueActive_ ? 1 : 0);
+  lucent::info("stage-observe",
+               "sprite-queue-last ordinal={} stage={} game_tick={} actor=0x{:08X} writes={} "
+               "entry=0x{:08X},0x{:08X} actor_before=0x{:08X},0x{:08X} "
+               "actor_after=0x{:08X},0x{:08X} exit=0x{:08X},0x{:08X}",
+               lastQueue_.ordinal,
+               lastQueue_.stage,
+               lastQueue_.gameTick,
+               lastQueue_.actor,
+               lastQueue_.actorWrites,
+               lastQueue_.entry.ofx,
+               lastQueue_.entry.ofy,
+               lastQueue_.actorBefore.ofx,
+               lastQueue_.actorBefore.ofy,
+               lastQueue_.actorAfter.ofx,
+               lastQueue_.actorAfter.ofy,
+               lastQueue_.exit.ofx,
+               lastQueue_.exit.ofy);
   for (std::size_t index = 0; index < used_; ++index) {
     const StageUpdateSample &sample = samples_[index];
     lucent::info("stage-observe",
@@ -190,7 +274,13 @@ void StageUpdateObserver::report() const {
                  "player=({},{},{}) camera=({},{},{}) gte_ops={} rtps_ops={} "
                  "projection_candidates={} projection_valid={} projected=({},{},{}) "
                  "branch_target=0x{:08X} branch_mode=0x{:08X} branch_look={} "
-                 "branch_player_gate={} branch_camera_block={}",
+                 "branch_player_gate={} branch_camera_block={} "
+                 "rtps_ofx=0x{:08X} rtps_ofy=0x{:08X} rtps_h=0x{:08X} "
+                 "preceding_queue={} queue_stage={} queue_tick={} queue_actor=0x{:08X} "
+                 "queue_writes={} queue_entry=0x{:08X},0x{:08X} "
+                 "actor_before=0x{:08X},0x{:08X} actor_after=0x{:08X},0x{:08X} "
+                 "queue_exit=0x{:08X},0x{:08X} preceding_actor_writes={} "
+                 "preceding_ofx100_writes={} preceding_sentinel_hits={}",
                  index,
                  sample.stage,
                  sample.levelTick,
@@ -219,7 +309,26 @@ void StageUpdateObserver::report() const {
                  sample.projection.cameraMode,
                  sample.projection.lookMode,
                  sample.projection.playerCameraGate,
-                 sample.projection.cameraBlock);
+                 sample.projection.cameraBlock,
+                 sample.projection.offset.ofx,
+                 sample.projection.offset.ofy,
+                 sample.projection.h,
+                 sample.projection.precedingQueue.ordinal,
+                 sample.projection.precedingQueue.stage,
+                 sample.projection.precedingQueue.gameTick,
+                 sample.projection.precedingQueue.actor,
+                 sample.projection.precedingQueue.actorWrites,
+                 sample.projection.precedingQueue.entry.ofx,
+                 sample.projection.precedingQueue.entry.ofy,
+                 sample.projection.precedingQueue.actorBefore.ofx,
+                 sample.projection.precedingQueue.actorBefore.ofy,
+                 sample.projection.precedingQueue.actorAfter.ofx,
+                 sample.projection.precedingQueue.actorAfter.ofy,
+                 sample.projection.precedingQueue.exit.ofx,
+                 sample.projection.precedingQueue.exit.ofy,
+                 sample.projection.precedingActorWrites,
+                 sample.projection.precedingOfx100Writes,
+                 sample.projection.precedingSentinelHits);
   }
 }
 

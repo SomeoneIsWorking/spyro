@@ -1,7 +1,9 @@
 #include "core.h"
+#include "fx_sprite_queue.h"
 #include "game.h"
 #include "gte_state.h"
 #include "hw_bind.h"
+#include "spyro_context.h"
 #include "stage_update_observer.h"
 #include "testutil.h"
 
@@ -77,6 +79,111 @@ void test_non_gameplay_returns_are_counted_without_samples() {
   observed.report();
 }
 
+void test_sprite_queue_offset_boundaries_count_reached_and_unreachable_writes() {
+  Core core;
+  core.mem_w32(0x800757D8u, 13u);
+  core.mem_w32(0x8007572Cu, 0u);
+  spyro1::StageUpdateObserver observed(true, kStageUpdate);
+  observed.beginSpriteQueue(core, {256u << 16u, 120u << 16u});
+  observed.spriteActorWrite(0x80070000u, {256u << 16u, 120u << 16u}, {100u << 16u, 120u << 16u});
+  observed.endSpriteQueue({100u << 16u, 120u << 16u});
+
+  CHECK_EQ(observed.queueCalls(), 1u);
+  CHECK_EQ(observed.actorWrites(), 1u);
+  CHECK_EQ(observed.ofx100Writes(), 1u);
+  CHECK_EQ(observed.sentinelHits(), 0u);
+  CHECK_EQ(observed.lastQueue().actor, 0x80070000u);
+  CHECK_EQ(observed.lastQueue().actorWrites, 1u);
+  CHECK_EQ(observed.lastQueue().entry.ofx, 256u << 16u);
+  CHECK_EQ(observed.lastQueue().actorBefore.ofx, 256u << 16u);
+  CHECK_EQ(observed.lastQueue().actorAfter.ofx, 100u << 16u);
+  CHECK_EQ(observed.lastQueue().exit.ofx, 100u << 16u);
+
+  spyro1::StageUpdateObserver unreachable(true, kStageUpdate);
+  unreachable.beginSpriteQueue(core, {256u << 16u, 120u << 16u});
+  unreachable.spriteActorWrite(0xFFFFFFFCu, {256u << 16u, 120u << 16u}, {100u << 16u, 120u << 16u});
+  unreachable.endSpriteQueue({100u << 16u, 120u << 16u});
+  CHECK_EQ(unreachable.actorWrites(), 1u);
+  CHECK_EQ(unreachable.sentinelHits(), 1u);
+
+  spyro1::StageUpdateObserver disabled(false, kStageUpdate);
+  disabled.beginSpriteQueue(core, {256u << 16u, 120u << 16u});
+  disabled.spriteActorWrite(0xFFFFFFFCu, {256u << 16u, 120u << 16u}, {100u << 16u, 120u << 16u});
+  disabled.endSpriteQueue({100u << 16u, 120u << 16u});
+  CHECK_EQ(disabled.queueCalls(), 0u);
+  CHECK_EQ(disabled.actorWrites(), 0u);
+  CHECK_EQ(disabled.sentinelHits(), 0u);
+  observed.report();
+  unreachable.report();
+}
+
+void test_shipping_sprite_queue_restores_guest_exit_offsets() {
+  auto game = std::make_unique<Game>();
+  Core &core = game->core;
+  SpyroContext context;
+  core.gameCtx = &context;
+  gte_bind(&core);
+  core.rsub.projParams.setGeomOffset(256.0f, 120.0f);
+  core.rsub.projParams.setGeomScreen(341.0f);
+  gte_write_ctrl(26u, 341u);
+
+  constexpr std::uint32_t kQueue = 0x800720F4u;
+  constexpr std::uint32_t kMeshTable = 0x80076378u;
+  constexpr std::uint32_t kActor = 0x80070000u;
+  constexpr std::uint32_t kMesh = 0x80090000u;
+  core.mem_w32(kQueue, kActor);
+  core.mem_w32(kQueue + 4u, 0u);
+  core.mem_w8(kActor + 0x50u, 0x80u);
+  core.mem_w32(kActor + 0x0Cu, 100u);
+  core.mem_w32(kActor + 0x10u, 120u);
+  core.mem_w32(kMeshTable, kMesh);
+  core.mem_w8(kMesh, 0u); // The actor transform is reached without synthetic polygons.
+  core.mem_w8(kMesh + 1u, 0u);
+
+  spyro1::StageUpdateObserver observed(true, kStageUpdate);
+  gte_write_ctrl(24u, 100u << 16u); // The retail queue also entered with OFX already at 100.
+  gte_write_ctrl(25u, 120u << 16u);
+  core.mem_w32(kActor + 0x44u, 0u);
+  CHECK(spyro::render::emitScreenQueue(core, &observed));
+  CHECK_EQ(observed.queueCalls(), 1u);
+  CHECK_EQ(observed.actorWrites(), 1u);
+  CHECK_EQ(observed.lastQueue().actorBefore.ofx, 100u << 16u);
+  CHECK_EQ(observed.lastQueue().actorAfter.ofx, 100u << 16u);
+  CHECK_EQ(observed.lastQueue().exit.ofx, 256u << 16u);
+  CHECK_EQ(observed.lastQueue().exit.ofy, 120u << 16u);
+  CHECK_EQ(gte_read_ctrl(24u), 256u << 16u);
+  CHECK_EQ(gte_read_ctrl(25u), 120u << 16u);
+  CHECK_EQ(gte_read_ctrl(26u), 341u);
+
+  // Unsupported screen transform: the producer refuses, no actor write occurs, but the guest
+  // loop's completion arm still restores CR24/25 before the caller sees that refusal.
+  core.mem_w32(kActor + 0x44u, 1u);
+  core.mem_w8(kMesh + 1u, 1u);
+  gte_write_ctrl(24u, 317u << 16u);
+  gte_write_ctrl(25u, 42u << 16u);
+  CHECK(!spyro::render::emitScreenQueue(core, &observed));
+  CHECK_EQ(observed.queueCalls(), 2u);
+  CHECK_EQ(observed.actorWrites(), 1u);
+  CHECK_EQ(observed.lastQueue().actorWrites, 0u);
+  CHECK_EQ(observed.lastQueue().entry.ofx, 317u << 16u);
+  CHECK_EQ(observed.lastQueue().exit.ofx, 256u << 16u);
+  CHECK_EQ(gte_read_ctrl(24u), 256u << 16u);
+  CHECK_EQ(gte_read_ctrl(25u), 120u << 16u);
+
+  // An empty queue takes the same guest completion arm; it must not merely restore the entry value.
+  core.mem_w32(kQueue, 0u);
+  gte_write_ctrl(24u, 321u << 16u);
+  CHECK(spyro::render::emitScreenQueue(core, &observed));
+  CHECK_EQ(observed.queueCalls(), 3u);
+  CHECK_EQ(observed.actorWrites(), 1u);
+  CHECK_EQ(observed.lastQueue().actorWrites, 0u);
+  CHECK_EQ(observed.lastQueue().entry.ofx, 321u << 16u);
+  CHECK_EQ(observed.lastQueue().exit.ofx, 256u << 16u);
+  CHECK_EQ(observed.sentinelHits(), 0u);
+  CHECK_EQ(gte_read_ctrl(24u), 256u << 16u);
+  GTE_BindState(nullptr);
+}
+
 void test_projection_reads_live_gte_result_and_rejects_wrong_operands() {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
@@ -108,6 +215,9 @@ void test_projection_reads_live_gte_result_and_rejects_wrong_operands() {
   gte_write_data(1u, 66536u);
 
   spyro1::StageUpdateObserver observed(true, kStageUpdate);
+  observed.beginSpriteQueue(core, {256u << 16u, 120u << 16u});
+  observed.spriteActorWrite(0x80070000u, {256u << 16u, 120u << 16u}, {100u << 16u, 120u << 16u});
+  observed.endSpriteQueue({100u << 16u, 120u << 16u});
   observed.beginStage(core, kStageUpdate);
   CHECK(core.rsub.gtePreOp.armed());
   gte_op_at(&core, kProjectionRtps, 0xFFFFFFFFu);
@@ -130,6 +240,15 @@ void test_projection_reads_live_gte_result_and_rejects_wrong_operands() {
   CHECK_EQ(observed.samples()[0].projection.lookMode, 0u);
   CHECK_EQ(observed.samples()[0].projection.playerCameraGate, 0u);
   CHECK_EQ(observed.samples()[0].projection.cameraBlock, 0u);
+  CHECK_EQ(observed.samples()[0].projection.offset.ofx, 0u);
+  CHECK_EQ(observed.samples()[0].projection.offset.ofy, 0u);
+  CHECK_EQ(observed.samples()[0].projection.h, 1000u);
+  CHECK_EQ(observed.samples()[0].projection.precedingQueue.ordinal, 1u);
+  CHECK_EQ(observed.samples()[0].projection.precedingQueue.actorAfter.ofx, 100u << 16u);
+  CHECK_EQ(observed.samples()[0].projection.precedingQueue.exit.ofx, 100u << 16u);
+  CHECK_EQ(observed.samples()[0].projection.precedingActorWrites, 1u);
+  CHECK_EQ(observed.samples()[0].projection.precedingOfx100Writes, 1u);
+  CHECK_EQ(observed.samples()[0].projection.precedingSentinelHits, 0u);
   CHECK_EQ(core.mem_r32(0x80076E90u), 0u);
   CHECK_EQ(core.mem_r32(0x80075914u), 0x52u);
 
@@ -173,6 +292,8 @@ void test_projection_reads_live_gte_result_and_rejects_wrong_operands() {
 int main() {
   RUN(reached_and_unreachable_returns_use_the_same_sampler);
   RUN(non_gameplay_returns_are_counted_without_samples);
+  RUN(sprite_queue_offset_boundaries_count_reached_and_unreachable_writes);
+  RUN(shipping_sprite_queue_restores_guest_exit_offsets);
   RUN(projection_reads_live_gte_result_and_rejects_wrong_operands);
   return pt_summary();
 }

@@ -309,3 +309,63 @@ the native log/parsed capture are
 `scratch/oracle-comparison/stage_guard_native.{log,json}`. The Spyro build
 identity was `a32db9b-dirty+psxport-e747e9d3`; this was an observation run,
 not a pinned Spyro conformance gate.
+
+## Raw GTE input discriminator
+
+Pinned Spyro `b8efd45`/psxport `e747e9d3` was observed without rebuilding or
+changing guest state. A later fresh native New Game run **failed the tick-55
+admission before attaching GDB**: at game tick 53, field 6471, its camera
+target was already `0x80000011`, so a state-zero tick-55 comparison in that
+run would be meaningless. The process exited normally; this is a negative
+handoff observation, not an attempt that was retried until it passed.
+
+Two independent, fresh exact-console-PC one-field observations used the same
+authentic BIOS/CHD and field-6438 pre-arm full-RAM SHA-256 as the prior
+off/on/unreachable controls. At `func_80017AA4`'s RTPS PC `0x80017B20`,
+tick 55/field 6547 retained **1 of 346,026** scanned instructions; tick
+1/field 6439 retained **1 of 254,066**. Neither dropped a record or reported
+a pairing error. Read-only GDB inspection of the core's bound GTE register
+file at the corresponding RTPS found, at **both** console ticks, OFX
+`0x01000000` (256 in 16.16), OFY `0x00780000` (120), H `0x155` (341),
+and translation `(0,0,0)`. At tick 55, camera matrix CR0..4 was
+`(0,0x026D1000,0x9B3,0x03E3F07B,0)` and V0 was
+`(VXY0=0x026AF659,VZ0=0)`; at tick 1, matrix was
+`(0,0x1000,0xA00,0xF000,0)` and V0 was
+`(0x016FFA23,0)`. These vector and matrix values also match the exact-PC
+GPR and RAM record, grounding the GDB RTPS association rather than relying
+on opcode alone.
+
+A single fresh native run armed a read-only GDB breakpoint only at the
+shipping title observer's **unique matched RTPS post-op path**. It reached
+one candidate at game tick 1/level tick 14 and exited normally after 2,962
+matched StageUpdate returns, 9/9 gameplay samples, 5,686 GTE operations,
+373 RTPS, one unique camera candidate, 17,835,240 executed Lightrec blocks,
+and zero fallback blocks/instructions. Its tick-1 raw GTE inputs were OFX
+`0x00640000` (**100**), OFY `0x00780000`, H `0x155`, the **same** camera
+matrix and zero translation as console tick 1, and
+`(VXY0=0x016FFA10,VZ0=0)`. At the inner phase, both camera positions were
+`(84992,45615,9937)`; native player Y was 47135 versus console 47116,
+which accounts for the 19-unit packed-vector difference. Native RTPS output
+was `(100,171,1520)` versus the exact-PC console function result
+`(256,172,1501)`. In this paired phase, screen X equals each side's OFX
+integer center, while OFY, H, camera matrix, and translation agree. OFX
+therefore identifies the immediate tick-1 X-input discrepancy; the player
+position and New Game handoff still differ, and the native candidate lacks
+an exact guest PC. The tick-55 native OFX was **not** directly captured by
+this run, so its earlier X=100 result cannot be assigned to OFX from this
+pair alone.
+
+`Spyro1::BootSequence::initialize` calls the guest `SetGeomOffset` with
+`(0x100,0x78)` and `SetGeomScreen` with `0x155`, so native boot initially
+publishes the console's 256/120/341 values. A later write or missing state
+restore must account for native OFX=100 at the tick-1 projection; the last
+**reached** OFX writer and its return-state contract are not identified.
+Title-native screen sprite submission and other producers can write GTE
+CR24, but a source call site is not evidence that it wrote this value on
+this route. The next discriminator is a bounded last-writer trace before
+the unique camera RTPS, with the guest and native producer boundaries
+distinguished. Do not override OFX to fit this sample. Raw captures are
+gitignored under `scratch/oracle-comparison/stage_gte_console_*` and
+`stage_gte_native_tick1.*`. The GDB-paused runs were not subjected to a new
+on/off output-hash comparison; these snapshots qualify the registers at the
+stop, not the subsequent field schedule or rendered/audio output.

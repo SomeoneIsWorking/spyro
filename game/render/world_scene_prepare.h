@@ -18,6 +18,8 @@ struct TaggedSector {
 
 struct AnimationSector {
   uint32_t address = 0;
+  uint8_t index = 0;
+  uint32_t activeMask = 0;
   uint32_t active = 0;
 };
 

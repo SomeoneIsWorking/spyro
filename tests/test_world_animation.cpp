@@ -29,6 +29,14 @@ void check(bool value, const char *what) {
   }
 }
 
+void checkResource(
+    const Plan &plan, size_t index, uint32_t begin, uint32_t size, const char *what) {
+  check(index < plan.resources.size(), what);
+  if (index < plan.resources.size()) {
+    check(plan.resources[index].begin == begin && plan.resources[index].end == begin + size, what);
+  }
+}
+
 constexpr uint32_t kAnimationSets = 0x78560u + 20u;
 constexpr uint32_t kSector = 0x91000u;
 constexpr uint32_t kSet = 0x93000u;
@@ -121,6 +129,12 @@ void test_channel0_direct_copies_vertices() {
   check(plan.writes[3].address == kSector + 24u && plan.writes[3].value == 0xffu &&
             plan.writes[3].width == 1u,
         "channel retired");
+  check(plan.resources.size() == 5u, "direct resource count");
+  checkResource(plan, 0u, kAnimationSets, 4u, "set slot resource");
+  checkResource(plan, 1u, kSet + 3u * 4u, 4u, "table entry resource");
+  checkResource(plan, 2u, kAnimation, 12u, "header resource");
+  checkResource(plan, 3u, kAnimation + 12u, 8u, "keyframe resource");
+  checkResource(plan, 4u, kAnimation + kPayload, 12u, "direct payload resource");
 }
 
 void test_channel0_blended_interpolates_toward_the_second_keyframe() {
@@ -148,6 +162,9 @@ void test_channel0_blended_interpolates_toward_the_second_keyframe() {
       spyro::world_animation::appendSector(RamView(far), kSector, activeFor(0u, 1u), farPlan, why),
       "decodes at full factor");
   check((farPlan.writes[0].value >> 21) > 500u, "full factor moves further toward keyframe B");
+  check(farPlan.resources.size() == 6u, "blended resource count");
+  checkResource(farPlan, 4u, kAnimation + kPayload, 4u, "blended source A resource");
+  checkResource(farPlan, 5u, kAnimation + kPayload + 4u, 4u, "blended source B resource");
 }
 
 void test_channel1_walks_colours_by_the_encoded_delta() {

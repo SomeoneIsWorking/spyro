@@ -261,6 +261,55 @@ void test_midpoint_visibility_admission_and_refusal() {
   }
 }
 
+void test_visible_pending_animation_materializes_retained_endpoint() {
+  Fixture f;
+  auto &core = f.game->core;
+  const auto w8 = [&](uint32_t address, uint8_t value) {
+    core.ram[address] = value;
+  };
+  const auto w16 = [&](uint32_t address, uint16_t value) {
+    w8(address, (uint8_t)value);
+    w8(address + 1u, (uint8_t)(value >> 8));
+  };
+  const auto w32 = [&](uint32_t address, uint32_t value) {
+    for (uint32_t i = 0; i < 4u; ++i) {
+      w8(address + i, (uint8_t)(value >> (i * 8u)));
+    }
+  };
+  constexpr uint32_t animationSetSlot = 0x78574u;
+  constexpr uint32_t animationSet = 0x93000u;
+  constexpr uint32_t animation = 0x94000u;
+  constexpr uint32_t payload = animation + 0x400u;
+  w32(animationSetSlot, animationSet);
+  w32(animationSet, animation);
+  w8(animation + 2u, 0u);
+  w16(animation + 6u, 16u);
+  w32(animation + 8u, 0x400u);
+  w8(animation + 16u, 0u);
+  for (uint32_t i = 0; i < 4u; ++i) {
+    w32(payload + i * 4u, 0x11111111u + i);
+  }
+  core.imageCatalog().activate(
+      "synthetic animation set", {animationSetSlot, animationSetSlot + 4u}, 2u);
+  core.imageCatalog().activate("synthetic animation data", {animationSet, payload + 16u}, 2u);
+  auto previous = f.source;
+  auto current = f.source;
+  previous.selection.sectors[0]->animation = 0xffffff00u;
+  current.selection.sectors[0]->animation = 0xffffffffu;
+  const std::vector<uint8_t> before(std::begin(core.ram), std::end(core.ram));
+  f.interval(previous, current);
+  spyro_temporal_scene_prepare(core);
+  CHECK(f.context.worldTemporal.eligible);
+  CHECK(std::equal(before.begin(), before.end(), std::begin(core.ram)));
+  const auto *retained = f.context.worldTemporal.previous();
+  CHECK(retained != nullptr);
+  CHECK_EQ(retained->source.selection.sectors[0]->animation, 0xffffffffu);
+  CHECK_EQ(retained->source.sectors[0]->low.vertices[0], 0x11111111u);
+  CHECK_EQ(retained->source.sectors[0]->low.vertices[3], 0x11111114u);
+  CHECK(spyro::world_scene::sample(retained->source, f.context.worldTemporal.current()->source, 0.5)
+            .status == spyro::world_recipe::Status::Ready);
+}
+
 } // namespace
 
 int main() {
@@ -269,5 +318,6 @@ int main() {
   RUN(lifecycle_refuses_stale_or_duplicate_sources);
   RUN(midpoint_visibility_admission_and_refusal);
   RUN(draw_policy_changes_refuse_without_losing_destination_ownership);
+  RUN(visible_pending_animation_materializes_retained_endpoint);
   return pt_summary();
 }

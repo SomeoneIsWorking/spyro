@@ -35,6 +35,7 @@ struct Write {
 
 struct Plan {
   std::vector<Write> writes;
+  std::vector<GuestAddressRange> resources;
   uint32_t channels = 0; // channels decoded, over every sector in the selection
   uint32_t direct = 0;   // of those, how many took the straight-copy form
   uint32_t blended = 0;  // ...and how many the GTE-interpolated form

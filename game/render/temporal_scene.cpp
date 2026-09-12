@@ -127,6 +127,11 @@ void spyro_temporal_scene_prepare(Core &core) {
     paired.temporal_eligible = spyro_paired_actor_fps60_eligible(paired);
   }
   const char *why = nullptr;
+  if (!context.worldTemporal.materializePending(core, why)) {
+    lucent::debug(
+        "worldtemporal", "REFUSED frame={} reason={}", context.worldTemporal.frameSerial(), why);
+    return;
+  }
   if (!context.worldTemporal.compatible(core, why)) {
     lucent::debug(
         "worldtemporal", "REFUSED frame={} reason={}", context.worldTemporal.frameSerial(), why);

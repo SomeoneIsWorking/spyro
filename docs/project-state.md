@@ -686,8 +686,8 @@ presentation fences executed 21,820,287 JIT blocks / 182,279,195 instructions wi
 zero fallback; paired presentation emitted 2,074/2,074 midpoint/endpoint outputs. A native
 684×240 capture shows the Artisans world and player during movement. This is local source-sampling
 evidence, not matched-checkpoint oracle parity, historical VRAM reconstruction or full-scene cadence.
-The combined Clang/Ninja gate passes all 19 CTests, 121 translation units through clang-tidy,
-213 source/header formatting checks, and the exact framework pin `a5a79652`.
+The combined Clang/Ninja gate passes all 34 CTest tests, 160 translation units through clang-tidy,
+276 source/header formatting checks, and the exact framework pin `161cb132`.
 
 A follow-up held-left observation with sample/queue diagnostics reproduced two refusals at frames
 1962 and 1966: the exact previous endpoints and joint painter plans were valid, while midpoint
@@ -698,6 +698,19 @@ unadvanced midpoint sources. Both focused temporal tests and the two touched TUs
 
 Gap: newly visible animated sectors need a faithful endpoint-state lifecycle; regular actors, shadows,
 particles and other unowned temporal sources lack complete matching-source interpolation.
+
+The endpoint lifecycle is now owned for visible world animation channels. When a previous source
+contains a pending channel, temporal admission decodes that channel through the same pure animation
+plan used by the frame producer, applies its writes to the retained endpoint arrays, retires only
+the endpoint stamp, and records every animation table/header/keyframe/payload span in the residency
+identity. Hidden channels still refuse when they become newly visible, and failed multi-channel
+materialization is atomic. Focused animation and temporal tests pass (62 and 135 checks). A fresh
+Artisans route reached 3,161 post-entry fields with 2,386 admitted world intervals and zero
+`active_animation` or endpoint-materialization refusals; the shipping JIT executed with zero
+fallback. This is live route and source-oracle-path evidence, not full retail packet parity.
+
+Gap: regular actors, shadows, particles and other unowned temporal sources lack complete matching-
+source interpolation, and full-scene independent-console oracle parity remains open.
 Discontinuous paired-model intervals retain endpoint presentation. Full-scene 60fps motion,
 paced timing/audio and performance remain unqualified.
 Issue 0102 resolves the observed duplicate field tick; it does not qualify full-scene cadence parity.

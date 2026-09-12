@@ -3,10 +3,16 @@
 #include "core.h"
 #include "fx_paired_actor.h"
 #include "producer_scope.h"
+#include "world_animation.h"
+#include "world_chunk_codec.h"
+#include "world_projection_math.h"
 #include "world_scene_builder.h"
+#include "world_scene_prepare.h"
 #include "world_source_pair.h"
 
+#include <algorithm>
 #include <lucent/log.h>
+#include <span>
 #include <tuple>
 #include <utility>
 
@@ -62,6 +68,126 @@ bool cameraMatches(const Frame &world, const SpyroPairedFrame &paired) {
          inputs == paired.transform.sceneCamera;
 }
 
+void sortResources(std::vector<Resource> &resources) {
+  std::sort(resources.begin(), resources.end(), [](const Resource &a, const Resource &b) {
+    return std::tie(a.range.begin, a.range.end, a.image.id, a.image.generation) <
+           std::tie(b.range.begin, b.range.end, b.image.id, b.image.generation);
+  });
+  resources.erase(std::unique(resources.begin(),
+                              resources.end(),
+                              [](const Resource &a, const Resource &b) {
+                                return a.range.begin == b.range.begin &&
+                                       a.range.end == b.range.end && a.image == b.image;
+                              }),
+                  resources.end());
+}
+
+bool applyAnimationPlan(Frame &frame,
+                        const world_scene_prepare::AnimationSector &animation,
+                        uint32_t channel,
+                        const world_animation::Plan &plan,
+                        const char *&why) {
+  auto &slot = frame.source.selection.sectors[animation.index];
+  if (!slot || slot->address != animation.address) {
+    why = "animation_endpoint_sector";
+    return false;
+  }
+  auto &sourceSector = frame.source.sectors[animation.index];
+  if (!sourceSector) {
+    why = "animation_endpoint_chunk";
+    return false;
+  }
+  const auto &sector = *sourceSector;
+  if (plan.channels != 1u) {
+    why = "animation_endpoint_channels";
+    return false;
+  }
+  size_t stamps = 0;
+  for (const auto &write : plan.writes) {
+    if (write.width == 1u) {
+      ++stamps;
+    } else if (write.width != 4u) {
+      why = "animation_endpoint_width";
+      return false;
+    }
+  }
+  if (stamps != 1u) {
+    why = "animation_endpoint_stamp";
+    return false;
+  }
+  const bool low = channel < 2u;
+  const world_chunk_codec::LowChunk *lowChunk =
+      sector.lowStatus == world_chunk_codec::Status::Ok ? &sector.low : nullptr;
+  const world_chunk_codec::HighChunk *highChunk =
+      sector.highStatus == world_chunk_codec::Status::Ok ? &sector.high : nullptr;
+  if ((low && !lowChunk) || (!low && !highChunk)) {
+    why = "animation_endpoint_chunk";
+    return false;
+  }
+  uint32_t base = 0;
+  std::vector<uint32_t> *values = nullptr;
+  if (channel == 0u) {
+    base = lowChunk->address + 0x1cu;
+    values = &sourceSector->low.vertices;
+  } else if (channel == 1u) {
+    base = lowChunk->address + 0x1cu + (uint32_t)lowChunk->vertices.size() * 4u;
+    values = &sourceSector->low.colors;
+  } else if (channel == 2u) {
+    base = highChunk->address + 0x1cu + ((highChunk->layout >> 22) & 0x3fcu);
+    values = &sourceSector->high.vertices;
+  } else {
+    const uint32_t layout = highChunk->layout;
+    const uint32_t first =
+        highChunk->address + 0x1cu + ((layout >> 22) & 0x3fcu) + ((layout << 2) & 0x3fcu);
+    const uint32_t second = first + ((layout >> 6) & 0x3fcu);
+    size_t wordIndex = 0;
+    for (const auto &write : plan.writes) {
+      if (write.width == 1u) {
+        if (write.address != animation.address + 24u + channel) {
+          why = "animation_endpoint_stamp";
+          return false;
+        }
+        continue;
+      }
+      const uint32_t streamBase = (wordIndex++ & 1u) == 0u ? first : second;
+      auto &stream =
+          (wordIndex & 1u) == 1u ? sourceSector->high.farColors : sourceSector->high.nearColors;
+      if (write.address < streamBase || write.address >= streamBase + stream.size() * 4u ||
+          ((write.address - streamBase) & 3u)) {
+        why = "animation_endpoint_destination";
+        return false;
+      }
+      const size_t index = (write.address - streamBase) / 4u;
+      if (index >= stream.size()) {
+        why = "animation_endpoint_index";
+        return false;
+      }
+      stream[index] = write.value;
+    }
+    return true;
+  }
+  for (const auto &write : plan.writes) {
+    if (write.width == 1u) {
+      if (write.address != animation.address + 24u + channel) {
+        why = "animation_endpoint_stamp";
+        return false;
+      }
+      continue;
+    }
+    if (write.address < base || ((write.address - base) & 3u)) {
+      why = "animation_endpoint_destination";
+      return false;
+    }
+    const size_t index = (write.address - base) / 4u;
+    if (index >= values->size()) {
+      why = "animation_endpoint_index";
+      return false;
+    }
+    (*values)[index] = write.value;
+  }
+  return true;
+}
+
 } // namespace
 
 void History::begin(uint64_t scene, bool reference, bool active) {
@@ -105,6 +231,79 @@ bool History::retain(const Core &core,
     resources.push_back({range, *image});
   }
   current_ = Frame{std::move(source), draw, std::move(resources), serial_};
+  return true;
+}
+
+bool History::materializePending(Core &core, const char *&why) {
+  if (!active_ || !previous_ || !current_ || refused_) {
+    why = "missing consecutive world source";
+    return false;
+  }
+  const world_projection_math::ProjectionStream culling(
+      previous_->source.selection.camera.cullingMatrix,
+      current_->source.selection.camera.cullingMatrix,
+      {},
+      0.5);
+  world_scene_prepare::Prepared prepared{};
+  why = "none";
+  if (!world_scene_prepare::prepare(previous_->source.selection,
+                                    current_->source.selection,
+                                    culling,
+                                    current_->source.clipRight,
+                                    prepared,
+                                    why,
+                                    true)) {
+    return false;
+  }
+  const world_chunk_codec::RamView ram(std::span<const uint8_t>(core.ram));
+  if (!world_source_pair::compatible(previous_->source, current_->source, why)) {
+    return false;
+  }
+  Frame staged = *previous_;
+  std::vector<Resource> pendingResources;
+  for (const auto &animation : prepared.animations) {
+    auto &previousHeader = staged.source.selection.sectors[animation.index];
+    if (!previousHeader || previousHeader->address != animation.address) {
+      why = "animation_endpoint_sector";
+      return false;
+    }
+    const uint32_t pending = previousHeader->animation;
+    for (uint32_t channel = 0; channel < 4u; ++channel) {
+      const uint8_t index = (uint8_t)(pending >> (channel * 8u));
+      if (index >= 0x80u || (uint8_t)(animation.activeMask >> (channel * 8u)) == 0xffu) {
+        continue;
+      }
+      const uint32_t active =
+          0xffffffffu & ~(0xffu << (channel * 8u)) | ((uint32_t)index << (channel * 8u));
+      lucent::debug("worldtemporal",
+                    "materialize sector={:08X} channel={} index={} active={:08X}",
+                    animation.address,
+                    channel,
+                    index,
+                    active);
+      world_animation::Plan plan{};
+      if (!world_animation::appendSector(ram, animation.address, active, plan, why) ||
+          !applyAnimationPlan(staged, animation, channel, plan, why)) {
+        return false;
+      }
+      previousHeader->animation |= 0xffu << (channel * 8u);
+      for (const auto range : plan.resources) {
+        const auto image = core.currentImageIdentity(range);
+        if (!image) {
+          why = "animation_resource_residency";
+          return false;
+        }
+        pendingResources.push_back({range, *image});
+      }
+    }
+  }
+  staged.resources.insert(staged.resources.end(), pendingResources.begin(), pendingResources.end());
+  sortResources(staged.resources);
+  current_->resources.insert(
+      current_->resources.end(), pendingResources.begin(), pendingResources.end());
+  sortResources(current_->resources);
+  previous_->source = std::move(staged.source);
+  previous_->resources = std::move(staged.resources);
   return true;
 }
 

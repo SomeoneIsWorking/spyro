@@ -35,6 +35,7 @@ class History {
 public:
   void begin(uint64_t scene, bool reference, bool active);
   bool retain(const Core &core, world_source::Source source, world_scene_submitter::DrawState draw);
+  bool materializePending(Core &core, const char *&why);
   void refuse();
   void rotate();
   bool compatible(const Core &core, const char *&why) const;

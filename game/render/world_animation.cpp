@@ -1,6 +1,8 @@
 #include "world_animation.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 
 namespace spyro::world_animation {
 namespace {
@@ -18,6 +20,35 @@ uint32_t channelSet(uint32_t channel) {
   return kEnvironmentAnimations + 20u + channel * 8u;
 }
 
+bool addAddress(uint32_t base, uint64_t offset, uint32_t &out) {
+  if (offset > (uint64_t)std::numeric_limits<uint32_t>::max() - base) {
+    return false;
+  }
+  out = base + (uint32_t)offset;
+  return true;
+}
+
+bool retainResource(const RamView &ram,
+                    uint32_t address,
+                    uint32_t size,
+                    Plan &plan,
+                    const char *reason,
+                    const char *&why) {
+  const auto range = ram.range(address, size);
+  if (!range) {
+    why = reason;
+    return false;
+  }
+  const auto duplicate =
+      std::find_if(plan.resources.begin(), plan.resources.end(), [&](const auto &item) {
+        return item.begin == range->begin && item.end == range->end;
+      });
+  if (duplicate == plan.resources.end()) {
+    plan.resources.push_back(*range);
+  }
+  return true;
+}
+
 struct Header {
   uint32_t sourceA = 0;
   uint32_t sourceB = 0;
@@ -25,33 +56,41 @@ struct Header {
   int32_t factor = 0; // 0 selects the straight-copy form
 };
 
-bool readHeader(
-    const RamView &ram, uint32_t channel, uint32_t index, Header &out, const char *&why) {
+bool readHeader(const RamView &ram,
+                uint32_t channel,
+                uint32_t index,
+                Header &out,
+                Plan &plan,
+                const char *&why) {
   const uint32_t setSlot = channelSet(channel);
-  if (!ram.contains(setSlot, 4u)) {
-    why = "animation_set_slot";
+  if (!retainResource(ram, setSlot, 4u, plan, "animation_set_slot", why)) {
     return false;
   }
   const uint32_t set = ram.r32(setSlot);
-  if (!ram.contains(set + index * 4u, 4u)) {
+  uint32_t tableEntry = 0;
+  if (!addAddress(set, (uint64_t)index * 4u, tableEntry) ||
+      !retainResource(ram, tableEntry, 4u, plan, "animation_table", why)) {
     why = "animation_table";
     return false;
   }
-  const uint32_t animation = ram.r32(set + index * 4u);
-  if (!ram.contains(animation, 12u)) {
-    why = "animation_header";
+  const uint32_t animation = ram.r32(tableEntry);
+  if (!retainResource(ram, animation, 12u, plan, "animation_header", why)) {
     return false;
   }
-  const uint32_t keyframe = animation + 12u + (uint32_t)ram.r8(animation + 2u) * 8u;
-  if (!ram.contains(keyframe, 8u)) {
-    why = "animation_keyframe";
+  uint32_t keyframe = 0;
+  if (!addAddress(animation, 12u + (uint64_t)ram.r8(animation + 2u) * 8u, keyframe) ||
+      !retainResource(ram, keyframe, 8u, plan, "animation_keyframe", why)) {
     return false;
   }
   out.factor = (int32_t)(uint32_t)ram.r8(keyframe + 4u);
   out.size = ram.r16(animation + 6u);
-  const uint32_t base = animation + ram.r32(animation + 8u);
-  out.sourceA = base + (uint32_t)ram.r8(keyframe + 5u) * out.size;
-  out.sourceB = base + (uint32_t)ram.r8(keyframe + 6u) * out.size;
+  uint32_t base = 0;
+  if (!addAddress(animation, ram.r32(animation + 8u), base) ||
+      !addAddress(base, (uint64_t)ram.r8(keyframe + 5u) * out.size, out.sourceA) ||
+      !addAddress(base, (uint64_t)ram.r8(keyframe + 6u) * out.size, out.sourceB)) {
+    why = "animation_payload";
+    return false;
+  }
   return true;
 }
 
@@ -241,11 +280,16 @@ bool appendSector(
       continue;
     }
     Header header{};
-    if (!readHeader(ram, channel, index, header, why)) {
+    if (!readHeader(ram, channel, index, header, plan, why)) {
       return false;
     }
     const uint32_t stride = channel == 3u ? 8u : 4u;
     if (!checkStride(header, stride, why) || !readable(ram, header, header.factor != 0, why)) {
+      return false;
+    }
+    if (!retainResource(ram, header.sourceA, header.size, plan, "animation_payload", why) ||
+        (header.factor != 0 &&
+         !retainResource(ram, header.sourceB, header.size, plan, "animation_payload", why))) {
       return false;
     }
     switch (channel) {

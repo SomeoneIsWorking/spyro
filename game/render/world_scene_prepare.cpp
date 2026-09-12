@@ -111,7 +111,7 @@ bool prepare(const world_source::Selection &previous,
         low ? (high ? 0u : 0xffff0000u) : (high ? 0x0000ffffu : 0xffffffffu);
     const uint32_t active = dirty | activeMask;
     if (decodingAnimation) {
-      out.animations.push_back({sector, active});
+      out.animations.push_back({sector, index, activeMask, active});
       continue;
     }
     const uint32_t previousActive = previous.sectors[index]->animation | activeMask;

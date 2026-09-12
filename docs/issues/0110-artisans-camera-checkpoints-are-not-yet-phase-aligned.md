@@ -468,44 +468,44 @@ changes the stage during the call. Entrance update tests camera rotation Y `< -5
 the stage-zero store at `0x8002E070`. The next stage-update call can then increment `g_GameTick`
 and reach normal `CameraUpdate` through `0x80033B4C` → `0x80037BD4`.
 
-This makes the **level-scene reset, first stage-9-to-0 store, then first stage-0 game-tick store**
-the narrow handoff sequence to compare at exact guest PCs in native and console. Record each hit
-count and the pre/post `g_Gamestate`, `g_LevelTicks`, `g_GameTick`, camera rotation Y,
-spherical-preset pointer, camera state/target, and delivered-field count through the first game
-tick. The positive control is reaching the reset pair, transition store, and tick store in order;
-an unreachable-PC sentinel must report zero against the same scanned denominator. Stop at that
-first tick rather than running to the later tick-55 camera-state restart. The source says
-`LoadLevelScene` resets
-both ticks, `PadVSync` advances level ticks by physical field, and the stage-0 arm advances game
-tick once per update. The earlier native first-game-tick level ticks 5/7 versus console 1 and the
-147/150 game-tick values at level tick 300 are consistent with different handoff timing, but do
-not prove which transition predicate or field boundary first differs. No new retail process was
-launched for this static discriminator.
+The first exact-PC console attempt **falsified** the presumed stage-9 entrance
+route for this New Game replay. The pinned observer accepts four PC targets,
+eight RAM ranges, and 128 queued records per configuration. Four fresh
+authentic-BIOS/disc arms replayed the same 38-command prefix to field 5,838;
+all four pre-arm full-RAM SHA-256 values were
+`6df9aec68f762d2e024b61d9dc57cb22723bcd90629c83cc1a07875cfea7a9c4`.
+The disc, BIOS, and Beetle fork identities are the ones admitted above. Each
+arm used exact pre-instruction PC snapshots, no guest writes, five bounded
+main-RAM ranges, and a 128-record queue.
 
-### Exact-PC observation boundary and bounded console plan
+| Arm | Field range after arming | Scanned instructions | Exact-PC entries | Dropped |
+| --- | ---: | ---: | --- | ---: |
+| Level-scene reset | 5,838–6,438 | 156,863,584 | `0x80013698/9C/A0/A4`: 1 each | 0 |
+| Presumed entrance plus game tick | 5,838–6,538 | 193,006,836 | `0x8002E070/74`: **0 each**; `0x80033A6C/70`: 50 each | 0 |
+| Unreachable sentinel | 5,838–6,538 | 193,006,836 | `0xFFFFFFFC`: **0** | 0 |
+| Loader-side stage-zero candidates | 5,838–6,438 | 156,863,584 | `0x80013B4C/50`: 1 each; `0x80016268/6C`: 0 each | 0 |
 
-The pinned console observer can take pre-instruction snapshots at exact guest PCs,
-including selected RAM ranges, but its ABI accepts only **4 PC targets**, **8 RAM
-ranges**, and **128 queued records** per configuration. The proposed read-only
-comparison therefore needs two predetermined console arms from the same saved
-pre-handoff state, each stopping at the first stage-0 game-tick store:
+Every positive record was retained; pairing errors were zero. At field 6,438,
+`0x80013698/9C` changed level tick 5,326→0 while game tick stayed zero and
+stage stayed 13. The `0x80013B4C/50` pair then changed stage 13→0 with both
+ticks still zero. At the first `0x80033A6C/70` hit in field 6,439, stage was
+zero, level tick one, and game tick changed zero→one. The 50 observed tick
+increments continued through field 6,537. The unreachable arm scanned the
+same 193,006,836 instructions as the entrance arm and retained no record.
+Raw read-only records and denominators are gitignored at
+`scratch/oracle-comparison/handoff_console_{reset,handoff,sentinel,loader_stage}.json`.
 
-- Reset arm: `0x80013698` (before level-tick zero store), `0x8001369C`
-  (after it), `0x800136A0` (before game-tick zero store), and `0x800136A4`
-  (after it).
-- Handoff arm: `0x8002E070`/`0x8002E074` (before/after the stage-9-to-0
-  store), then `0x80033A6C`/`0x80033A70` (before/after the first stage-0
-  game-tick store).
+The decomp's no-level-transition branch in `LoadLevelScene` writes
+`g_Gamestate=GS_Playing`; the exact `0x80013B4C` store is now reached on this
+route. The stage-9 entrance branch remains a real binary path, but it did not
+run in this comparison window. The corrected handoff sequence is therefore
+**level-scene reset → loader-side stage-zero store → first stage-zero game-tick
+store**. It identifies the console's route, not the native first divergence.
+This new window did not repeat the earlier observer off/on RAM, video, and
+audio hash control, so it does not independently requalify instrumentation
+effects at this boundary.
 
-Set `follow_return=false`, drain between fields to avoid the 128-record cap,
-and report per-target entries, scanned, retained, dropped, and the reached
-field denominator, including **zero** if a target was never reached. Sample
-`g_Gamestate`, `g_LevelTicks`, `g_GameTick`, camera rotation Y, spherical
-preset pointer, camera state, target state, and delivered-field counter as the
-eight bounded RAM ranges. A third identically bounded sentinel arm targets
-unreachable `0xFFFFFFFC`; it must report zero hits with a nonzero scanned
-denominator. These are planned controls, not observed runtime results. No
-console arm has been run for this handoff comparison.
+### Exact-PC native observation boundary
 
 The matching **native exact-PC arm cannot yet be implemented title-locally**
 without changing execution semantics. `Core::pcObserver` exists, but the
@@ -514,11 +514,13 @@ segment and synchronizes `Core::pc` only on return. `Core::storeWatchCb` receive
 address/value/width, not the translated instruction PC, so pairing that callback
 with `Core::pc` would falsely attribute an interior store to the segment exit.
 The title's StageUpdate call observer similarly sees an outer call boundary,
-not the nested reset or store instruction. A shared Lightrec debug seam would
-have to report selected guest instruction PCs and pre/post state at the
+not the nested reset or store instruction. A shared Lightrec debug seam must
+report selected guest instruction PCs and pre/post state at the
 translated execution boundary while leaving unarmed execution unchanged. Its
 synthetic qualification needs a reached translated-store positive, an
 unreachable-PC zero-hit negative with scanned denominator, unchanged guest
-output with observation on/off, and zero interpreter substitution. Until such
-a seam is reviewed and implemented in `psxport`, the console-only arms cannot
-yield a paired lifecycle verdict.
+output with observation on/off, and zero interpreter substitution. The matching
+native arm must target the reached `0x80013698/9C/A0/A4`, `0x80013B4C/50`,
+and `0x80033A6C/70` sequence under the same state-driven New Game route.
+Until that seam is reviewed and integrated in `psxport`, the console-only arms
+cannot yield a paired lifecycle verdict.

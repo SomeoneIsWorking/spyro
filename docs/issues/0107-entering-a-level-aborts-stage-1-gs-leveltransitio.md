@@ -5,7 +5,7 @@ status: resolved
 symptom: crossing a portal reaches the level-transition tally screen and the renderer aborts with "no producer is registered for this stage"
 tags: render,transition,hud,text
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 ## Symptom
@@ -105,16 +105,17 @@ unconditionally.
 
 Live route `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal --skip-transitions --after
 1500` now crosses the portal, renders the transition and the entrance animation, and reaches
-gameplay in the destination level, where it stops on the next unrelated boundary: the field's Spyro
-shadow producer `0x80059A48` refusing its recipe in that level.
+gameplay in the destination level. The next field boundary was the Spyro shadow producer
+`0x80059A48`; its anchor `FLAG` saturation was misclassified as an invalid projection and is
+resolved in issue 0108. The same route now continues through 1,200 post-entry fields with the
+16-face shadow fan present and no native-render refusal.
 
 ## Why this is the next task
 
 It is the screen the Start-cancellation work targets. `spyro1_transition_skip` already classifies and
-cancels both the stage-1 tally and the stage-10 return-home glide, and both are unit-tested, but
-neither has ever been observed live because the route to them aborted first. With stage 1 rendering,
-the tally cancellation becomes observable, and pressing on to the pause menu's Quit makes the
-stage-10 one observable too.
+cancels both the stage-1 tally and the stage-10 return-home glide, and both are unit-tested. The
+portal route now reaches gameplay after stage 1 and stage 9; observing either cancellation live still
+requires driving those specific input paths.
 
 ## Related
 

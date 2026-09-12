@@ -189,3 +189,123 @@ from identical initial state under a control that reproduces without the
 observer. Compare the paired **outer-return** phase before pursuing a nested
 `CameraUpdate` return. Do not change camera math or scheduler timing to fit
 unmatched endpoints.
+
+## Guarded outer-return discriminator
+
+The authenticated `SCUS_942.28` assembly at `func_800357A4`,
+`0x80035C60..0x80035D3C`, grounds the branch from camera target state zero
+to `0x80000010`. It requires `g_Spyro+0x194` (`0x80078BEC`) to be zero,
+camera mode `0x80075914` bit `0x10` or look mode `0x8007592C` to be nonzero,
+and `g_Camera+0xF0` (`0x80076EC0`) to be zero. It then calls
+`func_80017AA4` to project Spyro through the current camera. The branch
+stays at zero only when the projected point is within 64 pixels of screen
+X=256, within 40 pixels of Y=120, and its **unsigned** depth is at most
+`0x1400`; otherwise it selects `0x80000010` and stores 45 to the timer at
+`0x80075938`. These are the executable's branch conditions, not an inferred
+screen position from the player world coordinates. Ghidra's
+`build/decomp/800357a4.c` agrees with this branch; its overlapping-global
+warning is why the assembly is the address and threshold authority.
+
+The existing native startup observer now reads only those four guard words
+and the timer alongside its prior camera/player fields at the **completed
+outer StageUpdate return**. Its focused Clang observer test includes reached,
+unreachable, disabled, and non-gameplay arms and checks the added read-only
+fields. The full-console observer used seven static RAM ranges (312 bytes per
+record) over the existing authentic-BIOS/disc route, fields 6438..6582.
+Three fresh 144-field console processes exited cleanly. The reached target
+scanned 52,025,631 instructions and retained 72 entries plus 72 returns,
+with zero drops, pairing errors, or pending returns. The unreachable
+`0xFFFFFFFC` target scanned the same denominator and matched/retained zero;
+the disabled arm retained nothing. RAM, frame, and audio hashes were equal
+in all three arms and reproduced the hashes above. Their raw captures are in
+gitignored `scratch/oracle-comparison/stage_return_console_{off,on,unreachable}.json`.
+
+At game tick 54 then 55, console completed returns at fields 6545/6547,
+level ticks 107/109, held camera state and target state at zero, timer zero,
+player `(84992,47173,9556)`, and guard words
+`(camera mode, look mode, player gate, camera block)=(0x52,0,0,0)` in both
+samples. One native `PSXPORT_DEBUG=stage-observe` natural-New-Game run from
+the first REPL prompt exited cleanly after 6,482 delivered fields and 3,453
+product steps, with 20,254,111 executed Lightrec blocks and zero fallback
+blocks/instructions. It scanned/matched 3,017 completed StageUpdate returns,
+recorded 63 of 63 stage-0 returns, and omitted zero. At game tick 54 then 55,
+native level ticks were 110/114; camera state and target state changed from
+zero to `0x80000010`, timer from zero to 44, and the four sampled guard words
+were also `(0x52,0,0,0)`. Its player was `(84992,47173,9557)` and camera
+`(84992,44702,10175)` at both returns. Raw log and parsed records are in
+gitignored `scratch/oracle-comparison/stage_guard_native.{log,json}`. This
+diagnostic built from Spyro `a32db9b` plus the observer worktree against the
+shared psxport dev clone at `8b210329-dirty`; it is not a pinned-framework
+conformance run.
+
+The four sampled non-projection guards do not separate the tick-55 result.
+The native player Z differs by one from this console run, and the New Game
+handoff still varies by level tick, so the endpoints are not fully aligned.
+
+## Branch-time projection discriminator
+
+Authenticated `external/spyro-1/asm/math.s` at `0x80017B20..0x80017B44`
+shows that `func_80017AA4` runs RTPS, reads GTE SXY2 and MAC3, sign-extends
+each 16-bit screen coordinate, and stores the unchanged 32-bit MAC3 depth to
+the caller's three-word local. The caller's exact return PC `0x80035CC8`
+precedes its stack loads, so console GPRs `$v0/$at/$v1` there still hold the
+actual `(x,y,depth)` written by the function. The native title observer taps
+the existing per-Core GTE pre/post boundary only during the outer StageUpdate
+call. It filters the RTPS opcode by the current camera matrix, zero GTE
+translation, and the player/camera vector, then records SXY2/MAC3 and the
+five branch-time guard words; a result is valid only when exactly one RTPS
+matches in that call. Lightrec does not supply this callback an exact guest
+instruction PC, so the operand match and uniqueness are attribution limits.
+The focused Clang synthetic test runs a real RTPS through the shipping GTE
+path, verifies a known `(-100,-200,1000)` projection against the same register
+ports and signed/unsigned conversions, and rejects wrong vector, wrong
+matrix, two-candidate ambiguity, disabled, and unreachable arms. It also
+checks that VZ0 compares as a signed 16-bit GTE port rather than a 32-bit
+world-coordinate difference.
+
+Three fresh authentic-BIOS/CHD console processes began at field 6438 with
+identical full-RAM SHA-256
+`d7e1b645aa1b68ebd023f1593423b38d02f26d08b7e2dcfacbd0053086e85a7e`.
+Over fields 6438..6582, the exact `0x80035CC8` observer retained 19 hits
+from 52,025,631 scanned instructions, with no drop or pairing error. The
+unreachable `0xFFFFFFFC` arm scanned the same 52,025,631 instructions and
+retained zero; the off arm retained nothing. All three arms had 144 completed
+hash fields, 106,148 audio sample frames, and equal full-RAM, frame, and audio
+SHA-256 hashes (`ffee380b8b7e1e2ef8b583dfb464aa2b89f87ca66234470a286d36a089cba54a`,
+`07c928f9a71f040334415be62548c27b327840ae998a0b81ef3eebbe1ce48e8b`,
+`60a727fd2d91fecfee18b471b8fde8cc39c6c2d450e00d3ba41db27f69df2a67`).
+The positive arm reached stage 0 and captured console tick 55/level tick 109
+at field 6547: projected `(256,120,2546)`, target state zero, guard words
+`(camera mode, look mode, player gate, camera block)=(0x52,0,0,0)`, and timer
+zero. These are inner-return values before the projection thresholds execute.
+
+One native New Game process built against clean psxport `e747e9d3` exited
+normally at field 6482, with 3,453 product steps, 20,081,932 executed
+Lightrec blocks, and zero fallback blocks/instructions. It scanned/matched
+3,017 completed StageUpdate returns, recorded 63/63 gameplay returns with
+zero omission, and scanned 20,603 GTE operations including 374 RTPS; exactly
+two camera-vector/matrix candidates were uniquely captured in their calls.
+At native game tick 55/level tick 114, the one matching projection was
+`(100,120,2546)` with the same branch-time target and four guard words as
+console. The subsequent outer return had target/current state `0x80000010`
+and timer 44. The source branch rejects X=100 because `abs(100-256)>64`;
+console X=256, Y=120 and depth 2546 meet all three bounds. A second native
+unique sample at game tick 1 projected `(100,171,1510)`, while the exact
+console PC captured `(256,172,1501)` at its tick 1; both X observations
+differ by 156, but those earlier 3D states also differ.
+
+The unique native candidate's X=100 would take the observed branch; the
+console's exact-PC X=256 stays within its bound. Without an exact native
+instruction PC, the operand match cannot prove that candidate is the
+function's stack local, and it does **not** identify why X differs. The
+native and console handoffs remain unaligned (level ticks 114 versus 109 at
+game tick 55), and native player/camera Z are each one higher. The next
+narrow discriminator is the GTE projection inputs at this branch, especially
+OFX/OFY/H and the camera rotation matrix, compared at the same inner phase.
+Do not change camera math or field scheduling from this result alone. Raw
+console captures
+are gitignored under `scratch/oracle-comparison/stage_projection_console_*`;
+the native log/parsed capture are
+`scratch/oracle-comparison/stage_guard_native.{log,json}`. The Spyro build
+identity was `a32db9b-dirty+psxport-e747e9d3`; this was an observation run,
+not a pinned Spyro conformance gate.

@@ -95,6 +95,7 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
   core.game->timing.logicFrame = frame;
   core.rsub.otAttr.beginLogicFrame(frame);
   state.closeInputLatch();
+  stageObserver_.beginStage(core, kFrameUpdate);
   psx::cpu::dispatchGuestToReturn0(core,
                                    kFrameUpdate,
                                    psx::cpu::ExecutionBudget::fromCycles(kFrameBudgetCycles),

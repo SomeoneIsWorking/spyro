@@ -177,6 +177,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/spyro1_boot_sequence.cpp
   titles/spyro1/core/spyro1_field_scheduler.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
+  titles/spyro1/core/handoff_store_observer.cpp
   titles/spyro1/core/stage_update_observer.cpp
   titles/spyro1/core/spyro1_transition_skip.cpp
   titles/spyro1/core/spyro1_runtime.cpp
@@ -226,6 +227,10 @@ if(BUILD_TESTING)
   target_include_directories(test_stage_update_observer PRIVATE ${PSXPORT_DIR}/tests)
   target_link_libraries(test_stage_update_observer PRIVATE spyro_runtime)
   add_test(NAME stage_update_observer COMMAND test_stage_update_observer)
+  add_executable(test_handoff_store_observer tests/test_handoff_store_observer.cpp)
+  target_include_directories(test_handoff_store_observer PRIVATE ${PSXPORT_DIR}/tests)
+  target_link_libraries(test_handoff_store_observer PRIVATE spyro_runtime)
+  add_test(NAME handoff_store_observer COMMAND test_handoff_store_observer)
   add_executable(test_guest_execution tests/test_guest_execution.cpp)
   target_link_libraries(test_guest_execution PRIVATE spyro_runtime)
   add_test(NAME guest_execution COMMAND test_guest_execution)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game_runtime.h"
+#include "handoff_store_observer.h"
 #include "spyro1_boot_sequence.h"
 #include "spyro1_field_scheduler.h"
 #include "spyro1_frame_policy.h"
@@ -17,7 +18,7 @@ namespace spyro1 {
 
 class Spyro1FrameDriver final : public FrameDriver {
 public:
-  Spyro1FrameDriver(Game &game, bool observeStageUpdate);
+  Spyro1FrameDriver(Game &game, bool observeStageUpdate, bool observeHandoffStores);
   ~Spyro1FrameDriver() override;
 
   void initialize(Core &core);
@@ -31,6 +32,7 @@ private:
   BootSequence boot_;
   TransitionSkip transitions_;
   StageUpdateObserver stageObserver_;
+  HandoffStoreObserver handoffStoreObserver_;
   std::unique_ptr<SpyroRenderer> renderer_;
   std::uint32_t gameplayFrame_ = 0;
 };

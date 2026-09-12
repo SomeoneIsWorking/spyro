@@ -480,15 +480,15 @@ main-RAM ranges, and a 128-record queue.
 
 | Arm | Field range after arming | Scanned instructions | Exact-PC entries | Dropped |
 | --- | ---: | ---: | --- | ---: |
-| Level-scene reset | 5,838–6,438 | 156,863,584 | `0x80013698/9C/A0/A4`: 1 each | 0 |
-| Presumed entrance plus game tick | 5,838–6,538 | 193,006,836 | `0x8002E070/74`: **0 each**; `0x80033A6C/70`: 50 each | 0 |
+| Level-scene reset | 5,838–6,438 | 156,863,584 | `0x80013698/9C/A0/A4`: 1 PC snapshot each; only `98` and `A0` are stores | 0 |
+| Presumed entrance plus game tick | 5,838–6,538 | 193,006,836 | `0x8002E070/74`: **0 each**; `0x80033A6C/70`: 50 PC snapshots each; only `6C` is a store | 0 |
 | Unreachable sentinel | 5,838–6,538 | 193,006,836 | `0xFFFFFFFC`: **0** | 0 |
-| Loader-side stage-zero candidates | 5,838–6,438 | 156,863,584 | `0x80013B4C/50`: 1 each; `0x80016268/6C`: 0 each | 0 |
+| Loader-side stage-zero candidates | 5,838–6,438 | 156,863,584 | `0x80013B4C/50`: 1 PC snapshot each; only `4C` is a store; `0x80016268/6C`: 0 each | 0 |
 
 Every positive record was retained; pairing errors were zero. At field 6,438,
-`0x80013698/9C` changed level tick 5,326→0 while game tick stayed zero and
-stage stayed 13. The `0x80013B4C/50` pair then changed stage 13→0 with both
-ticks still zero. At the first `0x80033A6C/70` hit in field 6,439, stage was
+the `0x80013698` store changed level tick 5,326→0 while game tick stayed zero and
+stage stayed 13. The `0x80013B4C` store then changed stage 13→0 with both
+ticks still zero. At the first `0x80033A6C` store in field 6,439, stage was
 zero, level tick one, and game tick changed zero→one. The 50 observed tick
 increments continued through field 6,537. The unreachable arm scanned the
 same 193,006,836 instructions as the entrance arm and retained no record.
@@ -507,20 +507,127 @@ effects at this boundary.
 
 ### Exact-PC native observation boundary
 
-The matching **native exact-PC arm cannot yet be implemented title-locally**
-without changing execution semantics. `Core::pcObserver` exists, but the
-production Lightrec path never calls `pc_observer_at`; it executes a translated
-segment and synchronizes `Core::pc` only on return. `Core::storeWatchCb` receives
-address/value/width, not the translated instruction PC, so pairing that callback
-with `Core::pc` would falsely attribute an interior store to the segment exit.
-The title's StageUpdate call observer similarly sees an outer call boundary,
-not the nested reset or store instruction. A shared Lightrec debug seam must
-report selected guest instruction PCs and pre/post state at the
-translated execution boundary while leaving unarmed execution unchanged. Its
-synthetic qualification needs a reached translated-store positive, an
-unreachable-PC zero-hit negative with scanned denominator, unchanged guest
-output with observation on/off, and zero interpreter substitution. The matching
-native arm must target the reached `0x80013698/9C/A0/A4`, `0x80013B4C/50`,
-and `0x80033A6C/70` sequence under the same state-driven New Game route.
-Until that seam is reviewed and integrated in `psxport`, the console-only arms
-cannot yield a paired lifecycle verdict.
+`Core::pcObserver` and `Core::storeWatchCb` cannot attribute an interior translated
+store: Lightrec synchronizes `Core::pc` only when its execution segment returns,
+and the memory watch callback has no instruction PC. The shared Lightrec selected-
+store observer (fork `9a982a6`, per-Core psxport bridge `ff3709e7`) now reports
+pre/post state at an exact translated SW PC, retires warm translations on arming,
+and fails closed with a typed fault when optimizer provenance is unsupported.
+The title's opt-in `PSXPORT_DEBUG=handoff-store` capture targets the four reached
+stores `0x80013698`, `0x800136A0`, `0x80013B4C`, and `0x80033A6C`, plus
+unreachable `0xFFFFFFFC`. It reports per-target before/after hits over executed
+JIT instruction count and fallback count. Capture retains the first eight routine
+tick increments, every reset/stage/non-monotonic store, and the next eight stores
+after each such transition; the fixed 256-record capacity fails closed if an
+interesting event would be lost. It reports hits, recorded, and omitted by class.
+The admitted executable's SHA-256 is
+`a533d75cab8afaae6107ec35a02a9a5fe979a92c7c955f9cf1ee50f693a1b998`;
+its words at `0x8001369C`, `0x800136A4`, and `0x80013B50` are `LUI`, while
+`0x80033A70` is `BEQ`. The console observer's hits at those adjacent PCs remain
+valid pre-instruction snapshots, but they are not stores and must not be passed
+to Lightrec's selected-store API. The title's synthetic shipping-path test
+qualifies four reached SW PCs, a zero-hit sentinel, on/off guest-word equality,
+and zero interpreter fallback. A second synthetic arm runs 80 routine tick
+stores before the reset and verifies the later level/game reset, stage-zero
+store, and first post-reset tick remain recorded while 72 routine events are
+explicitly omitted. The focused Clang test passed 173 checks: the immediate
+arm reached all four stores once over 16 JIT instructions, and the long-prefix
+arm reached 84 paired stores over 336 JIT instructions, retained 12, omitted
+72 routine events, hit the sentinel zero times, and used zero fallback
+instructions in both arms.
+
+### Reached native exact-store handoff
+
+One serialized native run used `tools/drive.py gameplay` with the state-driven New Game route,
+no transition cancellation, `PSXPORT_DEBUG=handoff-store`, a fresh empty card/settings path,
+headless and silent output, and normal pacing (`PSXPORT_NOPACE=0`). The admitted executable
+SHA-256 was `a533d75cab8afaae6107ec35a02a9a5fe979a92c7c955f9cf1ee50f693a1b998`,
+CHD SHA-256 was `8fe0a6e735ee399a8251f2173cf61c6e20fa565611b934fa3d90788beab9d6cb`,
+the built `spyro_port` SHA-256 was `31c985e57c0a427d7f7f59a8ec3c310ce19918db7e86d55e3585bc24f7ed8518`,
+and the built/recorded psxport revision was `ff3709e74b24d21de4f3dcdcd402de8c33d57df7`.
+The driver reached `GS_Playing` at its REPL frame 6,381 and exited normally after frame 6,421
+(6,421 delivered fields, 3,423 product steps, zero Lightrec faults or fallback instructions).
+The owned game and driver processes exited. The complete capture is gitignored at
+`scratch/oracle-comparison/handoff_native_store.log`.
+
+| Native SW PC | Pre → post target word | Stage | Level tick | Game tick | Hits (before/after) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0x80013698` level reset | 6,371 → 0 | 13 → 13 | 6,371 → 0 | 0 → 0 | 1/1 |
+| `0x800136A0` game reset | 0 → 0 | 13 → 13 | 0 → 0 | 0 → 0 | 1/1 |
+| `0x80013B4C` loader stage zero | 13 → 0 | 13 → 0 | 0 → 0 | 0 → 0 | 1/1 |
+| `0x80033A6C` first game tick | 0 → 1 | 0 → 0 | **3 → 3** | 0 → 1 | 23/23 total |
+
+The observer scanned **121,330,865 JIT instructions**, captured 26 paired stores,
+retained 19, and omitted seven routine increments; all three transition stores
+and all eight post-transition neighborhood stores were retained. The unreachable
+sentinel was **0/121,330,865** JIT instructions, and interpreter fallback was zero.
+The subsequent native game-tick stores incremented normally; the first eight
+post-transition values and their level ticks were 1@3, 2@7, 3@9, 4@11, 5@13,
+6@15, 7@17, and 8@19.
+
+The authentic-BIOS console route recorded the same reached SW sequence: reset and
+loader stage-zero stores in field 6,438, then the first game-tick store in field
+6,439 with **level tick 1** and game tick 0→1. Its pre-reset level tick was
+5,326, and the full-RAM pre-arm hash at field 5,838 was
+`6df9aec68f762d2e024b61d9dc57cb22723bcd90629c83cc1a07875cfea7a9c4`.
+The console and native routes are not field- or full-RAM-aligned at the reset,
+so the supported conclusion is narrower: both reach the loader-side stage-zero
+path, but native delays its first stage-zero game-tick store until level tick
+**3**, versus console tick **1**. The differing pre-reset level ticks and
+distinct outer routes do not yet assign that two-tick gap to a scheduler,
+loader, or update branch.
+
+The next source-grounded discriminator is the `PadVSync` increment of
+`g_LevelTicks`. In the admitted PS-X EXE, `0x80053C6C` loads word
+`0x800758C8`, `0x80053C88` adds one, and **`0x80053C90` stores it back**;
+the other resident store to that word is the reached reset at `0x80013698`.
+The decomp's `PadVSync` increments it at callback entry, and native
+`FieldScheduler::deliver` attempts one guest callback dispatch per accepted
+field; masked guest IRQ state can defer the actual callback. After the
+stage-zero store leaves the word at zero, the first native
+game-tick store sees three; the console sees one. This is consistent with
+three versus one callback increments in that interval, but current captures
+do not count the `0x80053C90` stores there or attribute native field-delivery
+sites. The bounded read-only next arm should bracket `0x80013B4C` and the
+first `0x80033A6C`, count and retain every `0x80053C90` pre/post store in
+that bracket, and record native delivery sites (`hostturn`, native frame tail,
+or suppressed-render path) with the unreachable sentinel and JIT/fallback
+denominators. A console exact-PC arm must start close enough to the known
+handoff to fit the observer ABI's four-target, 128-record queue; an arm from
+field 5,838 would overflow from ordinary VSync callbacks. If the callback
+counts match the observed level-tick values, compare the field origin and
+phase before changing timing or gameplay state; if they do not, identify the
+additional writer or observer gap first.
+
+### Post-gate exact-binary rerun
+
+After the combined Clang gate (36/36 CTests) and psxport pin advanced to
+`b2510d063c81c594bdaa12c441d5b209ea5cca11`, the same bounded, normally
+paced state-driven New Game route ran on `spyro_port` SHA-256
+`2388b56451f471ea7e58b27b3242e49f2759e89e7423b3d238435367edc59538`.
+It used a fresh empty card, no transition cancellation, `--settle 40`, silent
+audio, and the confirmed headless Vulkan presentation sink. The unused
+`PSXPORT_VK_HEADLESS` environment knob did not select that sink. The admitted
+EXE remained SHA-256 `a533d75cab8afaae6107ec35a02a9a5fe979a92c7c955f9cf1ee50f693a1b998`
+and the opened CHD was rehashed as SHA-256
+`8fe0a6e735ee399a8251f2173cf61c6e20fa565611b934fa3d90788beab9d6cb`.
+The driver reached `GS_Playing` at REPL frame 6,381 and exited zero after its
+40-field settle at REPL frame 6,421. Runtime completion reported 6,422 fields,
+3,425 product steps, 121,957,868 executed JIT instructions, zero faults, and
+zero fallback blocks/instructions. Owned UV/driver/game PIDs
+`811183/811186/811198` all exited; the retail slot was released.
+
+The observer scanned **121,957,865 JIT instructions** and paired 27 stores,
+retaining 19 and explicitly omitting eight routine increments (transitions
+3/3 retained, post-transition neighborhood 8/8 retained, routine 8/16
+retained). Exact before/after hits were `0x80013698`: 1/1,
+`0x800136A0`: 1/1, `0x80013B4C`: 1/1, `0x80033A6C`: 24/24, and unreachable
+`0xFFFFFFFC`: **0/121,957,865**. The reset again changed level tick
+6,371→0; stage-zero changed stage 13→0 with both ticks zero. The **first**
+game-tick store again changed 0→1 with stage zero and level tick **3**,
+preserving the 3-versus-1 console mismatch on the final binary. Later field
+cadence was not identical to the preceding native run: its second game-tick
+store saw level tick 6, versus 7 before, so this rerun confirms the first
+handoff point rather than full subsequent phase alignment. The bounded capture
+is gitignored at `scratch/oracle-comparison/handoff_native_store.log`; the
+preceding framework run is retained as `handoff_native_store.prev.log`.

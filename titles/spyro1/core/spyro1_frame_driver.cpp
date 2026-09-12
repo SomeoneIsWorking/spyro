@@ -56,17 +56,26 @@ private:
 
 } // namespace
 
-Spyro1FrameDriver::Spyro1FrameDriver(Game &game, bool observeStageUpdate)
+Spyro1FrameDriver::Spyro1FrameDriver(Game &game, bool observeStageUpdate, bool observeHandoffStores)
     : fields_(game), boot_(fields_), transitions_(fields_),
-      stageObserver_(observeStageUpdate, kFrameUpdate),
+      stageObserver_(observeStageUpdate, kFrameUpdate), handoffStoreObserver_(observeHandoffStores),
       renderer_(std::make_unique<SpyroRenderer>(&game.core,
                                                 observeStageUpdate ? &stageObserver_ : nullptr)) {}
 
 Spyro1FrameDriver::~Spyro1FrameDriver() {
   stageObserver_.report();
+  handoffStoreObserver_.finish();
+  handoffStoreObserver_.report();
 }
 
 void Spyro1FrameDriver::initialize(Core &core) {
+  const auto storeStatus = handoffStoreObserver_.arm(core);
+  if (storeStatus != psx::cpu::StoreObserverStatus::Configured) {
+    lucent::error("handoff-store",
+                  "could not arm exact-PC store observer (status={})",
+                  static_cast<int>(storeStatus));
+    std::abort();
+  }
   SpyroRenderer::installModeFromConfig(&core);
   psx::cpu::dispatchGuestToReturn0(core,
                                    kStaticConstructors,

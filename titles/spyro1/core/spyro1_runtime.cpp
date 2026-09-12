@@ -59,7 +59,8 @@ void Spyro1Runtime::bootInit(Core &core) {
 }
 
 std::unique_ptr<FrameDriver> Spyro1Runtime::createFrameDriver(Game &game) {
-  return std::make_unique<Spyro1FrameDriver>(game, cfg_dbg("stage-observe") != 0);
+  return std::make_unique<Spyro1FrameDriver>(
+      game, cfg_dbg("stage-observe") != 0, cfg_dbg("handoff-store") != 0);
 }
 
 bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {

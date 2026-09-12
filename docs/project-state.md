@@ -135,9 +135,13 @@ walks the rest, hopping and detouring when steering alone stalls. That route now
 the cyclorama refusals of issue 0106 are gone, and the CdControlF mis-binding behind them is fixed
 (see below). Stages 1 and 9 now have their native producer — `game/render/level_transition_scene`
 over `level_transition_tally_recipe` and the HUD text builder, closing issue 0107 — so the route
-renders the transition and the entrance animation and reaches gameplay in the destination level. It
-stops there on the next unrelated boundary: the field's Spyro shadow producer `0x80059A48` refuses
-its recipe in that level. Observing either cancellation live now needs only that refusal cleared.
+renders the transition and the entrance animation and reaches gameplay in the destination level. The
+field's Spyro shadow producer `0x80059A48` now accepts the level-entry frames whose anchor projection
+saturates. Retail reads SXY2/SZ3 and MAC1-3 without testing the GTE `FLAG` register, so those flags
+are diagnostic output rather than a refusal condition. A real portal route after the fix rendered
+300 post-entry fields with 16 shadow faces per field, no native-render refusal, and zero Lightrec
+fallback. The route therefore advances beyond the former shadow boundary; the next unqualified
+scene or cancellation path must be recorded from a fresh observation.
 
 The level entrance sweep (stage 9, `func_8002E000`) is deliberately still absent. Its exit is inside
 its own update — `g_Gamestate = GS_Playing` once `g_Camera.m_Rotation.y` has swept below `-0x200`,

@@ -190,14 +190,14 @@ Recipe derive(Core *core) {
   // convention so unrelated guest GTE work cannot shift or resize the native shadow.
   const auto &geometry = core->rsub.projParams;
   if (!geometry.geomValid()) {
-    recipe.status = Status::InvalidProjection;
+    recipe.status = Status::UnpublishedProjection;
     return recipe;
   }
   projection.ofx = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfx() << 16u);
   projection.ofy = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfy() << 16u);
   projection.h = (std::uint16_t)(std::int32_t)geometry.geomH();
   if (projection.h == 0u) {
-    recipe.status = Status::InvalidProjection;
+    recipe.status = Status::UnpublishedProjection;
     return recipe;
   }
 
@@ -211,10 +211,12 @@ Recipe derive(Core *core) {
   psxport::native_projection::FixedAffine cameraAffine{};
   cameraAffine.m = camera.value;
   const auto anchor = psxport::native_projection::project(cameraAffine, projection, anchorInput);
-  if ((anchor.flags & 0x80000000u) != 0u) {
-    recipe.status = Status::InvalidProjection;
-    return recipe;
-  }
+  // 0x80059A48 reads SXY2, SZ3 and MAC1-3 straight out of the GTE and never looks at FLAG, so a
+  // saturating anchor is part of retail's picture rather than an unusable input: the shadow's
+  // translation comes from MAC1-3, which the divide overflow and SZ3 clamp do not touch, and the
+  // clamp itself is reproduced exactly by native_projection. Refusing here dropped the shadow for
+  // the frames just after a level entrance, where the anchor sits behind the near plane.
+  recipe.anchorFlags = anchor.flags;
   const std::int32_t bias = (std::int32_t)core->mem_r32(kShadowState + 0x1cu);
   const std::array<std::int32_t, 3> shadowTranslation = {
       (std::int32_t)(anchor.raw_view_fixed[0] >> 12u),
@@ -277,8 +279,8 @@ const char *statusName(Status status) {
     return "invalid core";
   case Status::InvalidState:
     return "invalid state";
-  case Status::InvalidProjection:
-    return "invalid projection";
+  case Status::UnpublishedProjection:
+    return "unpublished scene projection";
   }
   return "unknown";
 }

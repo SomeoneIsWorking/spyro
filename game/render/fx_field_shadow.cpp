@@ -30,6 +30,9 @@ bool spyro_field_shadow_submit(Core *core) {
     return false;
   }
   spyro::field_shadow_submitter::submit(core, core->game->rq, recipe, plan);
-  lucent::debug("fieldshadow", "PASS faces={}", recipe.faceCount);
+  lucent::debug("fieldshadow",
+                "PASS faces={} anchor_gte_flags=0x{:08X}",
+                recipe.faceCount,
+                recipe.anchorFlags);
   return true;
 }

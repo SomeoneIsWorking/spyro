@@ -15,7 +15,8 @@ enum class Status : std::uint8_t {
   ValidEmpty,
   InvalidCore,
   InvalidState,
-  InvalidProjection,
+  // The scene geometry the producer inherits was never published, or published with no distance.
+  UnpublishedProjection,
 };
 
 struct Vertex {
@@ -37,6 +38,9 @@ struct Recipe {
   Status status = Status::InvalidState;
   std::array<Face, kFanPoints> faces{};
   std::size_t faceCount = 0;
+  // The anchor projection's GTE flags. func_80059A48 never tests them, so neither does this
+  // recipe; they are reported so a saturating frame is visible rather than silent.
+  std::uint32_t anchorFlags = 0;
 };
 
 std::int32_t

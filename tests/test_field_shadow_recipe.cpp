@@ -79,6 +79,20 @@ void checkSameGeometry(const Recipe &a, const Recipe &b) {
   }
 }
 
+void test_saturating_anchor_still_produces_the_retail_fan() {
+  // func_80059A48 reads SXY2/SZ3/MAC1-3 and never tests FLAG, so an anchor behind the near plane —
+  // which is what the frames right after a level entrance look like — is still a drawn shadow. The
+  // recipe must report the saturation rather than refuse it.
+  const auto game = shadowFixture();
+  game->core.mem_w32(0x8007aa10u + 0x18u, (uint32_t)(int32_t)-1024);
+  const auto recipe = spyro::field_shadow_recipe::derive(&game->core);
+  CHECK(recipe.status == Status::Ready);
+  CHECK_EQ(recipe.faceCount, 16u);
+  // Bit 31 is the GTE's error sum; bit 17 is the H/SZ3 divide overflow the clamped SZ3 forces.
+  CHECK((recipe.anchorFlags & 0x80000000u) != 0u);
+  CHECK((recipe.anchorFlags & (1u << 17u)) != 0u);
+}
+
 void test_derive_projects_visible_closed_fan() {
   const auto game = shadowFixture();
   const auto recipe = spyro::field_shadow_recipe::derive(&game->core);
@@ -131,9 +145,9 @@ void test_owned_projection_moves_shadow_and_invalid_projection_refuses() {
   // The first perimeter point has positive view X: a longer focal length must widen it.
   CHECK(changed.faces[0].vertices[1].screenX - 342 > 32);
   game->core.rsub.projParams.setGeomScreen(0);
-  CHECK(spyro::field_shadow_recipe::derive(&game->core).status == Status::InvalidProjection);
+  CHECK(spyro::field_shadow_recipe::derive(&game->core).status == Status::UnpublishedProjection);
   game->core.rsub.projParams = ProjParams{};
-  CHECK(spyro::field_shadow_recipe::derive(&game->core).status == Status::InvalidProjection);
+  CHECK(spyro::field_shadow_recipe::derive(&game->core).status == Status::UnpublishedProjection);
 }
 
 void test_retained_ot_formula() {
@@ -156,6 +170,7 @@ void test_missing_game_is_refused() {
 
 int main() {
   RUN(derive_projects_visible_closed_fan);
+  RUN(saturating_anchor_still_produces_the_retail_fan);
   RUN(ambient_gte_projection_cannot_move_native_shadow);
   RUN(owned_projection_moves_shadow_and_invalid_projection_refuses);
   RUN(retained_ot_formula);

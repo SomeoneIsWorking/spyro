@@ -89,14 +89,78 @@ probe wrote guest RAM. Their bounded traces are in gitignored
 `scratch/oracle-comparison/console_cause.json`, `native_phase.json`, and
 `native_cause.json`.
 
+## Completed stage-update return discriminator
+
+The native frame driver calls guest stage update `0x8003385C` through Lightrec.
+The full console calls it from `0x80012230`, returning to
+`0x80012238`. With the admitted disc, BIOS, Beetle fork, empty saves, and the
+recorded 39-command route prefix from the earlier comparison, a 144-field
+observer window captured 72 entries and 72 saved-return arrivals. It scanned
+52,025,631 instructions, with zero drops, pairing errors or pending returns.
+Independent fresh console sessions had equal field count (144), audio frames
+(106,148), and all three on/off SHA-256 hashes: RAM
+`ffee380b8b7e1e2ef8b583dfb464aa2b89f87ca66234470a286d36a089cba54a`,
+video `07c928f9a71f040334415be62548c27b327840ae998a0b81ef3eebbe1ce48e8b`,
+audio `60a727fd2d91fecfee18b471b8fde8cc39c6c2d450e00d3ba41db27f69df2a67`.
+The console observer was reached and did not perturb this measured output window.
+
+An experimental title-only hook sampled native RAM after this outer guest
+function returned, before the host tail. It recorded 1,922 completed returns
+after arming, including 68 stage-0 samples through game tick 67. At game tick 1,
+console/native level ticks were 1/7 and player positions were
+`(84992,47116,9570)`/`(84992,47125,9570)`; camera state and entrance timer
+both read `0x80000010` and 44. Both arms showed camera state `0x80000011` at
+game tick 46 and zero at tick 54. At tick 55, console remained at state and
+target state zero with entrance timer zero, while native read both states
+`0x80000010` and timer 44. These are **experimental outer-return readings**;
+they cannot establish the nested `CameraUpdate` return or a camera root cause,
+and the native instrument was removed after the output controls below failed.
+The native run used the authenticated `SCUS_942.28` executable, the same
+configured CHD path as the console, Clang 22.1.8, and the then-current dirty
+framework tree at `b3fbe300` (`8aecc52-dirty+psxport-b3fbe300-dirty` build
+stamp). It exited after 6,494 fields and 3,459 product steps with 20,679,712
+Lightrec blocks executed and zero fallback blocks/instructions. This is not a
+release-conformance result for the subsequently committed framework tree.
+
+The first native off/on New Game run was invalid as a control: the runs had
+already diverged **before arming** at product fields 2640/2641, and their
+level-tick-140 endpoints had game ticks 66/67. A stricter six-run diagnostic
+started at the first pre-step REPL prompt (labelled frame 1), captured identical
+full 2 MiB pre-command RAM SHA-256
+`85d254b2a0c9b7b9347e0fbb70790a1e4d5fd7af0ff37aa31e17ce00edd9c1a9`
+and identical stage/game/level/camera/player words in every fresh process, then
+ran exactly 600 fields with no input. All ended at stage 13, game tick 0,
+level tick 602, camera state 0, and player Y 0. Every command in the table
+carries the `stage-observe` prefix; the six arms were:
+
+| First-prompt command(s) | Completed returns scanned / target matches | RAM SHA-256 | Frame SHA-256 | WAV SHA-256 |
+|---|---:|---|---|---|
+| `status` (two independent runs) | 0 / 0 | `947faa000e87badc42b46b2c45f77f3f0161c6099212c367555b8e24cf02e3c8` | `32bbfde9b8d2fe06cf732b76f5169639cadd43fb98a1aec97fd65e1a785d5b7d` | `0f54ec0ba4502d45e7f625eeb727b69a204ff969dafd9c2d7a2cfd7bb61c7791` |
+| `on` at `0x8003385C` | 83 / 83 | `1af29528dd2d612d6f5185ee17ca5a8467d104c87212c960219fa83b0c666b0a` | same as `status` | `e4ef40c77d50c4f0800d1d7fec73b1a5131654e66c24e4e9b30434f492264a18` |
+| `on FFFFFFFC` | 83 / 0 | same as `on` | same as `status` | same as `on` |
+| `on; off` | 0 / 0 | `61a013c242bddb46bc5434dcd935fb32c493e4fd6870b2c6b8b9455f1907ab16` | `e543ec7446dc6a738632a1c75aece7853959358bc2f16417ec57ae3f85b33563` | `85312d08c69bd00b487ec1b1ceac206331377dfac9266054923e829a95cee09e` |
+| `off; off` | 0 / 0 | same as `status` | same as `status` | same as `on` |
+
+The two `status` controls repeated exactly, as did reached and unreachable
+armed output; this is not a missing-target or uniform-hash instrument. Yet
+`on; off` changed all three outputs with **zero return scans during the run**,
+and `off; off` changed WAV alone. Thus the first-prompt command sequence can
+change output even when the observer is disabled during execution. The armed
+versus unarmed hash difference cannot be assigned to the read-only per-return
+counter or camera sampling. The armed/unarmed RAM difference was six bytes in
+`g_Pad`'s buffered-input slot (`0x800773F6..F7`, `0x80077400..03`); WAV PCM
+first differed at file byte 1,283,168. This bounds the observed difference,
+not its timing or ownership cause. The temporary native hook is not in the
+shipping tree; its bounded raw diagnostics remain gitignored in
+`scratch/oracle-comparison/stage_return_*` for review.
+
 ## Next discriminator
 
-Implement and qualify the shared native read-only guest-PC observer: pair
-`CameraUpdate` entry and saved-return records, report scanned instructions and drops,
-qualify reached and unreachable PC targets, and prove observation on/off preserves
-state and output hashes.
-Compare the two arms at completed `CameraUpdate` returns through game tick 55,
-including `g_Gamestate`, `g_LevelTicks`, `g_GameTick`, both camera states, and the
-entrance timer. Locate the first paired divergence before classifying input delivery,
-title scheduling, or guest camera execution. Do not change camera logic to match a
-field-end sample.
+Resolve native observation before inferring gameplay parity. Arm an observer
+through an immutable startup configuration boundary before REPL command timing,
+or build an independent Lightrec guest-PC/return trace with synchronized
+architectural state; the dormant `Core::pcObserver` is not wired into the
+shipping executor. Require reached and unreachable controls and identical
+native RAM, frame, and audio hashes from identical pre-arm state. Then compare
+a truly matched pre-update New Game handoff, before the first stage-0 game
+tick. Do not change camera math or scheduler timing to fit unmatched endpoints.

@@ -366,6 +366,44 @@ this route. The next discriminator is a bounded last-writer trace before
 the unique camera RTPS, with the guest and native producer boundaries
 distinguished. Do not override OFX to fit this sample. Raw captures are
 gitignored under `scratch/oracle-comparison/stage_gte_console_*` and
-`stage_gte_native_tick1.*`. The GDB-paused runs were not subjected to a new
+`stage_gte_native_tick1.json`. The GDB-paused runs were not subjected to a new
 on/off output-hash comparison; these snapshots qualify the registers at the
 stop, not the subsequent field schedule or rendered/audio output.
+
+## OFX writer source discriminator (reach still open)
+
+The authenticated local `SCUS_942.28` SHA-256
+`a533d75cab8afaae6107ec35a02a9a5fe979a92c7c955f9cf1ee50f693a1b998`
+loads 103,936 aligned words at `0x80010000`. Decoding the complete loaded
+image found four `ctc2` instructions targeting control register 24, at
+`0x80022D2C`, `0x8002395C`, `0x800623BC`, and `0x80062620`. The positive
+sprite-queue actor write at `0x80022D2C`, queue-exit restore at `0x8002395C`,
+and libgte `SetGeomOffset` write at `0x80062620` each matched one decoded
+word. Unreachable address `0xFFFFFFFC` was outside the loaded image and
+matched zero of the same 103,936-word scan. This is a **static inventory**;
+it does not establish which instruction ran on the New Game route, and does
+not cover WAD overlay code.
+
+The queue's authenticated assembly writes an actor's X to OFX at
+`0x80022D2C` and has an exit arm at `0x80023958..80023964` that writes
+`0x01000000` (256) to OFX and `0x00780000` (120) to OFY. The native
+`fx_sprite_queue.cpp::setup_screen_gte` likewise writes the actor's X to
+OFX, but its containing `emit_screen_queue` returns without restoring the
+screen center. Its stage-13 mode-3 text builder has an `x = 100` branch and
+stores that X in the actor field later consumed by `setup_screen_gte`.
+This is a concrete **restore-contract hypothesis** for the native tick-1
+OFX=100, separate from guest `SetGeomOffset` HLE. The branch and final actor
+must still be shown reached on the captured route before naming it the last
+writer or changing behavior.
+
+A first-prompt GDB hardware watchpoint on per-Core CR24 started at
+`0x01000000` against the existing pinned Spyro/psxport `e747e9d3` build.
+Its overhead prevented it from reaching the tick-1 camera candidate within
+the allotted retail slot. The run was terminated before its fixed route
+endpoint, without a retry or cap extension; it produced no writer-event
+denominator or new parity claim. Its driver truncated the earlier
+`stage_gte_native_tick1.log`; the parsed JSON and issue values above remain,
+but that earlier raw native log is no longer available. The next trace should
+arm around the stage-13 mode-3 queue return and the first camera RTPS, logging only changed
+CR24 values and the boundary that wrote them, with a reached actor write
+and an unreachable target control in the same bounded window.

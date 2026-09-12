@@ -447,3 +447,37 @@ and guest-grounded exit restore. The New Game handoff still varied (native level
 independent console. It therefore proves the local CR24/projection contract, not complete camera or
 visual parity. The raw logs are `scratch/oracle-comparison/stage_ofx_queue_live.prev.log` before
 and `stage_ofx_queue_live.log` after; both are gitignored.
+
+## Next lifecycle discriminator after the queue restore
+
+A bounded read-only scan of the authenticated `SCUS_942.28` executable above checked the loaded
+103,936 aligned words and found all 12 expected instruction words at their exact PCs (12/12).
+Unreachable PC `0xFFFFFFFC` was outside that loaded range (0/103,936). The adjacent
+`LoadLevelScene` zero stores for `g_LevelTicks` at `0x80013698` and `g_GameTick` at `0x800136A0`
+each matched once in the whole loaded image (1/103,936 apiece). In the stage-update body
+`0x8003385C..80033C50`, the `g_GameTick` store word appears once in 253 aligned words, at
+`0x80033A6C`. In entrance-update `0x8002E000..8002E084`, the stage-zero store word appears once
+in 33 aligned words, at `0x8002E070`. These are static instruction and control-flow facts, not
+runtime hit counts; the scan does not cover WAD overlays.
+
+The stage-0 dispatch branch at `0x80033890` reaches the game-tick load/add/store at
+`0x80033A58/64/6C`. The stage-9 dispatch at `0x80033954` calls entrance update `0x8002E000`,
+then jumps to the common tail `0x80033C30`, bypassing that game-tick store even if entrance update
+changes the stage during the call. Entrance update tests camera rotation Y `< -512` at
+`0x8002E048..4C` or spherical preset `0x8006CA84` at `0x8002E054..64`; either true route reaches
+the stage-zero store at `0x8002E070`. The next stage-update call can then increment `g_GameTick`
+and reach normal `CameraUpdate` through `0x80033B4C` → `0x80037BD4`.
+
+This makes the **level-scene reset, first stage-9-to-0 store, then first stage-0 game-tick store**
+the narrow handoff sequence to compare at exact guest PCs in native and console. Record each hit
+count and the pre/post `g_Gamestate`, `g_LevelTicks`, `g_GameTick`, camera rotation Y,
+spherical-preset pointer, camera state/target, and delivered-field count through the first game
+tick. The positive control is reaching the reset pair, transition store, and tick store in order;
+an unreachable-PC sentinel must report zero against the same scanned denominator. Stop at that
+first tick rather than running to the later tick-55 camera-state restart. The source says
+`LoadLevelScene` resets
+both ticks, `PadVSync` advances level ticks by physical field, and the stage-0 arm advances game
+tick once per update. The earlier native first-game-tick level ticks 5/7 versus console 1 and the
+147/150 game-tick values at level tick 300 are consistent with different handoff timing, but do
+not prove which transition predicate or field boundary first differs. No new retail process was
+launched for this static discriminator.

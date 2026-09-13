@@ -79,8 +79,17 @@ measured identities and boot facts, but do not extend their retired generated br
   diagnostics, and title selection do not collapse into `main.cpp` or `render_frame.cpp`.
 - Diagnostics report denominators, missing corpus, and both answers. Boot, logos, menus, FMV, and a
   clean trace do not establish gameplay conformance.
-- Do not use `./run.sh` for agent verification; use focused build/test commands. The launcher is a
-  player surface and now builds only the native/Lightrec product.
+- **`./run.sh` is the user's launcher, not the agent's tool.** It provisions, builds, and opens the
+  windowed, audible, real-time product for a human, so an agent run takes over the desktop. Never use
+  it to diagnose, measure, verify, or smoke-test your own work. Drive the product with the maintained
+  tools instead — `tools/drive.py` (reads guest state through the product's REPL and issues real pad
+  edges), `tools/shot.py`, `tools/depth_cov.py` — or launch the product binary directly through
+  `external/psxport/tools/port/launch_environment.py::agent_environment`, which is offscreen, silent,
+  and unpaced. Take audio evidence from the headless `PSXPORT_WAV` sink, never from a device, and keep
+  build probes under `build/` (`build/` maintainer, `build/player` player, `build/player-tools`
+  framework tools) rather than `scratch/`. Exercise the zero-argument route only as a bounded check
+  on the shipping surface the user meets, and never as the evidence for a gameplay, audio, or
+  performance claim.
 - Preserve verified binary addresses, behavior, native subsystem contracts, and real scenarios while
   replacing stale methodology. Update the one nearest living authority whose answer changes.
 

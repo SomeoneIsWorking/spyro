@@ -57,12 +57,16 @@ void logNative(Core *core, std::span<const uint32_t> painterKeys) {
       continue;
     }
     // Screen positions are logged without the draw offset the native path already applied, because
-    // a retail packet stores its vertices before the GPU adds it.
+    // a retail packet stores its vertices before the GPU adds it. The item's own painter key is
+    // logged per record so an unmatched primitive names the producer that submitted it; the
+    // histogram below can only say how many items each producer contributed.
     lucent::debug("actororacle",
-                  "native rec={} nv={} semi={} tex={} ord={:.6f} node=0x{:08X} v0={},{},{:06X} "
+                  "native rec={} painter=0x{:08X} nv={} semi={} tex={} ord={:.6f} node=0x{:08X} "
+                  "v0={},{},{:06X} "
                   "v1={},{},{:06X} v2={},{},{:06X} "
                   "v3={},{},{:06X}",
                   emitted,
+                  item.painter_object,
                   item.nv,
                   item.semi,
                   // Colour mode 3 is this queue's untextured sentinel; retail says the same thing
@@ -319,6 +323,22 @@ bool drawsClass(Core *core, int wantedClass) {
   return false;
 }
 
+// How many records g_SonyImage.m_ShadedMobys holds right now.
+//
+// The shaded pass (0x80022A2C) reads that pointer list directly instead of walking an OT, so a
+// producer whose records are missing from the decoded stream is indistinguishable from one that
+// read an empty list. The count is reported beside the decoded total so the comparison says which
+// of the two it was — a zero here means the retail body was handed nothing to draw, not that it
+// declined to draw.
+uint32_t shadedListLength(Core *core) {
+  constexpr uint32_t kShadedList = 0x800720F4u;
+  uint32_t count = 0;
+  while (count < 256u && core->mem_r32(kShadedList + count * 4u) != 0u) {
+    ++count;
+  }
+  return count;
+}
+
 } // namespace
 
 void compare(Core *core,
@@ -350,6 +370,9 @@ void compare(Core *core,
   for (uint32_t word = 0; word < savedOt.size(); ++word) {
     savedOt[word] = core->mem_r32(kseg(otBase + word * 4u));
   }
+
+  // Sampled before the body runs: what the retail pass is about to read, not what it left behind.
+  const uint32_t shadedBefore = shadedListLength(core);
 
   psx::cpu::dispatchGuestToReturn0(
       *core, retailBody, psx::cpu::ExecutionBudget::currentTurn(*core), site);
@@ -388,8 +411,11 @@ void compare(Core *core,
                   p.vertices[3].rgb);
   }
   lucent::debug("actororacle",
-                "retail side: body=0x{:08X} walked={} refusal={} decoded={} pool_from=0x{:08X}",
+                "retail side: body=0x{:08X} shaded_list={}/{} walked={} refusal={} decoded={} "
+                "pool_from=0x{:08X}",
                 retailBody,
+                shadedBefore,
+                shadedListLength(core),
                 walked,
                 refusal,
                 retail.size(),

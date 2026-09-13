@@ -586,9 +586,14 @@ native target, `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal --skip
 faces on each sampled frame and Lightrec reported zero fallback blocks and instructions. Enabling
 the actor semantic oracle on a 300-field route compared 440 frames: 383 retail primitives and 403
 native primitives yielded 380 matches after the measured -86-pixel presentation offset, with three
-retail-only and 23 native-only primitives. This is a concrete comparison discriminator, not full
-scene parity; the remaining actor/depth differences and the handoff `g_LevelTicks` phase offset keep
-S011 missing.
+retail-only and 23 native-only primitives. The oracle now attributes every record to its producer:
+the 23 native-only primitives are the whole of the shaded/sprite-queue arm `0x80022A2C`, which has
+zero matches on every frame captured so far, while the regular, specular, Spyro and shadow producers
+match to within 0-8 primitives. Retail's decoded stream on those frames contains no flat primitive at
+all, so that arm's colour, semi-transparency and depth rules are still source-grounded rather than
+parity-verified, and `g_SonyImage.m_ShadedMobys` holds 104 records at the retail dispatch. This is a
+concrete comparison discriminator, not full scene parity; the unresolved shaded-arm comparison, the
+remaining actor/depth differences and the handoff `g_LevelTicks` phase offset keep S011 missing.
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,

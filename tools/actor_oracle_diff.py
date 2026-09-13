@@ -9,9 +9,11 @@ A primitive is matched on the MULTISET of its (x, y, rgb) vertices, which is inv
 vertex order the two sides happen to emit. Two primitives that occupy the same pixels with the same
 colours are the same primitive whatever their winding.
 
-WHAT A NEGATIVE PRINTS. Every run prints both denominators, the matched count, and the unmatched
-count on each side. "0 unmatched" is therefore distinguishable from "the log had no frame in it",
-which refuses by name instead.
+WHAT A NEGATIVE PRINTS. Every run prints both denominators, the matched count, the unmatched
+count on each side, and each native producer's submitted/matched/recoloured/unmatched counts, so
+the producer an unmatched primitive came from is named rather than inferred from the painter
+histogram. "0 unmatched" is therefore distinguishable from "the log had no frame in it", which
+refuses by name instead.
 
     python3 tools/actor_oracle_diff.py scratch/logs/actororacle.log
     python3 tools/actor_oracle_diff.py scratch/logs/actororacle.log --frame -1 --show 20
@@ -26,7 +28,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 NATIVE_REC = re.compile(
-    r"native rec=(\d+) nv=(\d+) semi=(\d+) tex=(\d+) ord=(-?[0-9.]+) node=0x([0-9A-F]+) "
+    r"native rec=(\d+) painter=0x([0-9A-F]+) nv=(\d+) semi=(\d+) tex=(\d+) ord=(-?[0-9.]+) "
+    r"node=0x([0-9A-F]+) "
     r"v0=(-?\d+),(-?\d+),([0-9A-F]{6}) v1=(-?\d+),(-?\d+),([0-9A-F]{6}) "
     r"v2=(-?\d+),(-?\d+),([0-9A-F]{6}) v3=(-?\d+),(-?\d+),([0-9A-F]{6})"
 )
@@ -47,6 +50,10 @@ class Primitive:
     textured: int = -1
     order: float = 0.0
     node: str = ""
+    # The native producer that submitted the item (its painter object). Attributing an unmatched
+    # primitive to a producer is what turns "31 native-only primitives" into a work item; retail's
+    # stream comes from one guest walker, so its records carry no producer.
+    painter: str = ""
 
     def key(self, dx: int = 0) -> tuple:
         return (self.nv, tuple(sorted((x + dx, y, rgb) for x, y, rgb in self.vertices)))
@@ -94,15 +101,16 @@ def parse(path: str) -> list[Frame]:
     for line in open(path, encoding="utf-8", errors="replace"):
         if match := NATIVE_REC.search(line):
             g = match.groups()
-            nv = int(g[1])
+            nv = int(g[2])
             current.native.append(
                 Primitive(
                     nv,
-                    int(g[2]),
-                    _vertices(list(g[6:]), nv),
-                    textured=int(g[3]),
-                    order=float(g[4]),
-                    node=g[5],
+                    int(g[3]),
+                    _vertices(list(g[7:]), nv),
+                    textured=int(g[4]),
+                    order=float(g[5]),
+                    node=g[6],
+                    painter=g[1],
                 )
             )
         elif match := RETAIL_REC.search(line):
@@ -160,10 +168,18 @@ def report(frame: Frame, show: int, dx: int) -> int:
     matched = 0
     retail_only: list[Primitive] = []
     pairs: list[tuple[Primitive, Primitive]] = []
+    # Which native producer each primitive came from: how many it submitted and how each one ended
+    # up. A bare "native only: 31" is not actionable, while "0x80022A2C: 26 submitted, 2 unmatched"
+    # names the arm to read.
+    by_producer: dict[str, Counter] = {}
+    for primitive in frame.native:
+        by_producer.setdefault(primitive.painter, Counter())["submitted"] += 1
     for primitive in frame.retail:
         if native_keys[primitive.key()] > 0:
             native_keys[primitive.key()] -= 1
-            pairs.append((primitive, native_by_key[primitive.key()].pop(0)))
+            native = native_by_key[primitive.key()].pop(0)
+            pairs.append((primitive, native))
+            by_producer.setdefault(native.painter, Counter())["matched"] += 1
             matched += 1
         else:
             retail_only.append(primitive)
@@ -174,6 +190,7 @@ def report(frame: Frame, show: int, dx: int) -> int:
     leftover_native = [p for p in frame.native if native_keys[p.key(dx)] > 0]
     for p in leftover_native:
         native_keys[p.key(dx)] -= 1
+        by_producer.setdefault(p.painter, Counter())["unmatched"] += 1
     shape_keys = Counter(p.shape_key(dx) for p in leftover_native)
     recoloured: list[tuple[Primitive, Primitive]] = []
     still_missing: list[Primitive] = []
@@ -184,7 +201,11 @@ def report(frame: Frame, show: int, dx: int) -> int:
         shape = primitive.shape_key()
         if shape_keys[shape] > 0:
             shape_keys[shape] -= 1
-            recoloured.append((primitive, native_by_shape[shape].pop(0)))
+            native = native_by_shape[shape].pop(0)
+            recoloured.append((primitive, native))
+            counts = by_producer.setdefault(native.painter, Counter())
+            counts["unmatched"] -= 1
+            counts["recoloured"] += 1
         else:
             still_missing.append(primitive)
     retail_only = still_missing
@@ -198,6 +219,23 @@ def report(frame: Frame, show: int, dx: int) -> int:
     report_depth(pairs, frame.instances, frame.positions, frame.camera)
     print(f"  of which same shape, different colour : {len(recoloured)}")
     print(f"  of which absent from the native stream: {len(retail_only)}")
+    print("\nretail primitives by primitive code (a producer that emits one code shape cannot be")
+    print("absent here without its pass having declined every record):")
+    for code, count in Counter(p.code for p in frame.retail).most_common():
+        print(f"  code {code}: {count}")
+    print("\nnative primitives by producer (submitted / matched / recoloured / unmatched):")
+    for painter, counts in sorted(by_producer.items()):
+        print(f"  0x{painter or '--------'}: {counts['submitted']} / {counts['matched']} / "
+              f"{counts['recoloured']} / {counts['unmatched']}")
+    if leftover_native and show:
+        print(f"\nfirst {min(show, len(leftover_native))} native-only primitives "
+              "(producer, instance, position, vertices):")
+        for primitive in leftover_native[:show]:
+            verts = " ".join(f"{x},{y},{rgb}" for x, y, rgb in primitive.vertices)
+            print(f"  0x{primitive.painter} node={primitive.node}"
+                  f" {frame.instances.get(primitive.node, 'unknown')}"
+                  f" pos={frame.positions.get(primitive.node, '?')}"
+                  f" semi={primitive.semi} tex={primitive.textured} ord={primitive.order:.6f} {verts}")
     if recoloured:
         print(f"\nfirst {min(show, len(recoloured))} recoloured primitives (retail -> native):")
         for retail_p, native_p in recoloured[:show]:
@@ -320,6 +358,16 @@ def main() -> int:
         print(
             f"REFUSED: {args.log} contains no oracle frame. Run with "
             "PSXPORT_ACTOR_SCENE_ORACLE=1 and PSXPORT_DEBUG=actororacle.",
+            file=sys.stderr,
+        )
+        return 1
+    # A native record carries the painter that submitted it. A capture from a build that did not
+    # log that field parses its retail stream and none of its native one, which would otherwise
+    # report every retail primitive as missing; refuse by name instead.
+    if not any(p.painter for f in frames for p in f.native):
+        print(
+            f"REFUSED: {args.log} has no painter= field on its native records; it predates the "
+            "producer attribution and must be recaptured with the current build.",
             file=sys.stderr,
         )
         return 1

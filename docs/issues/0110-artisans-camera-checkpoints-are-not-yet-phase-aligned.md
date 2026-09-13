@@ -4,9 +4,9 @@ title: Artisans native and full-console camera checkpoints are not yet phase ali
 status: investigating
 symptom: At the same Artisans level tick and player position, native and console game ticks and camera states differ before movement input
 tags: oracle,camera,gameplay,timing,input
-state_items: S011
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-13
+state_items: S011
 ---
 
 The earlier Left-60 camera delta in [issue 0102](0102-native-delivered-fields-undercount-guest-vblank.md)
@@ -631,3 +631,77 @@ store saw level tick 6, versus 7 before, so this rerun confirms the first
 handoff point rather than full subsequent phase alignment. The bounded capture
 is gitignored at `scratch/oracle-comparison/handoff_native_store.log`; the
 preceding framework run is retained as `handoff_native_store.prev.log`.
+
+### Note (2026-09-13)
+## Field-delivery bracket: the 3-versus-1 level-tick gap is now attributed
+
+The bounded read-only arm the preceding section asked for now exists on both sides.
+
+**Native.** `PSXPORT_DEBUG=handoff-store` now also observes the resident PadVSync store
+`0x80053C90` and records the delivering field's site. The loader stage-zero store `0x80013B4C` opens a
+bracket and the first stage-zero game-tick store `0x80033A6C` closes it, so every `0x80053C90`
+between them is retained by class. Three independent normally paced state-driven New Game runs
+(across three `spyro_port` builds — before and after the shaded-arm change, then on the frozen tree)
+reproduced the same bracket shape; the ordinals move by one between runs because the pre-handoff
+store count is not identical, and the final landed run is tabulated here:
+
+| ordinal | SW PC | stage | level tick | game tick | delivery site |
+|---|---|---|---|---|---|
+| 6376 | `0x80013B4C` loader stage zero | 13 -> 0 | 0 -> 0 | 0 -> 0 | none |
+| 6377 | `0x80053C90` PadVSync | 0 | 0 -> 1 | 0 | `hostturn` |
+| 6378 | `0x80053C90` PadVSync | 0 | 1 -> 2 | 0 | `render-suppressed` |
+| 6379 | `0x80053C90` PadVSync | 0 | 2 -> 3 | 0 | `render-suppressed` |
+| 6380 | `0x80033A6C` first game tick | 0 | 3 | 0 -> 1 | none |
+
+The capture reported six target PCs, **121,927,308** scanned JIT instructions, 6,449 paired stores,
+22 retained, 6,427 routine increments explicitly omitted (`routine 8/6435`), three transition and
+three bracket events with zero omissions, `bracket_opened=1 bracket_closed=1`, zero fallback
+blocks/instructions, and unreachable `0xFFFFFFFC` **0/121,927,308**. The two earlier runs agreed on
+the bracket with 121,161,184 and 122,045,197 scanned JIT instructions and the same three delivery
+sites. Raw log: `scratch/oracle-comparison/handoff_bracket_native.log` (preceded by
+`handoff_bracket_native.prev.log`); run report `build/bin/spyro_port` SHA-256
+`a734c2405b3ff1cc16b5dc101ef1b1d2e631276312e53f290b29b084662c6aa2`.
+
+**Full console.** Three fresh exact-PC arms replayed the recorded 38-command prefix (field 5,838),
+walked to field 6,430, armed the pinned observer on `0x80013698`, `0x80013B4C`, `0x80053C90` and
+`0x80033A6C`, and drained `observe_read` after every field so the 128-record queue could not
+overflow. All three shared pre-arm full-RAM SHA-256
+`12aa437b2121f7e1…` and identical post-window RAM/frame/audio SHA-256, and all three ended at field
+6,444 with stage 0, level tick 6 and game tick 3:
+
+| field | SW PC | stage | level tick | game tick |
+|---|---|---|---|---|
+| 6438 | `0x80013698` level reset | 13 | 5326 -> 0 | 0 |
+| 6438 | `0x80013B4C` loader stage zero | 13 -> 0 | 0 | 0 |
+| 6439 | `0x80053C90` PadVSync | 0 | 0 -> 1 | 0 |
+| 6439 | `0x80033A6C` first game tick | 0 | 1 | 0 -> 1 |
+
+The reached arm matched and retained **19 of 4,458,961** scanned instructions with zero drops and
+zero pairing errors; unreachable `0xFFFFFFFC` scanned the same denominator and matched zero; the
+disabled arm retained nothing. Raw captures are gitignored at
+`scratch/oracle-comparison/handoff_bracket_console_{off,bracket,unreachable}.json`; the driver is
+`scratch/oracle-comparison/handoff_bracket_console.py`.
+
+## What the bracket establishes
+
+The "native three, console one" gap at the first stage-zero game-tick store is a **field-delivery
+count** difference, not a missing writer or an unattributed guest VSync. The console reaches the
+first stage-0 stage update one field after the loader's stage-zero store; the native tree delivers
+three fields there — one `hostturn` field and two `render-suppressed` fields — before the next
+product step's stage update runs. The steady cadence then agrees on both sides (two level ticks per
+game tick from the second store on: native 3 -> 6 -> 8 -> 10, console 1 -> 3 -> 5), so the
+divergence is local to the loader -> stage-0 transition rather than a general scheduler rate
+difference. (The native second game-tick store saw level tick 6 in the final run and 7 in an earlier
+one; the first store was level tick 3 in every run.)
+
+This does **not** yet say which cadence is faithful. It bounds the earlier camera-state comparison:
+native and console were already two level ticks apart at the first post-handoff game tick, so the
+tick-55 camera-state and projection deltas in the sections above are compared at different phases and
+cannot be assigned to camera math. No guest state was written in either arm.
+
+Next discriminator: explain the three-field delivery around the loader store. The native frame loop
+runs one stage update per product step and delivers `kFieldsPerLogicFrame` fields per step, so a store
+taken inside a stage update should be followed by that step's remaining fields plus the next step's
+first field rather than by three. Identify which delivery owns the extra boundary (host-turn ordering
+around `stepFrame`'s stage update, the `render-suppressed` branch, or the loader's own return path)
+and compare it against the console's one-field gap before changing cadence or camera code.

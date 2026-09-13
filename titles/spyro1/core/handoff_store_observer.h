@@ -11,11 +11,12 @@ class Core;
 
 namespace spyro1 {
 
-// The four SW instructions reached by the authenticated console New Game route. The adjacent
-// console snapshot PCs are LUI/BEQ instructions and cannot be selected by Lightrec's store
-// observer.
-inline constexpr std::array<std::uint32_t, 5> kHandoffStoreTargets{
-    0x80013698u, 0x800136A0u, 0x80013B4Cu, 0x80033A6Cu, 0xFFFFFFFCu};
+class FieldScheduler;
+
+// Four reached New Game handoff SW instructions, the resident PadVSync level-tick SW, and an
+// unreachable control. Adjacent console snapshot PCs are LUI/BEQ, not Lightrec store targets.
+inline constexpr std::array<std::uint32_t, 6> kHandoffStoreTargets{
+    0x80013698u, 0x800136A0u, 0x80013B4Cu, 0x80053C90u, 0x80033A6Cu, 0xFFFFFFFCu};
 
 struct HandoffStoreState {
   std::uint32_t address = 0;
@@ -29,6 +30,7 @@ struct HandoffStoreState {
 
 enum class HandoffStoreClass : std::uint8_t {
   Transition,
+  Bracket,
   Neighborhood,
   Routine,
 };
@@ -43,6 +45,7 @@ struct HandoffStoreSample {
   std::uint32_t guestPc = 0;
   std::uint64_t ordinal = 0;
   HandoffStoreClass sampleClass = HandoffStoreClass::Routine;
+  std::array<char, 32> deliverySite{};
   HandoffStoreState before{};
   HandoffStoreState after{};
 };
@@ -51,7 +54,7 @@ struct HandoffStoreSample {
 // Lightrec is paused at the exact instruction; Core's cached PC/registers are not used.
 class HandoffStoreObserver final {
 public:
-  explicit HandoffStoreObserver(bool enabled);
+  HandoffStoreObserver(bool enabled, const FieldScheduler &fields);
   ~HandoffStoreObserver();
   HandoffStoreObserver(const HandoffStoreObserver &) = delete;
   HandoffStoreObserver &operator=(const HandoffStoreObserver &) = delete;
@@ -65,6 +68,8 @@ public:
   psx::cpu::StoreObserverReport counts() const;
   HandoffStoreClassCounts classCounts(HandoffStoreClass sampleClass) const;
   std::uint64_t omitted() const;
+  bool bracketOpened() const;
+  bool bracketClosed() const;
 
 private:
   static constexpr std::size_t kMaxSamples = 256;
@@ -74,12 +79,16 @@ private:
   void capture(const psx::cpu::StoreObservation &observation) noexcept;
 
   bool enabled_ = false;
+  const FieldScheduler &fields_;
   Core *core_ = nullptr;
   std::array<HandoffStoreSample, kMaxSamples> samples_{};
-  std::array<HandoffStoreClassCounts, 3> classCounts_{};
+  std::array<HandoffStoreClassCounts, 4> classCounts_{};
   std::size_t used_ = 0;
   std::uint64_t pairs_ = 0;
   std::size_t neighborhoodRemaining_ = 0;
+  bool bracketOpened_ = false;
+  bool bracketOpen_ = false;
+  bool bracketClosed_ = false;
   bool pending_ = false;
   std::uint32_t pendingPc_ = 0;
   HandoffStoreSample pendingSample_{};

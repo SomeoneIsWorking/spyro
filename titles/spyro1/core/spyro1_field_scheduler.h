@@ -3,6 +3,7 @@
 #include "spyro1_frame_policy.h"
 
 #include <cstdint>
+#include <string_view>
 
 class Core;
 class Game;
@@ -38,6 +39,7 @@ public:
   bool presentationSkipPressed() const;
 
   std::int32_t counter() const;
+  std::string_view activeDeliverySite() const;
 
 private:
   // True while a guest root owns its counter, including an IRQ deferred by masking/critical state.
@@ -50,6 +52,7 @@ private:
   bool bootSequenceActive_ = false;
   FieldCadence cadence_{};
   bool inField_ = false;
+  const char *activeDeliverySite_ = nullptr;
   bool handlerStackArmed_ = false;
   bool hostClockArmed_ = false;
   bool replQuit_ = false;

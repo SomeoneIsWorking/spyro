@@ -1,10 +1,13 @@
 #include "handoff_store_observer.h"
 
 #include "core.h"
+#include "spyro1_field_scheduler.h"
 
 #include <lucent/log.h>
 
+#include <algorithm>
 #include <cstdlib>
+#include <string_view>
 
 namespace spyro1 {
 namespace {
@@ -15,6 +18,7 @@ constexpr std::uint32_t kGameTick = 0x8007572Cu;
 constexpr std::uint32_t kLevelResetPc = 0x80013698u;
 constexpr std::uint32_t kGameResetPc = 0x800136A0u;
 constexpr std::uint32_t kStageZeroPc = 0x80013B4Cu;
+constexpr std::uint32_t kPadVsyncPc = 0x80053C90u;
 constexpr std::uint32_t kGameTickPc = 0x80033A6Cu;
 
 constexpr std::size_t classIndex(HandoffStoreClass sampleClass) {
@@ -25,6 +29,8 @@ const char *className(HandoffStoreClass sampleClass) {
   switch (sampleClass) {
   case HandoffStoreClass::Transition:
     return "transition";
+  case HandoffStoreClass::Bracket:
+    return "bracket";
   case HandoffStoreClass::Neighborhood:
     return "neighborhood";
   case HandoffStoreClass::Routine:
@@ -69,7 +75,8 @@ HandoffStoreState readState(Core &core, const psx::cpu::StoreObservation &observ
 
 } // namespace
 
-HandoffStoreObserver::HandoffStoreObserver(bool enabled) : enabled_(enabled) {}
+HandoffStoreObserver::HandoffStoreObserver(bool enabled, const FieldScheduler &fields)
+    : enabled_(enabled), fields_(fields) {}
 
 HandoffStoreObserver::~HandoffStoreObserver() {
   finish();
@@ -89,6 +96,9 @@ psx::cpu::StoreObserverStatus HandoffStoreObserver::arm(Core &core,
     used_ = 0;
     pairs_ = 0;
     neighborhoodRemaining_ = 0;
+    bracketOpened_ = false;
+    bracketOpen_ = false;
+    bracketClosed_ = false;
     pending_ = false;
     classCounts_ = {};
     lastCounts_ = {};
@@ -125,21 +135,40 @@ void HandoffStoreObserver::capture(const psx::cpu::StoreObservation &observation
     pending_ = true;
     pendingPc_ = observation.guestPc;
     pendingSample_ = {.guestPc = observation.guestPc, .ordinal = pairs_ + 1u, .before = state};
+    const std::string_view site = fields_.activeDeliverySite();
+    if (site.size() >= pendingSample_.deliverySite.size()) {
+      std::abort();
+    }
+    std::copy(site.begin(), site.end(), pendingSample_.deliverySite.begin());
     return;
   }
-  if (!pending_ || pendingPc_ != observation.guestPc) {
+  if (!pending_ || pendingPc_ != observation.guestPc ||
+      std::string_view(pendingSample_.deliverySite.data()) != fields_.activeDeliverySite()) {
     std::abort();
   }
   pending_ = false;
   pendingSample_.after = state;
+  if (pendingSample_.guestPc == kStageZeroPc && pendingSample_.after.stage == 0u &&
+      !bracketOpened_) {
+    bracketOpened_ = true;
+    bracketOpen_ = true;
+  }
   if (isTransition(pendingSample_)) {
     pendingSample_.sampleClass = HandoffStoreClass::Transition;
     neighborhoodRemaining_ = kTransitionNeighborhood;
+  } else if (pendingSample_.guestPc == kPadVsyncPc && bracketOpen_) {
+    pendingSample_.sampleClass = HandoffStoreClass::Bracket;
+  } else if (pendingSample_.guestPc == kPadVsyncPc) {
+    pendingSample_.sampleClass = HandoffStoreClass::Routine;
   } else if (neighborhoodRemaining_ > 0u) {
     pendingSample_.sampleClass = HandoffStoreClass::Neighborhood;
     --neighborhoodRemaining_;
   } else {
     pendingSample_.sampleClass = HandoffStoreClass::Routine;
+  }
+  if (pendingSample_.guestPc == kGameTickPc && bracketOpen_) {
+    bracketOpen_ = false;
+    bracketClosed_ = true;
   }
   auto &classCount = classCounts_[classIndex(pendingSample_.sampleClass)];
   ++classCount.hits;
@@ -177,6 +206,14 @@ std::uint64_t HandoffStoreObserver::omitted() const {
   return pairs_ - used_;
 }
 
+bool HandoffStoreObserver::bracketOpened() const {
+  return bracketOpened_;
+}
+
+bool HandoffStoreObserver::bracketClosed() const {
+  return bracketClosed_;
+}
+
 void HandoffStoreObserver::report() const {
   if (!enabled_) {
     return;
@@ -184,15 +221,18 @@ void HandoffStoreObserver::report() const {
   const auto counts = this->counts();
   lucent::info("handoff-store",
                "targets={} jit_instructions={} fallback_instructions={} paired={} recorded={} "
-               "omitted={} pending={}",
+               "omitted={} pending={} bracket_opened={} bracket_closed={}",
                counts.targetCount,
                counts.executedJitInstructions,
                counts.fallbackInstructions,
                pairs_,
                used_,
                omitted(),
-               pending_ ? 1 : 0);
+               pending_ ? 1 : 0,
+               bracketOpened_ ? 1 : 0,
+               bracketClosed_ ? 1 : 0);
   for (const auto sampleClass : {HandoffStoreClass::Transition,
+                                 HandoffStoreClass::Bracket,
                                  HandoffStoreClass::Neighborhood,
                                  HandoffStoreClass::Routine}) {
     const auto classCount = classCounts(sampleClass);
@@ -217,7 +257,7 @@ void HandoffStoreObserver::report() const {
     lucent::info("handoff-store",
                  "event={} class={} pc=0x{:08X} address=0x{:08X} source=0x{:08X} "
                  "word=0x{:08X}->0x{:08X} stage={}->{} level_tick={}->{} game_tick={}->{} "
-                 "cycle={}->{}",
+                 "cycle={}->{} site={}",
                  sample.ordinal,
                  className(sample.sampleClass),
                  sample.guestPc,
@@ -232,7 +272,8 @@ void HandoffStoreObserver::report() const {
                  sample.before.gameTick,
                  sample.after.gameTick,
                  sample.before.cycle,
-                 sample.after.cycle);
+                 sample.after.cycle,
+                 sample.deliverySite[0] != '\0' ? sample.deliverySite.data() : "none");
   }
 }
 

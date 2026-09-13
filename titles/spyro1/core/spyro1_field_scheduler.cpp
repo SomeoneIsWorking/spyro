@@ -65,6 +65,11 @@ std::int32_t FieldScheduler::counter() const {
   return static_cast<std::int32_t>(game_.core.mem_r32(kVblankCounter));
 }
 
+std::string_view FieldScheduler::activeDeliverySite() const {
+  return inField_ && activeDeliverySite_ != nullptr ? std::string_view(activeDeliverySite_)
+                                                    : std::string_view{};
+}
+
 void FieldScheduler::bootSequenceBegin() {
   if (bootSequenceActive_) {
     lucent::error("skipmap", "boot sequence observation armed twice");
@@ -273,6 +278,7 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
     return false;
   }
   inField_ = true;
+  activeDeliverySite_ = request.site;
 
   const int queueSize = game_.rq.n;
   const bool queueWasUnconsumed = queueSize > 0 && !game_.rq.consumed;
@@ -324,6 +330,7 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
 
   ++fields_;
   reportField(request, queueSize, queueWasUnconsumed);
+  activeDeliverySite_ = nullptr;
   inField_ = false;
   spyro::runtimeRun(core).fieldDelivered();
   return true;

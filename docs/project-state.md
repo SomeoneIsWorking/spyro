@@ -568,6 +568,18 @@ A reached retail queue previously left OFX=100 and projected camera X=100 at the
 tick; after the restore, the same actor write was reached, the queue exited at OFX=256, and the
 camera projected X=256. New Game handoff timing and full independent output parity remain open.
 
+The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
+difference to pacing rather than camera math. The console's loader store and its first stage-zero
+game tick are one field apart, and that field carries `g_StateSwitch == 1`, which is the main
+loop's own draw gate: `func_8001A050` waits for two fields since the previous draw
+(`while (pre - post < 2) VSync(0)`), and `src/main.c:21` skips that draw entirely while a state
+switch is pending. Retail therefore has no fixed field quota, and the native frame loop's fixed
+`kFieldsPerLogicFrame` step keeps the level's absolute `g_LevelTicks` one to two fields ahead of
+the console from the load boundary on. Timers read from that counter fire early by the same
+amount, so the earlier camera-state comparison is phase-offset by a known quantity. No frame-loop
+or quota change was shipped; see issue 0110 for the measurement and for why a suppressed-iteration
+quota would be a pacing-model decision rather than a fix.
+
 The post-entry shadow boundary is now exercised on the same real portal route. After rebuilding the
 native target, `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal --skip-transitions
 --after 1200` reached the destination level and exited 0; the field shadow producer reported 16
@@ -575,7 +587,8 @@ faces on each sampled frame and Lightrec reported zero fallback blocks and instr
 the actor semantic oracle on a 300-field route compared 440 frames: 383 retail primitives and 403
 native primitives yielded 380 matches after the measured -86-pixel presentation offset, with three
 retail-only and 23 native-only primitives. This is a concrete comparison discriminator, not full
-scene parity; the remaining actor/depth differences and camera mismatch keep S011 missing.
+scene parity; the remaining actor/depth differences and the handoff `g_LevelTicks` phase offset keep
+S011 missing.
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,

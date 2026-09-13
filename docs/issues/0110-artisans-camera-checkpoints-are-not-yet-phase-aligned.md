@@ -3,10 +3,10 @@ id: 110
 title: Artisans native and full-console camera checkpoints are not yet phase aligned
 status: investigating
 symptom: At the same Artisans level tick and player position, native and console game ticks and camera states differ before movement input
+state_items: S011
 tags: oracle,camera,gameplay,timing,input
 created: 2026-09-12
 updated: 2026-09-13
-state_items: S011
 ---
 
 The earlier Left-60 camera delta in [issue 0102](0102-native-delivered-fields-undercount-guest-vblank.md)
@@ -728,3 +728,82 @@ offset with another.
 Next discriminator: establish where retail's loader store sits inside its own two-field logic
 iteration — whether `LoadLevelScene` runs in the same field iteration as the following stage-0
 update or in the one before it — before touching the field quota or the frame loop.
+
+## The discriminator is answered: retail has no fixed field quota
+
+`scratch/oracle-comparison/handoff_cadence_console.py` re-ran the same prefix (fields 5838 -> 6444)
+with a fifth observed word, `g_StateSwitch` (`0x8007579C`), added to the four RAM ranges. One
+capture, 13,032,200 instructions scanned, 48 retained, zero drops, zero pairing errors, target
+entries 44 `0x80053C90` / 1 `0x80013B4C` / 3 `0x80033A6C`. Per-field trace around the handoff:
+
+| field | PC | stage | load stage | state switch | level tick | game tick |
+|---|---|---|---|---|---|---|
+| 6401..6437 | `0x80053C90` PadVSync | 13 | 13 | 0 | 5288..5324 | 0 |
+| 6438 | `0x80053C90` PadVSync | 13 | 13 | 0 | 5325 | 0 |
+| 6438 | `0x80013B4C` loader stage zero | 13 -> 0 | 13 | 0 | 0 | 0 |
+| 6439 | `0x80053C90` PadVSync | 0 | 13 | **1** | 0 | 0 |
+| 6439 | `0x80033A6C` first game tick | 0 | -1 | 0 | 1 | 0 -> 1 |
+| 6440..6444 | PadVSync / game tick | 0 | -1 | 0 | 1..5 | 1..3 |
+
+So the loader store and the following stage-0 update are **adjacent field iterations** with exactly
+one `0x80053C90` between them, and the one field that separates them carries
+**`g_StateSwitch == 1`**. `g_LoadStage` is still 13 at that field's PadVSync and is -1 by the game
+tick, so the loader update's own case-13 tail (`g_LoadStage = -1`, `src/loaders.c`), the state-switch
+consumption, and the `GS_Playing` update all run inside that single field.
+
+`g_StateSwitch` is the main loop's draw gate, and the draw is where retail's two-field rate comes
+from. `src/main.c:21` is a free-running `while(1)` that ends with `if (!g_StateSwitch)
+GamestateDraw();`, and `GamestateDraw` (`func_8001A050`, `src/gamestates/draw.c:857`) contains:
+
+```c
+  D_80075950.pre = VSync(-1);
+  while (D_80075950.pre - D_80075950.post < 2) {
+    VSync(0);
+    D_80075950.pre = VSync(-1);
+  }
+  D_80075950.post = VSync(-1);
+```
+
+That loop is retail's two-field logic iteration, and it only runs when `g_StateSwitch == 0`. While a
+state switch is pending the main loop spins without the wait, so how many fields an iteration elapses
+is whatever the interval between two VSync interrupts happens to contain — an interrupt phase, not a
+rule. `g_DeltaTime` is the compensation: `g_DeltaTime = g_UnprocessedFrames` clamped to `[2, 4]`, so
+the guest advances at least two ticks of time per iteration even when no field elapsed
+(`src/main.c:21`; `g_UnprocessedFrames` is incremented by `PadVSync`, `src/gamepad.c:508`).
+
+The console's "one field" is therefore the phase of one VSync interrupt inside the loader update,
+and the native tree cannot be made to reproduce it by changing a quota: the shipping cadence already
+delivers exactly `kFieldsPerLogicFrame` fields per product step, and the temporary one-field
+suppressed build landed on level tick 2 rather than 1 for the same reason (its extra field is the
+host-turn delivery on the other side of the loader store; see the section above).
+
+**No frame-loop or quota change is warranted, and none was shipped.** The native frame loop's fixed
+two-field step is a deterministic model of the *draw-wait* rate, which is the rate the guest is in
+for all of gameplay. Its known cost is a permanent offset in the absolute `g_LevelTicks` counter
+from the moment of a load (native 2 or 3 where the console reads 1, constant thereafter), which is
+the offset the camera checkpoints above were compared across; timers read from `g_LevelTicks` fire
+one or two fields early as a result. Modelling retail's state-switch phase instead would mean
+choosing how many fields a suppressed iteration consumes, and retail's own answer is "however many
+interrupts land", so any such change is a pacing-model decision that needs its own evidence, not a
+bracket-count fix.
+
+### Retail's frame bookkeeping is already the native owner of those globals
+
+The frame driver's `FrameState` addresses are the retail globals, not a private host page:
+`game/core/guest_gp.h` sets `kGp = 0x80075264`, so `kGp + 0x468` is `g_DeltaTime` (`0x800756CC`),
+`kGp + 0x4FC` is `g_UnprocessedFrames` (`0x80075760`), and `kGp + 0x538` is `g_StateSwitch`
+(`0x8007579C`). `stepFrame` writes `clamp(elapsedFields(), 2, 4)` into `g_DeltaTime` and zeroes
+`g_UnprocessedFrames` once per logic frame — main.c's three lines, in the host that owns the field
+clock — and `renderSuppressed()` reads the guest's own `g_StateSwitch`.
+
+A read-only REPL probe (`scratch/oracle-comparison/pad_edge_probe.py`, log
+`scratch/oracle-comparison/pad_edge_probe.log`) confirmed the coupling live at Artisans: Cross
+pressed for six fields produced `g_Pad.m_Down = 0x00000040` for exactly one field, released for
+eight fields produced `g_Pad.m_Released = 0x00000040` for exactly one field, `g_UnprocessedFrames`
+read 1 and 2 on alternating fields, and `g_DeltaTime` stayed 2 throughout. `g_Pad.m_Down` /
+`m_Released` are `|`-accumulated rather than overwritten whenever `g_UnprocessedFrames != 0`
+(`src/gamepad.c:444`), so this is a discriminator that would have shown a stuck edge if the
+per-iteration consumption were missing; it did not.
+
+### Note (2026-09-13)
+Next discriminator answered: retail has no fixed field quota. Console loader store and first stage-zero game tick are one field apart with g_StateSwitch==1 across that field; func_8001A050 (draw.c:857) waits two fields since the previous draw and main.c:21 skips that draw while a state switch is pending, so a suppressed iteration's field count is interrupt phase. Provisional one-field suppressed build landed on level tick 2, not 1. The native fixed-two-field step is the deterministic time base; changing it changes simulation speed, not just phase. Residual level-tick offset (native 2-3 vs console 1) is parked as a pacing-model convention, not fixed. No code change shipped.

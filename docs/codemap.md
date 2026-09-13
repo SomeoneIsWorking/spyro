@@ -31,7 +31,7 @@ execution and services; title code must not fork Lightrec or reproduce a second 
 
 | Subsystem | Responsibility | Current / target location | Entry point | Deep doc |
 | --- | --- | --- | --- | --- |
-| Player launcher | Frozen Python environment, dependency refusal, title selection, authentication, product build and launch | `run.sh`, `bootstrap.py`, `tools/run.py` | `tools/run.py::main` | `docs/migration.md` |
+| Player launcher | Frozen Python environment, dependency refusal, title selection, authentication, product build and launch | `run.sh`, `bootstrap.py`, `tools/run.py` | `tools/run.py::main` | `docs/migration.md`, `docs/findings/launcher-cmake-compiler-identity.md` |
 | Title identity | Serial, PS-X EXE header, size, hashes, labels, and environment keys; one runtime SHA-256 owner for executable and WAD bytes | `titles/spyro*/executable.json`, `tools/title_identity.py`, `tools/generate_title_catalog.py`, `game/core/content_identity.*` | title catalog loader; `spyro::sha256` | `docs/project-state.md` |
 | Runtime image provisioning | Extract and authenticate the selected executable without emitting guest bodies | `tools/provision_title.py`; title manifests remain fact authority | `provision_title.provision` | `docs/migration.md` |
 | PSX guest executor | Per-`Core` Lightrec instance, CPU/device synchronization, code cache, bounded exits, and invalidation | `external/psxport/runtime/cpu/`; no title-local executor | `psx::cpu::dispatchGuest` | `docs/migration.md` |

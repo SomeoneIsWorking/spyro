@@ -154,18 +154,39 @@ def require_library(host: Host, module: str, name: str, package: str) -> None:
         raise missing_dependency(host, name, package)
 
 
+def resolved_compiler(host: Host, requested: str) -> str:
+    """Spell a chosen compiler the way CMake's cache will.
+
+    CMake records the executable it found, not the token it was handed, and it compares that cache
+    entry with the token on the next run. Passing a bare name therefore makes every later configure
+    look like a toolchain change, and CMake answers that by deleting the cache: measured on this host,
+    where a ccache shim precedes `/usr/bin` on PATH, `clang++` was recorded as
+    `/usr/lib64/ccache/clang++`, the launcher's bare `clang++` disagreed with it on every run, and the
+    self-triggered re-run silently finished on the system C++ compiler instead (see
+    docs/findings/launcher-cmake-compiler-identity.md). Handing CMake the path it already holds ends
+    that loop and keeps ccache in the driver chain.
+    """
+
+    if not requested or os.sep in requested or (os.altsep and os.altsep in requested):
+        return requested
+    return host.which(requested) or requested
+
+
 def compiler_arguments(host: Host, environment: Mapping[str, str]) -> list[str]:
     """Pass user compiler choices through; otherwise prefer Clang if it is present."""
 
     arguments = []
     if cc := environment.get("CC"):
-        arguments.append(f"-DCMAKE_C_COMPILER={cc}")
+        arguments.append(f"-DCMAKE_C_COMPILER={resolved_compiler(host, cc)}")
     if cxx := environment.get("CXX"):
-        arguments.append(f"-DCMAKE_CXX_COMPILER={cxx}")
+        arguments.append(f"-DCMAKE_CXX_COMPILER={resolved_compiler(host, cxx)}")
     if arguments:
         return arguments
     if host.which("clang") is not None and host.which("clang++") is not None:
-        return ["-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++"]
+        return [
+            f"-DCMAKE_C_COMPILER={resolved_compiler(host, 'clang')}",
+            f"-DCMAKE_CXX_COMPILER={resolved_compiler(host, 'clang++')}",
+        ]
     return []
 
 
@@ -268,6 +289,48 @@ def owned_build_path(build: Path) -> Path:
     return build
 
 
+def same_compiler(left: str, right: str) -> bool:
+    """Whether two compiler tokens name the same compiler.
+
+    Two absolute paths are the same compiler only when they are equal; when either side is a bare
+    name — the shape a hand-written cache holds — the basenames are compared, so respelling `clang++`
+    as `/usr/lib64/ccache/clang++` (or the reverse) is never mistaken for a toolchain change. Symlinks
+    are deliberately not followed: ccache dispatches on argv[0], so `/usr/lib64/ccache/clang` and
+    `/usr/lib64/ccache/c++` are different compilers even though both resolve to one file.
+    """
+
+    left_path, right_path = Path(left), Path(right)
+    if left_path.is_absolute() and right_path.is_absolute():
+        return left_path == right_path
+    return left_path.name == right_path.name
+
+
+def option_value(options: Sequence[str], key: str) -> str:
+    prefix = f"-D{key}="
+    return next(
+        (option.partition("=")[2] for option in options if option.startswith(prefix)), ""
+    )
+
+
+def compiler_mismatch(build: Path, compiler_options: Sequence[str]) -> str:
+    """Name the first requested compiler the CMake cache does not record, or return "" when it agrees.
+
+    The comparison is by compiler identity, so respelling `clang++` as `/usr/lib64/ccache/clang++`
+    never looks like a toolchain change and never deletes a valid build; an actual switch, or CMake
+    falling back to the system compiler, does.
+    """
+
+    for language in ("C", "CXX"):
+        key = f"CMAKE_{language}_COMPILER"
+        requested = option_value(compiler_options, key)
+        recorded = cache_value(build, key)
+        if not requested or not recorded:
+            continue
+        if not same_compiler(requested, recorded):
+            return f"{key} is {recorded}, launcher requested {requested}"
+    return ""
+
+
 def reset_cmake_state(build: Path) -> None:
     """Invalidate this CMake tree without erasing sibling products or dependency builds."""
     build = owned_build_path(build)
@@ -293,12 +356,19 @@ def configure(source, build, compiler_options, *definitions, build_testing=False
     generator = cache_value(build, "CMAKE_GENERATOR")
     source_changed = bool(cached_source and Path(cached_source).resolve() != source.resolve())
     generator_changed = bool(generator and generator != "Ninja")
-    if source_changed or generator_changed:
-        say(f"resetting CMake state in {build.relative_to(ROOT)} for source/Ninja configuration")
+    # A compiler switch has to be applied to a cache-free tree: CMake deletes its own cache when the
+    # requested compiler disagrees with it, and that self-triggered re-run does not put the requested
+    # compiler back, so the tree can otherwise end up on the system compiler while the launcher keeps
+    # asking for Clang. Resetting here makes the transition explicit and deterministic.
+    mismatch = compiler_mismatch(build, compiler_options)
+    if source_changed or generator_changed or mismatch:
+        reason = mismatch or "source/Ninja configuration"
+        say(f"resetting CMake state in {build.relative_to(ROOT)} for {reason}")
         reset_cmake_state(build)
     build.mkdir(parents=True, exist_ok=True)
-    # CMake owns compiler identity and compiler cache transitions. An argv-text stamp confuses
-    # aliases/ccache paths with toolchain changes and must never authorize deleting a build.
+    # The retired .spyro-toolchain stamp compared compiler argv text and let an alias or a ccache
+    # spelling delete a valid build. Compiler identity is owned above instead, through resolved paths
+    # and same_compiler, so only a real switch invalidates a tree; drop any stamp left behind.
     (build / ".spyro-toolchain").unlink(missing_ok=True)
     args = [
         "cmake",
@@ -315,6 +385,11 @@ def configure(source, build, compiler_options, *definitions, build_testing=False
         *definitions,
     ]
     command(args, quiet=True)
+    # Verify rather than assume. The failure this guards against is silent: the artifact links, runs,
+    # and was produced by a compiler nobody selected.
+    mismatch = compiler_mismatch(build, compiler_options)
+    if mismatch:
+        raise Refusal(f"CMake configured a different compiler than the launcher asked for: {mismatch}")
 
 
 def build_discdump(psxport, compiler_options):

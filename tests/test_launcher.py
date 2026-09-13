@@ -271,18 +271,44 @@ class LauncherTest(unittest.TestCase):
         ):
             launcher.preflight(FakeHost(missing_module="sdl3"), {})
 
-    def test_compilers_are_forwarded_without_identity_checks(self):
+    def test_compilers_are_resolved_to_the_path_cmake_will_record(self):
+        # CMake stores the executable it found and compares it with this token on the next run, so a
+        # bare name that disagrees with the cache destroys the cache and rebuilds every object.
         host = FakeHost(missing={"clang", "clang++"})
         self.assertEqual(
             launcher.compiler_arguments(
                 host, {"CC": "custom-c", "CXX": "custom-cxx"}
             ),
             [
-                "-DCMAKE_C_COMPILER=custom-c",
-                "-DCMAKE_CXX_COMPILER=custom-cxx",
+                "-DCMAKE_C_COMPILER=/fake/custom-c",
+                "-DCMAKE_CXX_COMPILER=/fake/custom-cxx",
             ],
         )
         self.assertEqual(launcher.compiler_arguments(host, {}), [])
+        self.assertEqual(
+            launcher.compiler_arguments(FakeHost(), {}),
+            [
+                "-DCMAKE_C_COMPILER=/fake/clang",
+                "-DCMAKE_CXX_COMPILER=/fake/clang++",
+            ],
+        )
+        # A caller who names a path keeps that spelling.
+        self.assertEqual(
+            launcher.compiler_arguments(host, {"CC": "/opt/cc/bin/clang"}),
+            ["-DCMAKE_C_COMPILER=/opt/cc/bin/clang"],
+        )
+
+    def test_compiler_identity_ignores_spelling_but_not_a_different_compiler(self):
+        for left, right, same in (
+            ("clang++", "/usr/bin/clang++", True),
+            ("/usr/lib64/ccache/clang++", "clang++", True),
+            ("/usr/lib64/ccache/clang++", "/usr/lib64/ccache/clang++", True),
+            ("/usr/lib64/ccache/clang++", "/usr/lib64/ccache/c++", False),
+            ("/usr/lib64/ccache/clang++", "/usr/bin/clang++", False),
+            ("g++", "clang++", False),
+        ):
+            with self.subTest(left=left, right=right):
+                self.assertEqual(launcher.same_compiler(left, right), same)
 
     def test_player_build_is_isolated_and_targets_only_the_port(self):
         commands = []
@@ -391,13 +417,51 @@ class ConfigureTest(unittest.TestCase):
         sentinel = self.cache(self.build)
         stamp = self.build / ".spyro-toolchain"
         stamp.write_text("-DCMAKE_CXX_COMPILER=/usr/lib64/ccache/clang++\n")
-        for compiler in ("clang++", "/usr/bin/clang++", "g++", "clang-cl"):
+        for compiler in ("clang++", "/usr/bin/clang++"):
             with self.subTest(compiler=compiler):
                 option = f"-DCMAKE_CXX_COMPILER={compiler}"
                 launcher.configure(self.source, self.build, [option])
                 self.assertEqual(sentinel.read_bytes(), b"preserved object")
                 self.assertIn(option, self.commands[-1])
                 self.assertFalse(stamp.exists())
+
+    def test_changed_compiler_resets_the_cmake_state_before_configuring(self):
+        # A real switch invalidates the build anyway; doing it here keeps the launcher's own token in
+        # the cache, because CMake's self-triggered re-run drops the requested compiler.
+        sentinel = self.cache(self.build)
+        option = "-DCMAKE_CXX_COMPILER=/fake/clang++"
+        launcher.configure(self.source, self.build, [option])
+        self.assertFalse(sentinel.exists())
+        self.assertFalse((self.build / "CMakeCache.txt").exists())
+        self.assertIn(option, self.commands[-1])
+
+    def test_configure_that_records_another_compiler_refuses(self):
+        requested = "/usr/lib64/ccache/clang++"
+        for recorded, refused in ((requested, False), ("/usr/lib64/ccache/cc", True)):
+            with self.subTest(recorded=recorded):
+                self.build.mkdir(parents=True, exist_ok=True)
+                (self.build / "CMakeCache.txt").write_text(
+                    f"CMAKE_HOME_DIRECTORY:INTERNAL={self.source}\n"
+                    "CMAKE_GENERATOR:INTERNAL=Ninja\n"
+                    f"CMAKE_CXX_COMPILER:STRING={requested}\n"
+                )
+
+                def configure(args, _recorded=recorded, **_kwargs):
+                    self.commands.append(args)
+                    (self.build / "CMakeCache.txt").write_text(
+                        f"CMAKE_HOME_DIRECTORY:INTERNAL={self.source}\n"
+                        "CMAKE_GENERATOR:INTERNAL=Ninja\n"
+                        f"CMAKE_CXX_COMPILER:STRING={_recorded}\n"
+                    )
+
+                option = f"-DCMAKE_CXX_COMPILER={requested}"
+                with mock.patch.object(launcher, "command", side_effect=configure):
+                    if refused:
+                        with self.assertRaisesRegex(launcher.Refusal, "different compiler"):
+                            launcher.configure(self.source, self.build, [option])
+                    else:
+                        launcher.configure(self.source, self.build, [option])
+                self.assertIn(option, self.commands[-1])
 
     def test_legacy_generator_resets_only_its_cmake_tree(self):
         sentinel = self.cache(self.build, "Unix Makefiles")

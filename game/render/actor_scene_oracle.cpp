@@ -169,7 +169,24 @@ void logNative(Core *core, std::span<const uint32_t> painterKeys) {
                 (int32_t)core->mem_r32(kCamera + 0x30u));
 }
 
-bool walkOt(Core *core, uint32_t poolFrom, std::vector<Retail> &out, const char *&refusal) {
+// One walk of the retail OT. `out` receives the packets the body linked; the counters say what the
+// walk saw so a capture can never report "no flat primitive" without also reporting whether it
+// looked: `scanned` counts every packet visited, `belowFilter` the ones the pool-address test
+// skipped, `refused` the ones the decoder recognised as a real packet it cannot read.
+struct RetailWalk {
+  uint32_t scanned = 0;
+  uint32_t belowFilter = 0;
+  uint32_t refused = 0;
+  // Which command codes were refused, as a bitmask over the byte. A bare count says a pass is
+  // invisible without saying what would make it visible.
+  std::array<uint32_t, 8> refusedCodes{};
+};
+
+bool walkOt(Core *core,
+            uint32_t poolFrom,
+            std::vector<Retail> &out,
+            RetailWalk &counters,
+            const char *&refusal) {
   const uint32_t otBase = core->mem_r32(kOtPointer);
   if (!ramSpan(otBase, kOtBins * 8u)) {
     refusal = "invalid_ot";
@@ -187,18 +204,25 @@ bool walkOt(Core *core, uint32_t poolFrom, std::vector<Retail> &out, const char 
         refusal = "invalid_ot_chain";
         return false;
       }
+      ++counters.scanned;
       const uint32_t tag = core->mem_r32(packet);
       const uint8_t wordCount = (uint8_t)(tag >> 24);
       const uint32_t command = core->mem_r32(kseg(packet + 4u));
+      const uint8_t code = (uint8_t)(command >> 24);
       if (wordCount != 0 && (command >> 24) == 0xe1u) {
         drawMode = (uint16_t)command;
       } else if (wordCount != 0 && packet >= kseg(poolFrom)) {
         Retail record{.bin = (uint16_t)bin};
         if (gpu_packet_decode::decode(core, packet, drawMode, wordCount, record.packet, refusal)) {
           out.push_back(record);
+        } else {
+          ++counters.refused;
+          counters.refusedCodes[code >> 5] |= 1u << (code & 31u);
         }
         // A packet this producer did not build is not a failure of the capture; it is skipped and
         // shows up in the scanned/decoded denominators below.
+      } else if (wordCount != 0) {
+        ++counters.belowFilter;
       }
       const uint32_t next = tag & 0x00ffffffu;
       packet = next == 0 ? 0 : kseg(next);
@@ -323,20 +347,43 @@ bool drawsClass(Core *core, int wantedClass) {
   return false;
 }
 
-// How many records g_SonyImage.m_ShadedMobys holds right now.
+// What g_SonyImage.m_ShadedMobys holds right now: how many records, and how many of them the
+// shaded pass has marked as emitted.
 //
 // The shaded pass (0x80022A2C) reads that pointer list directly instead of walking an OT, so a
 // producer whose records are missing from the decoded stream is indistinguishable from one that
-// read an empty list. The count is reported beside the decoded total so the comparison says which
-// of the two it was — a zero here means the retail body was handed nothing to draw, not that it
-// declined to draw.
-uint32_t shadedListLength(Core *core) {
+// read an empty list. Two halves answer that: the length says what the retail body was handed, and
+// the flag says what it did with it. The pass clears record+0x51 on entry to every record it walks
+// (`sb $zero, 0x51($fp)` at 0x80022B28) and sets it to 1 on every record it queues
+// (`sb $a0, 0x51($fp)` at 0x80022D98, with $a0 = 1), so a list of 104 with 0 flagged means the pass
+// declined all of them rather than never seeing them. Measured against the console, whose
+// equivalent packet-pool commit (`sw $t9, 0x0($at)` at 0x80023978) fires 9 times per rendered
+// Artisans field.
+struct ShadedList {
+  uint32_t records = 0;
+  uint32_t flagged = 0;
+  std::vector<uint32_t> flaggedActors;
+  // Position in g_SonyImage.m_ShadedMobys, so a console trace of the pass can be indexed by record.
+  std::vector<uint32_t> flaggedOrdinals;
+};
+
+ShadedList readShadedList(Core *core) {
   constexpr uint32_t kShadedList = 0x800720F4u;
-  uint32_t count = 0;
-  while (count < 256u && core->mem_r32(kShadedList + count * 4u) != 0u) {
-    ++count;
+  constexpr uint32_t kEmittedFlag = 0x51u;
+  ShadedList list{};
+  while (list.records < 256u) {
+    const uint32_t record = core->mem_r32(kShadedList + list.records * 4u);
+    if (record == 0u) {
+      break;
+    }
+    if (core->mem_r8(record + kEmittedFlag) == 1u) {
+      ++list.flagged;
+      list.flaggedActors.push_back(record);
+      list.flaggedOrdinals.push_back(list.records);
+    }
+    ++list.records;
   }
-  return count;
+  return list;
 }
 
 } // namespace
@@ -372,14 +419,19 @@ void compare(Core *core,
   }
 
   // Sampled before the body runs: what the retail pass is about to read, not what it left behind.
-  const uint32_t shadedBefore = shadedListLength(core);
+  const ShadedList shadedBefore = readShadedList(core);
 
   psx::cpu::dispatchGuestToReturn0(
       *core, retailBody, psx::cpu::ExecutionBudget::currentTurn(*core), site);
 
+  // Read after: the pass rewrites +0x51 on every record it walks, so this is what it did with the
+  // list rather than what it inherited from the native producers.
+  const ShadedList shadedAfter = readShadedList(core);
+
   std::vector<Retail> retail;
   const char *refusal = "none";
-  const bool walked = walkOt(core, savedCursor, retail, refusal);
+  RetailWalk counters;
+  const bool walked = walkOt(core, savedCursor, retail, counters, refusal);
 
   for (uint32_t word = 0; word < savedOt.size(); ++word) {
     core->mem_w32(kseg(otBase + word * 4u), savedOt[word]);
@@ -411,15 +463,47 @@ void compare(Core *core,
                   p.vertices[3].rgb);
   }
   lucent::debug("actororacle",
-                "retail side: body=0x{:08X} shaded_list={}/{} walked={} refusal={} decoded={} "
+                "retail side: body=0x{:08X} shaded_list={}->{} shaded_flagged={}->{} "
+                "walked={} refusal={} scanned={} below_filter={} refused={} decoded={} "
                 "pool_from=0x{:08X}",
                 retailBody,
-                shadedBefore,
-                shadedListLength(core),
+                shadedBefore.records,
+                shadedAfter.records,
+                shadedBefore.flagged,
+                shadedAfter.flagged,
                 walked,
                 refusal,
+                counters.scanned,
+                counters.belowFilter,
+                counters.refused,
                 retail.size(),
                 savedCursor);
+
+  if (counters.refused != 0) {
+    lucent::Line line;
+    line.add("retail REFUSED codes ({}):", counters.refused);
+    for (uint32_t word = 0; word < counters.refusedCodes.size(); ++word) {
+      for (uint32_t bit = 0; bit < 32u; ++bit) {
+        if ((counters.refusedCodes[word] & (1u << bit)) != 0u) {
+          line.add(" {:02X}", (unsigned)(word * 32u + bit));
+        }
+      }
+    }
+    line.flush_debug("actororacle");
+  }
+
+  // Which records the pass accepted. The count alone cannot separate "retail drew these three
+  // gem nodes and the native's face stage is the difference" from "retail accepted a different
+  // nine", and the two readings call for opposite fixes.
+  for (std::size_t i = 0; i < shadedAfter.flaggedActors.size(); ++i) {
+    const uint32_t actor = shadedAfter.flaggedActors[i];
+    lucent::debug("actororacle",
+                  "retail shaded accepted ordinal={} node=0x{:08X} class={} extent=0x{:04X}",
+                  shadedAfter.flaggedOrdinals[i],
+                  actor,
+                  (int)core->mem_r16(actor + kMobyClass),
+                  (unsigned)core->mem_r16(actor + 0x50u));
+  }
 }
 
 } // namespace spyro::actor_scene_oracle

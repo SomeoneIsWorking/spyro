@@ -1,11 +1,11 @@
 ---
 id: 111
 title: Spyro's shaded-moby queue recipe disagreed with the authenticated renderers on light table, variant bits, colour scale, semi-transparency and depth unit
-status: investigating
+status: resolved
 symptom: shaded-moby faces (0x80022A2C) used the wrong light entry, an unapplied delay-slot colour shift, the wrong semi-transparency rule and the record-local depth unit; both focused tests existed but were never registered in CTest, so nothing failed
 tags: spyro1,render,field,actor,shaded,lighting,semi,depth
 created: 2026-09-13
-updated: 2026-09-13
+updated: 2026-09-14
 ---
 
 Affected state items: S005, S019.
@@ -72,7 +72,10 @@ multiset of `(x, y, rgb)` vertices. The oracle now logs each native record's pai
 unmatched primitive names the producer that submitted it instead of only the total.
 
 One Artisans capture (`scratch/logs/actororacle_shaded_list2.log`, 6 frames, `--settle 12`), per
-frame, native records by producer as *submitted / matched / recoloured / unmatched*:
+frame, native records by producer as *submitted / matched / recoloured / unmatched*. **The
+`0x80022A2C` zero column below is an artifact of the decoder used at the time, not a measurement of
+the shaded pass** — see "Resolution" — and is kept because the argument that followed from it is why
+the instrument was fixed:
 
 | producer | frame 0 | 1 | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|---|
@@ -94,10 +97,12 @@ Two further measurements bound what that means:
   the same 104 after, so the shaded pass read a populated list and did not clear it. The records are
   not native inventions either — the list is filled by the guest's own `func_800521C0` ("Queue render
   mobys"), which the port dispatches in-process (`spyro_field_build_moby_lists`).
-- **Retail's decoded stream contains no flat primitive at all.** Retail codes decoded on those
-  frames are only `0x30/0x32/0x34/0x38/0x3C` — every one of them a Gouraud code — while
-  `func_80022A2C`'s flat arms are the `0x22`/`0x2A` family this recipe emits. So retail's shaded pass
-  contributed *zero* primitives, not misprojected ones.
+- ~~**Retail's decoded stream contains no flat primitive at all.**~~ Retail codes decoded on those
+  frames were only `0x30/0x32/0x34/0x38/0x3C` — every one of them a Gouraud code — while
+  `func_80022A2C`'s flat arms are the `0x22`/`0x2A` family this recipe emits, so it looked as though
+  the shaded pass contributed *zero* primitives rather than misprojected ones. **This measurement was
+  wrong**: the decoder refused the flat family, so those packets never reached the decoded set. See
+  "Resolution".
 
 The three records the native does draw are `class 83` (gem) instances whose record gates pass on
 both sides: read straight from guest RAM
@@ -107,22 +112,78 @@ both sides: read straight from guest RAM
 gate and the `z+40-(|y|-121)*3` gate), using the asm's `IR = (Y, Z, X)` ordering — which the native
 implements deliberately (`actor_transform_math::worldAffine`: `view = transform(camera, {relative[1],
 relative[2], relative[0]})`). The face stage is therefore not reached-and-clipped on the record path;
-retail's pass declined the records before it or not at all.
+retail's pass reached its accepted path for those three records — the claim that it declined them
+was the decoder artifact described below, and `shaded_flagged=9->9` now shows the acceptance.
 
-So this issue's residual is now **reproduced, not explained**, and the explanation has to come
-first: either the native shaded arm includes records retail excludes (a real inclusion/culling
-defect, and the 23 faces would be geometry retail never draws), or the oracle's retail arm cannot
-see that pass at all (a comparison blind spot, in which case the four agreeing producers prove
-nothing about the fifth). The measurement cannot choose yet, and the colour/semi-transparency/depth
-rules this issue changed are still **source-grounded but parity-unverified**: a producer with zero
-matched primitives has zero recoloured primitives, so "0 recoloured" is not evidence about it.
+## Resolution: the shaded arm was never invisible to retail, only to the decoder
 
-Next discriminator: instrument retail's `0x80022A2C` inside the oracle arm — count the records its
-loop body actually processes (the `sb $zero, 0x51($fp)` at `0x80022B28` is one per record) and the
-packets it links — instead of inferring both from the decoded stream. A dispatch of `0x80022A2C`
-*alone* is not that instrument: it aborts (SIGABRT) because the pool cursor, `g_MobyShadows` and the
-GTE matrices are set up by the passes before it, so the count has to come from inside the full
-`0x80019698` arm.
+The comparison's decoder, not the port, failed. `gpu_packet_decode::decode` accepted only the Gouraud
+polygon family (`0x30`/`0x32`/`0x34`/`0x38`/`0x3C`), and `func_80022A2C` emits the **flat** family
+(`0x20`/`0x22`/`0x28`). Every shaded packet in the retail OT chain was therefore refused and dropped,
+which is exactly the shape of a pass that drew nothing.
 
-### Note (2026-09-13)
-Live Actor-scene-oracle comparison now exists (17 frames, two captures): producer 0x80022A2C is 22-26 primitives per frame with ZERO matches on every frame while 0x8001F798/0x80020F34/0x80023AC4/0x80059A48 match to within 0-8. Retail's decoded stream holds only Gouraud codes 0x30-0x3C (no flat 0x2x at all), and g_SonyImage.m_ShadedMobys held 104 records before and after the retail body ran, so the retail shaded pass was handed a populated list and contributed nothing. The 3 records the native draws pass retail's record gates as decoded from r_moby.s. Colours/semi/depth remain parity-unverified: zero matched primitives means zero recoloured primitives. Next: count records processed inside retail's 0x80022A2C in the oracle arm (a lone 0x80022A2C dispatch aborts).
+Two instruments were needed to see it, and both are now permanent:
+
+- **The walk reports its own denominators.** `retail side:` now prints
+  `scanned= below_filter= refused= decoded=` and, when anything was refused, `retail REFUSED codes
+  (n):` with the command bytes. The first run with them up showed `scanned=623 below_filter=0
+  refused=33 decoded=572` while the summary had claimed `refusal=none`: thirty-three real packets had
+  been silently skipped, and the old line could not distinguish that from a silent pass.
+- **The record the pass accepts is readable from guest RAM.** `func_80022A2C` clears `record+0x51` on
+  entry to every record it walks (`sb $zero, 0x51($fp)` at `0x80022B28`) and sets it to 1 on the
+  record's accepted-lighting path (`sb $a0, 0x51($fp)` at `0x80022D98`, `$a0 = 1`, next to
+  `ctc2 $a1, C2_DQA` with `$a1 = 1`). After the retail arm, `shaded_flags=9->9` and the accepted
+  records are logged by list ordinal: the same nine world records the native accepts — including the
+  three `class 83` gem nodes this issue is about (`0x8016D6A8`/`0x8016D700`/`0x8016D758`, ordinals
+  0, 1, 2) — plus six world objects at ordinals 93/97/98/100/101/103. So the record gate never
+  disagreed.
+
+### The console agrees, and it draws the gems
+
+`scratch/oracle-comparison/shaded_pass_console.py` observes the real console's `func_80022A2C`
+through the packet pool cursor `D_800757B0`, which it commits once per accepted record
+(`sw $t9, 0x0($at)` at `0x80023978` world, `0x80023A2C` screen) and which advances with every polygon
+it writes. Six rendered Artisans fields, with the cursor snapshotted at every per-record entry
+(`0x80022B28`) so each record's bytes are bracketed individually:
+
+| field | records walked | accepted | cursor delta | records whose commit pointer moved (list index → bytes) |
+|---|---|---|---|---|
+| 6445 | 104 | 9 world + 3 screen | 5068 | 0→184, 1→184, 2→200, 93→528, 97→824, 98→528, 100→2252, 101→368 |
+| 6447 | 104 | 9 world + 3 screen | 5156 | same shape (±3%) |
+| 6449-6455 | 104 | 9 world + 3 screen | 4932-5268 | same shape |
+
+List indices 0, 1, 2 are the three gem records (matches, not inference: the in-process oracle logs the
+same three `class 83` nodes at ordinals 0, 1, 2), so **retail's shaded pass advances its per-record
+commit pointer for the gems** — 568 bytes across the three — and the native's 22-26 flat primitives
+for those same records are faithful inclusion, not over-inclusion. (The other moving records are the
+world objects at 93/97/98/100/101; ordinal 103 is accepted and moves it by nothing.) What that pointer
+counts — GPU packet bytes or the pass's own per-record scratch, which the backward chaining loop at
+0x80023990 walks in 8-byte entries — is not established, and this section does not depend on it: the
+record gate is what it settles.
+
+### After the fix
+
+With the flat untextured family decodable, the same capture shape gives, per frame,
+`0x80022A2C: 22-26 submitted / 22-26 matched / 0 unmatched`, `retail only: 0`, and the native-only
+residue back to the pre-existing single regular-pass primitive. `refused` falls from 33 to 8. The
+colour, semi-transparency and depth rules this issue changed are now **parity-verified** against
+retail's own packets rather than merely source-grounded.
+
+`test_gpu_packet_decode` pins the families: Gouraud untextured keeps per-vertex colour, flat
+untextured carries one colour to every vertex, the quad/three-vertex bit selects four vertices, and
+textured Gouraud still reads its texcoords and texture pages/clut. Non-polygon commands and
+size-mismatched tags must stay refusals.
+
+## Residuals
+
+- **The flat textured family (`0x24`/`0x26`/`0x2C`/`0x2E`) is refused by name**, and the oracle prints
+  its codes: 8 packets per frame, all `0x26`, sitting in the world OT at the gems' screen positions.
+  Their three-vertex size is fixed (32 bytes) but the order of the colour, XY and texcoord words is
+  not established for this title. A guessed `(XY, UV)` interleaving was tried and **falsified**: it
+  moved 16 retail primitives out of the matched set and broke the shadow arm's matches, so it was
+  reverted. Establish the layout from the code that writes these packets first.
+- The `0x80059A48` (Spyro's shadow) match rate varies by capture — 16/16 on one Artisans capture and
+  16/0 on another at the same frame index — so the shadow arm needs a phase-stable comparison before
+  anything is claimed about it. The captures differ in camera phase (the level's opening pan), so
+  this is not evidence of a defect either way.
+- `TRZ` (see earlier) and the depth-ordering question (issue 0105) are unchanged.

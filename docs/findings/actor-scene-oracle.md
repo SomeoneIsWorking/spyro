@@ -11,8 +11,11 @@ named.
 state the native producers have just read, decodes every GPU packet it links into the world OT
 (`game/render/gpu_packet_decode.*`, shared with `world_scene_capture.cpp`), restores the OT and the
 packet-pool cursor, and prints both streams with denominators. It is armed only by the environment
-knob and must never run on a shipping frame: it restores the OT and cursor, but not whatever else the
-retail body wrote.
+knob and must never run on a shipping frame: it restores the OT and the packet-pool cursor, but not
+everything else the retail body writes — the shaded queue's per-record `+0x51` accepted flag, the
+shadow cursor and the GTE control registers keep whatever the arm left. That can perturb an armed
+run's own gameplay, so an armed capture is internally consistent evidence about the two streams but is
+not a faithful gameplay run.
 
 The call sits after `spyro_field_shadow_submit`, because retail's walker draws the player and its
 shadow as ordinary mobys. Placing it before them was the first measurement error: it reported ~160
@@ -23,6 +26,25 @@ MEASURES the horizontal shift rather than assuming it — widescreen moves the n
 centre. It also measures the sign relating retail's OT bin to the port's normalized depth instead of
 assuming it; asserting the wrong orientation reported a faithful frame as 94% broken.
 
+## The decoder must cover every family the title emits, or a pass is invisible
+
+The walk can only report what it can decode, and for a while it could not decode the shaded pass:
+`gpu_packet_decode::decode` accepted only Gouraud polygons (`0x30`/`0x32`/`0x34`/`0x38`/`0x3C`) while
+`func_80022A2C` emits the flat family (`0x20`/`0x22`/`0x28`). Every shaded packet was refused and
+dropped, which reads exactly like a pass that drew nothing — issue 0111 was filed on that artifact. Two
+rules came out of it and are now part of the instrument:
+
+- **The walk prints its own denominators.** `scanned`, `below_filter`, `refused`, `decoded` and the
+  refused command codes appear in the `retail side:` line. The run that exposed this printed
+  `scanned=623 below_filter=0 refused=33 decoded=572` next to a `refusal=none`, i.e. thirty-three real
+  packets dropped silently. A capture that reports no primitives for a producer must show whether the
+  walk looked at them.
+- **A family is added only with its layout established.** Flat **textured** polygons
+  (`0x24`/`0x26`/`0x2C`/`0x2E`, 8 per frame in the world OT) are refused by name with their codes
+  printed: their three-vertex size is fixed at 32 bytes but the word order is not established for this
+  title, and a guessed `(XY, UV)` interleaving was falsified — it moved 16 retail primitives out of
+  the matched set and broke the shadow arm's matches.
+
 ## Measured, Artisans, 20 settle frames
 
     native primitives : 610      retail primitives : 584
@@ -30,9 +52,15 @@ assuming it; asserting the wrong orientation reported a faithful frame as 94% br
     measured horizontal shift: -86
 
 **The actor layer is exact.** Every retail primitive except two is reproduced at the same position in
-the same colours. The 28 native-only primitives are the widescreen extras retail never had to draw,
-and the 2 retail-only are untextured semi-transparent shadow fan pieces at the frame edge. There were
-zero "same shape, different colour" primitives, so actor COLOUR is not a fault.
+the same colours, and there were zero "same shape, different colour" primitives, so actor COLOUR is
+not a fault. The 2 retail-only primitives were untextured semi-transparent shadow fan pieces at the
+frame edge.
+
+**The 28 native-only primitives in that capture were not all widescreen extras.** 22-26 of them were
+the shaded producer's flat polygons, which the decoder was refusing at the time; with the flat family
+decodable the same captures give `0x80022A2C: 22-26 submitted / matched all / 0 unmatched` and the
+native-only residue falls to 0-8, dominated by one `class 194` node (`0x8016F070`) from the regular
+producer and otherwise the widescreen extras retail's 4:3 projection never had to draw.
 
 ## The one real divergence: depth vs OT bin
 

@@ -392,10 +392,13 @@ the three previously silent `return false` paths in `fx_field_cyclorama.cpp` no 
 without saying why. The current replay reaches this complete
 stage-0 composition without a native-render refusal;
 the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
-variants. A normal paced audio run after the shared CDC filter fix (`scratch/logs/spyro-xa-after-filter-20260828.log`)
+variants. ~~A normal paced audio run after the shared CDC filter fix (`scratch/logs/spyro-xa-after-filter-20260828.log`)
 produces 20.02 seconds of non-silent stereo 44.1 kHz WAV for 1,200 VBlanks, with 239 selected XA
 sectors on file 1/channel 4 and zero ring-full reports; the prior back-pressure came from decoding
-interleaved unselected channels. The same run reports 60.0 paced VBlanks/s and 735/736 SPU frames per
+interleaved unselected channels.~~ That measurement's only test was "non-silent", and a constant
+level passes it: measured 2026-09-14 for the same window, the shared XA streamer was ending Spyro's
+open-ended stream at the first foreign EOF, decoded no sectors, and the capture held a bare DC bias.
+See S022. The same run reports 60.0 paced VBlanks/s and 735/736 SPU frames per
 field. SBS oracle boot remains limited evidence:
 the 120-field run exits cleanly but retains five stack-only differing bytes and leaves one owned
 address unreached; its shared WAV sink writes zero bytes and is not audio evidence. A current paced
@@ -763,3 +766,18 @@ Spyro touch overlay exists yet; Android runtime mechanics belong to Lucent and b
 to shared/android-port.
 
 Related goal: G004.
+
+### S022 — Spyro 1 music (XA streaming)
+
+**Status: partial.** Music now streams. Spyro's sound driver sets mode `0xC8` plus a file 1/channel 4
+filter and issues `ReadS` **without** a `Setloc` — it scans forward and polls `GetlocL` — and the
+shared XA streamer treated a foreign (other file/channel) EOF as the end of that open-ended stream,
+which happened seventeen sectors in: `xa_sectors=0`, `xa_wr=0`, `xa_pulls=1` for 3,500 fields while
+the sink received a slowly-varying constant on both channels. psxport `379eafea` skips a foreign EOF
+instead (a bounded clip still ends at `end_lba`, and only our own channel's EOF ends an open-ended
+stream). The same windowless 3,500-field capture now decodes 959 XA sectors with a real waveform
+(zero crossings 900–2400/s, RMS 1750–4134). Still open: the sink carries a ≈+1430 DC bias even while
+the SPU is disabled; the intro cutscene's music has not been compared against the console's own PCM;
+nothing has been verified through a real audio device (headless `PSXPORT_WAV` captures only).
+
+Related goal: G002.

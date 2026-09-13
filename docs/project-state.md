@@ -777,7 +777,10 @@ the sink received a slowly-varying constant on both channels. psxport `379eafea`
 instead (a bounded clip still ends at `end_lba`, and only our own channel's EOF ends an open-ended
 stream). The same windowless 3,500-field capture now decodes 959 XA sectors with a real waveform
 (zero crossings 900–2400/s, RMS 1750–4134). Still open: the sink carries a ≈+1430 DC bias even while
-the SPU is disabled; the intro cutscene's music has not been compared against the console's own PCM;
+the SPU is disabled (the CD-audio source is ruled out — `CDC_GetCDAudioSample` writes zeros when
+nothing is streaming — so it enters in the SPU mix or the sink conversion; it is inaudible on a
+device but it is why "non-silent PCM" cannot be used as an audio test); the intro cutscene's music
+has not been compared against the console's own PCM;
 nothing has been verified through a real audio device (headless `PSXPORT_WAV` captures only).
 
 Related goal: G002.

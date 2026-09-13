@@ -699,9 +699,32 @@ native and console were already two level ticks apart at the first post-handoff 
 tick-55 camera-state and projection deltas in the sections above are compared at different phases and
 cannot be assigned to camera math. No guest state was written in either arm.
 
-Next discriminator: explain the three-field delivery around the loader store. The native frame loop
-runs one stage update per product step and delivers `kFieldsPerLogicFrame` fields per step, so a store
-taken inside a stage update should be followed by that step's remaining fields plus the next step's
-first field rather than by three. Identify which delivery owns the extra boundary (host-turn ordering
-around `stepFrame`'s stage update, the `render-suppressed` branch, or the loader's own return path)
-and compare it against the console's one-field gap before changing cadence or camera code.
+## Owner of one of the two extra native fields
+
+Reading `Spyro1FrameDriver::stepFrame` against the bracket output names the delivered fields. A host
+turn (`spyro1::hostTurn`, registered with the framework) can deliver a field while the frame update
+is still executing, so the loader's stage-zero store is followed by one field inside the same guest
+call. The render-suppressed branch of `stepFrame` then delivers `kFieldsPerLogicFrame` (two) more
+fields unconditionally, while the native branch on the other side of the same `if`/`else` checks
+`fields_.fieldsThisLogicFrame() < kFieldsPerLogicFrame` before delivering its tail. The two branches
+therefore disagree about the module's own one-logic-frame field quota: with a host turn, the
+suppressed step delivers three fields where the native branch delivers two.
+
+A temporary diagnostic build (patched, measured, then reverted; never committed) delivered only the
+remaining quota in the suppressed branch. Its bracket contained **two** `0x80053C90` stores — one
+`hostturn` and one `render-suppressed` — and the first game-tick store moved from level tick 3 to
+level tick **2**, with every later sampled game tick also shifted by one (2/5/7/9 instead of 3/6/8/10,
+same +3 then +2 pattern). That capture reported six target PCs, 122,126,013 scanned JIT instructions,
+6,449 paired stores, 21 retained, 6,428 routine increments omitted, and zero fallback instructions.
+Its log is gitignored at `scratch/oracle-comparison/handoff_bracket_quota_experiment.log`.
+
+So **one** of the two extra native fields is a quota violation by the suppressed branch, and the
+shipping cadence was left unchanged. The remaining field is the phase of the loader store inside its
+product step: the console reaches its next stage update one field after the loader store, while the
+native frame loop schedules stage updates on product-step boundaries. Neither branch reproduces the
+console's single field, so changing `stepFrame` on this evidence alone would replace one unexplained
+offset with another.
+
+Next discriminator: establish where retail's loader store sits inside its own two-field logic
+iteration — whether `LoadLevelScene` runs in the same field iteration as the following stage-0
+update or in the one before it — before touching the field quota or the frame loop.

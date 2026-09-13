@@ -2,6 +2,7 @@
 
 #include "actor_transform_math.h"
 #include "core.h"
+#include "gpu_vk.h"
 #include "proj_params.h"
 #include "world_projection_math.h"
 
@@ -133,7 +134,9 @@ Recipe derive(Core *core) {
     return recipe;
   }
   psxport::native_projection::ProjectionParams projection{};
-  projection.ofx = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfx() << 16u);
+  const int32_t center =
+      gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_ofx(core) : (int32_t)geometry.geomOfx();
+  projection.ofx = (std::int32_t)((std::uint32_t)center << 16u);
   projection.ofy = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfy() << 16u);
   projection.h = (std::uint16_t)(std::int32_t)geometry.geomH();
   if (projection.h == 0u) {
@@ -252,6 +255,11 @@ Recipe derive(Core *core) {
             const int pick = vertexPick[triangle][i];
             points[i] = pick < 0 ? tipVertex : ringPoints[(std::size_t)pick];
           }
+          if (points[0].raw_view[2] <= 0.0f || points[1].raw_view[2] <= 0.0f ||
+              points[2].raw_view[2] <= 0.0f) {
+            reject(Reject::TipRingBehindCamera);
+            continue;
+          }
           if (nclip(points[0], points[1], points[2]) <= 0) {
             reject(Reject::TipBackfacing);
             continue;
@@ -295,6 +303,7 @@ Recipe derive(Core *core) {
     std::int32_t darken = kRibbonDarken;
 
     bool havePrevious = false;
+    bool previousBehindCamera = false;
     Vertex previous[2]{};
     while (true) {
       if (!span(cursor, 8u)) {
@@ -320,8 +329,15 @@ Recipe derive(Core *core) {
         const std::int32_t nextColour = colour - darken;
         const std::int32_t nextUvA = uvALow + vStep;
         const std::int32_t nextUvB = uvBLow + vStep;
-        if (bin < 0) {
-          reject(Reject::RibbonNegativeBin);
+        const bool behindCamera =
+            previousBehindCamera || q0.raw_view[2] <= 0.0f || q1.raw_view[2] <= 0.0f;
+        if (bin < 0 || behindCamera) {
+          if (bin < 0) {
+            reject(Reject::RibbonNegativeBin);
+          }
+          if (behindCamera) {
+            reject(Reject::RibbonBehindCamera);
+          }
         } else {
           ++recipe.ribbons;
           Face face{};
@@ -356,6 +372,7 @@ Recipe derive(Core *core) {
       }
       previous[0] = toVertex(q0);
       previous[1] = toVertex(q1);
+      previousBehindCamera = q0.raw_view[2] <= 0.0f || q1.raw_view[2] <= 0.0f;
       havePrevious = true;
 
       if (remaining <= 0) {

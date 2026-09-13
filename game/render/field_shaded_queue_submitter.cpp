@@ -53,6 +53,7 @@ void submit(Core *core,
   }
   RenderQueue::PainterObjectScope painter(queue, producerKey);
   for (const auto &face : recipe.faces) {
+    core->rsub.diag.beginObject(face.actor);
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};

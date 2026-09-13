@@ -13,7 +13,6 @@ enum class Status : uint8_t {
   ValidEmpty,
   InvalidInput,
   UnsupportedVariant,
-  UnsupportedLighting,
   InvalidOtBin,
 };
 
@@ -28,7 +27,6 @@ struct Record {
   uint32_t actorOrdinal = 0;
   uint16_t meshIndex = 0;
   bool clipMode = false;
-  int32_t lightingOffset = 0;
   uint32_t lightBase = 0;
   uint32_t lightScale = 0;
   psxport::native_projection::FixedAffine affine{};
@@ -53,6 +51,7 @@ struct Vertex {
 };
 
 struct Face {
+  uint32_t actor = 0;
   uint32_t actorOrdinal = 0;
   uint32_t primitiveOrdinal = 0;
   uint32_t paintGroup = 0;

@@ -22,8 +22,10 @@ enum class Reject : std::uint8_t {
   EmptyPart,
   TipCursorPastLimit,
   TipBehindCamera,
+  TipRingBehindCamera,
   TipBackfacing,
   RibbonNegativeBin,
+  RibbonBehindCamera,
   Count,
 };
 

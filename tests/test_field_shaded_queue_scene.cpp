@@ -1,6 +1,7 @@
 #include "core.h"
 #include "field_shaded_queue_recipe.h"
 #include "field_shaded_queue_scene.h"
+#include "game.h"
 #include "testutil.h"
 
 #include <cstdlib>
@@ -13,19 +14,24 @@ namespace {
 constexpr uint32_t kQueue = 0x800720f4u;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
 
-std::unique_ptr<Core> emptyCore() {
-  auto core = std::make_unique<Core>();
-  core->rsub.projParams.setGeomOffset(256.0f, 120.0f);
-  core->rsub.projParams.setGeomScreen(341.0f);
-  core->mem_w32(kQueue, 0u);
-  core->mem_w32(kShadowCursor, 0x80072500u);
-  return core;
+// The scene reads the host aspect policy through the GPU owner, so the fixture owns a Game the way
+// the shipping callers do; a bare Core has no render mode to ask.
+std::unique_ptr<Game> emptyGame() {
+  auto game = std::make_unique<Game>();
+  Core &core = game->core;
+  core.rsub.projParams.setGeomOffset(256.0f, 120.0f);
+  core.rsub.projParams.setGeomScreen(341.0f);
+  core.mem_w32(kQueue, 0u);
+  core.mem_w32(kShadowCursor, 0x80072500u);
+  game->mods.aspect = ASPECT_4_3;
+  return game;
 }
 
 void test_empty_queue_is_atomic_valid_input() {
-  auto core = emptyCore();
+  auto game = emptyGame();
+  Core &core = game->core;
   spyro::field_shaded_queue_scene::Frame frame{};
-  CHECK(spyro::field_shaded_queue_scene::prepare(core.get(), 512, frame) ==
+  CHECK(spyro::field_shaded_queue_scene::prepare(&core, 512, frame) ==
         spyro::field_shaded_queue_scene::Status::Ready);
   const auto recipe = spyro::field_shaded_queue_recipe::derive(frame.input);
   CHECK(recipe.status == spyro::field_shaded_queue_recipe::Status::ValidEmpty);
@@ -34,13 +40,14 @@ void test_empty_queue_is_atomic_valid_input() {
 }
 
 void test_invalid_actor_refuses_without_guest_side_effects() {
-  auto core = emptyCore();
-  core->mem_w32(kQueue, 0x807ffff0u);
-  core->mem_w32(kQueue + 4u, 0u);
+  auto game = emptyGame();
+  Core &core = game->core;
+  core.mem_w32(kQueue, 0x807ffff0u);
+  core.mem_w32(kQueue + 4u, 0u);
   spyro::field_shaded_queue_scene::Frame frame{};
-  CHECK(spyro::field_shaded_queue_scene::prepare(core.get(), 512, frame) ==
+  CHECK(spyro::field_shaded_queue_scene::prepare(&core, 512, frame) ==
         spyro::field_shaded_queue_scene::Status::InvalidActor);
-  CHECK_EQ(core->mem_r32(kShadowCursor), 0x80072500u);
+  CHECK_EQ(core.mem_r32(kShadowCursor), 0x80072500u);
 }
 
 void inspectSnapshotIfRequested() {
@@ -48,16 +55,17 @@ void inspectSnapshotIfRequested() {
   if (path == nullptr || path[0] == '\0') {
     return;
   }
-  auto core = emptyCore();
+  auto game = emptyGame();
+  Core &core = game->core;
   std::ifstream input(path, std::ios::binary);
   CHECK(input.good());
-  input.read(reinterpret_cast<char *>(core->ram), sizeof(core->ram));
-  CHECK(input.gcount() == static_cast<std::streamsize>(sizeof(core->ram)));
-  core->rsub.projParams.setGeomOffset(256.0f, 120.0f);
-  core->rsub.projParams.setGeomScreen(341.0f);
+  input.read(reinterpret_cast<char *>(core.ram), sizeof(core.ram));
+  CHECK(input.gcount() == static_cast<std::streamsize>(sizeof(core.ram)));
+  core.rsub.projParams.setGeomOffset(256.0f, 120.0f);
+  core.rsub.projParams.setGeomScreen(341.0f);
 
   spyro::field_shaded_queue_scene::Frame frame{};
-  const auto scene = spyro::field_shaded_queue_scene::prepare(core.get(), 512, frame);
+  const auto scene = spyro::field_shaded_queue_scene::prepare(&core, 512, frame);
   const auto recipe = spyro::field_shaded_queue_recipe::derive(frame.input);
   const std::set<uint16_t> meshes(frame.sourceMeshIndices.begin(), frame.sourceMeshIndices.end());
   const std::set<int32_t> lightingOffsets(frame.sourceLightingOffsets.begin(),

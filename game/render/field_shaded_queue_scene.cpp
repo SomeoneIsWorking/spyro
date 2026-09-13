@@ -3,6 +3,7 @@
 #include "actor_recipe_capture.h"
 #include "actor_transform_math.h"
 #include "core.h"
+#include "gpu_vk.h"
 
 #include <array>
 #include <cstdlib>
@@ -16,7 +17,7 @@ constexpr uint32_t kQueue = 0x800720f4u;
 constexpr uint32_t kQueueCapacity = 256u;
 constexpr uint32_t kMeshTable = 0x80076378u;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
-constexpr uint32_t kLightTable = 0x8007e44cu;
+constexpr uint32_t kLightTable = 0x8006e44cu;
 constexpr uint32_t kColourMatrix = 0x800770c8u;
 constexpr uint32_t kScratchVertices = 0x1f800000u;
 constexpr uint32_t kScratchEnd = kScratchVertices + 1024u;
@@ -111,7 +112,9 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
   if (!core->rsub.projParams.geomValid()) {
     return Status::InvalidQueue;
   }
-  frame.input.projection = {.ofx = (int32_t)(core->rsub.projParams.geomOfx() * 65536.0f),
+  const int32_t center = gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_ofx(core)
+                                                  : (int32_t)core->rsub.projParams.geomOfx();
+  frame.input.projection = {.ofx = center << 16,
                             .ofy = (int32_t)(core->rsub.projParams.geomOfy() * 65536.0f),
                             .h = (uint16_t)core->rsub.projParams.geomH(),
                             .dqa = 0,
@@ -182,7 +185,6 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
                                              .actorOrdinal = qi,
                                              .meshIndex = mesh->index,
                                              .clipMode = !whollyInside(view),
-                                             .lightingOffset = mesh->lightingOffset,
                                              .lightBase = mesh->lightBase,
                                              .lightScale = mesh->lightScale,
                                              .affine = affine};
@@ -195,7 +197,7 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
       field_shaded_queue_recipe::Primitive primitive{
           .indices = core->mem_r32(mesh->stream + i * 8u),
           .normal = core->mem_r32(mesh->stream + i * 8u + 4u)};
-      if ((primitive.normal & 3u) == 0u) {
+      if ((primitive.indices & 3u) == 0u) {
         if (mesh->vertexColourBase == 0u) {
           return reset(frame, Status::UnsupportedVertexLighting);
         }

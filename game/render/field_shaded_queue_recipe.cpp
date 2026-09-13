@@ -40,7 +40,7 @@ uint32_t shade(const Input &input, const Record &record, uint32_t normal, bool r
   for (uint32_t i = 0; i < 3; ++i) {
     colourMac += (int64_t)input.colourMatrix[0][i] * transformed[i];
   }
-  int32_t factor = (int32_t)(colourMac >> (reverseFacing ? 2 : 8));
+  int32_t factor = (int32_t)(colourMac >> (reverseFacing ? 10 : 8));
   uint32_t base = record.lightBase;
   if (reverseFacing) {
     base >>= 1;
@@ -76,7 +76,7 @@ Vertex projectVertex(const psxport::native_projection::FixedAffine &affine,
           .sz = result.sz,
           .screenX = result.px,
           .screenY = result.py,
-          .viewZ = result.raw_view[2]};
+          .viewZ = result.pz};
 }
 
 Recipe refuse(Recipe recipe, Status status, const Record &record, uint32_t primitive) {
@@ -114,7 +114,7 @@ Recipe derive(const Input &input) {
          ++primitiveOrdinal) {
       ++recipe.candidates;
       const Primitive &primitive = record.primitives[primitiveOrdinal];
-      const uint32_t variant = primitive.normal & 3u;
+      const uint32_t variant = primitive.indices & 3u;
       if (variant != 0u && variant != 3u) {
         return refuse(std::move(recipe), Status::UnsupportedVariant, record, primitiveOrdinal);
       }
@@ -128,14 +128,20 @@ Recipe derive(const Input &input) {
         return refuse(std::move(recipe), Status::InvalidInput, record, primitiveOrdinal);
       }
       const uint8_t count = index[2] == index[3] ? 3u : 4u;
+      // The authenticated flat arm keeps 0x22/0x2A only while the projected depth TRZ is below
+      // 0x800 AND the face is front-facing; every other reached path subtracts 0x02000000 from the
+      // command and the face is opaque. TRZ is approximated by the actor's view-Z origin.
+      const bool nearCamera = record.affine.t[2] < 2048;
       const int32_t firstFacing =
           nclip(projected[index[0]], projected[index[1]], projected[index[2]]);
       bool reverseFacing = false;
       if (firstFacing <= 0) {
-        if (count == 3u ||
-            nclip(projected[index[3]], projected[index[1]], projected[index[2]]) >= 0) {
-          ++recipe.rejected;
-          continue;
+        if (!nearCamera) {
+          if (count == 3u ||
+              nclip(projected[index[3]], projected[index[1]], projected[index[2]]) >= 0) {
+            ++recipe.rejected;
+            continue;
+          }
         }
         reverseFacing = true;
       }
@@ -153,12 +159,13 @@ Recipe derive(const Input &input) {
       if (ot < 0 || ot >= 288) {
         return refuse(std::move(recipe), Status::InvalidOtBin, record, primitiveOrdinal);
       }
-      Face face{.actorOrdinal = record.actorOrdinal,
+      Face face{.actor = record.actor,
+                .actorOrdinal = record.actorOrdinal,
                 .primitiveOrdinal = primitiveOrdinal,
                 .paintGroup = paintGroup++,
                 .otBin = (uint16_t)ot,
                 .vertexCount = count,
-                .semiTransparent = variant == 3u,
+                .semiTransparent = variant != 0u && nearCamera && firstFacing >= 0,
                 .gouraud = variant == 0u};
       if (variant == 0u) {
         for (uint32_t i = 0; i < count; ++i) {
@@ -166,13 +173,7 @@ Recipe derive(const Input &input) {
         }
       } else {
         const uint32_t rgb = shade(input, record, primitive.normal, reverseFacing);
-        const uint32_t command =
-            (count == 3u ? 0x22000000u : 0x2a000000u) - (uint32_t)record.lightingOffset + rgb;
-        const uint32_t expectedOpcode = count == 3u ? 0x22u : 0x2au;
-        if ((command >> 24) != expectedOpcode) {
-          return refuse(std::move(recipe), Status::UnsupportedLighting, record, primitiveOrdinal);
-        }
-        face.rgb.fill(command & 0x00ffffffu);
+        face.rgb.fill(rgb);
       }
       for (uint32_t i = 0; i < count; ++i) {
         face.vertices[i] = projected[index[i]];

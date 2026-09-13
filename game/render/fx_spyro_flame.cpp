@@ -29,12 +29,15 @@ bool spyro_flame_submit(Core *core) {
              recipe.tips,
              recipe.ribbons,
              recipe.faces.size());
-    line.add(" empty_part={} past_limit={} tip_behind={} tip_backfacing={} ribbon_bin={}",
+    line.add(" empty_part={} past_limit={} tip_behind={} tip_ring_behind={} tip_backfacing={} "
+             "ribbon_bin={} ribbon_behind={}",
              recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::EmptyPart],
              recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::TipCursorPastLimit],
              recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::TipBehindCamera],
+             recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::TipRingBehindCamera],
              recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::TipBackfacing],
-             recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::RibbonNegativeBin]);
+             recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::RibbonNegativeBin],
+             recipe.rejects[(std::size_t)spyro::flame_recipe::Reject::RibbonBehindCamera]);
     return line;
   };
   if (recipe.status == spyro::flame_recipe::Status::ValidEmpty) {

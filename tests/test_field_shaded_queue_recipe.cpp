@@ -15,7 +15,7 @@ spyro::field_shaded_queue_recipe::Input triangleInput() {
   record.lightBase = 0x00080808u;
   record.lightScale = 0x00ffffffu;
   record.vertices = {{0, 0, 0}, {100, 0, 0}, {0, 100, 0}};
-  record.primitives = {{.indices = (1u << 16) | (2u << 9) | (2u << 2), .normal = 0x00010003u}};
+  record.primitives = {{.indices = (1u << 16) | (2u << 9) | (2u << 2) | 3u, .normal = 0x00010000u}};
   input.records.push_back(record);
   return input;
 }
@@ -27,9 +27,11 @@ void test_shaded_triangle_preserves_depth_colour_and_authored_identity() {
   CHECK_EQ(recipe.candidates, 1u);
   CHECK_EQ(recipe.rejected, 0u);
   CHECK_EQ(recipe.faces.size(), 1u);
+  CHECK_EQ(recipe.faces[0].actor, 0x80100000u);
   CHECK_EQ(recipe.faces[0].vertexCount, 3u);
   CHECK_EQ(recipe.faces[0].otBin, 32u);
   CHECK_EQ(recipe.faces[0].rgb[0], 0x00080808u);
+  CHECK_EQ(recipe.faces[0].vertices[0].viewZ, 1000.0f);
   CHECK(recipe.faces[0].semiTransparent);
   CHECK(!recipe.faces[0].gouraud);
   CHECK_EQ(recipe.faces[0].paintGroup, 0u);
@@ -37,6 +39,7 @@ void test_shaded_triangle_preserves_depth_colour_and_authored_identity() {
 
 void test_vertex_shaded_variant_uses_per_vertex_material_path() {
   auto input = triangleInput();
+  input.records[0].primitives[0].indices = (1u << 16) | (2u << 9) | (2u << 2);
   input.records[0].primitives[0].normal = 0u;
   input.records[0].primitives[0].vertexColours = {
       0x00102030u, 0x00405060u, 0x00708090u, 0x00a0b0c0u};
@@ -53,7 +56,7 @@ void test_vertex_shaded_variant_uses_per_vertex_material_path() {
 void test_mixed_variant_refuses_the_whole_recipe() {
   auto input = triangleInput();
   input.records[0].primitives.push_back(
-      {.indices = (1u << 16) | (2u << 9) | (2u << 2), .normal = 0x00010001u});
+      {.indices = (1u << 16) | (2u << 9) | (2u << 2) | 1u, .normal = 0x00010000u});
   const auto recipe = spyro::field_shaded_queue_recipe::derive(input);
   CHECK(recipe.status == spyro::field_shaded_queue_recipe::Status::UnsupportedVariant);
   CHECK_EQ(recipe.candidates, 2u);
@@ -73,6 +76,31 @@ void test_common_clip_rejection_is_valid_empty() {
   CHECK_EQ(recipe.faces.size(), 0u);
 }
 
+void test_flat_arm_semi_transparency_follows_the_near_camera_branch() {
+  auto nearInput = triangleInput();
+  auto farInput = triangleInput();
+  farInput.records[0].affine.t[2] = 4000;
+  const auto nearRecipe = spyro::field_shaded_queue_recipe::derive(nearInput);
+  const auto farRecipe = spyro::field_shaded_queue_recipe::derive(farInput);
+  CHECK(nearRecipe.status == spyro::field_shaded_queue_recipe::Status::Ready);
+  CHECK(farRecipe.status == spyro::field_shaded_queue_recipe::Status::Ready);
+  CHECK(nearRecipe.faces[0].semiTransparent);
+  CHECK(!farRecipe.faces[0].semiTransparent);
+  CHECK_EQ(nearRecipe.faces[0].rgb[0], farRecipe.faces[0].rgb[0]);
+}
+
+// The flat arm's colour is the selected light entry (the D_8006E44C base/scale pair) alone; the
+// source's light-table byte offset chooses that entry and never biases the colour command.
+void test_flat_arm_colour_is_the_selected_light_entry() {
+  auto input = triangleInput();
+  input.records[0].lightBase = 0x00102030u;
+  input.records[0].lightScale = 0x00808080u;
+  const auto recipe = spyro::field_shaded_queue_recipe::derive(input);
+  CHECK(recipe.status == spyro::field_shaded_queue_recipe::Status::Ready);
+  CHECK_EQ(recipe.faces.size(), 1u);
+  CHECK_EQ(recipe.faces[0].rgb[0], 0x00102030u);
+}
+
 } // namespace
 
 int main() {
@@ -80,5 +108,7 @@ int main() {
   RUN(vertex_shaded_variant_uses_per_vertex_material_path);
   RUN(mixed_variant_refuses_the_whole_recipe);
   RUN(common_clip_rejection_is_valid_empty);
+  RUN(flat_arm_semi_transparency_follows_the_near_camera_branch);
+  RUN(flat_arm_colour_is_the_selected_light_entry);
   return pt_summary();
 }

@@ -326,3 +326,33 @@ Implement the flat-textured family in the recipe AND in `gpu_packet_decode` (bot
 cannot see what the recipe emits). Shape from `.L80023534`..`.L800236D4`, with `.L80023650` as the
 semi-transparency arm. That is the fix for this abort, for the gems' `0x26` packets, and for the
 cutscene actor 0x80171010.
+
+### Note (2026-09-14)
+## Variant 1 vs variant 3: the exact delta, read from the two arms
+
+Both arms emit the SAME flat packet family this port already supports, so the shape is not the
+problem. The differences, arm to arm:
+
+| | variant 1 (bit 0 set, bit 1 clear, `.L80023534`) | variant 3 (bits 0 and 1, `.L80023720`) |
+|---|---|---|
+| packet | `0x20` (5 words, size 0x14) / `0x28` (6 words, 0x18) | same family |
+| light table | `D_8006E3D8` + (`LO >> 22`) | `D_8006E44C` + (`LO >> 21`) |
+| entry words | one (`lw $t3,0x0($t3)`) | two (`0x0($t2)`, `0x4($t2)`) — the port's `lightBase`/`lightScale` pair |
+| colour | record word r/g/b into IR1..3, `GPF 0`, `CC` | same, plus the reverse-facing `>>10` and the `factor - 1472` boost |
+| near / facing | gate on `$t7` (the index) alone | `TRZ - 0x800` near test, `sign << 25` / `lui 0x02000000` semi-transparency, `addi $v0, 0x200` OT bias |
+| output flag | `ori $s7, 0x80000001` | `ori $s7, 0x80000002` |
+
+`shade()` in `field_shaded_queue_recipe.cpp` already models the variant-3 column (its `>>10`, its
+`lightBase`/`lightScale` pair, its `factor - 1472` boost, its unpack), so the work here is a
+PARAMETERISED light lookup plus the variant-1 facing rule — not a second shader.
+
+## The one input still open, and why it is not being guessed
+
+`LO`'s producer. `mflo $t7` at `0x80023538` reads whatever the last MULT/MVMVA left, and neither the
+primitive loop head (`0x800232A8`) nor the bit-0-set path between `0x80023338` and `.L80023534` sets
+it, so the light index arrives from outside the loop. That index is the whole colour. Implementing
+the family on a guessed index would produce a cutscene that runs with wrong colours and reads as a
+success — so the trace of that producer is the next step, before any colour code is written.
+
+Everything else about the family is established above, and the refusal currently names
+`variant=1` plus the actor and primitive, so the moment the index is known the change is bounded.

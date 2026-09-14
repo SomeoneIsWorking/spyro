@@ -183,3 +183,19 @@ void submit(Core *core,
 }
 
 } // namespace spyro::actor_face_submitter
+
+const char *spyro::actor_face_submitter::statusName(Status status) {
+  switch (status) {
+  case Status::Ready:
+    return "Ready";
+  case Status::ValidEmpty:
+    return "ValidEmpty";
+  case Status::UnsupportedMaterial:
+    return "UnsupportedMaterial";
+  case Status::InvalidGlobalOrder:
+    return "InvalidGlobalOrder";
+  case Status::QueueCapacityExceeded:
+    return "QueueCapacityExceeded";
+  }
+  return "<unknown>";
+}

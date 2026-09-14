@@ -48,10 +48,29 @@ bool spyro_field_shaded_queue_submit(Core *core) {
   const auto plan = spyro::field_shaded_queue_submitter::prepare(queue, kProducerKey, recipe);
   if (plan.status != spyro::field_shaded_queue_submitter::Status::Ready &&
       plan.status != spyro::field_shaded_queue_submitter::Status::ValidEmpty) {
+    // The admission numbers travel with the refusal: QueueCapacityExceeded is the painter preflight
+    // declining, and WHICH of its inputs declined is what the caller needs to act on.
+    lucent::debug(
+        "fieldshaded",
+        "REFUSED plan={} admission_ready={} queued={} existing_objects={} existing_faces={} "
+        "faces={}",
+        spyro::field_shaded_queue_submitter::statusName(plan.status),
+        plan.admission.ready,
+        plan.admission.queued,
+        plan.admission.existingObjects,
+        plan.admission.existingFaces,
+        recipe.faces.size());
     return false;
   }
   const GpuState gpu = core->game->gpu;
   if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
+    lucent::debug(
+        "fieldshaded",
+        "REFUSED inverted draw area x=[{},{}] y=[{},{}] (retail's GPU would draw nothing)",
+        gpu.s_da_x0,
+        gpu.s_da_x1,
+        gpu.s_da_y0,
+        gpu.s_da_y1);
     return false;
   }
 

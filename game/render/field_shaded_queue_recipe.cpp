@@ -86,7 +86,6 @@ Recipe refuse(Recipe recipe, Status status, const Record &record, uint32_t primi
   recipe.faces.clear();
   return recipe;
 }
-
 } // namespace
 
 Recipe derive(const Input &input) {
@@ -114,8 +113,19 @@ Recipe derive(const Input &input) {
          ++primitiveOrdinal) {
       ++recipe.candidates;
       const Primitive &primitive = record.primitives[primitiveOrdinal];
+      // r_moby.s 0x80023320/0x80023324: bit 0 of the primitive word selects the LIT path
+      // (`bgtz $t6, .L80023534`) and bit 1 is read ONLY inside that path (`bgtz $t7, .L80023720`).
+      // So with bit 0 clear both words take the identical code path and both are per-vertex
+      // Gouraud: refusing bit 1 there was refusing a combination retail cannot distinguish.
       const uint32_t variant = primitive.indices & 3u;
-      if (variant != 0u && variant != 3u) {
+      const bool lit = (primitive.indices & 1u) != 0u;
+      if (variant == 1u) {
+        // Bit 0 set with bit 1 clear — .L80023534's fall-through. r_moby.s establishes its layout:
+        // flat TEXTURED quads (0x28) whose UVs come from the light table's +0x200 half, or 0x20
+        // untextured triangles when the last two indices match, with the depth built the same way.
+        // The recipe does not implement that family yet, so it is refused BY NAME, and the variant
+        // travels with the refusal (it is what a fix has to key on).
+        recipe.firstUnsupportedVariant = variant;
         return refuse(std::move(recipe), Status::UnsupportedVariant, record, primitiveOrdinal);
       }
       const std::array<uint32_t, 4> index = {(primitive.indices >> 23) & 0x7fu,
@@ -165,9 +175,9 @@ Recipe derive(const Input &input) {
                 .paintGroup = paintGroup++,
                 .otBin = (uint16_t)ot,
                 .vertexCount = count,
-                .semiTransparent = variant != 0u && nearCamera && firstFacing >= 0,
-                .gouraud = variant == 0u};
-      if (variant == 0u) {
+                .semiTransparent = lit && nearCamera && firstFacing >= 0,
+                .gouraud = !lit};
+      if (!lit) {
         for (uint32_t i = 0; i < count; ++i) {
           face.rgb[i] = primitive.vertexColours[i] & 0x00ffffffu;
         }
@@ -186,3 +196,19 @@ Recipe derive(const Input &input) {
 }
 
 } // namespace spyro::field_shaded_queue_recipe
+
+const char *spyro::field_shaded_queue_recipe::statusName(Status status) {
+  switch (status) {
+  case Status::Ready:
+    return "Ready";
+  case Status::ValidEmpty:
+    return "ValidEmpty";
+  case Status::InvalidInput:
+    return "InvalidInput";
+  case Status::UnsupportedVariant:
+    return "UnsupportedVariant";
+  case Status::InvalidOtBin:
+    return "InvalidOtBin";
+  }
+  return "<unknown>";
+}

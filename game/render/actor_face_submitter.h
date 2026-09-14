@@ -23,6 +23,9 @@ enum class Status : uint8_t {
   QueueCapacityExceeded,
 };
 
+// Named so a refusal reports WHICH condition failed rather than a bare enum value.
+const char *statusName(Status status);
+
 struct Material {
   bool textured = false;
   bool semiTransparent = false;

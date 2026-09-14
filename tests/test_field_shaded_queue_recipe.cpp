@@ -62,6 +62,37 @@ void test_mixed_variant_refuses_the_whole_recipe() {
   CHECK_EQ(recipe.candidates, 2u);
   CHECK_EQ(recipe.firstUnsupportedActor, 0x80100000u);
   CHECK_EQ(recipe.firstUnsupportedPrimitive, 1u);
+  CHECK_EQ(recipe.firstUnsupportedVariant, 1u);
+  CHECK_EQ(recipe.faces.size(), 0u);
+}
+
+// r_moby.s reads the primitive word's bit 1 only inside the bit-0 path, so a primitive carrying bit
+// 1 and NOT bit 0 is the same code as one carrying neither: per-vertex Gouraud. Refusing it was
+// refusing a combination retail cannot distinguish, and it is the flag half of the variant-1
+// family.
+void test_high_variant_bit_alone_is_the_per_vertex_path() {
+  auto input = triangleInput();
+  input.records[0].primitives[0].indices = (1u << 16) | (2u << 9) | (2u << 2) | 2u;
+  input.records[0].primitives[0].normal = 0u;
+  input.records[0].primitives[0].vertexColours = {
+      0x00102030u, 0x00405060u, 0x00708090u, 0x00a0b0c0u};
+  const auto recipe = spyro::field_shaded_queue_recipe::derive(input);
+  CHECK(recipe.status == spyro::field_shaded_queue_recipe::Status::Ready);
+  CHECK_EQ(recipe.faces.size(), 1u);
+  CHECK(recipe.faces[0].gouraud);
+  CHECK(!recipe.faces[0].semiTransparent);
+  CHECK_EQ(recipe.faces[0].rgb[1], 0x00405060u);
+}
+
+// The lit path with bit 1 clear is the flat TEXTURED family (.L80023534's fall-through). It is not
+// implemented, and the refusal has to name the variant because that is what the fix keys on.
+void test_lit_path_without_the_high_bit_is_refused_by_variant() {
+  auto input = triangleInput();
+  input.records[0].primitives[0].indices = (1u << 16) | (2u << 9) | (2u << 2) | 1u;
+  const auto recipe = spyro::field_shaded_queue_recipe::derive(input);
+  CHECK(recipe.status == spyro::field_shaded_queue_recipe::Status::UnsupportedVariant);
+  CHECK_EQ(recipe.firstUnsupportedVariant, 1u);
+  CHECK_EQ(recipe.firstUnsupportedPrimitive, 0u);
   CHECK_EQ(recipe.faces.size(), 0u);
 }
 
@@ -107,6 +138,8 @@ int main() {
   RUN(shaded_triangle_preserves_depth_colour_and_authored_identity);
   RUN(vertex_shaded_variant_uses_per_vertex_material_path);
   RUN(mixed_variant_refuses_the_whole_recipe);
+  RUN(high_variant_bit_alone_is_the_per_vertex_path);
+  RUN(lit_path_without_the_high_bit_is_refused_by_variant);
   RUN(common_clip_rejection_is_valid_empty);
   RUN(flat_arm_semi_transparency_follows_the_near_camera_branch);
   RUN(flat_arm_colour_is_the_selected_light_entry);

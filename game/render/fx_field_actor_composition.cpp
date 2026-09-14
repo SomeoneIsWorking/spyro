@@ -79,8 +79,9 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
         core->game->rq, kSecondaryProducer, secondaryRecipe.outputs, secondaryRecipe.faces);
     if (secondaryPlan.status != spyro::actor_face_submitter::Status::Ready &&
         secondaryPlan.status != spyro::actor_face_submitter::Status::ValidEmpty) {
-      lucent::debug(
-          "fieldactors", "REFUSED secondary submission={}", (uint32_t)secondaryPlan.status);
+      lucent::debug("fieldactors",
+                    "REFUSED secondary submission={}",
+                    spyro::actor_face_submitter::statusName(secondaryPlan.status));
       return false;
     }
   }
@@ -104,16 +105,23 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
     shadedRecipe = spyro::field_shaded_queue_recipe::derive(shadedFrame.input);
     if (!shadedReady(shadedRecipe)) {
       lucent::debug("fieldactors",
-                    "REFUSED shaded recipe={} actor=0x{:08X} primitive={}",
-                    (uint32_t)shadedRecipe.status,
+                    "REFUSED shaded recipe={} variant={} actor=0x{:08X} primitive={} candidates={}",
+                    spyro::field_shaded_queue_recipe::statusName(shadedRecipe.status),
+                    shadedRecipe.firstUnsupportedVariant,
                     shadedRecipe.firstUnsupportedActor,
-                    shadedRecipe.firstUnsupportedPrimitive);
+                    shadedRecipe.firstUnsupportedPrimitive,
+                    shadedRecipe.candidates);
       return false;
     }
     shadedPlan = spyro::field_shaded_queue_submitter::prepare(queue, kShadedProducer, shadedRecipe);
     if (shadedPlan.status != spyro::field_shaded_queue_submitter::Status::Ready &&
         shadedPlan.status != spyro::field_shaded_queue_submitter::Status::ValidEmpty) {
-      lucent::debug("fieldactors", "REFUSED shaded submission={}", (uint32_t)shadedPlan.status);
+      lucent::debug("fieldactors",
+                    "REFUSED shaded submission={} admission_ready={} queued={} existing_faces={}",
+                    spyro::field_shaded_queue_submitter::statusName(shadedPlan.status),
+                    shadedPlan.admission.ready,
+                    shadedPlan.admission.queued,
+                    shadedPlan.admission.existingFaces);
       return false;
     }
   }

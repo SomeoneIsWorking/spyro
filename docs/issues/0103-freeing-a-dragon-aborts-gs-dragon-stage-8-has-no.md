@@ -5,7 +5,7 @@ status: open
 symptom: the port aborts during Artisans gameplay with 'NATIVE RENDER NOT IMPLEMENTED — stage selector = 8 (no producer is registered for this stage)'; reported by the operator as a crash when Spyro breathes fire
 tags: render,field,cutscene,dragon,producer,crash
 created: 2026-09-08
-updated: 2026-09-09
+updated: 2026-09-14
 ---
 
 ## Symptom
@@ -276,3 +276,53 @@ abort. One walk covered every branch, with the frame counts each held:
 
 State 0's fade ramps 0 -> 255 into state 1, and state 7 fades back out to 31 as the cutscene ends,
 so the whole sequence is covered rather than sampled at its start.
+
+### Note (2026-09-14)
+## 2026-09-14: the cutscene still aborts, and the cause is now measured
+
+The "Measured after all four: the Artisans dragon cutscene runs to completion with no refusal and no
+abort" claim above does NOT hold for the route in this issue. Re-run today,
+`tools/drive.py gameplay --hold up --hold-frames 90 --tap circle --after 40 --repeat 15`, reaches
+stage 8 and aborts:
+
+```
+[fieldactors] REFUSED shaded recipe=UnsupportedVariant variant=1 actor=0x80171010 primitive=0 candidates=1
+[dragon]      state=1 ticks=2 fade=192 draw=1 shaded=1 steps=13 REFUSED at 0x80022A2C
+[render:error] NATIVE RENDER NOT IMPLEMENTED — stage selector = 8 (dragon cutscene producer 0x8001CFDC
+              refused its atomic composition)
+```
+
+Log: `scratch/logs/dragon_why4.log`. So the eight-branch walk that produced the completion claim
+carried a different Moby set; it cannot be quoted as coverage of this route. The stage-8 producer
+itself is present and does run — what refuses is one primitive inside the shaded producer.
+
+## Cause, from the source
+
+`0x80022A2C`'s variant word: `r_moby.s` 0x80023320/0x80023324 test bit 0 (`andi $t6,$at,0x1`) and bit 1
+(`andi $t7,$at,0x2`) SEPARATELY, and bit 0 branches (`bgtz $t6, .L80023534`) while bit 1 is read only
+INSIDE that path (`bgtz $t7, .L80023720`). Two consequences:
+
+1. `.L80023534`'s fall-through (bit 0 set, bit 1 clear = variant 1) is the flat TEXTURED family: the
+   branch loads `0x28` (a textured quad) or `0x20` (untextured triangle, when the last two indices
+   match), takes its UVs from the light table's `+0x200` half, and adds `0x02000000` to the packet
+   word. This is the same family issue 0111 left refused (the eight `0x26` packets in the world OT),
+   so the cutscene abort and 0111's residual are ONE missing feature.
+2. Variant 2 (bit 1 alone set) is bit-identical to variant 0, because bit 1 is never read with bit 0
+   clear. Refusing it was refusing a combination retail cannot distinguish.
+
+## Landed here
+
+- The recipe now decides the path with bit 0 and accepts variant 2 as the per-vertex path; variant 1
+  is still refused, by name, with `firstUnsupportedVariant` reported. `tests/test_field_shaded_queue_recipe.cpp`
+  covers both directions (8/8, 47 checks).
+- Two silent refusals in this path now name their reason: the submitter plan prints its status plus
+  the painter-preflight inputs, and the inverted-draw-area path prints the four registers it rejected.
+  `statusName` was added for `field_shaded_queue_submitter`, `actor_face_submitter` and
+  `field_shaded_queue_recipe` so refusals stop printing bare enum values.
+
+## Remaining
+
+Implement the flat-textured family in the recipe AND in `gpu_packet_decode` (both, or the oracle
+cannot see what the recipe emits). Shape from `.L80023534`..`.L800236D4`, with `.L80023650` as the
+semi-transparency arm. That is the fix for this abort, for the gems' `0x26` packets, and for the
+cutscene actor 0x80171010.

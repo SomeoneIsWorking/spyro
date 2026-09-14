@@ -108,3 +108,19 @@ void submit(Core *core,
 }
 
 } // namespace spyro::field_shaded_queue_submitter
+
+const char *spyro::field_shaded_queue_submitter::statusName(Status status) {
+  switch (status) {
+  case Status::Ready:
+    return "Ready";
+  case Status::ValidEmpty:
+    return "ValidEmpty";
+  case Status::InvalidRecipe:
+    return "InvalidRecipe";
+  case Status::InvalidOrder:
+    return "InvalidOrder";
+  case Status::QueueCapacityExceeded:
+    return "QueueCapacityExceeded";
+  }
+  return "<unknown>";
+}

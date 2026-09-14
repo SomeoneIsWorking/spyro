@@ -70,9 +70,15 @@ struct Recipe {
   uint32_t rejected = 0;
   uint32_t firstUnsupportedActor = 0;
   uint32_t firstUnsupportedPrimitive = 0;
+  // Low two bits of the refused primitive's index word: bit 0 selects the lit path, bit 1 is only
+  // consulted inside it (r_moby.s .L80023534), so the exact combination is what a fix needs.
+  uint32_t firstUnsupportedVariant = 0;
   std::vector<Face> faces;
 };
 
 Recipe derive(const Input &input);
+
+// Named so a refusal reports WHICH condition failed rather than a bare enum value.
+const char *statusName(Status status);
 
 } // namespace spyro::field_shaded_queue_recipe

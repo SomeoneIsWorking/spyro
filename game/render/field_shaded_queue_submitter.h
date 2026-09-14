@@ -26,6 +26,9 @@ struct Plan {
 Plan prepare(const RenderQueue &queue,
              uint32_t producerKey,
              const field_shaded_queue_recipe::Recipe &recipe);
+
+// Named so a refusal can say WHICH preflight condition failed rather than only that one did.
+const char *statusName(Status status);
 void submit(Core *core,
             RenderQueue &queue,
             uint32_t producerKey,

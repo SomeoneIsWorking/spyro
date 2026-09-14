@@ -105,9 +105,8 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
     shadedRecipe = spyro::field_shaded_queue_recipe::derive(shadedFrame.input);
     if (!shadedReady(shadedRecipe)) {
       lucent::debug("fieldactors",
-                    "REFUSED shaded recipe={} variant={} actor=0x{:08X} primitive={} candidates={}",
+                    "REFUSED shaded recipe={} actor=0x{:08X} primitive={} candidates={}",
                     spyro::field_shaded_queue_recipe::statusName(shadedRecipe.status),
-                    shadedRecipe.firstUnsupportedVariant,
                     shadedRecipe.firstUnsupportedActor,
                     shadedRecipe.firstUnsupportedPrimitive,
                     shadedRecipe.candidates);

@@ -356,3 +356,117 @@ success — so the trace of that producer is the next step, before any colour co
 
 Everything else about the family is established above, and the refusal currently names
 `variant=1` plus the actor and primitive, so the moment the index is known the change is bounded.
+
+### Note (2026-09-14)
+## Variant 1 implemented: the cutscene no longer aborts
+
+Same route as above, after the change (scratch/logs/dragon_variant1.log):
+
+- `NATIVE RENDER NOT IMPLEMENTED`: 0 occurrences (was 1, fatal)
+- `REFUSED`: 0 occurrences
+- dragon cutscene states reached: 0, 1, 2, 3, 4 (it used to die in state 1)
+- exit 0, `fallback_blocks=0`, 154,994,945 guest instructions, env audit reports 0 UNKNOWN knobs
+
+The agent's own walk therefore no longer reproduces the abort this issue is filed on. The cutscene
+producer now runs.
+
+### Correction to the note above: the family is flat UNTEXTURED
+
+The earlier note in this issue called variant 1 "flat TEXTURED" and tied it to issue 0111's refused
+`0x26` packets. That was wrong, and the two are separate features:
+
+- variant 1 emits `lui $v1, 0x28000000` with `addi $a0, $zero, 0x18` (6 words) for the quad case and
+  `0x20000000` with `0x14` (5 words) for the triangle case. `0x28` is POLY_F4 and `0x20` is POLY_F3 —
+  flat and UNTEXTURED, sizes 24 and 20 bytes. I had read `0x28` as POLY_FT4, which is `0x2C`.
+- the `lw 0x200($v0)` loads on that path feed the DEPTH sum (`add`/`add`/`add`/`sub $t8`/`sra 5`), not
+  UVs.
+- the decoder already reads `0x20`/`0x28` (`gouraud = code & 0x10`, `textured = code & 0x04`), which is
+  why the oracle can now check this arm's colour.
+
+The flat-**textured** family (`0x24`/`0x26`/`0x2C`/`0x2E`) remains refused in `gpu_packet_decode`, and
+issue 0111's residual is still that: a separate piece of work.
+
+### What was implemented
+
+`shadeVariantOne` in `field_shaded_queue_recipe.cpp`, from `r_moby.s` `.L80023534`..`.L800236D4`:
+
+- entry read from `0x8006E3D8 + ((record+0x4C) >> 22)` — the SAME guest word variant 3 reads at
+  `>> 21`, which the record gate already loads;
+- `IR0 = (entry >> 23) & 0x1E`, i.e. the entry's own top bits are the GPF scale;
+- the primitive's colour word is the vector, with NO shift (this arm's `GPF` has sf = 0, unlike
+  variant 3's);
+- the entry's channels are the RBK/GBK/BBK background;
+- no reverse-facing factor on this arm at all;
+- the semi-transparency bit is armed only when that index is 0 (`0x8002363C`: `bnez $t7` skips it).
+
+`UnsupportedVariant` and `firstUnsupportedVariant` are removed rather than left dead: with both lit
+arms implemented nothing could return them.
+
+### Verified / not verified
+
+`tests/test_field_shaded_queue_recipe.cpp`: 9/9, 50 checks. The variant-1 colour assertion is derived
+from the arm's own steps (entry `0x0F880808`, colour word `0x00010000` -> channels (0x080,0x080,0x880),
+scale 30, vector (1,0,0) -> `0x880809`), and a second case pins that a non-zero index leaves the face
+opaque.
+
+NOT yet verified, and not claimed: that the colour is VISUALLY right in the cutscene. The actor-scene
+oracle compares the field body, not the cutscene composition, so it can falsify the arm's arithmetic
+in the field but not the cutscene's on-screen result. Index-0 semi-transparency is implemented from
+the asm and has not been observed on screen either.
+
+### Note (2026-09-14)
+## Oracle result: the arm is right in shape and 1 unit low in R/G
+
+Actor-scene oracle on the current build (`scratch/logs/actororacle_variant1.log`, diffed with
+`tools/actor_oracle_diff.py`):
+
+```
+first 1 recoloured primitives (retail -> native):
+  code=20 bin=102 semi=0 retail=8C8CFF,8C8CFF,8C8CFF native=8B8BFF,8B8BFF,8B8BFF
+```
+
+`code=20` is a flat untextured triangle — the variant-1 family — so the oracle now SEES this arm and
+compares it against retail. Three facts come out of it:
+
+- the family, the vertex positions and the OT bin agree (only the colour differs, and only by one
+  unit: 140 vs 139 in R and G, with B saturated at 255 in both);
+- every variant-3 primitive still matches EXACTLY in the same frame, so the final `>>4` truncation is
+  correct and this is not a shared rounding step;
+- one unit low means my variant-1 TERMS are a hair short, not wrong in structure: the entry channels,
+  the vector, or the GPF product. That is the next step, and the oracle is now the falsifier for it.
+
+Also visible in the same capture, both pre-existing and unrelated to this arm: `retail REFUSED codes
+(8): 26` (the flat-TEXTURED family, issue 0111's residual) and the two retail-only `code=32`
+semi-transparent shadow-fan pieces at the frame edge.
+
+Until that unit is explained the arm is implemented and close, NOT exact — a 1/255 difference is
+imperceptible, but this issue's standard is retail, not imperceptible, so the claim stays partial.
+
+### Note (2026-09-14)
+## The residual's exact signature, measured over the capture's 12 frames
+
+Every recoloured primitive in `scratch/logs/actororacle_variant1.log`, across ~5,700 matched
+primitives, is `code=20` or `code=28` — i.e. variant 1 — and EVERY variant-3 primitive (codes
+30/32/34) is exact in all 12 frames:
+
+```
+code=20 retail=C0C0FF native=BFBFFF      R,G -1 ; B equal
+code=20 retail=8C8CFF native=8B8BFF      R,G -1 ; B equal
+code=20 retail=2929D9 native=2929DA      R,G equal ; B +1   <-- native HIGHER
+code=20 retail=0000A3 native=0000A4      B +1 (native higher)
+code=20 retail=00006D native=00006C      B -1
+code=28 retail=00002C native=00002D      B +1 (a quad)
+```
+
+Two conclusions that narrow the fix to one term:
+
+- R and G always move TOGETHER and by the same amount, while B moves independently. In these
+  primitives R == G in retail, so this is consistent with a difference in one shared term plus the
+  per-channel one.
+- the difference goes BOTH WAYS. A missing final rounding can only ever lose a unit, and a biased
+  scale can only ever gain or lose consistently, so neither is the cause: some variant-1 term is
+  simply off by less than 16 units of the pre-shift value.
+
+Since the frame's final `>>4` truncation is proved correct by variant 3 matching exactly in the same
+frames, the remaining candidates are the entry->RBK channel term and the GPF product. The oracle is
+now the falsifier: change one term, re-run the capture, and 12 primitives over 12 frames decide it.

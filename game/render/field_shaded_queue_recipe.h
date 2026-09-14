@@ -12,7 +12,6 @@ enum class Status : uint8_t {
   Ready,
   ValidEmpty,
   InvalidInput,
-  UnsupportedVariant,
   InvalidOtBin,
 };
 
@@ -29,6 +28,11 @@ struct Record {
   bool clipMode = false;
   uint32_t lightBase = 0;
   uint32_t lightScale = 0;
+  // Variant 1's arm indexes a different table from the same guest word (`r_moby.s` 0x80023268 loads
+  // LO from the record's +0x4C once per Moby; 0x8006E44C + (LO >> 21) is variant 3's pair, while
+  // 0x8006E3D8 + (LO >> 22) is ONE word whose top bits are the GPF scale).
+  uint32_t lightEntry = 0;
+  int32_t lightEntryIndex = 0;
   psxport::native_projection::FixedAffine affine{};
   std::vector<psxport::native_projection::ModelVertex> vertices;
   std::vector<Primitive> primitives;
@@ -70,9 +74,6 @@ struct Recipe {
   uint32_t rejected = 0;
   uint32_t firstUnsupportedActor = 0;
   uint32_t firstUnsupportedPrimitive = 0;
-  // Low two bits of the refused primitive's index word: bit 0 selects the lit path, bit 1 is only
-  // consulted inside it (r_moby.s .L80023534), so the exact combination is what a fix needs.
-  uint32_t firstUnsupportedVariant = 0;
   std::vector<Face> faces;
 };
 

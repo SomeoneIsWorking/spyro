@@ -67,6 +67,30 @@ uint32_t shade(const Input &input, const Record &record, uint32_t normal, bool r
   return channel(linear[0]) | (channel(linear[1]) << 8) | (channel(linear[2]) << 16);
 }
 
+// Variant 1's arm (`.L80023534`'s fall-through). Same idea as `shade` with the ROLES swapped: the
+// single entry word supplies the background channels AND the GPF scale (its top bits, `>>23 &
+// 0x1E`), while the primitive's colour word is the vector GPF scales. r_moby.s loads that colour
+// into IR1..3 at 0x8002358C, sets IR0 from the entry at 0x800235C0, loads the entry's channels as
+// RBK/GBK/BBK, then `GPF 0` and `CC` — so the contribution is `colour * scale` with NO shift (GPF's
+// sf is 0 on this path, unlike the variant-3 arm) and this arm has no reverse-facing factor at all.
+uint32_t shadeVariantOne(const Record &record, uint32_t colour) {
+  const uint32_t entry = record.lightEntry;
+  const int32_t scale = (int32_t)((entry >> 23) & 0x1eu);
+  std::array<int32_t, 3> linear = {(int32_t)((entry << 4) & 0xff0u),
+                                   (int32_t)((entry >> 4) & 0xff0u),
+                                   (int32_t)((entry >> 12) & 0xff0u)};
+  const std::array<int32_t, 3> vector = {(int32_t)((colour >> 16) & 0xffu),
+                                         (int32_t)((colour >> 8) & 0xffu),
+                                         (int32_t)(colour & 0xffu)};
+  for (uint32_t i = 0; i < 3; ++i) {
+    linear[i] += vector[i] * scale;
+  }
+  const auto channel = [](int32_t value) {
+    return (uint32_t)(std::clamp(value, 0, 4095) >> 4);
+  };
+  return channel(linear[0]) | (channel(linear[1]) << 8) | (channel(linear[2]) << 16);
+}
+
 Vertex projectVertex(const psxport::native_projection::FixedAffine &affine,
                      const psxport::native_projection::ProjectionParams &projection,
                      psxport::native_projection::ModelVertex source) {
@@ -119,15 +143,7 @@ Recipe derive(const Input &input) {
       // Gouraud: refusing bit 1 there was refusing a combination retail cannot distinguish.
       const uint32_t variant = primitive.indices & 3u;
       const bool lit = (primitive.indices & 1u) != 0u;
-      if (variant == 1u) {
-        // Bit 0 set with bit 1 clear — .L80023534's fall-through. r_moby.s establishes its layout:
-        // flat TEXTURED quads (0x28) whose UVs come from the light table's +0x200 half, or 0x20
-        // untextured triangles when the last two indices match, with the depth built the same way.
-        // The recipe does not implement that family yet, so it is refused BY NAME, and the variant
-        // travels with the refusal (it is what a fix has to key on).
-        recipe.firstUnsupportedVariant = variant;
-        return refuse(std::move(recipe), Status::UnsupportedVariant, record, primitiveOrdinal);
-      }
+      const bool variantOne = variant == 1u;
       const std::array<uint32_t, 4> index = {(primitive.indices >> 23) & 0x7fu,
                                              (primitive.indices >> 16) & 0x7fu,
                                              (primitive.indices >> 9) & 0x7fu,
@@ -175,12 +191,15 @@ Recipe derive(const Input &input) {
                 .paintGroup = paintGroup++,
                 .otBin = (uint16_t)ot,
                 .vertexCount = count,
-                .semiTransparent = lit && nearCamera && firstFacing >= 0,
+                .semiTransparent = variantOne ? record.lightEntryIndex == 0
+                                              : (lit && nearCamera && firstFacing >= 0),
                 .gouraud = !lit};
       if (!lit) {
         for (uint32_t i = 0; i < count; ++i) {
           face.rgb[i] = primitive.vertexColours[i] & 0x00ffffffu;
         }
+      } else if (variantOne) {
+        face.rgb.fill(shadeVariantOne(record, primitive.normal));
       } else {
         const uint32_t rgb = shade(input, record, primitive.normal, reverseFacing);
         face.rgb.fill(rgb);
@@ -205,8 +224,6 @@ const char *spyro::field_shaded_queue_recipe::statusName(Status status) {
     return "ValidEmpty";
   case Status::InvalidInput:
     return "InvalidInput";
-  case Status::UnsupportedVariant:
-    return "UnsupportedVariant";
   case Status::InvalidOtBin:
     return "InvalidOtBin";
   }

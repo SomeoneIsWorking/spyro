@@ -18,6 +18,7 @@ constexpr uint32_t kQueueCapacity = 256u;
 constexpr uint32_t kMeshTable = 0x80076378u;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
 constexpr uint32_t kLightTable = 0x8006e44cu;
+constexpr uint32_t kLightTableVariantOne = 0x8006e3d8u;
 constexpr uint32_t kColourMatrix = 0x800770c8u;
 constexpr uint32_t kScratchVertices = 0x1f800000u;
 constexpr uint32_t kScratchEnd = kScratchVertices + 1024u;
@@ -64,6 +65,8 @@ struct MeshSource {
   int32_t lightingOffset = 0;
   uint32_t lightBase = 0;
   uint32_t lightScale = 0;
+  uint32_t lightEntry = 0;
+  int32_t lightEntryIndex = 0;
   uint32_t vertexColourBase = 0;
 };
 
@@ -90,6 +93,17 @@ std::optional<MeshSource> inspectMesh(Core *core, uint32_t actor) {
   }
   source.lightBase = core->mem_r32(light);
   source.lightScale = core->mem_r32(light + 4u);
+  // The other arm's table, from the SAME guest word at a different shift (`>> 22`, signed, matching
+  // 0x80023548's `sra $t7, $t7, 22`). One word, not a pair.
+  {
+    const int32_t variantOneOffset = (int32_t)core->mem_r32(actor + 0x4cu) >> 22;
+    const uint32_t lightOne = kLightTableVariantOne + (uint32_t)variantOneOffset;
+    if (!actor_recipe_capture::physical_span(lightOne, 4u)) {
+      return std::nullopt;
+    }
+    source.lightEntry = core->mem_r32(lightOne);
+    source.lightEntryIndex = variantOneOffset;
+  }
   if (source.vertices == source.address + 16u) {
     source.vertexColourBase = kScratchVertices + source.vertexCount * 4u;
   }
@@ -187,6 +201,8 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
                                              .clipMode = !whollyInside(view),
                                              .lightBase = mesh->lightBase,
                                              .lightScale = mesh->lightScale,
+                                             .lightEntry = mesh->lightEntry,
+                                             .lightEntryIndex = mesh->lightEntryIndex,
                                              .affine = affine};
     record.vertices.reserve(mesh->vertexCount);
     for (uint32_t i = 0; i < mesh->vertexCount; ++i) {

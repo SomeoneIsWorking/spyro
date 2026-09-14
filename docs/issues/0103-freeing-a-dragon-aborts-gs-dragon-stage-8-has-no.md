@@ -470,3 +470,28 @@ Two conclusions that narrow the fix to one term:
 Since the frame's final `>>4` truncation is proved correct by variant 3 matching exactly in the same
 frames, the remaining candidates are the entry->RBK channel term and the GPF product. The oracle is
 now the falsifier: change one term, re-run the capture, and 12 primitives over 12 frames decide it.
+
+### Note (2026-09-14)
+## Refuted: rounding is not the discriminator for these 12 rows
+
+Experiment: make `shadeVariantOne`'s final channel step round (`(value + 8) >> 4`) instead of
+truncate, rebuild, re-capture the oracle, diff all 12 frames.
+
+Result: byte-for-byte IDENTICAL recolour list (`cmp` on the sorted diff output). The patch was
+verified to have landed in `shadeVariantOne` and not in the variant-3 helper: the `old` block I
+replaced is the one followed by `Vertex projectVertex` (line 94), while the sibling lambda at line 64
+belongs to the variant-3 function.
+
+So none of the 12 recoloured primitives has a pre-shift remainder of 8 or more in any channel. A
+missing half-step rounding is therefore REFUTED for them — if that were the cause, roughly half of
+the twelve would have moved.
+
+What this leaves, and the experiment that decides it: the arm's terms themselves. The next step is
+not another guessed formula but an instrument — a debug channel that prints, for the recoloured
+primitives, the guest entry word and its index, the derived IR0, the colour word as the vector, and
+the resulting pre-shift `linear[0..2]`. Comparing those against the retail colour that the oracle
+already prints for the same primitive shows which term is short and by how much, instead of trialling
+algebra.
+
+Reverted; the tree is back to b11317c. The abort fix stands on its own: the cutscene runs, and this
+arm is within one unit per channel on a visible object.

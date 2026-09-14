@@ -495,3 +495,52 @@ algebra.
 
 Reverted; the tree is back to b11317c. The abort fix stands on its own: the cutscene runs, and this
 arm is within one unit per channel on a visible object.
+
+### Note (2026-09-14)
+## CORRECTION: the 12 recolours are NOT this arm, and they PREDATE the change
+
+My earlier note in this issue attributed the 12 ±1 recolours to the new variant-1 arm. That was
+wrong, and the error was in my reasoning, not in the port: I read packet code 0x20/0x28 as "variant 1",
+but those are POLY_F3/POLY_F4 — the OUTPUT form (flat, untextured). A variant-3 face can emit them
+too, so the code says nothing about which shading arm produced the face.
+
+Two measurements settle it.
+
+### 1. An instrument that names the branch (`PSXPORT_DEBUG=shadedface`)
+
+`field_shaded_queue_recipe::derive` now prints one line per assembled face carrying the branch it
+took (`lit`, `variant1`, `reverse`, `firstFacing`) beside the result and both arms' inputs. On the
+Artisans capture every recoloured primitive is:
+
+```
+actor=0x8016D6A8 ordinal=0 prim=9 count=3 lit=true variant1=false reverse=false firstFacing=4
+  rgb=0x00000048 base=0x00000050 scale=0x000000FF entry=0x0A606060 entryIndex=4 colour=0xCA485A00
+```
+
+so they come from `shade()` — variant 3, the arm that was already there. A separate arm-level probe
+(`shadedv1` inside `shadeVariantOne`) printed ZERO lines in the whole field run: the new arm is never
+called in Artisans, and the field capture never exercised it at all. A diagnostic that could not name
+its branch is what let me mis-attribute this in the first place.
+
+### 2. A verified parent-commit baseline
+
+At `1d03c28` (checked out and confirmed by grep to contain no `shadeVariantOne` at all), the same
+capture produces the SAME 12 recolours, byte for byte, with the same match counts (582 at frame 0,
+606 at frame 11). The residual therefore predates the variant-1 implementation and is not a
+regression from it.
+
+### What the residual actually is, bisected
+
+Every row has `base=0x50 scale=0xFF reverse=false`, so `scale>>12` is 4080/4096 — about one unit. A
+one-LSB difference anywhere in the chain therefore shows up as exactly the observed ±1, in either
+direction.
+
+- PROBED AND REFUTED: rounding `transformNormal`'s 12-bit shift instead of truncating. The recolour
+  count goes 12 -> 120, so the shipped truncation is right and the difference is downstream of the
+  transform. (Same shape as the earlier refuted rounding probe on the arm itself.)
+
+Remaining candidates, in order, each with the oracle as the falsifier: the `colourMac >> (8|10)`
+step, the `(factor * scale) >> 12` product, and the `boost` term. This is a <=1/255 re-implementation
+rounding difference in a 12-bit fixed-point chain on 0.2% of one arm's primitives, it is invisible on
+screen, and it is now localised to a single arm and bisected past the transform — so it is recorded
+here as a known frontier rather than chased further by trialling formulae.

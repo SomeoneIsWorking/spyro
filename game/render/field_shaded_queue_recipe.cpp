@@ -2,6 +2,8 @@
 
 #include "wide_clip_plan.h"
 
+#include <lucent/log.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -204,6 +206,28 @@ Recipe derive(const Input &input) {
         const uint32_t rgb = shade(input, record, primitive.normal, reverseFacing);
         face.rgb.fill(rgb);
       }
+      // DIAGNOSTIC. `PSXPORT_DEBUG=shadedface` prints one line per assembled face and NAMES THE
+      // BRANCH it came from — so a colour disagreement with retail cannot be mis-attributed to
+      // whichever arm happens to be in mind: `lit=0` means the vertex colours were copied with no
+      // shading at all, and the arms' own inputs are printed beside the result.
+      lucent::debug("shadedface",
+                    "actor=0x{:08X} ordinal={} prim={} count={} lit={} variant1={} reverse={} "
+                    "firstFacing={} rgb=0x{:08X} base=0x{:08X} scale=0x{:08X} entry=0x{:08X} "
+                    "entryIndex={} colour=0x{:08X}",
+                    record.actor,
+                    record.actorOrdinal,
+                    primitiveOrdinal,
+                    count,
+                    lit,
+                    variantOne,
+                    reverseFacing,
+                    firstFacing,
+                    face.rgb[0],
+                    record.lightBase,
+                    record.lightScale,
+                    record.lightEntry,
+                    record.lightEntryIndex,
+                    primitive.normal);
       for (uint32_t i = 0; i < count; ++i) {
         face.vertices[i] = projected[index[i]];
       }

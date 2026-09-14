@@ -97,8 +97,38 @@ Each of these has a named natural terminal writer but no exercised route, so non
 - `GS_ExitLevel = 10` (`func_8002E084`): terminates through its own counter chain into
   `func_8002C664` (`0x8002C664`), which is a complete recovered route — a scoped original call to it
   is the shape a cancellation should take, once the state can be reached.
-- `GS_Dragon = 8` and `GS_Cutscene = 14` gamestate cutscenes: blocked earlier than input. `GS_Dragon`
-  has no native producer at all (issue 0103).
+- `GS_Dragon = 8`: blocked earlier than input; it has no native producer at all (issue 0103).
+- `GS_Cutscene = 14`: CORRECTED 2026-09-14 — this state is NOT without a cancellation. The intro
+  cutscene (`g_CutsceneIdx == 1`, "In the World of Dragons") is skipped BY THE GUEST while Start or
+  Cross is HELD: `gamestates/update.c:GamestateCutsceneUpdate` shortens the layout's duration once
+  `m_CurrentTick >= 241` and before the final 32 ticks (`m_Duration = (tick >> 1) + 16`), so the
+  cutscene still reaches its own terminal condition and calls the guest's `EndCutscenePlayback()`.
+  That is the same accelerate-toward-natural-terminal shape used by recorded playback, and it is a
+  complete route, so no native skip may be added here: a second mechanism would duplicate a live
+  guest one. What is missing is measurement, not implementation (below).
+
+## Measured boot timeline, and the harness gap that hid this
+
+Sampled every 30 fields from boot (screenshots in `scratch/screenshots/boot/`, game evidence only):
+
+- fields 46/226/406 — the two boot logos, gamestate 0 (`SONY COMPUTER ENTERTAINMENT AMERICA`,
+  then `UNIVERSAL INTERACTIVE`);
+- fields 586-946 — the Insomniac-logo panorama over the Artisans homeworld, gamestate 13;
+- field 1666 onward — the title screen (`SPYRO THE DRAGON`, `PRESS START`), gamestate 13.
+
+`gamestate == 14` (GS_Cutscene) was NOT observed anywhere in that window, so on this route the intro
+cutscene state is not reached before the title screen — which means "which screen does the user mean
+by IN THE WORLD OF DRAGONS" is still an open question, not an assumption to build on.
+
+The reason this went unmeasured is a harness property, now established by measurement rather than
+assumption: `tools/drive.py` applies `--hold`, `--tap` and `--after` only AFTER arrival in GS_Playing,
+so no driven run can press anything during boot, the logos, or the intro. A REPL `press` issued
+directly from boot DOES reach the guest before arrival — holding Start from boot changed the run
+(a no-input run aborts in the attract demo, issue 0113, while the same run with Start held survives
+the full 7800 fields), and the boot-skip routes already shipped rely on that same early input.
+
+Any future skip verification for a pre-gameplay state therefore needs a pre-arrival input path; the
+drive's arrival-gated route cannot express it, and that is a harness gap rather than a title defect.
 
 The portal traversal remains a separate blocker: the type-6 collision surface writes the transition
 globals, and a visible portal still reaches the unowned `0x80050BD0` mask/near-family/painter path.

@@ -224,9 +224,8 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
   previousBootActive_ = bootActive;
 }
 
-void FieldScheduler::serviceInspection() {
+void FieldScheduler::serviceRepl() {
   Core &core = game_.core;
-  snapshot_tick(&core);
   if (!cfg_on("PSXPORT_REPL")) {
     return;
   }
@@ -252,13 +251,12 @@ void FieldScheduler::reportField(const FieldRequest &request,
                                  int queueSize,
                                  bool queueWasUnconsumed) {
   lucent::debug("pace",
-                "t={:.1f}ms vbl={} pace={} present={} ack={} rq_unconsumed={} | site={} quota={} "
+                "t={:.1f}ms vbl={} pace={} present={} rq_unconsumed={} | site={} quota={} "
                 "counter={} rq_n={} unconsumed={}",
                 monotonicMilliseconds(),
                 fields_,
                 paces_,
                 presents_,
-                acknowledgements_,
                 queueFirstConsumers_,
                 request.site,
                 game_.core.cfg ? game_.core.cfg->paceQuota : 0u,
@@ -279,6 +277,14 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   }
   inField_ = true;
   activeDeliverySite_ = request.site;
+
+  // The REPL parks BEFORE this field's host pad sample and guest VBlank handler, where the
+  // full-console reference parks too (its VBlank step stops with the handler pending). A hold
+  // committed at the park is then seen by this field's SIO exchange on both cores, and RAM read
+  // at the park is the same guest phase on both: after the main loop's last iteration, before
+  // the next handler. Parking after the handler cost the product one field of pad latency
+  // against the reference and put every pad-word sample one poll ahead of it.
+  serviceRepl();
 
   const int queueSize = game_.rq.n;
   const bool queueWasUnconsumed = queueSize > 0 && !game_.rq.consumed;
@@ -301,7 +307,7 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   }
   cadence_.delivered();
   serviceSkipMap(startEdge);
-  serviceInspection();
+  snapshot_tick(&core);
 
   if (request.present) {
     // Every visible field crosses the framework's one presentation fence. This is the same owner
@@ -314,10 +320,6 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   game_.spu_audio.frame();
   if (request.pace) {
     ++paces_;
-  }
-  if (request.acknowledgeHostTurn) {
-    psx::cpu::notifyDisplayField(core);
-    ++acknowledgements_;
   }
   const std::array<std::uint32_t, 2> eventClasses =
       core.cfg != nullptr ? std::array{core.cfg->irqEventClasses[0], core.cfg->irqEventClasses[1]}
@@ -336,17 +338,6 @@ bool FieldScheduler::deliver(const FieldRequest &request) {
   return true;
 }
 
-void FieldScheduler::fps60CommitDelivered() {
-  psx::cpu::notifyDisplayField(game_.core);
-  ++acknowledgements_;
-  lucent::debug("pace",
-                "temporal commit ack: vbl={} pace={} present={} ack={}",
-                fields_,
-                paces_,
-                presents_,
-                acknowledgements_);
-}
-
 bool FieldScheduler::presentationSkipPressed() const {
   return game_.pad.pressedButton(kPadStart | kPadCross);
 }
@@ -360,14 +351,8 @@ const FieldScheduler &fieldScheduler(const Core &core) {
 }
 
 bool deliverNativeField(Core &core, const char *site, bool fps60CommitPending) {
-  return fieldScheduler(core).deliver({.site = site,
-                                       .present = !fps60CommitPending,
-                                       .pace = !fps60CommitPending,
-                                       .acknowledgeHostTurn = !fps60CommitPending});
-}
-
-void acknowledgeTemporalCommit(Core &core) {
-  fieldScheduler(core).fps60CommitDelivered();
+  return fieldScheduler(core).deliver(
+      {.site = site, .present = !fps60CommitPending, .pace = !fps60CommitPending});
 }
 
 void beginBootSequence(Core &core) {
@@ -387,8 +372,7 @@ void hostTurn(Core *core) {
   // A host turn may deliver the next guest field while a finite update is still executing, but it
   // is not a second display owner. The enclosing FrameDriver step reaches exactly one presentation
   // fence at its native frame commit; presenting here made that same step advance the fence twice.
-  scheduler.deliver(
-      {.site = "hostturn", .present = false, .pace = false, .acknowledgeHostTurn = false});
+  scheduler.deliver({.site = "hostturn", .present = false, .pace = false});
 }
 
 } // namespace spyro1

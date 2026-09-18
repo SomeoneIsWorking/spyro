@@ -37,10 +37,11 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 ## Current focus
 
-S011 — make the product's first `GS_Playing` update read `g_DeltaTime` 2 like the console (issue
-0110: the handoff delivers extra fields), then rerun `tools/oracle_compare.py` until Artisans
-gameplay matches on every decisive range, and extend source-based world/camera interpolation.
-Boot/title and a visible player do not establish full conformance.
+S011 — the Artisans route now matches the full-console reference on every decisive range at all
+fourteen `tools/oracle_compare.py` checkpoints (issue 0110). Next: verify the fps60 interpolation
+and widescreen presentation on the running product, extend source-based world/camera interpolation,
+and widen the compared route beyond Artisans. Boot/title, a visible player, and one matched route
+do not establish full conformance.
 
 ## Hosted verification and host gaps
 
@@ -573,25 +574,29 @@ A reached retail queue previously left OFX=100 and projected camera X=100 at the
 tick; after the restore, the same actor write was reached, the queue exited at OFX=256, and the
 camera projected X=256. New Game handoff timing and full independent output parity remain open.
 
-The state-aligned comparator (`tools/oracle_compare.py`, 2026-09-18, framework
-`tools/oracle/compare.py`) drives the product and the SCPH-1001 full-console reference by observed
-guest state with identical per-frame pad delivery and a blank memory card on both sides. Boot to
-the save picker matches on every decisive range. At the first `GS_Playing` frame the product's
-update ran with `g_DeltaTime` 4 against the console's 2, and Spyro's position differs from that
-update on (one unit in Z after thirty matched game ticks). Representative gameplay therefore does
-not yet conform; the exact first divergence and its cause are recorded in issue 0110.
+The state-aligned comparator (`tools/oracle_compare.py`, framework `tools/oracle/compare.py`)
+drives the product and the SCPH-1001 full-console reference by observed guest state with identical
+per-frame pad delivery and a blank memory card on both sides. Measured 2026-09-18: every decisive
+range matches at all fourteen checkpoints of the Artisans route, `save_picker` through
+`gameplay[11]`, including `g_Spyro.m_Position`, `m_State`, `g_GameTick`, `g_StateSwitch`, the three
+`g_Pad` words and the collision query's occlusion result. Two causes were fixed to reach that: the
+REPL parked one poll behind the console's VBlank phase, and Lightrec dropped the load-delay commit
+on a delay-slot load whose branch constant propagation had turned into a NOP, so the collision
+query read the wrong table (`shared/lightrec` `3fddb23`). Issue 0110 holds the measurement. One
+matched route is a first conformance result, not representative-gameplay conformance: the route is
+one level, output parity is separate, and the released-host budget is unmeasured.
 
 The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
 difference to pacing rather than camera math. The console's loader store and its first stage-zero
 game tick are one field apart, and that field carries `g_StateSwitch == 1`, which is the main
 loop's own draw gate: `func_8001A050` waits for two fields since the previous draw
 (`while (pre - post < 2) VSync(0)`), and `src/main.c:21` skips that draw entirely while a state
-switch is pending. Retail therefore has no fixed field quota, and the native frame loop's fixed
-`kFieldsPerLogicFrame` step keeps the level's absolute `g_LevelTicks` one to two fields ahead of
-the console from the load boundary on. Timers read from that counter fire early by the same
-amount, so the earlier camera-state comparison is phase-offset by a known quantity. No frame-loop
-or quota change was shipped; see issue 0110 for the measurement and for why a suppressed-iteration
-quota would be a pacing-model decision rather than a fix.
+switch is pending. Retail therefore has no fixed field quota. The frame driver now models that
+directly: one product step runs however many draw-less guest iterations the guest chains, then the
+drawn one, and only the drawn iteration spends the two-field quota. `g_LevelTicks` still carries a
+constant offset from the load boundary, growing from one at level entry to five across the compared
+route; timers read from that counter fire early by the same amount. That residual is informational
+and is what the remaining `player`, `camera` and `dragon_cutscene` byte deltas follow from.
 
 The post-entry shadow boundary is now exercised on the same real portal route. After rebuilding the
 native target, `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal --skip-transitions
@@ -612,7 +617,8 @@ does (`shaded_flagged=9->9`, including the three `class 83` gem nodes) and advan
 commit pointer for eight of them. The flat texture-word family (`0x26`, eight packets per frame) is refused by name with its code
 printed, because a guessed word order was falsified against the matched set. This is a concrete
 comparison discriminator, not full scene parity; the remaining actor/depth differences, the
-phase-sensitive shadow-arm comparison and the handoff `g_LevelTicks` phase offset keep S011 missing.
+phase-sensitive shadow-arm comparison, the residual `g_LevelTicks` offset, and the unmeasured
+per-host frame-time budget keep S011 missing.
 
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,
@@ -684,8 +690,19 @@ sector preparation now widens the authored horizontal culling plane by the same 
 used for projection and animation admission. Focused production tests cover both edges, preserved
 near-eye acceptance, native-width behavior, and animation of newly admitted sectors exactly once.
 
+On the Lightrec product (2026-09-18, `external/psxport/tools/port/looks_right.py --repository .
+--binary build/bin/spyro_port --replay replays/gameplay/artisans-arrival.pad --frames 7200
+--shot-at 3700,3300,3750 --env PSXPORT_WATCHDOG=60`): the 4:3 and 16:9 runs both reach 7,201 fields
+with no failure mark, and the wide frame differs from the 4:3 one. The Artisans courtyard capture
+at the dragon rescue shows a genuinely wider field of view — the hedge and arena rim on the left
+and a further castle building on the right that the 4:3 picture cannot see — at unchanged object
+proportions, and the level-intro card's 2D text stays centred. The default watchdog aborts this
+route: a level load blocks presentation past its three-second frame-progress timeout, so an
+unattended replay run must raise `PSXPORT_WATCHDOG`.
+
 Gap: complete scene variants, horizontal culling owners, and same-state oracle visual comparison
-remain unqualified. Additional coverage in Artisans does not prove the whole game.
+remain unqualified. Additional coverage in Artisans does not prove the whole game, and only the
+courtyard and the intro card are covered by captures.
 
 ### S020 — Source-based 60fps interpolation
 
@@ -704,6 +721,11 @@ depth narrowing. Exact integer GTE projection remains a separately verified fram
 An Artisans observation with this shared projection emitted 1,035 midpoint/endpoint pairs
 (2,070/2,070 nonempty outputs) and executed 21,244,084 JIT blocks with zero fallback. This proves
 the path was exercised, not matched-checkpoint oracle parity or full-scene interpolation.
+
+On the Lightrec product (2026-09-18): the looks-right fps60 leg over the same 7,200-field replay
+reports 1,216,422 interpolated prims across 3,374 extra presents, so the extra presents carry
+reconstructed geometry rather than duplicated frames. Still images and a prim count do not prove
+temporal smoothness, and no frame-time budget has been measured on any released host.
 
 World endpoint capture and reconstruction now share an owned source boundary, with a separate
 queue-only emission path; its preservation contracts are described in

@@ -269,11 +269,11 @@ void test_padv_sync_bracket_keeps_callback_origin_after_boring_prefix() {
   runStore(core, kReset);
   runStore(core, kLoader);
   for (std::uint32_t index = 0; index < 3u; ++index) {
-    CHECK(fields.deliver({"synthetic-handoff-field", false, false, false}));
+    CHECK(fields.deliver({"synthetic-handoff-field", false, false}));
   }
   core.r[9] = core.mem_r32(kGameTick);
   runStore(core, kTick);
-  CHECK(fields.deliver({"synthetic-post-tick-field", false, false, false}));
+  CHECK(fields.deliver({"synthetic-post-tick-field", false, false}));
   CHECK(fields.activeDeliverySite().empty());
   CHECK_EQ(core.mem_r32(kLevelTick), 4u);
   CHECK_EQ(core.mem_r32(kGameTick), 1u);
@@ -326,7 +326,7 @@ void test_padv_sync_bracket_keeps_callback_origin_after_boring_prefix() {
   runStore(core, kReset);
   runStore(core, kLoader);
   for (std::uint32_t index = 0; index < 3u; ++index) {
-    CHECK(fields.deliver({"synthetic-handoff-field", false, false, false}));
+    CHECK(fields.deliver({"synthetic-handoff-field", false, false}));
   }
   core.r[9] = core.mem_r32(kGameTick);
   runStore(core, kTick);
@@ -348,7 +348,7 @@ void test_unreached_stage_reports_no_padv_sync_bracket() {
   fields.observeVblankCallback(kPadVsync);
   spyro1::HandoffStoreObserver observer(true, fields);
   CHECK_EQ(observer.arm(core), psx::cpu::StoreObserverStatus::Configured);
-  CHECK(fields.deliver({"synthetic-unreached-stage", false, false, false}));
+  CHECK(fields.deliver({"synthetic-unreached-stage", false, false}));
   core.r[9] = core.mem_r32(kGameTick);
   runStore(core, kTick);
 

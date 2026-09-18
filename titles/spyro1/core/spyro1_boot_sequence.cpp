@@ -84,8 +84,7 @@ bool BootSequence::complete() const {
 }
 
 void BootSequence::deliverField(Core &core, const char *site) {
-  if (!fields_.deliver(
-          {.site = site, .present = true, .pace = true, .acknowledgeHostTurn = true})) {
+  if (!fields_.deliver({.site = site, .present = true, .pace = true})) {
     lucent::error("boot-native", "field scheduler refused boot field at {}", site);
     std::abort();
   }

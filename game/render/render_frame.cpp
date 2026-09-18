@@ -358,7 +358,6 @@ void SpyroRenderer::drawFrame() {
     // The same two-field logic-frame quota as the native leg below — the reference leg reproduces
     // the guest's cadence, not just its pixels.
     temporal.frame_commit(mC, kFieldsPerLogicFrame);
-    spyro1::acknowledgeTemporalCommit(*mC);
     if (!spyro_paired_actor_frame_finish(paired, true, false)) {
       abort();
     }
@@ -392,7 +391,7 @@ void SpyroRenderer::drawFrame() {
   // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see
   // frame_env.cpp for why that displays the PREVIOUS iteration's buffer and why that is correct.
   //
-  // Defer presentation, pacing, and host-turn acknowledgement to frame_commit in both temporal
+  // Defer presentation and pacing to frame_commit in both temporal
   // modes. It drains the capture accumulated by the queue flush.
   nativeFrameEnd(mC, mEnv, true);
   // THE PER-LOGIC-FRAME FENCE. flush() CAPTURES into Fps60::mNCur in both configs and frame_commit
@@ -403,5 +402,4 @@ void SpyroRenderer::drawFrame() {
   // retail speed — boot fields paced per-field and were correct, which is exactly why the defect
   // only showed once gameplay handed pacing to this fence.
   temporal.frame_commit(mC, kFieldsPerLogicFrame);
-  spyro1::acknowledgeTemporalCommit(*mC);
 }

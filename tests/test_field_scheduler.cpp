@@ -172,7 +172,7 @@ public:
 void test_unpresented_field_advances_time_and_full_root_once() {
   FieldFixture fixture;
   CHECK(fixture.install());
-  CHECK(fixture.fields.deliver({"test-direct", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-direct", false, false}));
   fixture.checkRegisters();
   fixture.checkCallbacks(1u);
   CHECK(fixture.game->core.lightrecExecutor().counters().executedBlocks > 0u);
@@ -191,7 +191,7 @@ void test_pending_edge_uses_hook_continuation_once() {
   CHECK(fixture.install());
   gpu_pace_subframe_fields(&fixture.game->core, 1, 1);
   CHECK_EQ(fixture.game->core.mem_r32(kIStat) & 1u, 1u);
-  CHECK(fixture.fields.deliver({"test-pending-edge", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-pending-edge", false, false}));
   psx::cpu::servicePendingWork(fixture.game->core);
   fixture.checkRegisters();
   fixture.checkCallbacks(1u);
@@ -205,7 +205,7 @@ void test_pending_edge_uses_hook_continuation_once() {
 void test_presentation_after_delivered_field_does_not_deliver_another_root() {
   FieldFixture fixture;
   CHECK(fixture.install());
-  CHECK(fixture.fields.deliver({"test-before-present", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-before-present", false, false}));
   fixture.checkRegisters();
   fixture.checkCallbacks(1u);
 
@@ -233,7 +233,7 @@ void test_root_without_hook_survives_pending_work_inside_guest_dispatch() {
   gpu_pace_subframe_fields(&fixture.game->core, 1, 1);
   CHECK_EQ(fixture.game->core.mem_r32(kIStat) & 1u, 1u);
   CHECK((fixture.game->core.pending_work & Core::PW_IRQ) != 0u);
-  CHECK(fixture.fields.deliver({"test-no-hook", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-no-hook", false, false}));
   psx::cpu::servicePendingWork(fixture.game->core);
   fixture.checkRegisters();
   fixture.checkCallbacks(1u);
@@ -274,8 +274,8 @@ void test_temporal_split_presents_do_not_advance_delivered_time() {
   fixture.game->mods.fps60 = true;
   for (uint32_t frame = 0; frame < 2; ++frame) {
     fixture.fields.beginLogicFrame();
-    CHECK(fixture.fields.deliver({"test-temporal-first", false, false, false}));
-    CHECK(fixture.fields.deliver({"test-temporal-second", false, false, false}));
+    CHECK(fixture.fields.deliver({"test-temporal-first", false, false}));
+    CHECK(fixture.fields.deliver({"test-temporal-second", false, false}));
     CHECK(fixture.fields.finishLogicFrame());
     const auto deliveredTime = fixture.game->timing.emulatedCpuTicks();
     // First commit seeds temporal history; the second executes Fps60's actual two-slot path,
@@ -315,8 +315,8 @@ void test_masked_hook_edge_dispatches_once_when_unmasked() {
   FieldFixture fixture;
   CHECK(fixture.install());
   fixture.game->core.mem_w32(kIMask, 0u);
-  CHECK(fixture.fields.deliver({"test-masked-hook", false, false, false}));
-  CHECK(fixture.fields.deliver({"test-second-masked-hook", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-masked-hook", false, false}));
+  CHECK(fixture.fields.deliver({"test-second-masked-hook", false, false}));
   const int maskedCounter = fixture.fields.counter();
   fixture.checkRegisters();
   CHECK_EQ(fixture.context.run.fields(), 2u);
@@ -336,7 +336,7 @@ void test_critical_section_defers_hook_root_until_irq_service_resumes() {
   FieldFixture fixture;
   CHECK(fixture.install());
   fixture.game->hle.irq_enabled = 0;
-  CHECK(fixture.fields.deliver({"test-critical-hook", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-critical-hook", false, false}));
   fixture.checkRegisters();
   fixture.checkCallbacks(0u);
   CHECK_EQ(fixture.fields.counter(), 0);
@@ -361,7 +361,7 @@ void test_bootstrap_without_root_keeps_host_counter_ownership() {
   CHECK(fixture.game->hle.dispatchBios('B', 0x18));
   static_cast<R3000 &>(fixture.game->core) = fixture.saved;
   fixture.game->core.mem_w32(kRootSlot, 0u);
-  CHECK(fixture.fields.deliver({"test-bootstrap", false, false, false}));
+  CHECK(fixture.fields.deliver({"test-bootstrap", false, false}));
   psx::cpu::servicePendingWork(fixture.game->core);
   fixture.checkRegisters();
   fixture.checkCallbacks(0u);

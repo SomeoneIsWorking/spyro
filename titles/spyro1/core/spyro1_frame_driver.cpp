@@ -26,6 +26,9 @@ constexpr std::uint32_t kFrameStep = kGp + 0x468u;
 constexpr std::uint32_t kRenderSuppressed = kGp + 0x538u;
 constexpr std::int32_t kFrameStepMin = 2;
 constexpr std::int32_t kFrameStepMax = 4;
+// Draw-less iterations are bounded by the same four seconds as one guest update
+// (kFrameBudgetCycles).
+constexpr std::uint32_t kSuppressedFieldLimit = 240;
 
 class FrameState {
 public:
@@ -90,21 +93,12 @@ void Spyro1FrameDriver::initialize(Core &core) {
                0x800127C0u);
 }
 
-void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
-  if (!boot_.complete() && !boot_.step(core)) {
-    return;
-  }
-
+bool Spyro1FrameDriver::runGuestUpdate(Core &core) {
   // Before the guest update reads the transition globals, so a cancelled screen releases its hold
   // in the same frame the press arrives.
   transitions_.observe(core);
 
-  const std::uint32_t frame = ++gameplayFrame_;
   FrameState state(core);
-  fields_.beginLogicFrame();
-
-  core.game->timing.logicFrame = frame;
-  core.rsub.otAttr.beginLogicFrame(frame);
   state.closeInputLatch();
   stageObserver_.beginStage(core, kFrameUpdate);
   psx::cpu::dispatchGuestToReturn0(core,
@@ -113,34 +107,47 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
                                    "frame-update");
   stageObserver_.afterReturn(core, kFrameUpdate);
   state.openInputLatch();
+  // Retail main.c: g_DeltaTime = clamp(g_UnprocessedFrames, 2, 4); g_UnprocessedFrames = 0.
   state.setFrameStep(std::clamp(state.elapsedFields(), kFrameStepMin, kFrameStepMax));
   const bool suppressed = state.renderSuppressed();
   state.restartFieldCount();
-  if (!suppressed) {
-    renderer_->drawFrame();
-    // The update-side host turn has already delivered the first display field. The native
-    // renderer's commit owns the single visible fence, but it does not itself run the field
-    // scheduler. Deliver the retail tail explicitly without presenting a second picture.
-    if (fields_.fieldsThisLogicFrame() < kFieldsPerLogicFrame &&
-        !deliverNativeField(core, "native-frame-tail", true)) {
-      lucent::error("frameloop", "native frame tail could not deliver its second field");
+  return suppressed;
+}
+
+void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
+  if (!boot_.complete() && !boot_.step(core)) {
+    return;
+  }
+
+  const std::uint32_t frame = ++gameplayFrame_;
+  fields_.beginLogicFrame();
+  core.game->timing.logicFrame = frame;
+  core.rsub.otAttr.beginLogicFrame(frame);
+
+  // Retail main.c ends each iteration with `if (!g_StateSwitch) GamestateDraw();` and the draw's
+  // two-field wait is the only wait in the loop. While a state switch is pending (a loader stage,
+  // a scene reset) the next update runs immediately; the fields such an iteration spans are the
+  // display interrupts that land during its own guest work, which the guest-time host clock now
+  // delivers deterministically. One product step is therefore one drawn iteration, preceded by
+  // however many draw-less iterations the guest chains in front of it.
+  while (runGuestUpdate(core)) {
+    if (fields_.fieldsThisLogicFrame() > kSuppressedFieldLimit) {
+      lucent::error("frameloop",
+                    "product step {} chained draw-less guest iterations across {} fields; "
+                    "g_StateSwitch never cleared",
+                    frame,
+                    fields_.fieldsThisLogicFrame());
       std::abort();
     }
-  } else {
-    for (std::uint32_t field = 0; field < kFieldsPerLogicFrame; ++field) {
-      // Match frame_commit's two-field fence: the first field advances the guest/audio clock
-      // without presenting, and the second owns the single visible presentation for this logic
-      // iteration. Presenting both fields would violate FrameDriver's one-fence-per-step contract.
-      const bool deferPresentation = field + 1u < kFieldsPerLogicFrame;
-      if (!deliverNativeField(core, "render-suppressed", deferPresentation)) {
-        lucent::error("frameloop",
-                      "{} product step could not deliver its field {} of {}",
-                      "render-suppressed",
-                      field + 1,
-                      kFieldsPerLogicFrame);
-        std::abort();
-      }
-    }
+  }
+
+  renderer_->drawFrame();
+  // The native renderer's commit owns the single visible fence, but it does not itself run the
+  // field scheduler. Deliver the retail tail explicitly without presenting a second picture.
+  if (fields_.fieldsThisLogicFrame() < kFieldsPerLogicFrame &&
+      !deliverNativeField(core, "native-frame-tail", true)) {
+    lucent::error("frameloop", "native frame tail could not deliver its second field");
+    std::abort();
   }
 
   if (!fields_.finishLogicFrame()) {

@@ -14,7 +14,6 @@ struct FieldRequest {
   const char *site;
   bool present;
   bool pace;
-  bool acknowledgeHostTurn;
 };
 
 // The sole Spyro 1 definition of one 60 Hz display field. Native boot, frame tails, and host turns
@@ -32,7 +31,6 @@ public:
   void bootSequenceEnd();
   void armHostClock();
   void observeVblankCallback(std::uint32_t function);
-  void fps60CommitDelivered();
 
   // BootSequence alone decides whether this edge transitions a presentation-only hold. The pad
   // subsystem continues to expose the input to later title states unchanged.
@@ -44,7 +42,7 @@ public:
 private:
   // True while a guest root owns its counter, including an IRQ deferred by masking/critical state.
   bool dispatchCallbacks();
-  void serviceInspection();
+  void serviceRepl();
   void serviceSkipMap(bool startEdge);
   void reportField(const FieldRequest &request, int queueSize, bool queueWasUnconsumed);
 
@@ -61,7 +59,6 @@ private:
   std::uint64_t fields_ = 0;
   std::uint64_t paces_ = 0;
   std::uint64_t presents_ = 0;
-  std::uint64_t acknowledgements_ = 0;
   std::uint64_t queueFirstConsumers_ = 0;
   std::uint32_t callbackFallback_ = 0;
   std::uint32_t deepestHandlerStack_ = 0x8000E000u;
@@ -81,7 +78,6 @@ FieldScheduler &fieldScheduler(Core &core);
 const FieldScheduler &fieldScheduler(const Core &core);
 
 bool deliverNativeField(Core &core, const char *site, bool fps60CommitPending);
-void acknowledgeTemporalCommit(Core &core);
 void beginBootSequence(Core &core);
 void endBootSequence(Core &core);
 void observeVblankCallback(Core &core, std::uint32_t function);

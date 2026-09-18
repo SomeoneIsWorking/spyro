@@ -1,7 +1,7 @@
 ---
 id: 110
 title: Artisans native and full-console camera checkpoints are not yet phase aligned
-status: investigating
+status: resolved
 symptom: At the same Artisans level tick and player position, native and console game ticks and camera states differ before movement input
 state_items: S011
 tags: oracle,camera,gameplay,timing,input
@@ -824,3 +824,36 @@ update integrated with `g_DeltaTime` 4 instead of 2 at the handoff, the direct c
 extra delivered fields the bracket above counted: a guest-visible simulation difference, not a
 pacing-model convention. Report: `scratch/oracle/compare.json` (exit 1 at the `playing`
 checkpoint; `--frame-step 30`).
+
+### Resolved (2026-09-18): a Lightrec delay-slot defect, not a pacing convention
+The residual above was two independent causes, and both are now fixed.
+
+**The REPL park phase.** `FieldScheduler::deliver` ran the REPL service *after* the host pad sample
+and the guest VBlank handler, while the full-console reference parks with its handler still pending.
+Every pad word the comparator read on the product was therefore one poll ahead of the console's, and
+a hold committed at the park reached the next guest frame rather than this one. `serviceRepl` now
+runs at the top of `deliver`, and `tools/oracle_spyro1.py::lookahead` returns 0 on both cores.
+
+**The collision query read the wrong table.** With the phase aligned, the first `GS_Playing`
+checkpoint still failed on one word: `D_80075844`, the occlusion group that `func_8004DF24`
+(`external/spyro-1/asm/collision.s`) writes, read 0x0B on the product against 0x05 on the console.
+`g_Environment.field_0x2C`, the 0x20-byte collision header it points at, and 256 KB around it were
+byte-identical on both cores, so identical inputs were producing different answers.
+
+An offline replay of the routine over the product's own RAM dump located it. At `0x8004DFAC` the
+guest has `bgtz $s6, .L8004E28C` with `lw $a0, 0x2C($a0)` in its delay slot. Lightrec's constant
+propagation knows `$s6` is zero, rewrites the branch to `bgtz $zero`, and `is_nop()` then replaces
+it with a NOP — but unlike the three constant-folding arms beside it, that generic path did not
+clear `LIGHTREC_LOAD_DELAY` on the delay slot. The load kept writing `REG_TEMP` while the
+end-of-block handler that commits it was no longer emitted, so `$a0` stayed at `&g_Environment`
+instead of the collision header, and the occlusion search walked the wrong memory and never
+terminated. Fixed in `shared/lightrec` `3fddb23` with a differential regression test; psxport's pin
+moves with it.
+
+**Measured after both fixes** (`scratch/oracle_after_fix.txt`, 111.3 s): every decisive range
+matches at all fourteen checkpoints of the Artisans route, `save_picker` through `gameplay[11]`,
+including `player.position`, `player.state`, `game_tick`, `state_switch`, the three pad words and
+`occlusion_result`. `g_LevelTicks` keeps the constant offset this issue parked as a pacing-model
+convention, growing from 1 at level entry to 5 across the route; the informational `player`,
+`camera` and `dragon_cutscene` byte deltas that appear from `gameplay[3]` are counters and phases
+downstream of it.

@@ -43,6 +43,8 @@ G_DELTA_TIME = 0x800756CC         # g_DeltaTime: the lag the last update was tol
 G_STATE_SWITCH = 0x8007579C       # g_StateSwitch: the draw is skipped this iteration
 G_PAD = 0x80077378                # g_Pad: m_Down +0, m_Released +4, m_Held +8 (gamepad.h)
 G_SPYRO = 0x80078A58              # g_Spyro: m_Position at +0 (spyro.h), m_State at +0x78
+G_DRAGON_CUTSCENE = 0x80077030    # g_DragonCutscene (dragon.h): 0x24 WAD header, then the state machine
+D_OCCLUSION_RESULT = 0x80075844   # the collision query's occlusion group for g_Camera.m_OcclusionGroup
 
 declared = (
     DeclaredRange("gamestate", G_GAMESTATE, 4, True),
@@ -58,6 +60,13 @@ declared = (
     DeclaredRange("player.state", G_SPYRO + 0x78, 4, True),
     DeclaredRange("player", G_SPYRO, 0x2A8, False),
     DeclaredRange("camera", G_CAMERA, 0x110, False),
+    # m_CutsceneIdx, m_State, m_Stage, m_BlocksRead, m_HasOverflow, m_LoadLength,
+    # m_CutsceneTicks, unk_0x40, m_Fade: the rescue cutscene's own streaming state machine.
+    DeclaredRange("dragon_cutscene", G_DRAGON_CUTSCENE + 0x24, 0x24, False),
+    # The camera's occlusion group, recomputed every frame by the handwritten collision query at
+    # 0x8004DF24. It is one word, it is wrong long before the camera visibly moves, and a stale
+    # Lightrec delay-slot register made it read the wrong table (shared/lightrec 3fddb23).
+    DeclaredRange("occlusion_result", D_OCCLUSION_RESULT, 4, True),
     # The pad words are what each core's game actually read; a mismatch there is an input-delivery
     # defect in the harness, not a product divergence, and must fail before anything downstream.
     DeclaredRange("pad.down", G_PAD, 4, True),
@@ -67,12 +76,15 @@ declared = (
 
 excluded = {
     "g_LevelTicks (informational only)":
-        "counted per delivered field by the VSync callback; the product delivers a fixed two fields "
-        "per logic frame plus host-turn fields, so it drifts from the console by a constant after "
-        "each load (docs/issues/0110)",
-    "g_DeltaTime and g_Camera (informational only)":
-        "the lag count and camera phase follow the field cadence above; a camera divergence is "
-        "attributable only once the tick phase matches (docs/issues/0110)",
+        "counted per delivered field by the VSync callback. The product spends the two-field draw "
+        "wait on drawn iterations only, as retail's main loop does, but a draw-less iteration's "
+        "field count is retail's own VSync interrupt phase, which the host clock cannot reproduce. "
+        "The counter therefore keeps a constant offset from each load, measured 1 at level entry "
+        "growing to 5 across the Artisans route (docs/issues/0110)",
+    "g_DeltaTime, g_Camera and the dragon cutscene's tick (informational only)":
+        "the lag count, camera phase and cutscene timers are read from the counter above, so they "
+        "carry its offset; they are compared to show the size of the residual, not to fail on it "
+        "(docs/issues/0110)",
     "g_TitlescreenState m_Tick/m_SubTick (informational only)":
         "the menu counts frames spent in a state; creating the new save takes the console about 50 "
         "frames of memory-card I/O where the product's HLE card completes it in 6 (measured "
@@ -107,11 +119,13 @@ selftest = SelftestSeed(G_SPYRO, "player.position", 0)
 
 
 def lookahead(core: CoreSession) -> int:
-    """Both cores park at the first field after the main loop consumed the previous frame's
-    fields. The guest's VSync callback samples the pad into g_Pad at every field while the draw
-    runs (g_PadMutex set), so a hold committed at the park is sampled at the next field and read
-    by the very next GamestateUpdate on either core: no lookahead."""
+    """Both cores park with the next VBlank handler pending: the console's VBlank step stops there,
+    and the product's REPL parks at the start of field delivery, before the host pad sample and the
+    guest handler (titles/spyro1/core/spyro1_field_scheduler.cpp). libpad's handler runs the SIO
+    exchange, which is what first sees a hold, so a hold committed at either park reaches the same
+    game frame's update: no lookahead."""
     return 0
+
 
 TAP_PERIOD = 20  # tools/drive.py Navigator: a 4-frame tap every 20-frame observation step
 TAP_WIDTH = 4

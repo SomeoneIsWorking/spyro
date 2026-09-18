@@ -4,9 +4,9 @@
 
 namespace spyro1 {
 
-// The retained Spyro frame tail spends at least two display fields per gameplay logic iteration.
-// Native rendering supplies those fields through frame_commit; render-suppressed diagnostics must
-// use the same quota instead of accidentally running gameplay at twice its retail logic rate.
+// The retained Spyro frame tail spends at least two display fields per drawn logic iteration
+// (GamestateDraw's `< 2` wait). Native rendering supplies those fields through frame_commit; a
+// draw-less iteration (g_StateSwitch pending) has no quota, exactly as in retail main.c.
 inline constexpr std::uint32_t kFieldsPerLogicFrame = 2;
 
 // Count fields delivered during one logic iteration. The guest's own frame tail compares the

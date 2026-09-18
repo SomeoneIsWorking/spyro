@@ -28,6 +28,10 @@ public:
   const FieldScheduler &fields() const;
 
 private:
+  // One retail main-loop iteration up to its draw gate: the guest update, then g_DeltaTime and
+  // g_UnprocessedFrames bookkeeping. Returns the guest's g_StateSwitch, which skips the draw.
+  bool runGuestUpdate(Core &core);
+
   FieldScheduler fields_;
   BootSequence boot_;
   TransitionSkip transitions_;

@@ -857,3 +857,22 @@ including `player.position`, `player.state`, `game_tick`, `state_switch`, the th
 convention, growing from 1 at level entry to 5 across the route; the informational `player`,
 `camera` and `dragon_cutscene` byte deltas that appear from `gameplay[3]` are counters and phases
 downstream of it.
+
+**The residual surfaces again past the portal (2026-09-19).** With the per-face colour program
+ported (issue 0113), the route now runs past Artisans and the `level` checkpoint completes on both
+cores. Both enter level 11 at `game_tick` 1, and `player.position` differs in exactly one field:
+
+```
+native   14080200 57de0100 34820000
+console  14080200 bbde0100 34820000
+```
+
+X and Z are byte-identical; Y is `0x0001DE57` against `0x0001DEBB`, a difference of 100 units, which
+is one frame of the entrance fall. That is this issue's constant `g_LevelTicks` offset arriving at a
+place where it is visible in position rather than only in counters: the cores are one field apart in
+a fall, not disagreeing about where the fall goes. The following 120-frame held-nothing segment then
+diverges in all three axes, which is the same one-frame offset carried through 120 frames of
+physics rather than a second cause.
+
+So the pacing-model convention this issue parked is no longer only informational. Closing it now
+means making level entry itself phase-exact, not just the Artisans checkpoints.

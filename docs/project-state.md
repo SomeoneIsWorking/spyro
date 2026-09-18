@@ -608,8 +608,15 @@ program is now ported as a pure owner validated against the real GTE, so the bou
 refuses on its account; the separate additive program at `0x80021FE0` and the quad billboard at
 `0x8002256C` still do, and neither has been observed reaching a driven route. Issue
 [0113](issues/0113-attract-demo-aborts-secondary-shaded-producers-r.md) holds the deterministic
-reproduction, the transcription and what remains refused. This state item stays `missing` until a
-route past that point is measured end to end against the console.
+reproduction, the transcription and what remains refused.
+
+**Measured after that fix** (`tools/oracle_compare.py`, 107.9 s): `save_picker` and `playing` MATCH,
+and the route now reaches `level` and a 120-frame held-nothing segment inside Stone Hill instead of
+aborting. Both DIVERGE, and both reduce to the phase residual above: at `level` the two cores agree
+byte for byte on X and Z and differ by 100 units in Y, one frame of the entrance fall, which issue
+[0110](issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md) now records as the
+place where its parked `g_LevelTicks` convention stops being informational. This state item stays
+`missing` until level entry is phase-exact and the segment past it matches.
 
 The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
 difference to pacing rather than camera math. The console's loader store and its first stage-zero

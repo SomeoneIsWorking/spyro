@@ -12,7 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import guest_globals
-import spyro1_steering
 
 from compare import (
     Checkpoint,
@@ -90,7 +89,11 @@ excluded = {
     "g_DeltaTime, g_Camera and the dragon cutscene's tick (informational only)":
         "the lag count, camera phase and cutscene timers are read from the counter above, so they "
         "carry its offset; they are compared to show the size of the residual, not to fail on it "
-        "(docs/issues/0110)",
+        "(docs/issues/0110). Informational is not inert: one frame after g_DeltaTime reads 2 "
+        "against the console's 4, the camera's rotation differs by about 1.3 degrees of yaw while "
+        "its position and every spherical block stay byte-identical. Held input does not move the "
+        "player because of it, but the d-pad is camera-relative, so a steered route does not "
+        "replay and a level entry cannot be compared (docs/issues/0114)",
     "g_TitlescreenState m_Tick/m_SubTick (informational only)":
         "the menu counts frames spent in a state; creating the new save takes the console about 50 "
         "frames of memory-card I/O where the product's HLE card completes it in 6 (measured "
@@ -104,8 +107,9 @@ excluded = {
 
 # Representative Artisans input after arrival: the level fades in and hands the player control some
 # frames into GS_Playing (tools/drive.py --settle), so the first segment holds nothing for that
-# span. Then Spyro runs forward, turns, jumps standing, charges, and jumps while running. These run
-# in the level the `level` checkpoint entered, not in the homeworld the walk started from.
+# span. Then Spyro runs forward, turns, jumps standing, charges, and jumps while running. Run these
+# with --frame-step 1: a segment-end comparison cannot tell a state that never diverged from one
+# that diverged and came back.
 gameplay = (
     (frozenset(), 120),
     (frozenset({"up"}), 60),
@@ -218,72 +222,12 @@ def reach_playing(driver: Driver, core: CoreSession, budget: int, settle: Settle
     return driver.drive(core, budget, lambda seen: seen.playing, new_game_pattern, "GS_Playing", settle)
 
 
-STEERING_STEP = 12  # game frames per steering decision: tools/drive.py's 24 fields, in this unit
-HOP_FRAMES = 4      # of each decision, the frames the jump is held for
-
-
-class PortalWalk:
-    """Walk one core to a homeworld portal and through it, steering from that core's own camera.
-
-    WHY A LEVEL ENTRY IS THE CHECKPOINT WORTH HAVING. Everything before it happens inside one
-    resident WAD image. A portal entry is where the product must discard and reload guest code at a
-    reused load address and invalidate every translation that came from it, which is the part of
-    the runtime a matched walk around Artisans cannot exercise at all.
-
-    The route policy is `spyro1_steering.Walk`, shared with tools/drive.py, so the interactive
-    driver and this checkpoint walk one route rather than two that agree by coincidence. Each core
-    gets its own instance: the oracle drives the console to the checkpoint first and the product
-    after, and if they disagree about where they are they walk apart, which the declared ranges
-    then report instead of comparing two different places.
-
-    `arrived=0` because standing near a portal is not entering one: the walk keeps closing the gap
-    until this core's own level id changes, and the shared stall rule tries the next portal if
-    walking into this one never does anything.
-    """
-
-    def __init__(self, core: CoreSession):
-        self._core = core
-        self._walk = spyro1_steering.Walk("portal", spyro1_steering.portal_targets(self._words),
-                                          arrived=0)
-        self._from = u32(core, G_LEVEL_ID)
-        self._buttons: frozenset[str] = frozenset()
-        self._hop = False
-        print(f"[oracle] {core.name}: walking out of level {self._from} through one of "
-              f"{len(self._walk.remaining)} portal(s): "
-              + ", ".join(target.what for target in self._walk.remaining))
-
-    def _words(self, address: int, count: int) -> list[int]:
-        raw = self._core.read(address, count * 4)
-        return [int.from_bytes(raw[i:i + 4], "little") for i in range(0, count * 4, 4)]
-
-    def left(self, seen: Observation) -> bool:
-        """Playable again, in a different level. The level id alone would park both cores inside
-        the entrance animation, where input is ignored and the following segments would compare a
-        cutscene rather than a level."""
-        return seen.level != self._from and seen.gamestate == GS_PLAYING
-
-    def __call__(self, frame: int, seen: Observation) -> frozenset[str]:
-        if seen.level != self._from:
-            return frozenset()  # through the portal; the entrance plays out on its own
-        if frame % STEERING_STEP == 0:
-            decision = self._walk.next(spyro1_steering.camera(self._words))
-            self._buttons = frozenset(decision.buttons)
-            self._hop = decision.hop
-            print(f"[oracle]   {self._core.name} f{frame}: {decision.describe()}")
-        if self._hop and frame % STEERING_STEP < HOP_FRAMES:
-            return self._buttons | {"cross"}
-        return self._buttons
-
-
-def reach_level(driver: Driver, core: CoreSession, budget: int, settle: Settle) -> tuple[int, frozenset[str]]:
-    walk = PortalWalk(core)
-    return driver.drive(core, budget, walk.left, walk, "a level change through a portal", settle)
-
-
 checkpoints = (
     Checkpoint("save_picker", reach_save_picker),
     Checkpoint("playing", reach_playing),
-    # The representative segments below then run in the level this one entered, immediately after
-    # the product discarded and reloaded guest code at a reused address.
-    Checkpoint("level", reach_level),
+    # The gameplay segments then run in Artisans, where this route arrives. A level entry is the
+    # checkpoint worth having, because it is the only place the product must discard and reload
+    # guest code at a reused address and invalidate every translation that came from it. It is not
+    # here because no route to one is reproducible yet: walking out is camera-relative, and the
+    # camera's rotation carries the pacing residual. Issue 0114 holds the measurement.
 )

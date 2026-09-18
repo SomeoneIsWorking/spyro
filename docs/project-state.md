@@ -37,11 +37,12 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 ## Current focus
 
-S011 — the Artisans route now matches the full-console reference on every decisive range at all
-fourteen `tools/oracle_compare.py` checkpoints (issue 0110). Next: verify the fps60 interpolation
-and widescreen presentation on the running product, extend source-based world/camera interpolation,
-and widen the compared route beyond Artisans. Boot/title, a visible player, and one matched route
-do not establish full conformance.
+S011 — the Artisans route matches the full-console reference on every decisive range at every one
+of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
+issue 0110). Next: verify the fps60 interpolation and widescreen presentation on the running
+product, and extend source-based world/camera interpolation. Widening the route past Artisans is
+blocked on issue 0114, because the pacing residual steers a camera-relative walk. Boot/title, a
+visible player, and one matched route do not establish full conformance.
 
 ## Hosted verification and host gaps
 
@@ -586,37 +587,41 @@ query read the wrong table (`shared/lightrec` `3fddb23`). Issue 0110 holds the m
 matched route is a first conformance result, not representative-gameplay conformance: output parity
 is separate and the released-host budget is unmeasured.
 
-The compared route no longer stops at that homeworld. A `level` checkpoint walks each core out of
-Artisans through a portal, steering from that core's own camera with the route policy the
-interactive driver uses (`tools/spyro1_steering.py`), and arrives when that core is playable again
-in a different level. Measured 2026-09-18: both cores entered level 11 from the same walk, the
-product after 7,246 game frames and the console after 8,397 VBlanks, so the product's discard and
-reload of guest code at a reused load address is now inside the comparison rather than outside it.
+That route is now compared at full resolution. `tools/oracle_compare.py --frame-step 1` compares
+every declared range after **every one** of the twelve gameplay segments' 477 game frames instead of
+once per segment: 485 comparisons, **zero divergences**, exit 0, 153 s. A segment-end comparison
+cannot tell a state that never diverged from one that diverged and came back, and this one shows it
+never diverged.
 
-Two results came out of that first widened run, and neither is a pass.
+Two attempts to widen the route past the homeworld both failed, and neither failure is the product
+being wrong about a level. A `level` checkpoint that walked each core out of Artisans through a
+portal, steering from that core's own camera, let the two cores steer apart: they agreed for two
+decisions, drifted from the third, pressed different buttons from the tenth, and entered level 11
+from two different places, which the decisive `player.position` range duly reported as a DIVERGE.
+Recording the reference's 473 steered frames and replaying exactly those on the product removed the
+input as a variable, and then the product did not reach any portal within the 6000-frame budget.
 
-The `level` checkpoint DIVERGES on one decisive range: `g_Spyro.m_Position` differs by 100 units in
-Y, one frame of the entrance fall. Both cores arrive at the same game tick with the same level id
-and gamestate, and `g_LevelTicks` carries its usual offset, so this follows the same phase residual
-issue 0110 records rather than being a new cause.
+The cause is measured and it is one counter. Spyro's d-pad is camera-relative, and the per-frame
+report locates where the camera parts company: one frame after `g_DeltaTime` reads 2 against the
+console's 4, the camera's Euler rotation differs by about 1.3 degrees of yaw while its position,
+destination, state, occlusion group and every spherical block stay byte-identical. `g_DeltaTime` is
+read from `g_LevelTicks`, whose constant per-load offset issue
+[0110](issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md) parked as a pacing
+convention. That residual moves no decisive range under held input across 477 frames, so 0110's
+result stands, but it does steer, so no camera-relative route replays. The oracle therefore
+registers only the checkpoints it can honestly compare, and issue
+[0114](issues/0114-no-reproducible-route-out-of-artisans-so-level-entry-is-uncompared.md) owns the
+consequence: the product's discard and reload of guest code at a reused load address, and the
+translation invalidation that follows it, is still outside every comparison.
 
-The product then ABORTED partway through the segments that follow, at a named unimplemented
-boundary: a secondary actor whose triangle carries control bit 2 takes the per-face colour program
-at guest `0x80021DB4`, which the native producer refused rather than draw with the base material
-colours that program replaces. That was the first hard stop on any route leaving Artisans. The
-program is now ported as a pure owner validated against the real GTE, so the boundary no longer
-refuses on its account; the separate additive program at `0x80021FE0` and the quad billboard at
-`0x8002256C` still do, and neither has been observed reaching a driven route. Issue
+One hard stop on that route was separately found and fixed. A secondary actor whose triangle carries
+control bit 2 takes the per-face colour program at guest `0x80021DB4`, which the native producer
+refused rather than draw with the base material colours that program replaces, aborting the product
+shortly after it entered Stone Hill. The program is now ported as a pure owner validated against the
+real GTE; the separate additive program at `0x80021FE0` and the quad billboard at `0x8002256C` still
+refuse, and neither has been observed on a driven route. Issue
 [0113](issues/0113-attract-demo-aborts-secondary-shaded-producers-r.md) holds the deterministic
 reproduction, the transcription and what remains refused.
-
-**Measured after that fix** (`tools/oracle_compare.py`, 107.9 s): `save_picker` and `playing` MATCH,
-and the route now reaches `level` and a 120-frame held-nothing segment inside Stone Hill instead of
-aborting. Both DIVERGE, and both reduce to the phase residual above: at `level` the two cores agree
-byte for byte on X and Z and differ by 100 units in Y, one frame of the entrance fall, which issue
-[0110](issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md) now records as the
-place where its parked `g_LevelTicks` convention stops being informational. This state item stays
-`missing` until level entry is phase-exact and the segment past it matches.
 
 The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
 difference to pacing rather than camera math. The console's loader store and its first stage-zero

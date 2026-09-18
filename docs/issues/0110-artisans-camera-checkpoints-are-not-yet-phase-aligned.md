@@ -858,21 +858,34 @@ convention, growing from 1 at level entry to 5 across the route; the information
 `camera` and `dragon_cutscene` byte deltas that appear from `gameplay[3]` are counters and phases
 downstream of it.
 
-**The residual surfaces again past the portal (2026-09-19).** With the per-face colour program
-ported (issue 0113), the route now runs past Artisans and the `level` checkpoint completes on both
-cores. Both enter level 11 at `game_tick` 1, and `player.position` differs in exactly one field:
+**A claim that this issue reached past the portal was wrong, and is withdrawn (2026-09-19).**
+An earlier revision of this appendix, committed in `4798811`, read the `level` checkpoint's
+`player.position` DIVERGE as this issue's `g_LevelTicks` offset becoming visible in position. It is
+not. At that checkpoint the report shows `game_tick`, `level_ticks`, `delta_time` and `state_switch`
+all EQUAL, so there was no phase offset there to surface.
+
+What actually produced that DIVERGE was the instrument. `PortalWalk` ran once per core as an
+independent feedback controller, so each core steered itself out of Artisans: measured, the two
+agreed for two decisions, drifted from the third (`bearing +42` against `+38`), pressed different
+buttons from the tenth (`up+left` against `up`), and took 16 decisions against 15. They entered
+level 11 from two different places. A decisive range comparing two different places is not a
+measurement of this issue or of any other.
+
+**The residual is informational, but it is not inert (2026-09-19).** Comparing the same route after
+every game frame instead of once per segment (`--frame-step 1`, 485 comparisons, zero divergences,
+exit 0) confirms the decisive claim above at a much finer resolution: `player.position`,
+`player.state`, `game_tick`, `state_switch`, the pad words and the occlusion result are equal at
+every one of the 477 frames. It also shows what the residual does reach. One frame after
+`g_DeltaTime` reads 2 against the console's 4, the camera's rotation parts company:
 
 ```
-native   14080200 57de0100 34820000
-console  14080200 bbde0100 34820000
+m_Rotation   native ff0f e80f 3103   console ff0f f70f 2c03      (y 4072/4087, z 817/812)
 ```
 
-X and Z are byte-identical; Y is `0x0001DE57` against `0x0001DEBB`, a difference of 100 units, which
-is one frame of the entrance fall. That is this issue's constant `g_LevelTicks` offset arriving at a
-place where it is visible in position rather than only in counters: the cores are one field apart in
-a fall, not disagreeing about where the fall goes. The following 120-frame held-nothing segment then
-diverges in all three axes, which is the same one-frame offset carried through 120 frames of
-physics rather than a second cause.
-
-So the pacing-model convention this issue parked is no longer only informational. Closing it now
-means making level entry itself phase-exact, not just the Artisans checkpoints.
+The camera's position, destination, state, occlusion group and every spherical block are still
+byte-identical; only the two rotation matrices and the Euler angles they come from differ, by about
+1.3 degrees of yaw. Held input for 477 frames does not move the player because of it, which is why
+this issue's decisive result stands. A camera-relative route does diverge because of it, which is
+why no route out of Artisans replays. That consequence is
+[issue 0114](0114-no-reproducible-route-out-of-artisans-so-level-entry-is-uncompared.md); closing it
+means reproducing `g_DeltaTime` per update, which is this issue's cause rather than its symptom.

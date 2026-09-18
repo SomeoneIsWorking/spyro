@@ -28,8 +28,9 @@ level becoming playable:
 uv run --frozen python tools/drive.py gameplay --seek-portal --debug fieldactors --after 900
 ```
 
-The same route inside `tools/oracle_compare.py`'s `level` checkpoint aborts the product the same
-way, after both cores have entered level 11.
+A `level` checkpoint in `tools/oracle_compare.py` aborted the product the same way, after both
+cores had entered level 11. That checkpoint has since been withdrawn for an unrelated reason
+(issue 0114), so `tools/drive.py` is the reproduction.
 
 This supersedes the earlier attract-demo observation, which was never deterministic. The attract
 demo simply happened to be the only route that drew such an actor; the discriminator is the actor,
@@ -122,8 +123,7 @@ The quad billboard at `0x8002256C` is likewise still refused, as `Reason::Ft4`.
 ## Why it matters
 
 It was the first hard stop on any route that leaves Artisans, so it blocked representative gameplay
-(state item S011) rather than one cutscene. It also bounded what the oracle's `level` checkpoint
-could compare.
+(state item S011) rather than one cutscene.
 
 ## Not the same as issue 0103
 

@@ -7,11 +7,11 @@ created: 2026-08-06
 
 ## Instrument
 
-tools/present_geometry.py — the only SHAPE instrument in this workspace: measures the presented picture's ASPECT. Every other capture check here (coverage %, colour count, brightness, tile richness) is INVARIANT under an aspect bug. Refuses (rc 3) when black margins make band-vs-picture ambiguous; give it --active/--display or --guest-frame (the frame's own drawn extent) for a verdict.
+external/psxport/tools/port/present_geometry.py — the only SHAPE instrument in this workspace: measures the presented picture's ASPECT. Every other capture check here (coverage %, colour count, brightness, tile richness) is INVARIANT under an aspect bug. Refuses (rc 3) when black margins make band-vs-picture ambiguous; give it --active/--display or --guest-frame (the frame's own drawn extent) for a verdict.
 
 ## Validated by
 
-python3 tools/present_geometry.py --selftest = 16/16. Runs BOTH directions on synthetic frames: fills-sink 4:3 -> OK rc0; fills-sink 1.600x -> STRETCHED rc1; all-black -> REFUSED rc2; spyro-shaped (960x450 picture in a 960x720 sink, only 224/240 guest lines drawn) with NO guest info -> AMBIGUOUS rc3 (the OLD spider1 copy printed a confident STRETCHED 1.714x on that exact frame); the SAME frame with --active 512x224 --display 512x240 -> STRETCHED 1.600x rc1; and the NEGATIVE CONTROL, the FIXED present with the SAME flags -> OK rc0. Mutation-tested: 3 injected defects (band-treated-as-picture, off-by-one band edge, Paeth off-by-one) each drop the selftest to 14-15/16.
+uv run --frozen python external/psxport/tools/port/present_geometry.py --selftest = 16/16. Runs BOTH directions on synthetic frames: fills-sink 4:3 -> OK rc0; fills-sink 1.600x -> STRETCHED rc1; all-black -> REFUSED rc2; spyro-shaped (960x450 picture in a 960x720 sink, only 224/240 guest lines drawn) with NO guest info -> AMBIGUOUS rc3 (the OLD spider1 copy printed a confident STRETCHED 1.714x on that exact frame); the SAME frame with --active 512x224 --display 512x240 -> STRETCHED 1.600x rc1; and the NEGATIVE CONTROL, the FIXED present with the SAME flags -> OK rc0. Mutation-tested: 3 injected defects (band-treated-as-picture, off-by-one band edge, Paeth off-by-one) each drop the selftest to 14-15/16.
 
 ## Known failure modes
 
@@ -28,10 +28,7 @@ python3 tools/present_geometry.py --selftest = 16/16. Runs BOTH directions on sy
   silently wrong and the tool cannot detect it.
 - **It is a geometry check on the FRAME, not on the CONTENT.** It cannot tell "correctly 4:3" from
   "the game happens to be drawing a square thing".
-- **DUPLICATED FILE, and one copy is STALE.** This copy and `Tomba2Engine/tools/present_geometry.py`
-  are byte-identical. `spider1/tools/present_geometry.py` is the ORIGINAL and has NOT been updated —
-  it still prints a confident band-only aspect (it says STRETCHED 1.714x on a frame this copy
-  resolves to 1.600x). Fix it with `cp spyro/tools/present_geometry.py spider1/tools/`. Before
-  trusting a number from ANY copy run `md5sum */tools/present_geometry.py` from ~/repo/psx — no hash
-  is quoted here on purpose, because a hand-copied hash rots on the next edit. The file's correct
-  home is `external/psxport/tools/`, which needs a coord claim to do.
+- **One file, in the framework, so a fix reaches every port.** It used to be copied into
+  `spyro/tools/`, `Tomba2Engine/tools/` and `spider1/tools/`, and by 2026-09-19 all three hashes
+  differed. The copies are deleted; this port runs the framework's file through its own pin, so the
+  version it gets is the one `psxport.pin` records.

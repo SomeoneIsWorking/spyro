@@ -499,11 +499,15 @@ class Navigator:
 
 
 def environment(disc: str | None) -> dict[str, str]:
-    env = dict(os.environ)
+    """The headless REPL launch environment for the built port. The framework's launch policy
+    (external/psxport/tools/port/launch_environment.py) owns the headless/silent/unpaced knobs so
+    no agent driver can seize the desktop or drift from the others."""
+    sys.path.insert(0, str(ROOT / "external" / "psxport" / "tools"))
+    from port.launch_environment import agent_environment
+
+    env = agent_environment(dict(os.environ))
     env.update(
         PSXPORT_REPL="1",
-        PSXPORT_NOAUDIO="1",
-        PSXPORT_NOPACE="1",
         PSXPORT_WATCHDOG="0",
         PSXPORT_ASSET_DIR="external/psxport",
     )

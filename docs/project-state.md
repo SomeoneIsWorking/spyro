@@ -37,8 +37,10 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 ## Current focus
 
-S011 — compare the reached Artisans gameplay against the independent console oracle, including
-the remaining camera-state difference, and extend source-based world/camera interpolation. Boot/title and a visible player do not establish full conformance.
+S011 — make the product's first `GS_Playing` update read `g_DeltaTime` 2 like the console (issue
+0110: the handoff delivers extra fields), then rerun `tools/oracle_compare.py` until Artisans
+gameplay matches on every decisive range, and extend source-based world/camera interpolation.
+Boot/title and a visible player do not establish full conformance.
 
 ## Hosted verification and host gaps
 
@@ -570,6 +572,14 @@ The title-native screen-actor queue now executes its authenticated GTE offset re
 A reached retail queue previously left OFX=100 and projected camera X=100 at the first gameplay
 tick; after the restore, the same actor write was reached, the queue exited at OFX=256, and the
 camera projected X=256. New Game handoff timing and full independent output parity remain open.
+
+The state-aligned comparator (`tools/oracle_compare.py`, 2026-09-18, framework
+`tools/oracle/compare.py`) drives the product and the SCPH-1001 full-console reference by observed
+guest state with identical per-frame pad delivery and a blank memory card on both sides. Boot to
+the save picker matches on every decisive range. At the first `GS_Playing` frame the product's
+update ran with `g_DeltaTime` 4 against the console's 2, and Spyro's position differs from that
+update on (one unit in Z after thirty matched game ticks). Representative gameplay therefore does
+not yet conform; the exact first divergence and its cause are recorded in issue 0110.
 
 The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
 difference to pacing rather than camera math. The console's loader store and its first stage-zero

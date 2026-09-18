@@ -6,7 +6,7 @@ symptom: At the same Artisans level tick and player position, native and console
 state_items: S011
 tags: oracle,camera,gameplay,timing,input
 created: 2026-09-12
-updated: 2026-09-13
+updated: 2026-09-18
 ---
 
 The earlier Left-60 camera delta in [issue 0102](0102-native-delivered-fields-undercount-guest-vblank.md)
@@ -807,3 +807,20 @@ per-iteration consumption were missing; it did not.
 
 ### Note (2026-09-13)
 Next discriminator answered: retail has no fixed field quota. Console loader store and first stage-zero game tick are one field apart with g_StateSwitch==1 across that field; func_8001A050 (draw.c:857) waits two fields since the previous draw and main.c:21 skips that draw while a state switch is pending, so a suppressed iteration's field count is interrupt phase. Provisional one-field suppressed build landed on level tick 2, not 1. The native fixed-two-field step is the deterministic time base; changing it changes simulation speed, not just phase. Residual level-tick offset (native 2-3 vs console 1) is parked as a pacing-model convention, not fixed. No code change shipped.
+
+### Note (2026-09-18): the state-aligned comparator pins the first guest-visible divergence
+`tools/oracle_compare.py` (psxport `tools/oracle/compare.py`, title policy in
+`tools/oracle_spyro1.py`) drives both cores by observed guest state with identical per-frame pad
+delivery; the pad words `g_Pad.m_Down/m_Released/m_Held` are decisive and agreed at every compared
+frame after the handoff, so the measured pad lookahead is zero on both cores. With the product on
+a blank card (its persistent `scratch/saves/card.mcr` held a save and routed the picker through
+LOAD GAME), boot to the save picker MATCHES on every decisive range. At the first observed
+`GS_Playing` frame the product reads game tick 1, `g_LevelTicks` 6 and `g_DeltaTime` 4 while the
+console reads game tick 2, `g_LevelTicks` 3 and `g_DeltaTime` 2, and `g_Spyro.m_Position` already
+differs (Y `0xB815` vs `0xB81F`, Z `0x2562` vs `0x2557`). Thirty frames later both read game tick
+32 and `g_DeltaTime` 2, the level-tick offset is a constant four, and the position still differs by
+one unit in Z (`0x2555` vs `0x2554`) with 3/272 camera bytes. The residual is therefore one physics
+update integrated with `g_DeltaTime` 4 instead of 2 at the handoff, the direct consequence of the
+extra delivered fields the bracket above counted: a guest-visible simulation difference, not a
+pacing-model convention. Report: `scratch/oracle/compare.json` (exit 1 at the `playing`
+checkpoint; `--frame-step 30`).

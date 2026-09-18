@@ -15,9 +15,11 @@ public:
   SpyroTemporalSceneAdmission();
   ~SpyroTemporalSceneAdmission();
   bool world(Core &core, bool paired);
-  // The regular-actor interval, preflighted the same way and for the same reason: a midpoint the
-  // planner would refuse must be discovered before presentation depends on it, not during it.
+  // The two actor intervals, preflighted the same way and for the same reason: a midpoint the
+  // planner would refuse must be discovered before presentation depends on it, not during it. They
+  // are admitted independently, so a refusal on one layer costs only that layer's in-between faces.
   bool actors(Core &core);
+  bool secondaryActors(Core &core);
 
 private:
   // Replays one source across the interval's endpoints and its midpoint into the isolated sink,

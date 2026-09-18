@@ -229,38 +229,27 @@ bool applyAnimationPlan(Frame &frame,
 } // namespace
 
 void History::begin(uint64_t scene, bool reference, bool active) {
-  ++serial_;
-  eligible = false;
-  current_.reset();
-  seen_ = false;
-  refused_ = false;
-  const bool enabled = active && !reference;
-  if (!enabled || enabled != active_ || scene != scene_) {
-    previous_.reset();
-  }
-  scene_ = scene;
-  active_ = enabled;
+  pair_.begin(scene, reference, active);
 }
 
 bool History::retain(const Core &core,
                      world_source::Source source,
                      world_scene_submitter::DrawState draw) {
-  if (!active_) {
+  if (!pair_.active()) {
     return false;
   }
-  if (seen_ || refused_ || !source.selection.valid || draw.areaLeft > draw.areaRight ||
-      draw.areaTop > draw.areaBottom) {
+  if (pair_.retained() || pair_.refused() || !source.selection.valid ||
+      draw.areaLeft > draw.areaRight || draw.areaTop > draw.areaBottom) {
     refuse();
     return false;
   }
-  seen_ = true;
   std::vector<Resource> resources;
   for (const auto range : source.resourceRanges()) {
     const auto image = core.currentImageIdentity(range);
     if (!image) {
       lucent::debug("worldtemporal",
                     "REFUSED frame={} resource=[{:08X},{:08X}) has no complete residency",
-                    serial_,
+                    frameSerial(),
                     range.begin,
                     range.end);
       refuse();
@@ -294,7 +283,7 @@ bool History::retain(const Core &core,
         lucent::debug("worldtemporal",
                       "pending animation inputs unavailable frame={} sector={:08X} channel={} "
                       "reason={}",
-                      serial_,
+                      frameSerial(),
                       header->address,
                       channel,
                       reason ? reason : "plan_shape");
@@ -316,36 +305,37 @@ bool History::retain(const Core &core,
       }
     }
   }
-  current_ =
-      Frame{std::move(source), draw, std::move(resources), std::move(pendingChannels), serial_};
-  return true;
+  return pair_.retain(Frame{
+      std::move(source), draw, std::move(resources), std::move(pendingChannels), frameSerial()});
 }
 
 bool History::materializePending(Core &core, const char *&why) {
-  if (!active_ || !previous_ || !current_ || refused_) {
+  Frame *const previous = pair_.mutablePrevious();
+  Frame *const current = pair_.mutableCurrent();
+  if (!pair_.active() || pair_.refused() || !previous || !current) {
     why = "missing consecutive world source";
     return false;
   }
-  const ProjectionStream culling(previous_->source.selection.camera.cullingMatrix,
-                                 current_->source.selection.camera.cullingMatrix,
+  const ProjectionStream culling(previous->source.selection.camera.cullingMatrix,
+                                 current->source.selection.camera.cullingMatrix,
                                  {},
                                  0.5);
   world_scene_prepare::Prepared prepared{};
   why = "none";
-  if (!world_scene_prepare::prepare(previous_->source.selection,
-                                    current_->source.selection,
+  if (!world_scene_prepare::prepare(previous->source.selection,
+                                    current->source.selection,
                                     culling,
-                                    current_->source.clipRight,
+                                    current->source.clipRight,
                                     prepared,
                                     why,
                                     true)) {
     return false;
   }
   const world_chunk_codec::RamView ram(std::span<const uint8_t>(core.ram));
-  if (!world_source_pair::compatible(previous_->source, current_->source, why)) {
+  if (!world_source_pair::compatible(previous->source, current->source, why)) {
     return false;
   }
-  Frame staged = *previous_;
+  Frame staged = *previous;
   std::vector<Resource> pendingResources;
   for (const auto &animation : prepared.animations) {
     auto &previousHeader = staged.source.selection.sectors[animation.index];
@@ -372,12 +362,12 @@ bool History::materializePending(Core &core, const char *&why) {
         return false;
       }
       const auto captured =
-          std::find_if(previous_->pendingChannels.begin(),
-                       previous_->pendingChannels.end(),
+          std::find_if(previous->pendingChannels.begin(),
+                       previous->pendingChannels.end(),
                        [&](const PendingChannel &candidate) {
                          return candidate.sector == animation.index && candidate.channel == channel;
                        });
-      if (captured == previous_->pendingChannels.end()) {
+      if (captured == previous->pendingChannels.end()) {
         why = "animation_resource_unretained";
         return false;
       }
@@ -395,51 +385,49 @@ bool History::materializePending(Core &core, const char *&why) {
   }
   staged.resources.insert(staged.resources.end(), pendingResources.begin(), pendingResources.end());
   sortResources(staged.resources);
-  current_->resources.insert(
-      current_->resources.end(), pendingResources.begin(), pendingResources.end());
-  sortResources(current_->resources);
-  previous_->source = std::move(staged.source);
-  previous_->resources = std::move(staged.resources);
+  current->resources.insert(
+      current->resources.end(), pendingResources.begin(), pendingResources.end());
+  sortResources(current->resources);
+  previous->source = std::move(staged.source);
+  previous->resources = std::move(staged.resources);
   return true;
 }
 
 void History::refuse() {
-  current_.reset();
-  eligible = false;
-  refused_ = true;
+  pair_.refuse();
 }
 
 void History::rotate() {
-  previous_ = std::move(current_);
-  current_.reset();
-  eligible = false;
+  pair_.rotate();
 }
 
 bool History::compatible(const Core &core, const char *&why) const {
-  if (!active_ || !previous_ || !current_ || refused_) {
+  const Frame *const previous = pair_.previous();
+  const Frame *const current = pair_.current();
+  if (!pair_.active() || pair_.refused() || !previous || !current) {
     why = "missing consecutive world source";
     return false;
   }
-  if (previous_->serial + 1 != current_->serial) {
+  if (!pair_.paired()) {
     why = "nonconsecutive world frames";
     return false;
   }
-  if (!sameResources(*previous_, *current_) || !resident(core, *previous_) ||
-      !resident(core, *current_)) {
+  if (!sameResources(*previous, *current) || !resident(core, *previous) ||
+      !resident(core, *current)) {
     why = "world resource residency changed";
     return false;
   }
-  if (!sameDrawPolicy(previous_->draw, current_->draw)) {
+  if (!sameDrawPolicy(previous->draw, current->draw)) {
     why = "world draw policy changed";
     return false;
   }
-  return world_source_pair::compatible(previous_->source, current_->source, why);
+  return world_source_pair::compatible(previous->source, current->source, why);
 }
 
 bool History::camerasMatch(const SpyroPairedFrame &previous,
                            const SpyroPairedFrame &current) const {
-  return previous_ && current_ && cameraMatches(*previous_, previous) &&
-         cameraMatches(*current_, current);
+  return pair_.previous() && pair_.current() && cameraMatches(*pair_.previous(), previous) &&
+         cameraMatches(*pair_.current(), current);
 }
 
 bool History::emit(Core &core, RenderQueue &target, double t) const {
@@ -447,13 +435,14 @@ bool History::emit(Core &core, RenderQueue &target, double t) const {
   if (!compatible(core, why)) {
     return false;
   }
-  const auto recipe = world_scene::sample(previous_->source, current_->source, t);
+  const auto recipe = world_scene::sample(pair_.previous()->source, pair_.current()->source, t);
   // Both endpoints and every interior sample draw into the CURRENT owned destination.
-  const auto plan = world_scene_submitter::prepare(current_->draw, target, kProducerKey, recipe);
+  const auto plan =
+      world_scene_submitter::prepare(pair_.current()->draw, target, kProducerKey, recipe);
   lucent::debug(
       "worldtemporal",
       "world sample frame={} t={} recipe={} reason={} plan={} faces={} candidates={} rejected={}",
-      serial_,
+      frameSerial(),
       t,
       static_cast<unsigned>(recipe.status),
       recipe.refusal,

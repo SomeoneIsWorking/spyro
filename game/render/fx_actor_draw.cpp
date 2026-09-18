@@ -3,6 +3,7 @@
 #include "actor_emit.h"
 #include "actor_recipe_capture.h"
 #include "actor_scene_builder.h"
+#include "actor_stage.h"
 #include "actor_temporal.h"
 #include "core.h"
 #include "game.h"
@@ -70,11 +71,11 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
                   "REFUSED stage={} recipe={} reason={} prefix_status={} submission={} record={} "
                   "source_word={} words={:08X},{:08X} records={} candidates={} source_scanned={} "
                   "source_queued={} source_culled={} coarse={} view={} invalid_model={}",
-                  spyro::actor_emit::statusName(prepared.status),
+                  spyro::actor_stage::name(prepared.status),
                   (uint32_t)recipe.status,
                   (uint32_t)recipe.firstReason,
                   firstPrefixStatus,
-                  spyro::actor_face_submitter::statusName(prepared.plan.status),
+                  spyro::actor_face_submitter::statusName(prepared.plan.submitter.status),
                   recipe.firstUnsupportedRecord,
                   recipe.firstUnsupportedSourceWord,
                   recipe.firstUnsupportedWords[0],
@@ -101,7 +102,7 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
                 recipe.rejectedCandidates,
                 recipe.faces.size(),
                 sceneFrame.shadows.size(),
-                prepared.plan.admission.existingObjects);
+                prepared.plan.submitter.admission.existingObjects);
   lucent::debug("actordirect",
                 "source scanned={} queued={} culled={}",
                 census.scanned,

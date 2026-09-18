@@ -5,6 +5,7 @@
 #include "fx_paired_actor.h"
 #include "presentation_owner.h"
 #include "runtime_run.h"
+#include "secondary_actor_temporal.h"
 #include "temporal_scene.h"
 #include "world_temporal.h"
 
@@ -18,6 +19,7 @@ struct SpyroContext {
   SpyroPairedActorFrameState pairedActor{};
   spyro::world_temporal::History worldTemporal{};
   spyro::actor_temporal::History actorTemporal{};
+  spyro::secondary_actor_temporal::History secondaryActorTemporal{};
   SpyroTemporalSceneAdmission temporalAdmission{};
   SpyroPresentationOwner presentationOwner{};
 };

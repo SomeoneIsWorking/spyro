@@ -39,11 +39,10 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
 of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
-issue 0110). The world, the player model and now the regular actor layer are reconstructed in an
-in-between present, carrying 2,109,213 interpolated prims over 3,374 extra presents (0.560 of
-captured items). Next: give the remaining FIELD producers — secondary actors, world-shaded sprites,
-shadows, particles — their own temporal sources, and measure a frame-time budget on a released
-host. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
+issue 0110). The world, the player model, the regular actor layer and now the secondary actor layer
+are reconstructed in an in-between present. Next: give the remaining FIELD producers — world-shaded
+sprites, shadows, particles — their own temporal sources, and measure a frame-time budget on a
+released host. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
 a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
 conformance.
 
@@ -785,6 +784,31 @@ have no predecessor, and the sampler refused none. The 485-comparison per-frame 
 still matches the full-console reference with zero divergences, so the logic-frame route is
 unchanged. Secondary actors (0x80020F34), world-shaded sprites (0x80022A2C), shadows, particles,
 glow and tracers still replay verbatim in an in-between present.
+
+Secondary actors — the 0x80020F34 layer, the second largest FIELD actor layer — gained their own
+temporal source on 2026-09-19. It owns nothing the regular layer already owns: the endpoint
+lifecycle and the consecutive-frame admission rule are `spyro::temporal::Pair`, the pairing and the
+measured identity rule are `spyro::actor_pairing`, and the route from a ready recipe to the queue is
+`actor_submission`. Only two things are this layer's own. Its endpoint is the whole secondary scene
+frame rather than a record corpus, because the recipe reads the frame's per-record lighting control
+word and its shadow list. And its records sit inside a larger per-actor struct, which is why the
+shared pairing takes pointers: one implementation serves a flat record vector and a nested one.
+
+Measured on 2026-09-19 over the same 7,200-field Artisans replay: the looks-right fps60 leg reports
+2,141,330 interpolated prims across the same 3,374 extra presents, against 2,109,213 before, and the
+reaches and widescreen verdicts still pass. The FIELD composition runs on 430 of 3,382 logic frames
+— the replay's Artisans stretch — and refuses none of them; the secondary interval is admitted on
+429 of those 430. Across 2,145 reconstructions 2,135 records carry a sampled pose, 10 are
+incompatible, none is unpaired and the sampler refused none. The gain is small because this route
+passes few secondary actors: driven to Artisans through `tools/drive.py gameplay` and walked left,
+the layer draws up to 82 faces per frame with 557 of 567 reconstructions sampled. Prim counts and
+admission rates prove the path is exercised, not that the motion is smooth, and no frame-time budget
+has been measured on any released host.
+
+`fx_secondary_actor.cpp` was removed in the same change. It was a standalone secondary producer with
+no caller: the live owner has been `fx_field_actor_composition` since issue 0099, because the
+secondary and world-shaded layers share one guest shadow-list transaction. A dead second
+implementation of a producer is exactly the drift the one-owner rule exists to prevent.
 
 The first compatibility rule was wrong, and the census is what found it. The draw record's header
 word packs the keyframe blend factor beside the coordinate shift, so requiring the whole word to

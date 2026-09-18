@@ -1,3 +1,4 @@
+#include "actor_pairing.h"
 #include "actor_record_fixture.h"
 #include "actor_temporal.h"
 #include "core.h"
@@ -43,11 +44,11 @@ void test_exact_producer_membership() {
   CHECK(!source->owns(item));
   item.layer = RQ_WORLD;
   item.painter_object = spyro::world_temporal::kProducerKey;
-  context.worldTemporal.eligible = true;
+  context.worldTemporal.admit(true);
   CHECK(source->owns(item));
   item.painter_object = spyro::actor_draw::kProducerKey;
   CHECK(!source->owns(item));
-  context.actorTemporal.eligible = true;
+  context.actorTemporal.admit(true);
   CHECK(source->owns(item));
   auto other = std::make_unique<Game>();
   SpyroContext otherContext;
@@ -332,7 +333,7 @@ void test_regular_actor_interval_reconstructs_authored_motion() {
   history.retain({spyro::test_fixture::actorRecord(0x80010000u, 1024)});
 
   // The logic frame's own picture, which presentation captures and the midpoint replaces.
-  spyro::actor_temporal::Census census{};
+  spyro::actor_pairing::Census census{};
   CHECK(history.emit(game->core, game->rq, 1.0, census) == spyro::actor_temporal::Status::Ready);
   CHECK_EQ(census.actors, 1u);
   CHECK_EQ(census.interpolated, 1u);
@@ -345,7 +346,7 @@ void test_regular_actor_interval_reconstructs_authored_motion() {
 
   const std::vector<uint8_t> ramBefore(std::begin(game->core.ram), std::end(game->core.ram));
   spyro_temporal_scene_prepare(game->core);
-  CHECK(history.eligible);
+  CHECK(history.eligible());
   const auto source = spyro_temporal_scene_source(*game);
   CHECK(source->eligible(game->core));
   CHECK(source->owns(endpoint));
@@ -382,7 +383,7 @@ void test_single_actor_endpoint_is_not_an_interval() {
   context.actorTemporal.begin(1, false, true);
   context.actorTemporal.retain({spyro::test_fixture::actorRecord(0x80010000u, 0)});
   spyro_temporal_scene_prepare(game->core);
-  CHECK(!context.actorTemporal.eligible);
+  CHECK(!context.actorTemporal.eligible());
   RqItem item{};
   item.layer = RQ_WORLD;
   item.has_xyf = true;
@@ -732,7 +733,7 @@ void test_joint_world_camera_admission_preserves_live_state() {
   core.rsub.projParams.setGeomOffset(13, 17);
   spyro_temporal_scene_prepare(core);
   CHECK(paired.temporal_eligible);
-  CHECK(history.eligible);
+  CHECK(history.eligible());
   CHECK_EQ(core.rsub.census.primsSeen(), census);
   CHECK_EQ(game->rq.pushed_total, pushes);
   CHECK_EQ(game->rq.n, static_cast<int>(captured.size()));
@@ -768,20 +769,20 @@ void test_joint_world_camera_admission_preserves_live_state() {
     ++frame.transform.sceneCamera.position[0];
     spyro_temporal_scene_prepare(core);
     CHECK(paired.temporal_eligible);
-    CHECK(!history.eligible);
+    CHECK(!history.eligible());
     --frame.transform.sceneCamera.position[0];
     --frame.frameSerial;
     spyro_temporal_scene_prepare(core);
     CHECK(paired.temporal_eligible);
-    CHECK(!history.eligible);
+    CHECK(!history.eligible());
     ++frame.frameSerial;
   }
   spyro_temporal_scene_prepare(core);
-  CHECK(history.eligible);
+  CHECK(history.eligible());
   presentation.presentRotate();
   CHECK(history.current() == nullptr);
   CHECK(history.previous() != nullptr);
-  CHECK(!history.eligible);
+  CHECK(!history.eligible());
   CHECK(!paired.temporal_eligible);
 }
 

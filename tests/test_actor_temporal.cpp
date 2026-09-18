@@ -1,5 +1,7 @@
 #include "actor_temporal.h"
 
+#include "actor_pairing.h"
+
 #include "actor_prefix_builder.h"
 #include "actor_record_fixture.h"
 
@@ -11,7 +13,9 @@
 namespace {
 
 using spyro::actor_recipe_capture::Record;
-using namespace spyro::actor_temporal;
+using namespace spyro::actor_pairing;
+using spyro::actor_temporal::Endpoint;
+using spyro::actor_temporal::History;
 
 unsigned checks = 0;
 
@@ -23,8 +27,14 @@ void require(bool condition, const char *what) {
   }
 }
 
-Endpoint endpointOf(std::vector<Record> records, uint64_t serial) {
-  return Endpoint{std::move(records), serial};
+// Exactly what a temporal source does with a pair: copy the current endpoint and sample it in
+// place against its predecessor, through the shipping pairing owner. The endpoint's frame serial
+// is the pair's bookkeeping, not the corpus's, so it plays no part here.
+std::vector<Record>
+sampleAt(const Endpoint &previous, const Endpoint &current, double t, Census &census) {
+  std::vector<Record> sampled = current;
+  sample(previous, sampled, t, census);
+  return sampled;
 }
 
 void test_compatibility_names_every_identity_field() {
@@ -92,27 +102,27 @@ void test_compatibility_names_every_identity_field() {
 void test_endpoints_are_reproduced_exactly_and_the_midpoint_is_not() {
   // The actor moves both across the screen and away from the camera, so the sample has to move
   // the projected position AND the depth key it is sorted by.
-  const auto previous = endpointOf({spyro::test_fixture::actorRecord(0x80010000u, 0, 4096)}, 10);
-  const auto current = endpointOf({spyro::test_fixture::actorRecord(0x80010000u, 1024, 8192)}, 11);
+  const auto previous = Endpoint{spyro::test_fixture::actorRecord(0x80010000u, 0, 4096)};
+  const auto current = Endpoint{spyro::test_fixture::actorRecord(0x80010000u, 1024, 8192)};
 
   std::vector<Record> sampled;
   Census census{};
 
-  sample_records(previous, current, 1.0, sampled, census);
+  sampled = sampleAt(previous, current, 1.0, census);
   require(census.actors == 1 && census.interpolated == 1, "t=1 did not interpolate the pair");
-  require(spyro::actor_prefix::compareOutputs(current.records[0].expected, sampled[0].expected)
-                  .mismatches == 0,
-          "t=1 did not reproduce the current endpoint exactly");
+  require(
+      spyro::actor_prefix::compareOutputs(current[0].expected, sampled[0].expected).mismatches == 0,
+      "t=1 did not reproduce the current endpoint exactly");
   const int32_t atOne = sampled[0].expected.vertices[0].projected.sx;
 
-  sample_records(previous, current, 0.0, sampled, census);
+  sampled = sampleAt(previous, current, 0.0, census);
   {
     // At t=0 the GEOMETRY is the previous endpoint's, exactly. The record's identity — its header,
     // colours, primitive words and transform snapshot — still comes from the current frame, which
     // is what makes the sample a member of the current frame's corpus rather than a replay of the
     // previous one.
     const auto &zero = sampled[0].expected;
-    const auto &was = previous.records[0].expected;
+    const auto &was = previous[0].expected;
     require(zero.vertices.size() == was.vertices.size(), "t=0 lost a vertex");
     for (size_t i = 0; i < zero.vertices.size(); ++i) {
       require(zero.vertices[i].projected.sx == was.vertices[i].projected.sx &&
@@ -125,7 +135,7 @@ void test_endpoints_are_reproduced_exactly_and_the_midpoint_is_not() {
   const int32_t atZero = sampled[0].expected.vertices[0].projected.sx;
   require(atZero != atOne, "the fixture's endpoints are indistinguishable");
 
-  sample_records(previous, current, 0.5, sampled, census);
+  sampled = sampleAt(previous, current, 0.5, census);
   require(census.interpolated == 1 && census.unpaired == 0 && census.incompatible == 0 &&
               census.refused == 0,
           "the midpoint was not interpolated");
@@ -135,8 +145,8 @@ void test_endpoints_are_reproduced_exactly_and_the_midpoint_is_not() {
   require(atHalf > std::min(atZero, atOne) && atHalf < std::max(atZero, atOne),
           "the midpoint is not strictly between the endpoints");
   const uint32_t depthAtHalf = sampled[0].expected.controls[15];
-  const uint32_t depthAtZero = previous.records[0].expected.controls[15];
-  const uint32_t depthAtOne = current.records[0].expected.controls[15];
+  const uint32_t depthAtZero = previous[0].expected.controls[15];
+  const uint32_t depthAtOne = current[0].expected.controls[15];
   require(depthAtZero != depthAtOne, "the fixture's endpoints share a depth key");
   require(depthAtHalf > std::min(depthAtZero, depthAtOne) &&
               depthAtHalf < std::max(depthAtZero, depthAtOne),
@@ -144,14 +154,14 @@ void test_endpoints_are_reproduced_exactly_and_the_midpoint_is_not() {
 }
 
 void test_unpaired_actors_are_shown_at_their_own_endpoint() {
-  const auto previous = endpointOf({spyro::test_fixture::actorRecord(0x80010000u, 0)}, 3);
+  const auto previous = Endpoint{spyro::test_fixture::actorRecord(0x80010000u, 0)};
   auto currentRecords = std::vector<Record>{spyro::test_fixture::actorRecord(0x80010000u, 1024),
                                             spyro::test_fixture::actorRecord(0x80010040u, 512)};
-  const auto current = endpointOf(currentRecords, 4);
+  const auto &current = currentRecords;
 
   std::vector<Record> sampled;
   Census census{};
-  sample_records(previous, current, 0.5, sampled, census);
+  sampled = sampleAt(previous, current, 0.5, census);
   require(census.actors == 2, "the census lost a record");
   require(census.interpolated == 1 && census.unpaired == 1 && census.incompatible == 0 &&
               census.refused == 0,
@@ -165,8 +175,8 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
 
   // A record the producer could not attribute to an instance is unpairable on both sides.
   auto anonymousRecords = std::vector<Record>{spyro::test_fixture::actorRecord(0, 1024)};
-  const auto anonymous = endpointOf(anonymousRecords, 4);
-  sample_records(anonymous, anonymous, 0.5, sampled, census);
+  const auto &anonymous = anonymousRecords;
+  sampled = sampleAt(anonymous, anonymous, 0.5, census);
   require(census.actors == 1 && census.unpaired == 1 && census.interpolated == 0,
           "a record with no instance identity was paired");
 
@@ -175,8 +185,8 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
   auto recycledRecords = std::vector<Record>{spyro::test_fixture::actorRecord(0x80010000u, 1024)};
   recycledRecords[0].input.header = 0x01000000u;
   recycledRecords[0].expected = spyro::actor_prefix::build(recycledRecords[0].input);
-  const auto recycled = endpointOf(recycledRecords, 4);
-  sample_records(previous, recycled, 0.5, sampled, census);
+  const auto &recycled = recycledRecords;
+  sampled = sampleAt(previous, recycled, 0.5, census);
   require(census.actors == 1 && census.incompatible == 1 && census.unpaired == 0 &&
               census.interpolated == 0,
           "a recycled instance was not counted apart from an absent one");
@@ -187,17 +197,16 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
 
   // A Moby drawn twice is two records, and identity alone cannot say which pose belongs to which
   // draw. Occurrence order can, so the second draw pairs only when last frame had a second draw.
-  const auto doubled = endpointOf({spyro::test_fixture::actorRecord(0x80010000u, 0),
-                                   spyro::test_fixture::actorRecord(0x80010000u, 2048)},
-                                  5);
-  sample_records(previous, doubled, 0.5, sampled, census);
+  const auto doubled = Endpoint{spyro::test_fixture::actorRecord(0x80010000u, 0),
+                                spyro::test_fixture::actorRecord(0x80010000u, 2048)};
+  sampled = sampleAt(previous, doubled, 0.5, census);
   require(census.actors == 2 && census.interpolated == 1 && census.unpaired == 1,
           "a second draw of one instance reused the first draw's pose");
-  sample_records(doubled, doubled, 0.5, sampled, census);
+  sampled = sampleAt(doubled, doubled, 0.5, census);
   require(census.actors == 2 && census.interpolated == 2,
           "two draws of one instance were not paired in occurrence order");
   require(sampled[1].expected.vertices[0].projected.sx ==
-              doubled.records[1].expected.vertices[0].projected.sx,
+              doubled[1].expected.vertices[0].projected.sx,
           "the second draw was paired against the first draw's pose");
 }
 

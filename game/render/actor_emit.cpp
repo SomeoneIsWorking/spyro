@@ -2,29 +2,12 @@
 
 #include "core.h"
 #include "game.h"
-#include "producer_scope.h"
 #include "render_queue.h"
 
 #include <cstdlib>
 #include <lucent/log.h>
 
 namespace spyro::actor_emit {
-
-const char *statusName(Status status) {
-  switch (status) {
-  case Status::Ready:
-    return "ready";
-  case Status::ValidEmpty:
-    return "valid-empty";
-  case Status::Recipe:
-    return "recipe";
-  case Status::Submission:
-    return "submission";
-  case Status::DrawArea:
-    return "draw-area";
-  }
-  return "unknown";
-}
 
 Prepared prepare(const Core &core,
                  const RenderQueue &queue,
@@ -33,27 +16,20 @@ Prepared prepare(const Core &core,
   Prepared prepared{};
   prepared.recipe = actor_recipe_capture::compose_records(records, prepared.outputs);
   if (prepared.recipe.status == actor_draw_recipe::Status::ValidEmpty) {
+    // There are no faces to plan, so the plan reports the same completed-empty state rather than
+    // the never-ran default. Publication then has one state to read, not two.
     prepared.status = Status::ValidEmpty;
+    prepared.plan.status = Status::ValidEmpty;
     return prepared;
   }
   if (prepared.recipe.status != actor_draw_recipe::Status::Ready) {
     prepared.status = Status::Recipe;
     return prepared;
   }
+  // The planner reports its refusal in the same vocabulary, so it is carried, not translated.
   prepared.plan =
-      actor_face_submitter::prepare(queue, producerKey, prepared.outputs, prepared.recipe.faces);
-  if (prepared.plan.status != actor_face_submitter::Status::Ready) {
-    prepared.status = Status::Submission;
-    return prepared;
-  }
-  // The destination is part of the plan: an inverted draw area means the frame has no place to put
-  // these faces, and discovering that after publication would leave the queue holding them.
-  const GpuState &gpu = core.game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
-    prepared.status = Status::DrawArea;
-    return prepared;
-  }
-  prepared.status = Status::Ready;
+      actor_submission::prepare(core, queue, producerKey, prepared.outputs, prepared.recipe.faces);
+  prepared.status = prepared.plan.status;
   return prepared;
 }
 
@@ -62,23 +38,20 @@ void publish(Core &core,
              uint32_t producerKey,
              const char *producerName,
              const Prepared &prepared) {
-  if (prepared.status == Status::ValidEmpty) {
-    return;
-  }
-  if (prepared.status != Status::Ready) {
+  if (prepared.status != Status::Ready && prepared.status != Status::ValidEmpty) {
     lucent::error("actordirect",
                   "FATAL: publish of producer 0x{:08X} in state {}",
                   producerKey,
-                  statusName(prepared.status));
+                  actor_stage::name(prepared.status));
     std::abort();
   }
-  ProducerScope producer(&core.rsub.producerScope, producerKey, producerName);
-  actor_face_submitter::submit(&core,
-                               queue,
-                               producerKey,
-                               actor_face_submitter::Layer::Regular,
-                               prepared.recipe.faces,
-                               prepared.plan);
+  actor_submission::publish(core,
+                            queue,
+                            producerKey,
+                            producerName,
+                            actor_face_submitter::Layer::Regular,
+                            prepared.recipe.faces,
+                            prepared.plan);
 }
 
 } // namespace spyro::actor_emit

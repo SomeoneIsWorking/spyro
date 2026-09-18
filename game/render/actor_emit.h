@@ -1,8 +1,8 @@
 #pragma once
 
 #include "actor_draw_recipe.h"
-#include "actor_face_submitter.h"
 #include "actor_recipe_capture.h"
+#include "actor_submission.h"
 
 #include <cstdint>
 #include <span>
@@ -13,10 +13,7 @@ struct RenderQueue;
 
 namespace spyro::actor_emit {
 
-enum class Status : uint8_t { Ready, ValidEmpty, Recipe, Submission, DrawArea };
-
-// Named so a refusal reports WHICH stage declined rather than a bare enum value.
-const char *statusName(Status status);
+using Status = actor_stage::Emit;
 
 // Everything one regular-actor record corpus needs in order to reach a queue, resolved without
 // touching either the queue or guest state.
@@ -29,7 +26,7 @@ struct Prepared {
   Status status = Status::ValidEmpty;
   std::vector<actor_prefix::Output> outputs;
   actor_draw_recipe::Recipe recipe;
-  actor_face_submitter::Plan plan;
+  actor_submission::Plan plan;
 };
 
 Prepared prepare(const Core &core,

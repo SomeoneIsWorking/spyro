@@ -2,6 +2,7 @@
 
 #include "image_identity.h"
 #include "scene_camera_inputs.h"
+#include "temporal_pair.h"
 #include "world_scene_submitter.h"
 #include "world_source.h"
 
@@ -51,24 +52,27 @@ public:
   bool camerasMatch(const SpyroPairedFrame &previous, const SpyroPairedFrame &current) const;
   bool emit(Core &core, RenderQueue &target, double t) const;
   uint64_t frameSerial() const {
-    return serial_;
+    return pair_.serial();
   }
   const Frame *previous() const {
-    return previous_ ? &*previous_ : nullptr;
+    return pair_.previous();
   }
   const Frame *current() const {
-    return current_ ? &*current_ : nullptr;
+    return pair_.current();
   }
-  bool eligible = false;
+  bool eligible() const {
+    return pair_.eligible();
+  }
+  void admit(bool eligible) {
+    pair_.admit(eligible);
+  }
 
 private:
-  std::optional<Frame> previous_;
-  std::optional<Frame> current_;
-  uint64_t serial_ = 0;
-  uint64_t scene_ = 0;
-  bool active_ = false;
-  bool seen_ = false;
-  bool refused_ = false;
+  // The endpoint lifecycle and the consecutive-frame admission rule are the same ones the two
+  // actor sources use; only what an endpoint IS, and what makes two of them compatible, is the
+  // world's own. A `Frame` still carries its serial because the paired-actor source compares
+  // against it to prove both sources described the same logic frame.
+  temporal::Pair<Frame> pair_;
 };
 
 } // namespace spyro::world_temporal

@@ -87,7 +87,7 @@ void test_owned_source_and_current_destination() {
   f.game->gpu.s_da_y1 = 2;
   const std::vector<uint8_t> before(std::begin(core.ram), std::end(core.ram));
   spyro_temporal_scene_prepare(core);
-  CHECK(f.context.worldTemporal.eligible);
+  CHECK(f.context.worldTemporal.eligible());
   CHECK_EQ(f.context.pairedActor.temporal.calls, 0u);
   CHECK_EQ(core.rsub.projParams.projH(), 7u);
   CHECK_EQ(core.rsub.projParams.geomOfx(), 0.0f);
@@ -148,7 +148,7 @@ void test_residency_checks_every_span_and_generation() {
   core.imageCatalog().activate("synthetic equal-byte reload", last, 1u);
   CHECK(!history.compatible(core, why));
   spyro_temporal_scene_prepare(core);
-  CHECK(!history.eligible);
+  CHECK(!history.eligible());
 }
 
 void test_lifecycle_refuses_stale_or_duplicate_sources() {
@@ -195,7 +195,7 @@ void test_draw_policy_changes_refuse_without_losing_destination_ownership() {
   const char *why = nullptr;
   CHECK(!history.compatible(f.game->core, why));
   spyro_temporal_scene_prepare(f.game->core);
-  CHECK(!history.eligible);
+  CHECK(!history.eligible());
   history.begin(1, false, true);
   f.draw.areaLeft = f.draw.areaRight + 1;
   CHECK(!history.retain(f.game->core, f.source, f.draw));
@@ -222,7 +222,7 @@ void test_midpoint_visibility_admission_and_refusal() {
   f.draw = emptyPlan.draw;
   f.interval(previous, current);
   spyro_temporal_scene_prepare(f.game->core);
-  CHECK(f.context.worldTemporal.eligible);
+  CHECK(f.context.worldTemporal.eligible());
   auto target = std::make_unique<RenderQueue>();
   target->game = f.game.get();
   CHECK(f.context.worldTemporal.emit(f.game->core, *target, 0.5));
@@ -255,7 +255,7 @@ void test_midpoint_visibility_admission_and_refusal() {
     f.context.worldTemporal.rotate();
     f.interval(badPrevious, badCurrent);
     spyro_temporal_scene_prepare(f.game->core);
-    CHECK(!f.context.worldTemporal.eligible);
+    CHECK(!f.context.worldTemporal.eligible());
     CHECK(spyro::world_scene::build(badPrevious).status == spyro::world_recipe::Status::ValidEmpty);
     CHECK(spyro::world_scene::build(badCurrent).status == spyro::world_recipe::Status::ValidEmpty);
   }
@@ -298,7 +298,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   const std::vector<uint8_t> before(std::begin(core.ram), std::end(core.ram));
   f.interval(previous, current);
   spyro_temporal_scene_prepare(core);
-  CHECK(f.context.worldTemporal.eligible);
+  CHECK(f.context.worldTemporal.eligible());
   CHECK(std::equal(before.begin(), before.end(), std::begin(core.ram)));
   const auto *retained = f.context.worldTemporal.previous();
   CHECK(retained != nullptr);
@@ -317,7 +317,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
       "synthetic animation data reload", {animationSet, payload + 16u}, 2u);
   f.retain(current);
   spyro_temporal_scene_prepare(core);
-  CHECK(!f.context.worldTemporal.eligible);
+  CHECK(!f.context.worldTemporal.eligible());
   CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == unchanged);
   CHECK_EQ(f.context.worldTemporal.previous()->source.selection.sectors[0]->animation, 0xffffff00u);
   CHECK(std::equal(before.begin(), before.end(), std::begin(core.ram)));
@@ -328,7 +328,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   core.ram[payload] ^= 1u; // Content changes without an image-generation change.
   f.retain(current);
   spyro_temporal_scene_prepare(core);
-  CHECK(!f.context.worldTemporal.eligible);
+  CHECK(!f.context.worldTemporal.eligible());
   CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == beforeMutation);
 
   f.retain(previous);
@@ -338,7 +338,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
       "new animation slot owner", {animationSetSlot, animationSetSlot + 4u}, 2u);
   f.retain(current);
   spyro_temporal_scene_prepare(core);
-  CHECK(!f.context.worldTemporal.eligible);
+  CHECK(!f.context.worldTemporal.eligible());
   CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == beforeOwnership);
 }
 

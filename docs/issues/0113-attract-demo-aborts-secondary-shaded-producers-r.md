@@ -1,11 +1,11 @@
 ---
 id: 113
-title: "Secondary actors abort outside Artisans: the specular lighting program is unimplemented"
+title: "Secondary actors abort outside Artisans: the per-face colour program is unimplemented"
 status: open
-symptom: the port aborts with 'secondary/shaded actor producers 0x80020F34/0x80022A2C refused their combined atomic recipe' whenever a secondary actor with control bit 2 is drawn; first seen in the attract demo, now reproduced on demand by entering Stone Hill
+symptom: the port aborts with 'secondary/shaded actor producers 0x80020F34/0x80022A2C refused their combined atomic recipe' whenever a secondary actor with control bit 2 is drawn; first seen in the attract demo, then reproduced on demand by entering Stone Hill
 tags: render,field,actor,secondary,lighting,re,crash
 created: 2026-09-14
-updated: 2026-09-18
+updated: 2026-09-19
 ---
 
 ## Symptom
@@ -36,94 +36,94 @@ demo simply happened to be the only route that drew such an actor; the discrimin
 not the demo. Every ordinary driven run stayed inside Artisans, whose secondary actors do not use
 this program, which is why nothing saw it for so long.
 
-## Root cause
+## What bit 2 actually selects
 
-`fieldactors` names it exactly:
+The measured refusal carried `control=0x038181A6`. Bit 31 is clear, so the face is a TRIANGLE, and
+`func_80020F34` (external/spyro-1 `asm/renderers/r_moby.s`) dispatches on bit 2 differently for the
+two topologies:
 
-```
-[fieldactors] REFUSED secondary recipe=3 reason=0 record=0 source_word=65
-```
+| face | where bit 2 branches | what it is |
+|---|---|---|
+| quad (`words[0] < 0`) | `0x800217E0` -> `.L8002256C` | a camera-facing textured billboard: one projected vertex, a depth-cued half-size, and a GT4 packet built from four screen-aligned corners |
+| triangle | `0x80021B64` sets `$a1`, `0x80021C0C` -> `.L80021DB4` | one computed colour for all three vertices, replacing the three material-table colours |
 
-Status 3 is `secondary_actor_recipe::Status::UnsupportedLighting`. `game/render/secondary_actor_recipe.cpp`
-refuses any emitted candidate whose first prefix word has bit 2 set:
+The evaluator already refuses the quad arm as `Reason::Ft4` and advances the prefix cursor by its
+five words, which is correct and unchanged. The triangle arm is the one this issue is about.
 
-```cpp
-// Bit 2 selects the distinct view-normal/specular program at 0x80021C70.
-// Base material colour does not reproduce that lighting contract.
-if (candidate.evaluation.emitted && (candidate.input.words[0] & 4u) != 0u) {
-```
+An earlier revision of this issue transcribed the triangle arm but attributed it to bit 2 on a quad
+and named its control word `$gp + 0x30` = `0x80075294`. Both were wrong: `$gp` is repurposed as a
+cursor into `D_8006FCF4 + 0x1600` from `0x80020F78` and restored from LO at `0x8002287C`, so the
+word is the draw record's own `+0x30`. Both record builders copy it there from the Moby's `+0x4C`
+(`0x80020CA0` reads `0x4C($sp)` with `$sp` holding the Moby, and stores `$sp` itself at `+0x34`),
+which the port already captures as `secondary_actor_scene::Record::lightingControl`.
 
-The refusal is the designed deliverable for an unported variant, not a defect in itself. The gap is
-the missing program: retail's `func_80020F34` (external/spyro-1 `asm/renderers/r_moby.s`, from asm
-line 2069; the arm begins at guest `0x80021C70`) computes a per-face specular term from the view
-normal instead of taking the base material colour. It is not decompiled to C, so recovering it is
-MIPS reading.
+## The triangle program, transcribed
 
-## The program, transcribed (2026-09-18)
-
-`func_80020F34` keeps two spare registers in HI and LO for its whole run. `mtlo $gp` at `0x8002173C`
-parks the real global pointer so `$gp` can be repurposed as the vertex-scratch cursor, and
-`mthi $at` at `0x80021768` parks the word at `$gp + 0x30` = `0x80075294`, which selects between the
-two per-face colour programs. Measured at the refusal: `0x00535245`. Its top byte is the selector —
-zero here, which is what sends the face into the specular arm rather than the additive one at
-`0x80021FE0`.
-
-Control bit 2 branches at `0x80021C0C` into `.L80021DB4`. The arm computes ONE colour and uses it
-for all of the face's vertices, then rejoins the ordinary emission path at `.L80021C14` with
-`$t2 = $t3 = $t4` set to it; the ordinary path would instead have taken three colours from the
-material table at `words[1]` offsets `(>>17)&0x7FC`, `(>>8)&0x7FC`, `(<<1)&0x7FC`, which is exactly
-what `actor_draw_recipe.cpp` already reproduces.
+`func_80020F34` parks that word in HI at `0x80021768` for the model's whole face loop, and each
+face re-reads it with `mfhi`. Its top byte selects between two programs; the arm below is the one
+that runs when the top byte is zero.
 
 ```
-t6 = HI                              ; the program-select word
-if ((s32)t6 >> 24 != 0) -> 0x80021FE0 ; the other program
-t5 = LO                              ; both are restored before the jump back
+t6 = HI                               ; the Moby's +0x4C word
+if ((s32)t6 >> 24 != 0) -> 0x80021FE0  ; the other program
 
-; two edge vectors from the three vertices' scratch records
-IR1 = SY1-SY0 ; IR2 = lo(w1)-lo(w0) ; IR3 = hi(w1)-hi(w0)
-R11R12 = SY2-SY0 ; R22R23 = lo(w2)-lo(w0) ; R33 = hi(w2)-hi(w0)
+; two edge vectors from the three vertices' 8-byte projection records
+IR1 = x1-x0 ; IR2 = y1-y0 ; IR3 = z1-z0
+RT11 = x2-x0 ; RT22 = y2-y0 ; RT33 = z2-z0
 save RBK, GBK
-OP 0                                 ; cross product -> MAC1..3
+OP 0x4B70000C  (sf=0, lm=0)            ; cross product -> MAC1..3
 
 ; the material colour becomes the GTE background colour
 RBK = (t6 >> 6) & 0xFF0 ; GBK = t6 & 0xFF0 ; BBK = (t6 << 6) & 0xFF0
 
-; |n|, through the guest's own sqrt helper
+; |n|, through the same table libgte's own sqrt uses
 IR1 = MAC1>>4 ; IR2 = MAC3>>4 ; IR3 = MAC2>>4   ; note the 3/2 swap
-SQR 0 ; sum = MAC1+MAC2+MAC3
-LZCS = sum ; normalise, index D_80074B84, shift back  -> len   (0 when sum == 0)
+SQR 0x4AA00428 (sf=0, lm=1) ; sum = MAC1+MAC2+MAC3
+LZCS = sum ; normalise, index D_80074B84, shift back -> len
 
-LO = ((t6 >> 18) << 14) / len        ; the intensity
-; one colour, splayed across the light-colour matrix
+LO = ((t6 >> 18) << 14) / len          ; the intensity
 c0,c1,c2 = u16 [D_800770C8 + 0xC, +0x10, +0x14]
 LR1LR2 = c1<<16|c0 ; LR3LG1 = c0<<16|c2 ; LG2LG3 = c2<<16|c1 ; LB1LB2 = c1<<16|c0 ; LB3 = c2
 RGB = 0xFFFFFF ; IR0 = LO
-GPF 0                                ; MAC = IR0 * IR
+GPF 0x4B90003D (sf=0, lm=0)            ; MAC = IR0 * IR
 IR1..3 = MAC1..3 >> 8
-CC                                   ; MAC = BK*4096 + LCM*IR
-colour = RGB2 ; restore RBK, GBK, LO, HI
+CC  0x4B38041C (sf=1, lm=1)            ; MAC = BK*4096 + LCM*IR, then RGBC * IR
+colour = RGB2 ; restore RBK, GBK, LO, HI ; rejoin .L80021C14 with t2 = t3 = t4 = colour
 ```
 
-So the face colour is the material colour plus a light colour scaled by the screen-space face
-normal over its own length — a per-face directional term, not a per-vertex one. Every operation is
-a real GTE op, and the port already reaches the GTE through `gte_op` and reproduces this exact
-normalise/`D_80074B84`/shift tail in `game/core/native_gte.cpp`, so a native implementation does
-not need a second software GTE.
+The light-colour matrix ends up with all three rows equal to `(c0, c1, c2)`, so the term is
+uncoloured before the material background is added. The rejoin point is the only place the arm
+touches: nothing but the three vertex colours differs from the ordinary path.
 
-### What is still unmeasured
+The 8-byte per-vertex record is written by the projection loop at `0x800212B4`: `+0` is SZ3 and
+`+2`/`+4`/`+6` are the RTPS MAC1..3 outputs, so its cursor `D_8006FCF4 + 0x900 + (index << 1)` holds
+view-space coordinates, while the packed screen XY goes to the scratchpad at `0x1F800000`. The port
+takes those coordinates from its own projection's `raw_view_fixed`, never from guest scratch.
 
-Which native field each scratch half corresponds to. The arm reads a halfword at `+2` and a word at
-`+4` of an 8-byte per-vertex record at `(vertexByteOffset << 1) + D_8006FCF4 + 0x900`, and the
-projection loop at `0x800212B0` writes `SZ3`, `MAC1`, `MAC2`, `MAC3` as four halfwords at `$sp` and
-the packed `SXY2` as a word at `$fp`, so the mapping onto `PrimitiveInput::xy` and `::depth` is not
-yet pinned down. One runtime read of that record beside the native `projected` values settles it;
-the port must take the values from its own projection, not from guest scratch.
+## What the port does now
+
+`game/render/face_light_program.cpp` owns the transcribed arm as a pure function over the three
+view-space vertices, the control word, and a snapshot of the light colour and magnitude table that
+`face_light_environment` takes from the Core once per composition. `tests/test_face_light_program.cpp`
+runs the pure result against the real GTE for 23 faces through `GTE_ExecuteIsolated` and the same
+`mtc2`/`ctc2` register-transfer path the guest uses, which is what settles the shift and saturation
+flags; it also proves the comparison can fail.
+
+## What is still refused
+
+The other program at `0x80021FE0`, which a non-zero top byte selects. It adds a constant to each
+vertex colour's red byte with saturation, subtracts it from green and blue, and forces the packet's
+command byte to `0x34`, so it changes the emitted primitive rather than only its colours and does
+not belong in the colour path. `face_light::Status::Additive` names it, and a face that asks for it
+still refuses the whole call. Nothing has yet been observed reaching it.
+
+The quad billboard at `0x8002256C` is likewise still refused, as `Reason::Ft4`.
 
 ## Why it matters
 
-It is the first hard stop on any route that leaves Artisans, so it blocks representative gameplay
-(state item S011) rather than one cutscene. It also bounds what the oracle's `level` checkpoint can
-compare: the product dies partway through the segments that follow the level entry.
+It was the first hard stop on any route that leaves Artisans, so it blocked representative gameplay
+(state item S011) rather than one cutscene. It also bounded what the oracle's `level` checkpoint
+could compare.
 
 ## Not the same as issue 0103
 

@@ -65,7 +65,11 @@ struct Vertex {
 
 struct Output {
   Status status = Status::Stream;
-  uint32_t moby = 0;                   // The guest Moby instance, or 0 when the source is not one.
+  uint32_t moby = 0; // The guest Moby instance, or 0 when the source is not one.
+  // The Moby's word at +0x4C, which both record builders copy to the draw record's +0x30 and
+  // func_80020F34 parks in HI for the model's whole face loop. It selects and parameterises the
+  // per-face colour program that bit 2 of a triangle's prefix word asks for.
+  uint32_t lightingControl = 0;
   std::array<uint32_t, 16> controls{}; // CR0..7 and CR13..15 at their numeric indices.
   std::vector<Vertex> vertices;
   std::vector<uint32_t> colors;

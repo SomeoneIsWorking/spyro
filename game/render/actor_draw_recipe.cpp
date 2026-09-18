@@ -38,8 +38,17 @@ uint32_t vertexOffset(uint32_t word, unsigned index) {
   return (word >> shifts[index]) & 0x7fcu;
 }
 
+// The three halfwords retail's projection loop stores at 0x800212C0: the RTPS MAC1..3 outputs,
+// truncated on their way into memory.
+face_light::ViewVertex view_vertex(const psxport::native_projection::NativeProjectedVertex &v) {
+  return {(int16_t)(uint16_t)(uint32_t)(int32_t)(v.raw_view_fixed[0] >> 12),
+          (int16_t)(uint16_t)(uint32_t)(int32_t)(v.raw_view_fixed[1] >> 12),
+          (int16_t)(uint16_t)(uint32_t)(int32_t)(v.raw_view_fixed[2] >> 12)};
+}
+
 bool populate(const actor_prefix::Output &record,
               uint32_t sourceWord,
+              const face_light::Environment &lighting,
               PrimitiveInput &out,
               Reason &reason) {
   if (sourceWord >= record.primitiveWords.size()) {
@@ -74,6 +83,7 @@ bool populate(const actor_prefix::Output &record,
     out.screenX[i] = vertex.projected.px;
     out.screenY[i] = vertex.projected.py;
     out.viewZ[i] = vertex.projected.pz;
+    out.view[i] = view_vertex(vertex.projected);
   }
   const uint32_t material = out.words[1];
   const uint32_t offsets[] = {(material >> 17) & 0x7fcu,
@@ -88,6 +98,19 @@ bool populate(const actor_prefix::Output &record,
     out.color[i] = record.colors[offsets[i] / 4u];
   }
   out.color[0] &= 0x00ffffffu;
+  out.lightingControl = record.lightingControl;
+  // Bit 2 on a triangle replaces all three material colours with one computed term. On a quad the
+  // same bit means the separate billboard program at 0x8002256C, which evaluate() refuses as Ft4.
+  if (!quad && (out.words[0] & 4u) != 0u) {
+    const auto lit = face_light::face_color(
+        {out.view[0], out.view[1], out.view[2]}, out.lightingControl, lighting);
+    out.lighting = lit.status;
+    if (lit.status == face_light::Status::Ready) {
+      out.color[0] = lit.color;
+      out.color[1] = lit.color;
+      out.color[2] = lit.color;
+    }
+  }
   return true;
 }
 
@@ -226,6 +249,13 @@ Evaluation evaluate(const PrimitiveInput &s) {
     out.reason = Reason::Depth;
     return out;
   }
+  // Retail reaches its two per-face colour programs only after culling, at 0x80021C0C, so a face
+  // that never survives to be drawn never needs one and must not refuse the call on its behalf.
+  if (!quad && (control & 4u) != 0u && s.lighting != face_light::Status::Ready) {
+    out.supported = false;
+    out.reason = Reason::FaceLight;
+    return out;
+  }
   out.family = full ? (textured ? Family::GT4 : Family::G4) : (textured ? Family::GT3 : Family::G3);
   out.localBin = q;
   out.payload = payload(s, out.family, second);
@@ -233,7 +263,8 @@ Evaluation evaluate(const PrimitiveInput &s) {
   return out;
 }
 
-Recipe compose(std::span<const actor_prefix::Output> records) {
+Recipe compose(std::span<const actor_prefix::Output> records,
+               const face_light::Environment &lighting) {
   Recipe recipe{};
   recipe.records = (uint32_t)records.size();
   const auto boundary = actor_prefix::classifyCall(records);
@@ -256,7 +287,7 @@ Recipe compose(std::span<const actor_prefix::Output> records) {
     while (source < record.primitiveWords.size()) {
       PrimitiveInput input{};
       Reason malformed = Reason::None;
-      if (!populate(record, source, input, malformed)) {
+      if (!populate(record, source, lighting, input, malformed)) {
         recipe.status = Status::Unsupported;
         recipe.firstReason = malformed;
         recipe.firstUnsupportedRecord = recordIndex;
@@ -281,6 +312,9 @@ Recipe compose(std::span<const actor_prefix::Output> records) {
         return recipe;
       }
       if (result.emitted) {
+        if ((int32_t)input.words[0] >= 0 && (input.words[0] & 4u) != 0u) {
+          ++recipe.faceLightFaces;
+        }
         recipe.faces.push_back({recordIndex,
                                 record.moby,
                                 source,

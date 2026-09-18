@@ -3,6 +3,7 @@
 #include "actor_face_submitter.h"
 #include "actor_recipe_capture.h"
 #include "core.h"
+#include "face_light_environment.h"
 #include "field_shaded_queue_recipe.h"
 #include "field_shaded_queue_scene.h"
 #include "field_shaded_queue_submitter.h"
@@ -68,18 +69,20 @@ spyro::ProducerRefusal spyro_field_actor_composition_submit(Core *core,
         record.actor.expected = spyro::actor_prefix::build(record.actor.input);
       }
     }
-    secondaryRecipe = spyro::secondary_actor_recipe::derive(secondaryFrame);
+    const spyro::face_light::EnvironmentSource lighting(core);
+    secondaryRecipe = spyro::secondary_actor_recipe::derive(secondaryFrame, lighting.environment());
     if (!secondaryReady(secondaryRecipe)) {
       return spyro::refuse(kChannel,
                            kSecondaryProducer,
                            "secondary recipe={} reason={} record={} source_word={} control=0x{:08X}"
-                           " program_select=0x{:08X}",
+                           " lighting=0x{:08X}/{}",
                            spyro::secondary_actor_recipe::status_name(secondaryRecipe.status),
                            (uint32_t)secondaryRecipe.firstReason,
                            secondaryRecipe.firstUnsupportedRecord,
                            secondaryRecipe.firstUnsupportedSourceWord,
                            secondaryRecipe.firstUnsupportedControl,
-                           core->mem_r32(spyro::guest::kSpecularProgramSelect));
+                           secondaryRecipe.firstUnsupportedLighting,
+                           spyro::face_light::status_name(secondaryRecipe.firstLightingStatus));
     }
     secondaryPlan = spyro::actor_face_submitter::prepare(
         core->game->rq, kSecondaryProducer, secondaryRecipe.outputs, secondaryRecipe.faces);
@@ -211,9 +214,10 @@ spyro::ProducerRefusal spyro_field_actor_composition_submit(Core *core,
         core, queue, kShadedProducer, shadedRecipe, shadedPlan);
   }
   lucent::debug("fieldactors",
-                "PASS secondary_faces={} shaded_faces={} secondary_shadows={} shaded_shadows={} "
-                "shadow_cursor=0x{:08X}",
+                "PASS secondary_faces={} face_light={} shaded_faces={} secondary_shadows={} "
+                "shaded_shadows={} shadow_cursor=0x{:08X}",
                 secondaryRecipe.faces.size(),
+                secondaryRecipe.faceLightFaces,
                 shadedRecipe.faces.size(),
                 secondaryFrame.shadows.size(),
                 shadedFrame.shadows.size(),

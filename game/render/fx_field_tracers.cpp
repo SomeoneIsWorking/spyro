@@ -1,5 +1,6 @@
 #include "fx_field_tracers.h"
 #include "guest_globals.h"
+#include "guest_magnitude.h"
 
 #include "core.h"
 #include "field_tracers_recipe.h"
@@ -38,17 +39,9 @@ int tracerMagnitude(Core *core, uint32_t value) {
   if (value == 0u) {
     return 0;
   }
-  const unsigned leading = (unsigned)__builtin_clz(value) & ~1u;
-  const int exponent = (31 - (int)leading) >> 1;
-  uint32_t normalized = 0;
-  if (leading >= 24u) {
-    normalized = value << (leading - 24u);
-  } else {
-    normalized = value >> (24u - leading);
-  }
-  const int32_t tableIndex = ((int32_t)(normalized - 0x40u)) << 1;
-  const int32_t tableValue = core->mem_r16s(kMagnitudeTable + (uint32_t)tableIndex);
-  return (int)((uint32_t)(tableValue << exponent) >> 12);
+  const auto step = spyro::guest_magnitude::normalize(value, spyro::guest_magnitude::lzcr(value));
+  const int32_t tableValue = core->mem_r16s(kMagnitudeTable + step.tableByteOffset);
+  return (int)(spyro::guest_magnitude::scaled((int16_t)tableValue, step.exponent) >> 12);
 }
 
 bool preflight(Core *core, const spyro::field_tracers_recipe::Recipe &recipe) {

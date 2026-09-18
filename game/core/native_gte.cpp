@@ -14,6 +14,7 @@
 #include "core.h"
 #include "game.h"
 #include "guest_globals.h"
+#include "guest_magnitude.h"
 #include "native_execution.h"
 #include "spyro_game.h"
 
@@ -60,21 +61,15 @@ struct SqrtTail {
 };
 
 SqrtTail sqrt_tail(Core *c, uint32_t val) {
+  // LZCR — the mtc2 to LZCS already happened.
+  const auto step = spyro::guest_magnitude::normalize(val, gte_read_data(31));
   SqrtTail r{};
-  const uint32_t lzc = gte_read_data(31); // LZCR — the mtc2 to LZCS already happened
-  r.a1 = lzc & ~1u;
-  r.shift = (uint32_t)((int32_t)(31 - (int32_t)r.a1) >> 1); // sra
-  const int32_t a2s = (int32_t)r.a1 - 24;
-  if (a2s < 0) {
-    r.a2 = 24u - r.a1;                                    // branch taken: addi 24, then sub
-    r.a3 = (uint32_t)((int32_t)val >> (int)(r.a2 & 31u)); // srav — ARITHMETIC
-  } else {
-    r.a3 = val << ((uint32_t)a2s & 31u); // sllv
-    r.a2 = 24u;                          // the j's delay slot, this path only
-  }
-  r.a3 = (r.a3 - 64u) << 1;
-  r.t0 = (uint32_t)(int32_t)(int16_t)c->mem_r16(spyro::guest::kMagnitudeTable + r.a3)
-         << (r.shift & 31u);
+  r.a1 = step.evenLeadingZeros;
+  r.shift = step.exponent;
+  r.a2 = step.residualShift;
+  r.a3 = step.tableByteOffset;
+  r.t0 = spyro::guest_magnitude::scaled((int16_t)c->mem_r16(spyro::guest::kMagnitudeTable + r.a3),
+                                        r.shift);
   r.v0 = r.t0 >> 12; // srl — LOGICAL
   return r;
 }

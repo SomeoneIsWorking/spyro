@@ -8,7 +8,7 @@
 
 namespace spyro::secondary_actor_recipe {
 
-enum class Status : uint8_t { Ready, ValidEmpty, UnsupportedPrefix, UnsupportedLighting };
+enum class Status : uint8_t { Ready, ValidEmpty, UnsupportedPrefix, UnsupportedTopology };
 
 const char *status_name(Status status);
 
@@ -18,17 +18,22 @@ struct Recipe {
   uint32_t sourceRecords = 0;
   uint32_t candidates = 0;
   uint32_t rejectedCandidates = 0;
+  uint32_t faceLightFaces = 0;
   uint32_t firstUnsupportedRecord = 0;
   uint32_t firstUnsupportedSourceWord = 0;
-  uint32_t firstUnsupportedControl = 0; // the face's first prefix word, which selects the program
+  uint32_t firstUnsupportedControl = 0;  // the face's first prefix word, which selects the program
+  uint32_t firstUnsupportedLighting = 0; // that record's Moby +0x4C word
+  face_light::Status firstLightingStatus = face_light::Status::Ready;
   std::vector<actor_prefix::Output> outputs;
   std::vector<actor_draw_recipe::Face> faces;
 };
 
-// Pure 0x80020F34 preflight. The renderer shares the Moby compressed-model
-// projection and ordinary G3/G4/GT3/GT4 topology with 0x8001F798, but control
-// bit 2 selects its separate per-face specular-lighting program. Unsupported
-// input clears every face so a partial secondary actor cannot be presented.
-Recipe derive(const secondary_actor_scene::Frame &frame);
+// Pure 0x80020F34 preflight. The renderer shares the Moby compressed-model projection and ordinary
+// G3/G4/GT3/GT4 topology with 0x8001F798. Control bit 2 additionally selects one of the two
+// per-face colour programs: on a triangle the directional term this recipe computes, on a quad the
+// billboard at 0x8002256C, which is not ported. Unsupported input clears every face so a partial
+// secondary actor cannot be presented.
+Recipe derive(const secondary_actor_scene::Frame &frame,
+              const face_light::Environment &lighting = {});
 
 } // namespace spyro::secondary_actor_recipe

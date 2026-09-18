@@ -12,13 +12,13 @@ const char *status_name(Status status) {
     return "ValidEmpty";
   case Status::UnsupportedPrefix:
     return "UnsupportedPrefix";
-  case Status::UnsupportedLighting:
-    return "UnsupportedLighting";
+  case Status::UnsupportedTopology:
+    return "UnsupportedTopology";
   }
   return "unknown";
 }
 
-Recipe derive(const secondary_actor_scene::Frame &frame) {
+Recipe derive(const secondary_actor_scene::Frame &frame, const face_light::Environment &lighting) {
   Recipe recipe{};
   recipe.sourceRecords = (uint32_t)frame.records.size();
   if (frame.records.empty()) {
@@ -27,34 +27,34 @@ Recipe derive(const secondary_actor_scene::Frame &frame) {
   recipe.outputs.reserve(frame.records.size());
   for (const auto &record : frame.records) {
     recipe.outputs.push_back(record.actor.expected);
+    // The prefix builder works from transform and stream state alone, so the word that selects the
+    // per-face colour program is attached here, where the scene record still holds it.
+    recipe.outputs.back().lightingControl = record.lightingControl;
   }
 
-  auto topology = actor_draw_recipe::compose(recipe.outputs);
+  auto topology = actor_draw_recipe::compose(recipe.outputs, lighting);
   recipe.candidates = topology.candidates;
   recipe.rejectedCandidates = topology.rejectedCandidates;
   if (topology.status == actor_draw_recipe::Status::ValidEmpty) {
     return recipe;
   }
   if (topology.status != actor_draw_recipe::Status::Ready) {
-    recipe.status = Status::UnsupportedPrefix;
+    recipe.status = topology.firstReason == actor_draw_recipe::Reason::Prefix
+                        ? Status::UnsupportedPrefix
+                        : Status::UnsupportedTopology;
     recipe.firstReason = topology.firstReason;
     recipe.firstUnsupportedRecord = topology.firstUnsupportedRecord;
     recipe.firstUnsupportedSourceWord = topology.firstUnsupportedSourceWord;
+    if (!topology.candidateOrder.empty()) {
+      const auto &last = topology.candidateOrder.back();
+      recipe.firstUnsupportedControl = last.input.words[0];
+      recipe.firstUnsupportedLighting = last.input.lightingControl;
+      recipe.firstLightingStatus = last.input.lighting;
+    }
     return recipe;
   }
 
-  for (const auto &candidate : topology.candidateOrder) {
-    // Bit 2 selects the distinct view-normal/specular program at 0x80021C70.
-    // Base material colour does not reproduce that lighting contract.
-    if (candidate.evaluation.emitted && (candidate.input.words[0] & 4u) != 0u) {
-      recipe.status = Status::UnsupportedLighting;
-      recipe.firstUnsupportedRecord = candidate.record;
-      recipe.firstUnsupportedSourceWord = candidate.sourceWord;
-      recipe.firstUnsupportedControl = candidate.input.words[0];
-      return recipe;
-    }
-  }
-
+  recipe.faceLightFaces = topology.faceLightFaces;
   recipe.faces = std::move(topology.faces);
   recipe.status = recipe.faces.empty() ? Status::ValidEmpty : Status::Ready;
   return recipe;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "actor_prefix_builder.h"
+#include "face_light_program.h"
 
 #include <array>
 #include <cstdint>
@@ -23,6 +24,7 @@ enum class Reason : uint8_t {
   Malformed,
   BinRange,
   Prefix,
+  FaceLight,
 };
 enum class Status : uint8_t { NoCorpus, Ready, ValidEmpty, Unsupported };
 
@@ -38,6 +40,12 @@ struct PrimitiveInput {
   std::array<float, 4> screenX{};
   std::array<float, 4> screenY{};
   std::array<float, 4> viewZ{};
+  // The view-space coordinates retail's projection loop stores per vertex, kept because the bit-2
+  // colour program differences them. `lighting` records what that program made of this face:
+  // Ready both when it produced `color` and when the face never asked for it.
+  std::array<face_light::ViewVertex, 4> view{};
+  uint32_t lightingControl = 0;
+  face_light::Status lighting = face_light::Status::Ready;
 };
 
 struct Evaluation {
@@ -78,6 +86,8 @@ struct Recipe {
   uint32_t rejectedRecords = 0;
   uint32_t candidates = 0;
   uint32_t rejectedCandidates = 0;
+  // Emitted faces that took the bit-2 colour program, the denominator for any claim that it ran.
+  uint32_t faceLightFaces = 0;
   uint32_t firstUnsupportedRecord = 0;
   uint32_t firstUnsupportedSourceWord = 0;
   std::array<uint32_t, 2> firstUnsupportedWords{};
@@ -93,6 +103,9 @@ QuadDecision classifyQuad(int32_t firstArea, int32_t secondArea, bool twoSided);
 
 // Atomically composes complete prefix outputs. Unsupported/malformed input
 // clears every face; a complete call with no accepted faces is ValidEmpty.
-Recipe compose(std::span<const actor_prefix::Output> records);
+// Without a lighting environment the bit-2 colour program cannot run, and the faces that ask for
+// it are refused by name rather than drawn with the material colours retail would have replaced.
+Recipe compose(std::span<const actor_prefix::Output> records,
+               const face_light::Environment &lighting = {});
 
 } // namespace spyro::actor_draw_recipe

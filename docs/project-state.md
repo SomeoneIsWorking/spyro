@@ -600,12 +600,16 @@ Y, one frame of the entrance fall. Both cores arrive at the same game tick with 
 and gamestate, and `g_LevelTicks` carries its usual offset, so this follows the same phase residual
 issue 0110 records rather than being a new cause.
 
-The product then ABORTS partway through the segments that follow, at a named unimplemented
-boundary: a secondary actor with control bit 2 selects the view-normal/specular program at guest
-`0x80021C70`, which the native producer refuses rather than draw with base material colour. This is
-the first hard stop on any route that leaves Artisans and it blocks this state item. Issue
+The product then ABORTED partway through the segments that follow, at a named unimplemented
+boundary: a secondary actor whose triangle carries control bit 2 takes the per-face colour program
+at guest `0x80021DB4`, which the native producer refused rather than draw with the base material
+colours that program replaces. That was the first hard stop on any route leaving Artisans. The
+program is now ported as a pure owner validated against the real GTE, so the boundary no longer
+refuses on its account; the separate additive program at `0x80021FE0` and the quad billboard at
+`0x8002256C` still do, and neither has been observed reaching a driven route. Issue
 [0113](issues/0113-attract-demo-aborts-secondary-shaded-producers-r.md) holds the deterministic
-reproduction, the refusal reason and where the guest program lives; it is not decompiled to C.
+reproduction, the transcription and what remains refused. This state item stays `missing` until a
+route past that point is measured end to end against the console.
 
 The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
 difference to pacing rather than camera math. The console's loader store and its first stage-zero

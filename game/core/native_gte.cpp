@@ -13,6 +13,7 @@
 // guest RAM.
 #include "core.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "native_execution.h"
 #include "spyro_game.h"
 
@@ -72,7 +73,8 @@ SqrtTail sqrt_tail(Core *c, uint32_t val) {
     r.a2 = 24u;                          // the j's delay slot, this path only
   }
   r.a3 = (r.a3 - 64u) << 1;
-  r.t0 = (uint32_t)(int32_t)(int16_t)c->mem_r16(0x80074B84u + r.a3) << (r.shift & 31u);
+  r.t0 = (uint32_t)(int32_t)(int16_t)c->mem_r16(spyro::guest::kMagnitudeTable + r.a3)
+         << (r.shift & 31u);
   r.v0 = r.t0 >> 12; // srl — LOGICAL
   return r;
 }

@@ -23,7 +23,7 @@ namespace {
 constexpr uint32_t kProducerKey = 0x800189f0u;
 using spyro::guest::kCamera;
 constexpr uint32_t kLevelId = 0x8007596cu;
-constexpr uint32_t kSqrtTable = 0x80074b84u;
+using spyro::guest::kMagnitudeTable;
 constexpr uint32_t kTracerCount = 0x80075684u;
 
 struct ProjectedPoint {
@@ -47,7 +47,7 @@ int tracerMagnitude(Core *core, uint32_t value) {
     normalized = value >> (24u - leading);
   }
   const int32_t tableIndex = ((int32_t)(normalized - 0x40u)) << 1;
-  const int32_t tableValue = core->mem_r16s(kSqrtTable + (uint32_t)tableIndex);
+  const int32_t tableValue = core->mem_r16s(kMagnitudeTable + (uint32_t)tableIndex);
   return (int)((uint32_t)(tableValue << exponent) >> 12);
 }
 

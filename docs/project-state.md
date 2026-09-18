@@ -583,8 +583,29 @@ range matches at all fourteen checkpoints of the Artisans route, `save_picker` t
 REPL parked one poll behind the console's VBlank phase, and Lightrec dropped the load-delay commit
 on a delay-slot load whose branch constant propagation had turned into a NOP, so the collision
 query read the wrong table (`shared/lightrec` `3fddb23`). Issue 0110 holds the measurement. One
-matched route is a first conformance result, not representative-gameplay conformance: the route is
-one level, output parity is separate, and the released-host budget is unmeasured.
+matched route is a first conformance result, not representative-gameplay conformance: output parity
+is separate and the released-host budget is unmeasured.
+
+The compared route no longer stops at that homeworld. A `level` checkpoint walks each core out of
+Artisans through a portal, steering from that core's own camera with the route policy the
+interactive driver uses (`tools/spyro1_steering.py`), and arrives when that core is playable again
+in a different level. Measured 2026-09-18: both cores entered level 11 from the same walk, the
+product after 7,246 game frames and the console after 8,397 VBlanks, so the product's discard and
+reload of guest code at a reused load address is now inside the comparison rather than outside it.
+
+Two results came out of that first widened run, and neither is a pass.
+
+The `level` checkpoint DIVERGES on one decisive range: `g_Spyro.m_Position` differs by 100 units in
+Y, one frame of the entrance fall. Both cores arrive at the same game tick with the same level id
+and gamestate, and `g_LevelTicks` carries its usual offset, so this follows the same phase residual
+issue 0110 records rather than being a new cause.
+
+The product then ABORTS partway through the segments that follow, at a named unimplemented
+boundary: a secondary actor with control bit 2 selects the view-normal/specular program at guest
+`0x80021C70`, which the native producer refuses rather than draw with base material colour. This is
+the first hard stop on any route that leaves Artisans and it blocks this state item. Issue
+[0113](issues/0113-attract-demo-aborts-secondary-shaded-producers-r.md) holds the deterministic
+reproduction, the refusal reason and where the guest program lives; it is not decompiled to C.
 
 The handoff field-delivery bracket (issue 0110) attributes the residual camera-checkpoint phase
 difference to pacing rather than camera math. The console's loader store and its first stage-zero

@@ -44,6 +44,10 @@ inline constexpr std::uint32_t kTitlescreenState = 0x80078D78u;
 // g_LevelMobys (moby.h): pointer to the level's Moby array.
 inline constexpr std::uint32_t kLevelMobys = 0x80075828u;
 
+// D_80074B84: the reciprocal-magnitude table the guest's normalisation reads after the GTE's
+// leading-zero count. Named once here because three owners reach it under three different names.
+inline constexpr std::uint32_t kMagnitudeTable = 0x80074B84u;
+
 // g_LevelId is the level now resident; g_NextLevelId the one a portal entry has requested. The
 // pair is how any owner tells "still here" from "a level change is under way".
 inline constexpr std::uint32_t kLevelId = 0x8007596Cu;

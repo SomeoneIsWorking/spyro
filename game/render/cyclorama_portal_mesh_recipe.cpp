@@ -195,10 +195,10 @@ uint32_t vectorMagnitude(const RamView &ram, Point3 value) {
     normalized = squared >> (24u - leading);
   }
   const uint32_t tableIndex = (normalized - 0x40u) * 2u;
-  if (!ram.contains(kMagnitudeTable + tableIndex, 2u)) {
+  if (!ram.contains(spyro::guest::kMagnitudeTable + tableIndex, 2u)) {
     return 0u;
   }
-  const uint32_t root = (uint16_t)ram.r16(kMagnitudeTable + tableIndex);
+  const uint32_t root = (uint16_t)ram.r16(spyro::guest::kMagnitudeTable + tableIndex);
   return (root << outputShift) >> 12;
 }
 

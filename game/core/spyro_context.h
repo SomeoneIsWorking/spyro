@@ -1,5 +1,6 @@
 #pragma once
 
+#include "actor_temporal.h"
 #include "archive_transfer.h"
 #include "fx_paired_actor.h"
 #include "presentation_owner.h"
@@ -16,6 +17,7 @@ struct SpyroContext {
   spyro::RuntimeRun run{};
   SpyroPairedActorFrameState pairedActor{};
   spyro::world_temporal::History worldTemporal{};
+  spyro::actor_temporal::History actorTemporal{};
   SpyroTemporalSceneAdmission temporalAdmission{};
   SpyroPresentationOwner presentationOwner{};
 };

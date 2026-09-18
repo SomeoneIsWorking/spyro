@@ -1,9 +1,13 @@
 #include "actor_prefix_builder.h"
 #include "actor_transform_math.h"
+#include "projection_stream.h"
 #include "wide_clip_plan.h"
 
 #include <algorithm>
+#include <cmath>
+#include <optional>
 #include <string_view>
+#include <vector>
 
 namespace spyro::actor_prefix {
 namespace {
@@ -16,9 +20,60 @@ int32_t wrapSub(int32_t left, uint32_t right) {
   return (int32_t)((uint32_t)left - right);
 }
 
+// The same rounding the framework's view sampler uses, so a record's depth key and its geometry
+// never disagree about which side of a 1-unit step a sample fell on.
+int32_t sampleScalar(int32_t previous, int32_t current, double t, bool endpointOnly) {
+  if (endpointOnly) {
+    return current;
+  }
+  return (int32_t)std::floor(std::lerp((double)previous, (double)current, t));
+}
+
 actor_model_codec::StreamResult decode(const OwnedStream &stream, uint32_t count, uint8_t shift) {
   return actor_model_codec::decodeStream(
       {stream.firstFull, stream.fullWords, stream.deltaWords, count, shift});
+}
+
+// One record's decoded model, before any transform: the two authored streams and the pose the
+// record's own blend factor resolves them to. Both endpoints of a sample decode through this, so
+// the blend has one implementation rather than one per endpoint.
+struct Pose {
+  std::vector<actor_model_codec::Vec3i> primary;
+  std::vector<actor_model_codec::Vec3i> alternate;
+  std::vector<actor_model_codec::Vec3i> resolved;
+};
+
+std::optional<Pose> decodePose(const Input &input) {
+  const uint16_t vertexScale = (uint16_t)((input.header & 0xff00u) >> 2);
+  const bool paired = vertexScale != 0;
+  const auto primary = decode(input.primary, input.vertexCount, input.streamShift);
+  if (primary.status != actor_model_codec::StreamStatus::Ok) {
+    return std::nullopt;
+  }
+  actor_model_codec::StreamResult alternate{};
+  if (paired) {
+    alternate = decode(input.alternate, input.vertexCount, input.streamShift);
+    if (alternate.status != actor_model_codec::StreamStatus::Ok) {
+      return std::nullopt;
+    }
+  }
+  Pose pose{};
+  pose.primary.reserve(input.vertexCount);
+  pose.alternate.reserve(input.vertexCount);
+  pose.resolved.reserve(input.vertexCount);
+  for (uint32_t i = 0; i < input.vertexCount; ++i) {
+    const auto a = primary.vertices[i];
+    const auto b = paired ? alternate.vertices[i] : actor_model_codec::Vec3i{};
+    actor_model_codec::Vec3i resolved = a;
+    if (paired) {
+      const auto blend = actor_model_codec::blendPose(a, b, (int16_t)vertexScale);
+      resolved = {blend.mac[0], blend.mac[1], blend.mac[2]};
+    }
+    pose.primary.push_back(a);
+    pose.alternate.push_back(b);
+    pose.resolved.push_back(resolved);
+  }
+  return pose;
 }
 
 psxport::native_projection::FixedAffine affineFrom(const Input &input,
@@ -67,6 +122,18 @@ uint32_t packedSxy(const psxport::native_projection::NativeProjectedVertex &proj
 } // namespace
 
 Output build(const Input &input) {
+  return sample(input, input, 1.0);
+}
+
+Output sample(const Input &previous, const Input &current, double t) {
+  const Input &input = current;
+  if (!std::isfinite(t) || t < 0.0 || t > 1.0) {
+    return {};
+  }
+  // t=1 is the ordinary single-endpoint build, and is the only case that needs no previous pose.
+  // Every other t goes through the sampling stream, which projects an exact endpoint unchanged, so
+  // t=0 needs no special case of its own. This flag is what the rest of the function tests.
+  const bool endpointOnly = t == 1.0;
   Output out{};
   if (input.vertexCount == 0) {
     out.status = Status::CountZero;
@@ -81,7 +148,8 @@ Output build(const Input &input) {
   const int8_t translationBias = (int8_t)(input.header >> 16);
   const bool clipMode = (int32_t)input.header < 0;
   const int32_t clipRight = std::max(1, input.projection.ofx >> 15);
-  int32_t cr14 = ((int32_t)input.tz >> 5) - translationBias;
+  int32_t cr14 = (sampleScalar((int32_t)previous.tz, (int32_t)current.tz, t, endpointOnly) >> 5) -
+                 translationBias;
   if (cr14 < 0) {
     cr14 = 0;
   }
@@ -89,50 +157,60 @@ Output build(const Input &input) {
     cr14 = (int32_t)((uint32_t)cr14 + 32u);
   }
   const auto affine = affineFrom(input, out.controls);
+  std::array<uint32_t, 16> previousControls{};
+  const auto previousAffine = endpointOnly ? affine : affineFrom(previous, previousControls);
+  // The rotation cannot be sampled as a matrix — that is what the projection stream is for — but
+  // the view depth this ladder reads is a translation, which is linear in t. Sampling it before the
+  // wrapping subtraction below keeps a sample near the wrap from landing on the far side of it.
+  const int32_t sampledDepth = sampleScalar(previousAffine.t[2], affine.t[2], t, endpointOnly);
   // 0x8001F8A0: having scaled the translation, retail re-tests the depth it just produced and drops
   // the record when it passes 0xF618. Only a scaled record reaches that test, so an unscaled actor
   // keeps whatever depth the ladder gave it.
-  if ((input.header & 0xffu) != 0u && affine.t[2] > 0xF618) {
+  if ((input.header & 0xffu) != 0u && sampledDepth > 0xF618) {
     out.status = Status::VisibilityRejected;
     return out;
   }
   out.controls[13] = (coordShift & 31u) + ((uint32_t)input.transformShift << 8);
   out.controls[14] = (uint32_t)cr14;
-  out.controls[15] = (uint32_t)wrapSub(affine.t[2], 512u << (coordShift & 31u));
+  out.controls[15] = (uint32_t)wrapSub(sampledDepth, 512u << (coordShift & 31u));
   out.depthOrigin = out.controls[15] << 2;
   out.otShift = (out.controls[13] & 255u) + 4u + (clipMode ? 0x80000000u : 0u);
 
-  const uint16_t vertexScale = (uint16_t)((input.header & 0xff00u) >> 2);
-  const bool paired = vertexScale != 0;
-  const auto primary = decode(input.primary, input.vertexCount, input.streamShift);
-  if (primary.status != actor_model_codec::StreamStatus::Ok) {
+  const auto pose = decodePose(input);
+  if (!pose) {
     out.status = Status::Stream;
     return out;
   }
-  actor_model_codec::StreamResult alternate{};
-  if (paired) {
-    alternate = decode(input.alternate, input.vertexCount, input.streamShift);
-    if (alternate.status != actor_model_codec::StreamStatus::Ok) {
+  std::optional<Pose> previousPose;
+  if (!endpointOnly) {
+    previousPose = decodePose(previous);
+    if (!previousPose || previousPose->resolved.size() != pose->resolved.size()) {
       out.status = Status::Stream;
       return out;
     }
   }
+  const ProjectionStream stream =
+      endpointOnly ? ProjectionStream(affine, input.projection)
+                   : ProjectionStream(previousAffine, affine, input.projection, t);
   out.vertices.reserve(input.vertexCount);
   uint32_t commonStatus = 0xffffffffu;
   for (uint32_t i = 0; i < input.vertexCount; ++i) {
-    const auto a = primary.vertices[i];
-    const auto b = paired ? alternate.vertices[i] : actor_model_codec::Vec3i{};
-    actor_model_codec::Vec3i resolved = a;
-    if (paired) {
-      const auto blend = actor_model_codec::blendPose(a, b, (int16_t)vertexScale);
-      resolved = {blend.mac[0], blend.mac[1], blend.mac[2]};
+    const auto packed = projectionInput(pose->resolved[i]);
+    const auto previousPacked = previousPose ? projectionInput(previousPose->resolved[i]) : packed;
+    const auto projected = stream.project(previousPacked, packed);
+    if (!projected) {
+      // The framework declines to sample a vertex whose transform overflowed the accumulator; a
+      // model missing one vertex is not a model, so the whole record refuses and the caller keeps
+      // this actor's captured endpoint instead.
+      out.status = Status::Stream;
+      out.vertices.clear();
+      return out;
     }
-    const auto packed = projectionInput(resolved);
-    const auto projected = psxport::native_projection::project(affine, input.projection, packed);
-    const uint32_t sxy = packedSxy(projected);
+    const uint32_t sxy = packedSxy(*projected);
     const uint32_t scratchWord = clipMode ? spyro::wide::packedClipStatus(sxy, clipRight) : sxy;
     commonStatus &= scratchWord;
-    out.vertices.push_back({a, b, resolved, packed, projected, scratchWord});
+    out.vertices.push_back(
+        {pose->primary[i], pose->alternate[i], pose->resolved[i], packed, *projected, scratchWord});
   }
   out.commonStatus = clipMode ? commonStatus & 31u : 0u;
   if (out.commonStatus != 0) {

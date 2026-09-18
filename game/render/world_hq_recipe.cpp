@@ -137,7 +137,7 @@ world_hq_refinement::Position projectionPosition(const world_chunk_codec::HighCh
 bool classify(const world_source::Source &previous,
               const world_source::Source &input,
               const world_scene_prepare::Prepared &prepared,
-              const world_projection_math::ProjectionStream &stream,
+              const ProjectionStream &stream,
               int clipRight,
               Work &work,
               Recipe &out,
@@ -317,7 +317,7 @@ bool classify(const world_source::Source &previous,
 bool append(const world_source::Source &previous,
             const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
-            const world_projection_math::ProjectionStream &projection,
+            const ProjectionStream &projection,
             int clipRight,
             Recipe &out,
             const char *&why,
@@ -337,8 +337,7 @@ bool append(const world_source::Source &input,
             Recipe &out,
             const char *&why,
             Audit *audit) {
-  const world_projection_math::ProjectionStream stream(input.selection.camera.projectionMatrix,
-                                                       projection);
+  const ProjectionStream stream(input.selection.camera.projectionMatrix, projection);
   return append(input, input, prepared, stream, clipRight, out, why, audit);
 }
 

@@ -57,7 +57,7 @@ ProjectionResult projectVertices(const world_chunk_codec::LowChunk &previous,
                                  const world_chunk_codec::LowChunk &current,
                                  const world_source::Camera &previousCamera,
                                  const world_source::Camera &currentCamera,
-                                 const world_projection_math::ProjectionStream &projection,
+                                 const ProjectionStream &projection,
                                  uint8_t tags,
                                  int clipRight,
                                  std::vector<Vertex> &out) {
@@ -192,7 +192,7 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
 bool append(const world_source::Source &previous,
             const world_source::Source &input,
             const world_scene_prepare::Prepared &prepared,
-            const world_projection_math::ProjectionStream &projection,
+            const ProjectionStream &projection,
             int clipRight,
             uint32_t farLimit,
             Recipe &out,
@@ -245,8 +245,7 @@ bool append(const world_source::Source &input,
             uint32_t farLimit,
             Recipe &out,
             const char *&why) {
-  const world_projection_math::ProjectionStream stream(input.selection.camera.projectionMatrix,
-                                                       projection);
+  const ProjectionStream stream(input.selection.camera.projectionMatrix, projection);
   return append(input, input, prepared, stream, clipRight, farLimit, out, why);
 }
 

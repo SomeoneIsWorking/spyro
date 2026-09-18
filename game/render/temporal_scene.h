@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 class Core;
@@ -14,8 +15,17 @@ public:
   SpyroTemporalSceneAdmission();
   ~SpyroTemporalSceneAdmission();
   bool world(Core &core, bool paired);
+  // The regular-actor interval, preflighted the same way and for the same reason: a midpoint the
+  // planner would refuse must be discovered before presentation depends on it, not during it.
+  bool actors(Core &core);
 
 private:
+  // Replays one source across the interval's endpoints and its midpoint into the isolated sink,
+  // requiring each to survive the same painter planner presentation uses. `emit` reports whether
+  // the source produced that sample at all.
+  bool
+  interval(Core &core, const char *label, const std::function<bool(RenderQueue &, float)> &emit);
+
   std::unique_ptr<RenderQueue> sink_;
 };
 class TemporalSceneSource;

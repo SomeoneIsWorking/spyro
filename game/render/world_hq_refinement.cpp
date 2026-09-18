@@ -67,7 +67,7 @@ uint32_t averageRgb(uint32_t left, uint32_t right) {
 
 } // namespace
 
-std::optional<HighVertex> projectVertex(const world_projection_math::ProjectionStream &projection,
+std::optional<HighVertex> projectVertex(const ProjectionStream &projection,
                                         Vec3s previous,
                                         Vec3s position,
                                         uint8_t tags,
@@ -123,7 +123,7 @@ HighVertex projectVertex(const FixedAffine &cameraMatrix,
                          Position position,
                          uint8_t tags,
                          int clipRight) {
-  const world_projection_math::ProjectionStream stream(cameraMatrix, projection);
+  const ProjectionStream stream(cameraMatrix, projection);
   // Endpoint projection has no interval admission and cannot return a sampling refusal.
   return projectVertex(stream, position, position, tags, clipRight).value();
 }
@@ -231,7 +231,7 @@ HighVertex midpoint(const HighVertex &left, const HighVertex &right) {
   return out;
 }
 
-bool projectLattice(const world_projection_math::ProjectionStream &projection,
+bool projectLattice(const ProjectionStream &projection,
                     uint8_t tags,
                     int clipRight,
                     std::span<HighVertex> vertices,
@@ -452,7 +452,7 @@ void correctCenter(std::array<HighVertex, 9> &vertices) {
 }
 
 bool appendMedium(const Materials &materials,
-                  const world_projection_math::ProjectionStream &projection,
+                  const ProjectionStream &projection,
                   int clipRight,
                   const HighWork &work,
                   Recipe &out,
@@ -752,7 +752,7 @@ bool appendNearTransitions(const Materials &materials,
 }
 
 bool appendNearQuads(const Materials &materials,
-                     const world_projection_math::ProjectionStream &projection,
+                     const ProjectionStream &projection,
                      int clipRight,
                      const HighWork &work,
                      Recipe &out,
@@ -814,7 +814,7 @@ bool appendNearQuads(const Materials &materials,
 }
 
 bool appendNearTriangles(const Materials &materials,
-                         const world_projection_math::ProjectionStream &projection,
+                         const ProjectionStream &projection,
                          int clipRight,
                          const HighWork &work,
                          Recipe &out,
@@ -887,7 +887,7 @@ bool appendNearTriangles(const Materials &materials,
 } // namespace
 
 bool append(const Materials &materials,
-            const world_projection_math::ProjectionStream &projection,
+            const ProjectionStream &projection,
             int clipRight,
             const Work &work,
             Recipe &out,
@@ -907,12 +907,7 @@ bool append(const Materials &materials,
             const Work &work,
             Recipe &out,
             const char *&why) {
-  return append(materials,
-                world_projection_math::ProjectionStream(cameraMatrix, projection),
-                clipRight,
-                work,
-                out,
-                why);
+  return append(materials, ProjectionStream(cameraMatrix, projection), clipRight, work, out, why);
 }
 
 } // namespace spyro::world_hq_refinement

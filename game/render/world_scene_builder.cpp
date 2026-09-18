@@ -128,7 +128,7 @@ Recipe reconstruct(const world_source::Source &previous,
                    const world_source::Source &source,
                    std::optional<double> t,
                    world_hq_recipe::Audit *audit) {
-  using world_projection_math::ProjectionStream;
+  using spyro::ProjectionStream;
   const ProjectionStream culling = t ? ProjectionStream(previous.selection.camera.cullingMatrix,
                                                         source.selection.camera.cullingMatrix,
                                                         {},

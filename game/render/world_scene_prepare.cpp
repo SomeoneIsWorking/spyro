@@ -57,7 +57,7 @@ psxport::native_projection::ModelVertex cullingInput(const world_source::Selecti
 
 bool prepare(const world_source::Selection &previous,
              const world_source::Selection &selection,
-             const world_projection_math::ProjectionStream &culling,
+             const ProjectionStream &culling,
              int32_t horizontalWidth,
              Prepared &out,
              const char *&why,
@@ -148,7 +148,7 @@ bool prepare(const world_source::Selection &selection,
              Prepared &out,
              const char *&why,
              bool decodingAnimation) {
-  const world_projection_math::ProjectionStream culling(selection.camera.cullingMatrix, {});
+  const ProjectionStream culling(selection.camera.cullingMatrix, {});
   return prepare(selection, selection, culling, horizontalWidth, out, why, decodingAnimation);
 }
 

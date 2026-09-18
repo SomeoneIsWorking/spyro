@@ -105,6 +105,19 @@ struct CompareResult {
 // whole-record rejection.
 Output build(const Input &input);
 
+// One authored record sampled between two endpoints of its own transform and pose. `t` is the
+// sample position in [0,1]. At 1 the result is exactly `build(current)`; at 0 the GEOMETRY and the
+// depth key are exactly the previous endpoint's, because the shared projection stream projects an
+// exact endpoint unchanged.
+//
+// Only the geometry and the depth key are sampled. Everything that identifies the model — the
+// header, the streams' shape, the colour arm, the primitive words, the transform snapshot — is
+// read from `current`, which is why t=0 is the previous pose inside the current record rather than
+// `build(previous)`. A caller must therefore have established that the two endpoints describe the
+// SAME actor before asking for a sample. The record refuses as a whole when the framework declines
+// to sample any of its vertices, because a half-sampled model is not a model.
+Output sample(const Input &previous, const Input &current, double t);
+
 // Pure call-level preflight. A future owner must obtain Owned before mutating
 // RenderQueue or guest packet state; VisibilityRejected is a fully evaluated
 // zero-output record, while every other non-Ok status refuses the whole call.

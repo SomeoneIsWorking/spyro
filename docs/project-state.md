@@ -39,10 +39,13 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
 of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
-issue 0110). Next: verify the fps60 interpolation and widescreen presentation on the running
-product, and extend source-based world/camera interpolation. Widening the route past Artisans is
-blocked on issue 0114, because the pacing residual steers a camera-relative walk. Boot/title, a
-visible player, and one matched route do not establish full conformance.
+issue 0110). The world, the player model and now the regular actor layer are reconstructed in an
+in-between present, carrying 2,109,213 interpolated prims over 3,374 extra presents (0.560 of
+captured items). Next: give the remaining FIELD producers — secondary actors, world-shaded sprites,
+shadows, particles — their own temporal sources, and measure a frame-time budget on a released
+host. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
+a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
+conformance.
 
 ## Hosted verification and host gaps
 
@@ -763,6 +766,33 @@ On the Lightrec product (2026-09-18): the looks-right fps60 leg over the same 7,
 reports 1,216,422 interpolated prims across 3,374 extra presents, so the extra presents carry
 reconstructed geometry rather than duplicated frames. Still images and a prim count do not prove
 temporal smoothness, and no frame-time budget has been measured on any released host.
+
+Regular actors — the 0x8001F798 producer, the largest FIELD actor layer — gained their own temporal
+source on 2026-09-19. The producer retains its own record corpus as one endpoint per logic frame;
+the interval pairs records by Moby instance in occurrence order and samples each pose through the
+same `ProjectionStream` the world uses, so every sampled vertex comes from its own endpoint's model
+vertex through its own transform. A record with no compatible predecessor is drawn at its own
+endpoint instead of replaying the previous frame's picture for it. `actor_emit` owns the one
+compose/preflight/publish path both the logic frame and the reconstruction go through.
+
+Measured on the same 7,200-field Artisans replay: the looks-right fps60 leg reports 2,109,213
+interpolated prims across the same 3,374 extra presents, against 1,216,422 before. By the per-layer
+census the reconstructed share of captured items rose from 0.323 to 0.560, and world-layer prims
+replayed verbatim fell from 4,843,384 to 3,057,360. The actor interval is admitted on 2,608 of
+3,382 logic frames, and inside an admitted interval 100,095 of 101,060 records (99.0%) carry a
+sampled pose: 755 are incompatible (525 a changed model descriptor, 220 a changed depth scale), 210
+have no predecessor, and the sampler refused none. The 485-comparison per-frame Artisans oracle run
+still matches the full-console reference with zero divergences, so the logic-frame route is
+unchanged. Secondary actors (0x80020F34), world-shaded sprites (0x80022A2C), shadows, particles,
+glow and tracers still replay verbatim in an in-between present.
+
+The first compatibility rule was wrong, and the census is what found it. The draw record's header
+word packs the keyframe blend factor beside the coordinate shift, so requiring the whole word to
+match rejected 75,630 of 75,645 incompatible records — three quarters of every actor drawn — for
+animating rather than for being a different model. Identity is now the model descriptor, the vertex
+count, the header's top byte and the primitive-word count; every other field is per-endpoint state
+the sampler already reads from the side it belongs to. A census that only counted "not
+interpolated" could not have told that from a rule that never ran.
 
 World endpoint capture and reconstruction now share an owned source boundary, with a separate
 queue-only emission path; its preservation contracts are described in

@@ -46,7 +46,7 @@ using Audit = std::vector<AuditEntry>;
 bool append(const world_source::Source &previous,
             const world_source::Source &current,
             const world_scene_prepare::Prepared &prepared,
-            const world_projection_math::ProjectionStream &projection,
+            const ProjectionStream &projection,
             int clipRight,
             world_recipe::Recipe &out,
             const char *&why,

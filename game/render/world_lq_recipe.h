@@ -15,7 +15,7 @@ namespace spyro::world_lq_recipe {
 bool append(const world_source::Source &previous,
             const world_source::Source &current,
             const world_scene_prepare::Prepared &prepared,
-            const world_projection_math::ProjectionStream &projection,
+            const ProjectionStream &projection,
             int clipRight,
             uint32_t farLimit,
             world_recipe::Recipe &out,

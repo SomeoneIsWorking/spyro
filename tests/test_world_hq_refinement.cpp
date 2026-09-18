@@ -239,8 +239,7 @@ void test_medium_quad_texture_attribute() {
 
 void test_sampled_precision_streams() {
   const ProjectionParams projection{256 << 16, 120 << 16, 341};
-  const spyro::world_projection_math::ProjectionStream stream(
-      identity(), identity(), projection, 0.5);
+  const spyro::ProjectionStream stream(identity(), identity(), projection, 0.5);
   const auto sampled =
       spyro::world_hq_refinement::projectVertex(stream, {20, 10, 200}, {40, 30, 280}, 2, 512);
   const auto expected = project(projection, {30, 20, 240}, 2);
@@ -258,7 +257,7 @@ void test_sampled_precision_streams() {
   auto left = identity(), right = identity();
   left.t[0] = INT32_MAX - 500;
   right.t[0] = -(INT32_MAX - 500);
-  const spyro::world_projection_math::ProjectionStream overflow(left, right, projection, 0.5);
+  const spyro::ProjectionStream overflow(left, right, projection, 0.5);
   // Coarse endpoint transforms do not overflow and their interior is near the eye. Scaling
   // each authored X by16 does overflow, so the second sample must propagate its refusal.
   require(overflow.project({100, 0, 100}, {-100, -1, 100}).has_value());
@@ -287,8 +286,7 @@ void test_independent_midpoint_graph() {
   }
   work.medium.push_back(parent);
   const ProjectionParams projection{256 << 16, 120 << 16, 341};
-  const spyro::world_projection_math::ProjectionStream stream(
-      identity(), identity(), projection, 0.5);
+  const spyro::ProjectionStream stream(identity(), identity(), projection, 0.5);
   spyro::world_recipe::Recipe out{};
   const char *why = "none";
   require(spyro::world_hq_refinement::append(

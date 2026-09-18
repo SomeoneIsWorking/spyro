@@ -1,5 +1,8 @@
+#include "actor_record_fixture.h"
+#include "actor_temporal.h"
 #include "core.h"
 #include "fps60.h"
+#include "fx_actor_draw.h"
 #include "game.h"
 #include "paired_actor_depth.h"
 #include "scene_painter_order.h"
@@ -14,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace {
@@ -40,6 +44,10 @@ void test_exact_producer_membership() {
   item.layer = RQ_WORLD;
   item.painter_object = spyro::world_temporal::kProducerKey;
   context.worldTemporal.eligible = true;
+  CHECK(source->owns(item));
+  item.painter_object = spyro::actor_draw::kProducerKey;
+  CHECK(!source->owns(item));
+  context.actorTemporal.eligible = true;
   CHECK(source->owns(item));
   auto other = std::make_unique<Game>();
   SpyroContext otherContext;
@@ -309,6 +317,77 @@ void test_valid_empty_endpoint_keeps_visible_midpoint() {
   checkSourceUnchanged(currentBefore, state.current);
   CHECK_EQ(game->rq.n, 0);
   CHECK(game->rqRedirect == nullptr);
+}
+
+void test_regular_actor_interval_reconstructs_authored_motion() {
+  auto game = std::make_unique<Game>();
+  SpyroContext context;
+  game->core.gameCtx = &context;
+  game->mods.fps60 = true;
+  auto &history = context.actorTemporal;
+  history.begin(1, false, true);
+  history.retain({spyro::test_fixture::actorRecord(0x80010000u, 0)});
+  history.rotate();
+  history.begin(1, false, true);
+  history.retain({spyro::test_fixture::actorRecord(0x80010000u, 1024)});
+
+  // The logic frame's own picture, which presentation captures and the midpoint replaces.
+  spyro::actor_temporal::Census census{};
+  CHECK(history.emit(game->core, game->rq, 1.0, census) == spyro::actor_temporal::Status::Ready);
+  CHECK_EQ(census.actors, 1u);
+  CHECK_EQ(census.interpolated, 1u);
+  CHECK_EQ(game->rq.n, 1);
+  if (game->rq.n != 1) {
+    return;
+  }
+  const RqItem endpoint = game->rq.items[0];
+  CHECK_EQ(endpoint.painter_object, spyro::actor_draw::kProducerKey);
+
+  const std::vector<uint8_t> ramBefore(std::begin(game->core.ram), std::end(game->core.ram));
+  spyro_temporal_scene_prepare(game->core);
+  CHECK(history.eligible);
+  const auto source = spyro_temporal_scene_source(*game);
+  CHECK(source->eligible(game->core));
+  CHECK(source->owns(endpoint));
+
+  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  std::array<RqItem, 1> captured{endpoint};
+  float midpoint = 0;
+  for (float t : {0.5f, 1.0f}) {
+    presentation.presentPass(&game->core, t, {captured, 1});
+    CHECK_EQ(presentation.mSink->n, 1);
+    if (presentation.mSink->n != 1) {
+      continue;
+    }
+    const RqItem &drawn = presentation.mSink->items[0];
+    CHECK_EQ(drawn.painter_object, spyro::actor_draw::kProducerKey);
+    if (t == 0.5f) {
+      midpoint = drawn.xsf[0];
+    } else {
+      // The discriminator: a midpoint that merely replayed the captured frame would land on the
+      // endpoint instead of short of it.
+      CHECK(midpoint < drawn.xsf[0]);
+      CHECK_EQ(drawn.xsf[0], endpoint.xsf[0]);
+    }
+  }
+  // Admission and reconstruction read the actors they were handed; neither writes guest memory.
+  CHECK(std::equal(ramBefore.begin(), ramBefore.end(), std::begin(game->core.ram)));
+}
+
+void test_single_actor_endpoint_is_not_an_interval() {
+  auto game = std::make_unique<Game>();
+  SpyroContext context;
+  game->core.gameCtx = &context;
+  game->mods.fps60 = true;
+  context.actorTemporal.begin(1, false, true);
+  context.actorTemporal.retain({spyro::test_fixture::actorRecord(0x80010000u, 0)});
+  spyro_temporal_scene_prepare(game->core);
+  CHECK(!context.actorTemporal.eligible);
+  RqItem item{};
+  item.layer = RQ_WORLD;
+  item.has_xyf = true;
+  item.painter_object = spyro::actor_draw::kProducerKey;
+  CHECK(!spyro_temporal_scene_source(*game)->owns(item));
 }
 
 void test_temporal_evidence_requires_complete_visible_observation() {
@@ -745,6 +824,8 @@ int main() {
   RUN(disabled_and_discontinuous_frames_refuse);
   RUN(mixed_scene_reconstructs_authored_motion_without_guest_writes);
   RUN(valid_empty_endpoint_keeps_visible_midpoint);
+  RUN(regular_actor_interval_reconstructs_authored_motion);
+  RUN(single_actor_endpoint_is_not_an_interval);
   RUN(temporal_evidence_requires_complete_visible_observation);
   RUN(forced_endpoint_diagnostics_account_for_both_slots_without_motion_proof);
   RUN(coalesced_actor_buckets_merge_with_field_world);

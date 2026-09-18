@@ -50,7 +50,7 @@ struct Work {
 // Shared HQ geometry rules used while classifying roots and while projecting
 // their refinement lattices. They live here so the precision reproject,
 // facing, and depth semantics have one implementation.
-std::optional<HighVertex> projectVertex(const world_projection_math::ProjectionStream &projection,
+std::optional<HighVertex> projectVertex(const ProjectionStream &projection,
                                         Position previous,
                                         Position current,
                                         uint8_t tags,
@@ -72,7 +72,7 @@ void applyTile(world_recipe::Face &face, const world_material_codec::DecodedTile
 std::array<uint32_t, 25> nearQuadColorLattice(const std::array<uint32_t, 4> &corners);
 
 bool append(const world_source::Materials &materials,
-            const world_projection_math::ProjectionStream &projection,
+            const ProjectionStream &projection,
             int clipRight,
             const Work &work,
             world_recipe::Recipe &out,

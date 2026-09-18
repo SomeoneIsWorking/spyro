@@ -3,6 +3,7 @@
 #include "game.h"
 #include "guest_globals.h"
 #include "hw_bind.h"
+#include "spyro_context.h"
 #include "spyro_game.h"
 #include "testutil.h"
 #include "world_scene_submitter.h"
@@ -23,6 +24,10 @@ constexpr uint32_t kPreviousCursor = kShadowStart + 16u;
 void test_empty_actor_submission_commits_shadow_reset() {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
+  // A completed submission retains its record corpus as the next frame's interpolation endpoint,
+  // which is per-Core title state. Without it the producer has nowhere to publish that endpoint.
+  SpyroContext context{};
+  core.gameCtx = &context;
   core.mem_w32(kLevelMobys, kMoby);
   core.mem_w32(kMoby + 0x48u, 0xffffffffu);
   core.mem_w32(kShadowCursor, kPreviousCursor);

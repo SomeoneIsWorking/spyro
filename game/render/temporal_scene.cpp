@@ -1,6 +1,8 @@
 #include "temporal_scene.h"
 
+#include "actor_temporal.h"
 #include "core.h"
+#include "fx_actor_draw.h"
 #include "fx_paired_actor.h"
 #include "game.h"
 #include "painter_object_layer.h"
@@ -27,14 +29,16 @@ public:
       return false;
     }
     const auto &context = spyro_context(core);
-    return context.pairedActor.temporal_eligible || context.worldTemporal.eligible;
+    return context.pairedActor.temporal_eligible || context.worldTemporal.eligible ||
+           context.actorTemporal.eligible;
   }
 
   bool owns(const RqItem &item) const override {
     const auto &context = spyro_context(game_.core);
     return (context.pairedActor.temporal_eligible && producerItem(item, 0x80023AC4u)) ||
            (context.worldTemporal.eligible &&
-            producerItem(item, spyro::world_temporal::kProducerKey));
+            producerItem(item, spyro::world_temporal::kProducerKey)) ||
+           (context.actorTemporal.eligible && producerItem(item, spyro::actor_draw::kProducerKey));
   }
 
   void reconstruct(Core &core, float t) override {
@@ -48,11 +52,26 @@ public:
       lucent::error("worldtemporal", "FATAL: admitted world source refused presentation t={}", t);
       std::abort();
     }
+    if (context.actorTemporal.eligible) {
+      spyro::actor_temporal::Census census{};
+      const auto status = core.game && core.game->rqRedirect
+                              ? context.actorTemporal.emit(core, *core.game->rqRedirect, t, census)
+                              : spyro::actor_temporal::Status::NoEndpoints;
+      if (status != spyro::actor_temporal::Status::Ready &&
+          status != spyro::actor_temporal::Status::ValidEmpty) {
+        lucent::error("actortemporal",
+                      "FATAL: admitted actor source refused presentation t={} status={}",
+                      t,
+                      spyro::actor_temporal::statusName(status));
+        std::abort();
+      }
+    }
   }
 
   void rotate(Core &core) override {
     spyro_paired_actor_fps60_rotate(&core);
     spyro_context(core).worldTemporal.rotate();
+    spyro_context(core).actorTemporal.rotate();
   }
 
 private:
@@ -66,54 +85,89 @@ private:
 SpyroTemporalSceneAdmission::SpyroTemporalSceneAdmission() = default;
 SpyroTemporalSceneAdmission::~SpyroTemporalSceneAdmission() = default;
 
-bool SpyroTemporalSceneAdmission::world(Core &core, bool paired) {
+bool SpyroTemporalSceneAdmission::interval(Core &core,
+                                           const char *label,
+                                           const std::function<bool(RenderQueue &, float)> &emit) {
   if (!sink_) {
     sink_ = std::make_unique<RenderQueue>(RenderQueue::Observation::Admission);
   }
-  auto &sink = sink_;
-  sink->game = core.game;
-  const auto &context = spyro_context(core);
+  auto &sink = *sink_;
+  sink.game = core.game;
   DisplayPassGuard readonly(core.rsub.mode);
   for (float t : {0.0f, 0.5f, 1.0f}) {
-    sink->reset();
-    if (paired && spyro_paired_actor_rebuild_sample(
-                      &core, *sink, context.pairedActor.previous, context.pairedActor.current, t) ==
-                      SpyroPairedRebuildResult::Refused) {
-      lucent::debug("worldtemporal", "preflight refused stage=paired t={}", t);
+    sink.reset();
+    if (!emit(sink, t)) {
       return false;
     }
-    if (!context.worldTemporal.emit(core, *sink, t)) {
-      return false;
-    }
-    sink->finalize(&core, "world-temporal-preflight");
+    sink.finalize(&core, label);
     std::vector<const RqItem *> stream;
-    stream.reserve(static_cast<size_t>(sink->n));
-    for (int i = 0; i < sink->n; ++i) {
-      stream.push_back(&sink->items[i]);
+    stream.reserve(static_cast<size_t>(sink.n));
+    for (int i = 0; i < sink.n; ++i) {
+      stream.push_back(&sink.items[i]);
     }
     // emitItemStream does no playback for an empty source. The painter planner deliberately
     // refuses a stream with zero grouped faces, so it applies only when there is output to replay.
-    if (!stream.empty()) {
-      const auto plan = planPainterItemStream(stream);
-      lucent::debug("worldtemporal",
-                    "preflight painter t={} refusal={} item={} partitioned={}/{}",
-                    t,
-                    static_cast<unsigned>(plan.stats.refusal),
-                    plan.stats.refusal_item,
-                    plan.stats.partitioned_items,
-                    stream.size());
-      if (!plan.accepted() || plan.stats.partitioned_items != stream.size()) {
-        return false;
-      }
+    if (stream.empty()) {
+      continue;
+    }
+    const auto plan = planPainterItemStream(stream);
+    lucent::debug("worldtemporal",
+                  "preflight {} painter t={} refusal={} item={} partitioned={}/{}",
+                  label,
+                  t,
+                  static_cast<unsigned>(plan.stats.refusal),
+                  plan.stats.refusal_item,
+                  plan.stats.partitioned_items,
+                  stream.size());
+    if (!plan.accepted() || plan.stats.partitioned_items != stream.size()) {
+      return false;
     }
   }
   return true;
+}
+
+bool SpyroTemporalSceneAdmission::world(Core &core, bool paired) {
+  const auto &context = spyro_context(core);
+  return interval(
+      core, "world-temporal-preflight", [&context, paired, &core](RenderQueue &sink, float t) {
+        if (paired &&
+            spyro_paired_actor_rebuild_sample(
+                &core, sink, context.pairedActor.previous, context.pairedActor.current, t) ==
+                SpyroPairedRebuildResult::Refused) {
+          lucent::debug("worldtemporal", "preflight refused stage=paired t={}", t);
+          return false;
+        }
+        return context.worldTemporal.emit(core, sink, t);
+      });
+}
+
+bool SpyroTemporalSceneAdmission::actors(Core &core) {
+  const auto &context = spyro_context(core);
+  if (!context.actorTemporal.paired()) {
+    return false;
+  }
+  return interval(core, "actor-temporal-preflight", [&context, &core](RenderQueue &sink, float t) {
+    spyro::actor_temporal::Census census{};
+    const auto status = context.actorTemporal.emit(core, sink, t, census);
+    if (status == spyro::actor_temporal::Status::Ready ||
+        status == spyro::actor_temporal::Status::ValidEmpty) {
+      return true;
+    }
+    lucent::debug("actortemporal",
+                  "preflight refused t={} status={} actors={} interpolated={}",
+                  t,
+                  spyro::actor_temporal::statusName(status),
+                  census.actors,
+                  census.interpolated);
+    return false;
+  });
 }
 
 void spyro_temporal_scene_begin(
     Core &core, uint64_t scene, bool pairedScene, bool reference, bool active) {
   auto &context = spyro_context(core);
   context.worldTemporal.begin(scene, reference, active);
+  context.actorTemporal.begin(scene, reference, active);
   spyro_paired_actor_frame_begin(context.pairedActor, pairedScene, reference, active);
 }
 
@@ -122,6 +176,13 @@ void spyro_temporal_scene_prepare(Core &core) {
   auto &paired = context.pairedActor;
   paired.temporal_eligible = false;
   context.worldTemporal.eligible = false;
+  // Regular actors carry their own endpoints, so their admission neither depends on the world
+  // source nor is lost to one of its refusals below.
+  context.actorTemporal.eligible = context.temporalAdmission.actors(core);
+  lucent::debug("actortemporal",
+                "actor interval frame={} admitted={}",
+                context.actorTemporal.frameSerial(),
+                context.actorTemporal.eligible);
   if (paired.was_fps60_active && paired.endpoints_compatible) {
     // Preserve paired-only admission when the world lacks a complete matching source.
     paired.temporal_eligible = spyro_paired_actor_fps60_eligible(paired);

@@ -1,23 +1,19 @@
 #include "fx_actor_draw.h"
 
-#include "actor_face_submitter.h"
+#include "actor_emit.h"
 #include "actor_recipe_capture.h"
 #include "actor_scene_builder.h"
+#include "actor_temporal.h"
 #include "core.h"
 #include "game.h"
 #include "gpu_vk.h"
-#include "producer_scope.h"
 #include "render_queue.h"
+#include "spyro_context.h"
 
 #include <cstdint>
 #include <lucent/log.h>
+#include <utility>
 #include <vector>
-
-namespace {
-
-constexpr uint32_t kProducerKey = 0x8001F798u;
-
-} // namespace
 
 bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
   spyro::actor_scene::Frame sceneFrame{};
@@ -63,52 +59,40 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
       record.expected = spyro::actor_prefix::build(record.input);
     }
   }
-  std::vector<spyro::actor_prefix::Output> outputs;
-  const auto recipe = spyro::actor_recipe_capture::compose_records(records, outputs);
-  if (recipe.status == spyro::actor_draw_recipe::Status::ValidEmpty) {
-    // Preparation owns the shadow-list lifecycle even when every face is culled.
-    spyro::actor_scene::commit(c, sceneFrame);
-    return true;
-  }
-  if (recipe.status != spyro::actor_draw_recipe::Status::Ready) {
+  const auto prepared =
+      spyro::actor_emit::prepare(*c, c->game->rq, spyro::actor_draw::kProducerKey, records);
+  const auto &recipe = prepared.recipe;
+  if (prepared.status != spyro::actor_emit::Status::Ready &&
+      prepared.status != spyro::actor_emit::Status::ValidEmpty) {
     const uint32_t firstPrefixStatus =
-        outputs.empty() ? UINT32_MAX : (uint32_t)outputs.front().status;
-    lucent::debug(
-        "actordirect",
-        "REFUSED recipe={} reason={} prefix_status={} record={} source_word={} words={:08X},{:08X} "
-        "records={} candidates={} source_scanned={} source_queued={} source_culled={} coarse={} "
-        "view={} invalid_model={}",
-        (uint32_t)recipe.status,
-        (uint32_t)recipe.firstReason,
-        firstPrefixStatus,
-        recipe.firstUnsupportedRecord,
-        recipe.firstUnsupportedSourceWord,
-        recipe.firstUnsupportedWords[0],
-        recipe.firstUnsupportedWords[1],
-        records.size(),
-        recipe.candidates,
-        census.scanned,
-        census.queued,
-        census.culled,
-        census.coarseCulled,
-        census.viewCulled,
-        census.invalidModel);
+        prepared.outputs.empty() ? UINT32_MAX : (uint32_t)prepared.outputs.front().status;
+    lucent::debug("actordirect",
+                  "REFUSED stage={} recipe={} reason={} prefix_status={} submission={} record={} "
+                  "source_word={} words={:08X},{:08X} records={} candidates={} source_scanned={} "
+                  "source_queued={} source_culled={} coarse={} view={} invalid_model={}",
+                  spyro::actor_emit::statusName(prepared.status),
+                  (uint32_t)recipe.status,
+                  (uint32_t)recipe.firstReason,
+                  firstPrefixStatus,
+                  spyro::actor_face_submitter::statusName(prepared.plan.status),
+                  recipe.firstUnsupportedRecord,
+                  recipe.firstUnsupportedSourceWord,
+                  recipe.firstUnsupportedWords[0],
+                  recipe.firstUnsupportedWords[1],
+                  records.size(),
+                  recipe.candidates,
+                  census.scanned,
+                  census.queued,
+                  census.culled,
+                  census.coarseCulled,
+                  census.viewCulled,
+                  census.invalidModel);
     return false;
   }
-  RenderQueue &queue = c->game->rq;
-  const auto plan =
-      spyro::actor_face_submitter::prepare(queue, kProducerKey, outputs, recipe.faces);
-  if (plan.status != spyro::actor_face_submitter::Status::Ready) {
-    lucent::debug("actordirect", "REFUSED submission={}", (uint32_t)plan.status);
-    return false;
-  }
-  const GpuState gpu = c->game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
-    return false;
-  }
-  ProducerScope producer(&c->rsub.producerScope, kProducerKey, "actor:opaque");
-  spyro::actor_face_submitter::submit(
-      c, queue, kProducerKey, spyro::actor_face_submitter::Layer::Regular, recipe.faces, plan);
+  // Preparation owns the shadow-list lifecycle even when every face is culled, and an empty picture
+  // is still an endpoint: the next frame can interpolate against a scene that drew nothing.
+  spyro::actor_emit::publish(
+      *c, c->game->rq, spyro::actor_draw::kProducerKey, spyro::actor_draw::kProducerName, prepared);
   spyro::actor_scene::commit(c, sceneFrame);
   lucent::debug("actordirect",
                 "PASS records={} candidates={} rejected={} faces={} shadows={} painters_before={}",
@@ -117,11 +101,12 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
                 recipe.rejectedCandidates,
                 recipe.faces.size(),
                 sceneFrame.shadows.size(),
-                plan.admission.existingObjects);
+                prepared.plan.admission.existingObjects);
   lucent::debug("actordirect",
                 "source scanned={} queued={} culled={}",
                 census.scanned,
                 census.queued,
                 census.culled);
+  spyro_context(*c).actorTemporal.retain(std::move(records));
   return true;
 }

@@ -326,11 +326,10 @@ bool History::materializePending(Core &core, const char *&why) {
     why = "missing consecutive world source";
     return false;
   }
-  const world_projection_math::ProjectionStream culling(
-      previous_->source.selection.camera.cullingMatrix,
-      current_->source.selection.camera.cullingMatrix,
-      {},
-      0.5);
+  const ProjectionStream culling(previous_->source.selection.camera.cullingMatrix,
+                                 current_->source.selection.camera.cullingMatrix,
+                                 {},
+                                 0.5);
   world_scene_prepare::Prepared prepared{};
   why = "none";
   if (!world_scene_prepare::prepare(previous_->source.selection,

@@ -510,7 +510,7 @@ void sampled_source_contract() {
       before.sectors[0]->extent = after.sectors[0]->extent = channel < 2u ? 0x4001u : 0x2001u;
       auto &dirty = dirtyPrevious ? before : after;
       dirty.sectors[0]->animation &= ~(0xffu << (channel * 8u));
-      const spyro::world_projection_math::ProjectionStream culling(
+      const spyro::ProjectionStream culling(
           before.camera.cullingMatrix, after.camera.cullingMatrix, {}, 0.5);
       Prepared prepared{};
       const char *why = "unset";

@@ -33,7 +33,7 @@ struct Prepared {
 
 bool prepare(const world_source::Selection &previous,
              const world_source::Selection &current,
-             const world_projection_math::ProjectionStream &culling,
+             const ProjectionStream &culling,
              int32_t horizontalWidth,
              Prepared &out,
              const char *&why,

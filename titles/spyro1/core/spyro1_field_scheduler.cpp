@@ -179,9 +179,9 @@ bool FieldScheduler::dispatchCallbacks() {
 
 void FieldScheduler::serviceSkipMap(bool startEdge) {
   using spyro::guest::kGamestate;
-  constexpr std::uint32_t kSubstate = 0x80078D78u;
+  using spyro::guest::kTitlescreenState;
   constexpr std::uint32_t kSubSubstate = 0x80078D7Cu;
-  constexpr std::uint32_t kBootPhase = 0x80075864u;
+  using spyro::guest::kLoadStage;
   Core &core = game_.core;
 
   ++skipMapFields_;
@@ -191,9 +191,9 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
     ++skipMapStartEdges_;
   }
   const std::uint32_t stage = core.mem_r32(kGamestate);
-  const std::uint32_t substate = core.mem_r32(kSubstate);
+  const std::uint32_t substate = core.mem_r32(kTitlescreenState);
   const std::uint32_t subSubstate = core.mem_r32(kSubSubstate);
-  const std::uint32_t bootPhase = core.mem_r32(kBootPhase);
+  const std::uint32_t bootPhase = core.mem_r32(kLoadStage);
   const bool changed = stage != previousStage_ || substate != previousSubstate_ ||
                        subSubstate != previousSubSubstate_ || bootPhase != previousBootPhase_ ||
                        bootActive != previousBootActive_;

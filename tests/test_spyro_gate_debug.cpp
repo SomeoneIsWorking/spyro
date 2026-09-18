@@ -17,17 +17,17 @@ void require(bool condition, const char *what) {
 
 void seedGate(Core &core) {
   core.mem_w32(spyro::guest::kGamestate, 0u);
-  core.mem_w32(0x80075864u, 0xffffffffu);
+  core.mem_w32(spyro::guest::kLoadStage, 0xffffffffu);
   core.mem_w32(0x8007596cu, 10u);
   core.mem_w32(0x800758b4u, 14u);
-  core.mem_w32(0x800758bcu, 1u);
-  core.mem_w32(0x80078640u, 0x80010000u);
+  core.mem_w32(spyro::guest::kPortalCount, 1u);
+  core.mem_w32(spyro::guest::kPortals, 0x80010000u);
   core.mem_w32(0x80010018u, 40u);
   core.mem_w32(0x8001001cu, 14u);
   core.mem_w32(0x80010020u, 100u);
   core.mem_w32(0x80010024u, 200u);
   core.mem_w32(0x80010028u, 300u);
-  core.mem_w32(0x80075828u, 0x80020000u);
+  core.mem_w32(spyro::guest::kLevelMobys, 0x80020000u);
   core.mem_w32(0x80020000u + 40u * 0x58u, 0x80030000u);
   core.mem_w32(0x80030000u, 0x80031000u);
   core.mem_w8(0x80031000u, 2u);

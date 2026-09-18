@@ -13,7 +13,7 @@
 namespace spyro::actor_scene {
 namespace {
 
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kLevelMobys;
 constexpr uint32_t kCategoryVisibility = 0x800771C8u;
 constexpr uint32_t kModels = 0x80076378u;
 using spyro::guest::kCamera;

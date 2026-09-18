@@ -252,4 +252,8 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/source_policy.py)
   add_test(NAME source_policy_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/source_policy.py --selftest)
+  # The agent drivers read their guest addresses out of game/core/guest_globals.h. If that parser
+  # ever silently stops matching the header's form, every driver would fall back to nothing at all.
+  add_test(NAME guest_globals_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/guest_globals.py --selftest)
 endif()

@@ -26,7 +26,7 @@ struct Harness {
 };
 
 void setPortal(Harness &h, uint32_t index, uint32_t address, int32_t sector) {
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortals + index * 4u, address);
+  h.core->mem_w32(spyro::guest::kPortals + index * 4u, address);
   h.core->mem_w32(address + 0x14u, (uint32_t)sector);
 }
 
@@ -56,7 +56,7 @@ void test_publish_spin_requires_ready_recipe() {
 
 void test_inactive_portal_keeps_main_sky_ready() {
   Harness h;
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortalCount, 1u);
+  h.core->mem_w32(spyro::guest::kPortalCount, 1u);
   setPortal(h, 0u, 0x80010000u, 7);
   const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get());
   CHECK(recipe.status == Status::Ready);
@@ -66,7 +66,7 @@ void test_inactive_portal_keeps_main_sky_ready() {
 
 void test_active_malformed_portal_refuses() {
   Harness h;
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortalCount, 2u);
+  h.core->mem_w32(spyro::guest::kPortalCount, 2u);
   setPortal(h, 0u, 0x80010000u, 7);
   setPortal(h, 1u, 0x80010020u, -1);
   h.core->mem_w8(spyro::cyclorama_scene_recipe::kBroadVisibility + 7u, 0xffu);
@@ -77,13 +77,13 @@ void test_active_malformed_portal_refuses() {
 
 void test_invalid_portal_shape_refuses() {
   Harness h;
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortalCount, 7u);
+  h.core->mem_w32(spyro::guest::kPortalCount, 7u);
   CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status == Status::InvalidPortalCount);
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortalCount, 1u);
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortals, 0u);
+  h.core->mem_w32(spyro::guest::kPortalCount, 1u);
+  h.core->mem_w32(spyro::guest::kPortals, 0u);
   CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status ==
         Status::InvalidPortalPointer);
-  h.core->mem_w32(spyro::cyclorama_scene_recipe::kPortals, 0x90000000u);
+  h.core->mem_w32(spyro::guest::kPortals, 0x90000000u);
   CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status ==
         Status::InvalidPortalPointer);
   setPortal(h, 0u, 0x80010000u, 256);

@@ -16,8 +16,6 @@ namespace spyro::cyclorama_scene_recipe {
 // aperture is empty before invoking the owned static-mesh producer 0x8004EBA8.
 constexpr uint32_t kSpinYaw = 0x80075858u;
 constexpr uint32_t kSpinPitch = 0x800758fcu;
-constexpr uint32_t kPortalCount = 0x800758bcu;
-constexpr uint32_t kPortals = 0x80078640u;
 constexpr uint32_t kBroadVisibility = 0x800771c8u;
 constexpr uint32_t kPortalCapacity = 6u;
 

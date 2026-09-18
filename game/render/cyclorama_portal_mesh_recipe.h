@@ -13,7 +13,6 @@ namespace spyro::cyclorama_portal_mesh {
 
 constexpr uint32_t kProducerKey = 0x80050240u;
 constexpr uint32_t kNearProducerKey = 0x8004f4bcu;
-constexpr uint32_t kLevelTicks = 0x800758c8u;
 constexpr uint32_t kSineTable = 0x8006cbf8u;
 constexpr uint32_t kMagnitudeTable = 0x80074b84u;
 constexpr uint32_t kPortalPointCapacity = 16u;

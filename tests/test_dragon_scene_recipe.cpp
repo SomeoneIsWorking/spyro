@@ -5,6 +5,7 @@
 #include "core.h"
 #include "dragon_scene_recipe.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "testutil.h"
 
 #include <algorithm>
@@ -15,8 +16,8 @@ namespace {
 using spyro::dragon_scene::Producer;
 using spyro::dragon_scene::Status;
 
-constexpr uint32_t kCutscene = 0x80077030u;
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kDragonCutscene;
+using spyro::guest::kLevelMobys;
 constexpr uint32_t kMobyArray = 0x80100000u;
 constexpr uint32_t kMobyBytes = 0x58u;
 constexpr uint32_t kDragon = 0x80120000u;
@@ -42,12 +43,12 @@ std::unique_ptr<Game> dragonFixture(uint32_t state, int32_t ticks = 0, int32_t f
   core.mem_w8(kMobyArray + kMobyBytes + 72u, 1u);
   core.mem_w8(kMobyArray + kMobyBytes * 2u + 72u, 0xffu);
   core.mem_w8(kDragon + 72u, 2u);
-  core.mem_w32(kCutscene + 0x28u, state);
-  core.mem_w32(kCutscene + 0x3cu, (uint32_t)ticks);
-  core.mem_w32(kCutscene + 0x44u, (uint32_t)fade);
-  core.mem_w32(kCutscene + 0x88u, kSpyro);
-  core.mem_w32(kCutscene + 0x8cu, kCutsceneDragon);
-  core.mem_w32(kCutscene + 0x90u, kDragon);
+  core.mem_w32(kDragonCutscene + 0x28u, state);
+  core.mem_w32(kDragonCutscene + 0x3cu, (uint32_t)ticks);
+  core.mem_w32(kDragonCutscene + 0x44u, (uint32_t)fade);
+  core.mem_w32(kDragonCutscene + 0x88u, kSpyro);
+  core.mem_w32(kDragonCutscene + 0x8cu, kCutsceneDragon);
+  core.mem_w32(kDragonCutscene + 0x90u, kDragon);
   return game;
 }
 

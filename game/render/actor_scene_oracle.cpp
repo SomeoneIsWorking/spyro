@@ -27,7 +27,7 @@ constexpr uint32_t kMaxChain = 65536u;
 constexpr uint32_t kMobyClass = 54u;
 constexpr uint32_t kMobyBytes = 0x58u;
 constexpr uint32_t kMobyState = 72u;
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kLevelMobys;
 constexpr uint32_t kMaxLevelMobys = 1024u;
 using spyro::guest::kCamera;
 

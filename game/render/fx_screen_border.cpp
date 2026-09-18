@@ -1,4 +1,5 @@
 #include "fx_screen_border.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "game.h"
@@ -13,7 +14,7 @@ namespace {
 constexpr uint32_t kProducerKey = 0x80018F30u;
 constexpr uint32_t kEnabled = 0x8007570Cu;   // g_ScreenBorderEnabled
 constexpr uint32_t kBarHeight = 0x800756C0u; // D_800756C0 — the animated bar height
-constexpr uint32_t kDeltaTime = 0x800756CCu; // g_DeltaTime (main.c clamps it to 2..4)
+using spyro::guest::kDeltaTime;
 
 } // namespace
 

@@ -1,4 +1,5 @@
 #include "title_menu_state.h"
+#include "guest_globals.h"
 
 #include "core.h"
 
@@ -41,7 +42,7 @@ title_menu_recipe::Mode2Input State::mode2Input() const {
 
 State read(Core *core) {
   const uint32_t gatePtr = core->mem_r32(kGateVarPtr);
-  State state = {.mode = core->mem_r32(kModeAddress),
+  State state = {.mode = core->mem_r32(spyro::guest::kTitlescreenState),
                  .mode2State = core->mem_r32(kMode2State),
                  .page = core->mem_r32(kPage),
                  .anim = core->mem_r32(kAnim),

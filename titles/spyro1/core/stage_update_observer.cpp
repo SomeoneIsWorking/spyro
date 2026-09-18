@@ -10,10 +10,10 @@ namespace spyro1 {
 namespace {
 
 // Addresses and offsets from the authenticated Spyro 1 executable and external/spyro-1 symbols.
-using spyro::guest::kGamestate;
-constexpr std::uint32_t kLevelTick = 0x800758C8u;
-constexpr std::uint32_t kGameTick = 0x8007572Cu;
 using spyro::guest::kCamera;
+using spyro::guest::kGamestate;
+using spyro::guest::kGameTick;
+using spyro::guest::kLevelTicks;
 constexpr std::uint32_t kCameraPosition = kCamera + 0x28u;
 constexpr std::uint32_t kCameraState = kCamera + 0x58u;
 constexpr std::uint32_t kCameraTargetState = kCamera + 0xC0u;
@@ -203,7 +203,7 @@ void StageUpdateObserver::afterReturn(Core &core, std::uint32_t entry) {
   }
   samples_[used_++] = {
       .stage = 0u,
-      .levelTick = core.mem_r32(kLevelTick),
+      .levelTick = core.mem_r32(kLevelTicks),
       .gameTick = core.mem_r32(kGameTick),
       .cameraState = core.mem_r32(kCameraState),
       .cameraTargetState = core.mem_r32(kCameraTargetState),

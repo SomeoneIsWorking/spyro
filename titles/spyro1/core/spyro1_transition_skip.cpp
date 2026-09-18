@@ -35,7 +35,7 @@ constexpr std::uint64_t kReturnHomeCycles = 2u << 20;
 constexpr std::uint32_t kLevelTransHudActive = 0x800756B0u;
 
 // g_LoadStage, reported so a cancellation can be read against the load it did not touch.
-constexpr std::uint32_t kLoadStage = 0x80075864u;
+using spyro::guest::kLoadStage;
 
 } // namespace
 

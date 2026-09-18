@@ -1,4 +1,5 @@
 #include "cyclorama_scene_recipe.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "world_chunk_codec.h"
@@ -61,7 +62,7 @@ Recipe prepare(Core *core) {
   const int32_t cameraGroup = (int32_t)core->mem_r32(kCameraOcclusionGroup);
   const int32_t groupCount = (int32_t)core->mem_r32(kEnvironmentOcclusionGroupCount);
   recipe.mainSelection = cameraGroup < groupCount ? cameraGroup : -1;
-  recipe.portalCount = (int32_t)core->mem_r32(kPortalCount);
+  recipe.portalCount = (int32_t)core->mem_r32(spyro::guest::kPortalCount);
   if (recipe.portalCount <= 0) {
     recipe.status = Status::Ready;
     recipe.refusal = "none";
@@ -73,7 +74,7 @@ Recipe prepare(Core *core) {
 
   const world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram, sizeof(core->ram)));
   for (int32_t i = 0; i < recipe.portalCount; ++i) {
-    const uint32_t portal = ram.r32(kPortals + (uint32_t)i * 4u);
+    const uint32_t portal = ram.r32(spyro::guest::kPortals + (uint32_t)i * 4u);
     if (portal == 0u || (portal & 3u) != 0u || !ram.contains(portal, kPortalWorldSector + 4u)) {
       return refuse(recipe, Status::InvalidPortalPointer, "portal_pointer");
     }

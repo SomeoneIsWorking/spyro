@@ -74,7 +74,7 @@ constexpr StageArm kStageArms[] = {
      "GS_Credits — SPLIT on [0x80075704]<99 -> 0x8007BFD0 (an OVERLAY function), else 0x8001EB80 "
      "(reaches RasterizeSpritePrimQueue 0x80022A2C)"},
 };
-constexpr uint32_t kStageIndirectPtr13 = 0x80078D78u; // the [..]==3 discriminator of stage 13
+using spyro::guest::kTitlescreenState;
 constexpr uint32_t kStageIndirectPtr15 = 0x80075704u; // the [..]<99 discriminator of stage 15
 constexpr uint32_t kStageFnPtr7 = 0x8007567Cu;        // stage 7's function pointer
 
@@ -225,8 +225,8 @@ void SpyroRenderer::reportBacklog(const Scene &sc) const {
   if (sc.stage == 13) {
     lucent::error("render",
                   "  [0x{:08X}] = {} selects 0x8001E6B8 (==3) or 0x8007CEE4",
-                  kStageIndirectPtr13,
-                  mC->mem_r32(kStageIndirectPtr13));
+                  kTitlescreenState,
+                  mC->mem_r32(kTitlescreenState));
   }
   if (sc.stage == 15) {
     lucent::error("render",

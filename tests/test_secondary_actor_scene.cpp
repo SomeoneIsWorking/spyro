@@ -1,6 +1,7 @@
 #include "actor_recipe_capture.h"
 #include "actor_scene_builder.h"
 #include "core.h"
+#include "guest_globals.h"
 #include "secondary_actor_recipe.h"
 #include "secondary_actor_scene.h"
 #include "testutil.h"
@@ -12,7 +13,7 @@
 namespace {
 
 constexpr uint32_t kSourceList = 0x80071ef4u;
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kLevelMobys;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
 constexpr uint32_t kShadowListStart = 0x800724f4u;
 

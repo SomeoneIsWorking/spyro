@@ -12,12 +12,12 @@ namespace {
 constexpr uint32_t kRamBegin = 0x80000000u;
 constexpr uint32_t kRamEnd = 0x801fffffu;
 using spyro::guest::kGamestate;
-constexpr uint32_t kLoadStage = 0x80075864u;
+using spyro::guest::kLoadStage;
 constexpr uint32_t kLevelId = 0x8007596cu;
 constexpr uint32_t kNextLevelId = 0x800758b4u;
-constexpr uint32_t kPortalCount = 0x800758bcu;
-constexpr uint32_t kPortals = 0x80078640u;
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kLevelMobys;
+using spyro::guest::kPortalCount;
+using spyro::guest::kPortals;
 using spyro::guest::kSpyro;
 
 constexpr uint32_t kPortalPathMoby = 0x18u;

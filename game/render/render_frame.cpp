@@ -42,10 +42,10 @@
 namespace {
 using spyro::guest::kCamera;
 using spyro::guest::kGamestate;
-constexpr uint32_t kStageSubstate = 0x80078D78u;
+using spyro::guest::kTitlescreenState;
 constexpr uint32_t kStageSubSubstate = 0x80078D7Cu;
-constexpr uint32_t kStateSwitch = 0x8007579Cu;
-constexpr uint32_t kLoadStage = 0x80075864u;
+using spyro::guest::kLoadStage;
+using spyro::guest::kStateSwitch;
 constexpr uint32_t kGameplayDrawFrame = 0x8007593Cu;
 
 // One message per layer of 0x80019698, so the abort still names the exact producer that refused
@@ -88,7 +88,8 @@ bool isFieldStage(uint32_t stage) {
 }
 
 bool pairedActorScene(Core *core, const Scene &scene) {
-  const bool frontend = scene.stage == kStageFrontEnd && core->mem_r32(0x80078D78u) == 3u &&
+  const bool frontend = scene.stage == kStageFrontEnd &&
+                        core->mem_r32(spyro::guest::kTitlescreenState) == 3u &&
                         core->mem_r32(0x80078D7Cu) == 2u;
   const bool respawnFading = (scene.stage == kStageRespawn || scene.stage == kStageGameOver) &&
                              core->mem_r32(kGameplayDrawFrame) != 0u;
@@ -252,7 +253,7 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     abortUnimplemented(sc, "no producer is registered for this stage");
   }
   if (sc.stage == kStageFrontEnd) {
-    const uint32_t titleMode = mC->mem_r32(0x80078D78u);
+    const uint32_t titleMode = mC->mem_r32(spyro::guest::kTitlescreenState);
     if (!spyro::stage13_scene_recipe::hasSharedBackdrop(titleMode)) {
       if (!stage13Mode3Render()) {
         abortUnimplemented(sc, "mode 3 also armed paired-actor renderer 0x80023AC4");
@@ -302,7 +303,7 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
                 mC->r[31],
                 mC->r[29],
                 mC->mem_r32(kGamestate),
-                mC->mem_r32(kStageSubstate),
+                mC->mem_r32(kTitlescreenState),
                 mC->mem_r32(kStageSubSubstate),
                 mC->mem_r32(kLoadStage),
                 mC->mem_r32(kStateSwitch));

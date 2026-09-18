@@ -38,8 +38,8 @@ constexpr std::uint32_t kPadVsync = 0x80053C68u;
 constexpr std::uint32_t kTick = 0x80033A68u;
 constexpr std::uint32_t kReturn = 0x80070000u;
 using spyro::guest::kGamestate;
-constexpr std::uint32_t kLevelTick = 0x800758C8u;
-constexpr std::uint32_t kGameTick = 0x8007572Cu;
+using spyro::guest::kGameTick;
+using spyro::guest::kLevelTicks;
 
 void writeCode(Core &core) {
   // Synthetic stores at the four selected PCs, without copying the retail instruction corpus.
@@ -118,7 +118,7 @@ void enableSyntheticFields(Game &game, SyntheticRuntime &runtime, SpyroContext &
 
 void resetWords(Core &core) {
   core.mem_w32(kGamestate, 13u);
-  core.mem_w32(kLevelTick, 5326u);
+  core.mem_w32(kLevelTicks, 5326u);
   core.mem_w32(kGameTick, 7u);
   core.r[8] = 0x80070000u;
   core.r[9] = 7u;
@@ -134,7 +134,7 @@ void test_shipping_observer_captures_four_stores_and_unreachable_control() {
   resetWords(core);
   runHandoff(core); // Warm the ordinary shipping JIT path before the observer is armed.
   const auto plainStage = core.mem_r32(kGamestate);
-  const auto plainLevelTick = core.mem_r32(kLevelTick);
+  const auto plainLevelTick = core.mem_r32(kLevelTicks);
   const auto plainGameTick = core.mem_r32(kGameTick);
 
   resetWords(core);
@@ -167,7 +167,7 @@ void test_shipping_observer_captures_four_stores_and_unreachable_control() {
   CHECK_EQ(observer.classCounts(spyro1::HandoffStoreClass::Bracket).hits, 0u);
   CHECK(observer.bracketOpened());
   CHECK(observer.bracketClosed());
-  CHECK_EQ(samples[0].before.address, kLevelTick);
+  CHECK_EQ(samples[0].before.address, kLevelTicks);
   CHECK_EQ(samples[0].before.word, 5326u);
   CHECK_EQ(samples[0].after.word, 0u);
   CHECK_EQ(samples[1].before.address, kGameTick);
@@ -180,7 +180,7 @@ void test_shipping_observer_captures_four_stores_and_unreachable_control() {
   CHECK_EQ(samples[3].before.gameTick, 0u);
   CHECK_EQ(samples[3].after.gameTick, 1u);
   CHECK_EQ(core.mem_r32(kGamestate), plainStage);
-  CHECK_EQ(core.mem_r32(kLevelTick), plainLevelTick);
+  CHECK_EQ(core.mem_r32(kLevelTicks), plainLevelTick);
   CHECK_EQ(core.mem_r32(kGameTick), plainGameTick);
   observer.finish();
   observer.report();
@@ -266,7 +266,7 @@ void test_padv_sync_bracket_keeps_callback_origin_after_boring_prefix() {
   for (std::uint32_t index = 0; index < 80u; ++index) {
     runStore(core, kPadVsync);
   }
-  CHECK_EQ(core.mem_r32(kLevelTick), 5406u);
+  CHECK_EQ(core.mem_r32(kLevelTicks), 5406u);
   runStore(core, kReset);
   runStore(core, kLoader);
   for (std::uint32_t index = 0; index < 3u; ++index) {
@@ -276,7 +276,7 @@ void test_padv_sync_bracket_keeps_callback_origin_after_boring_prefix() {
   runStore(core, kTick);
   CHECK(fields.deliver({"synthetic-post-tick-field", false, false}));
   CHECK(fields.activeDeliverySite().empty());
-  CHECK_EQ(core.mem_r32(kLevelTick), 4u);
+  CHECK_EQ(core.mem_r32(kLevelTicks), 4u);
   CHECK_EQ(core.mem_r32(kGameTick), 1u);
 
   const auto samples = observer.samples();
@@ -331,7 +331,7 @@ void test_padv_sync_bracket_keeps_callback_origin_after_boring_prefix() {
   }
   core.r[9] = core.mem_r32(kGameTick);
   runStore(core, kTick);
-  CHECK_EQ(core.mem_r32(kLevelTick), 3u);
+  CHECK_EQ(core.mem_r32(kLevelTicks), 3u);
   CHECK_EQ(core.mem_r32(kGameTick), 1u);
   CHECK(disabled.samples().empty());
 }

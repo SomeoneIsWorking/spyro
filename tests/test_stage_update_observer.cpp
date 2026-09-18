@@ -18,8 +18,8 @@ constexpr std::uint32_t kProjectionRtps = 0x4A180001u;
 void test_reached_and_unreachable_returns_use_the_same_sampler() {
   Core core;
   core.mem_w32(spyro::guest::kGamestate, 0u);
-  core.mem_w32(0x800758C8u, 1u);
-  core.mem_w32(0x8007572Cu, 1u);
+  core.mem_w32(spyro::guest::kLevelTicks, 1u);
+  core.mem_w32(spyro::guest::kGameTick, 1u);
   core.mem_w32(0x80076E28u, 0x80000010u);
   core.mem_w32(0x80076E90u, 0x80000010u);
   core.mem_w32(0x80075914u, 0x52u);
@@ -83,7 +83,7 @@ void test_non_gameplay_returns_are_counted_without_samples() {
 void test_sprite_queue_offset_boundaries_count_reached_and_unreachable_writes() {
   Core core;
   core.mem_w32(spyro::guest::kGamestate, 13u);
-  core.mem_w32(0x8007572Cu, 0u);
+  core.mem_w32(spyro::guest::kGameTick, 0u);
   spyro1::StageUpdateObserver observed(true, kStageUpdate);
   observed.beginSpriteQueue(core, {256u << 16u, 120u << 16u});
   observed.spriteActorWrite(0x80070000u, {256u << 16u, 120u << 16u}, {100u << 16u, 120u << 16u});

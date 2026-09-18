@@ -1,5 +1,6 @@
 #include "core.h"
 #include "cyclorama_portal_mesh_recipe.h"
+#include "guest_globals.h"
 #include "testutil.h"
 
 #include <array>
@@ -70,7 +71,7 @@ void inspectSnapshotIfRequested() {
   PortalFrame frame{};
   PortalFrame nearFrame{};
   for (uint32_t i = 0; i < 5u; ++i) {
-    const uint32_t portal = h.core->mem_r32(0x80078640u + i * 4u);
+    const uint32_t portal = h.core->mem_r32(spyro::guest::kPortals + i * 4u);
     const PortalFrame observed =
         spyro::cyclorama_portal_mesh::prepareFrame(h.core.get(), portal, i, nextYaw, nextPitch);
     std::printf("portal%u frame: status=%s portal=0x%08X asset=0x%08X distance=%u shift=%u "

@@ -1,4 +1,5 @@
 #include "cyclorama_portal_mesh_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_model_codec.h"
 #include "core.h"
@@ -440,9 +441,10 @@ PortalFrame prepareFrame(
   frame.maskVisible =
       !frame.edges.empty() && frame.clipLeft < frame.clipRight && frame.clipTop < frame.clipBottom;
   const uint32_t baseColor = ram.r32(frame.asset + 0x10u);
-  const uint32_t phase = (uint32_t)std::abs(cosine(
-                             ram, (int32_t)(ram.r32(kLevelTicks) * 16u + portalOrdinal * 512u))) >>
-                         1;
+  const uint32_t phase =
+      (uint32_t)std::abs(cosine(
+          ram, (int32_t)(ram.r32(spyro::guest::kLevelTicks) * 16u + portalOrdinal * 512u))) >>
+      1;
   const uint32_t animated = colorLerp(baseColor, 0x00ffffffu, (int16_t)phase);
   frame.tintColor =
       frame.distance <= kNearDistanceEnd

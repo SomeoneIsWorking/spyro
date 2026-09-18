@@ -81,6 +81,7 @@
 // Its enclosing frame environment has a separate owner for guest-state publication.
 #include "core.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "producer_scope.h" // ProducerScope — the native leg's "who is drawing right now"
 #include "render.h"
 #include "render_queue.h"
@@ -315,7 +316,7 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
     lucent::error("render",
                   "  stage 13 mode [0x{:08X}] = {} has NO native producer. Modes 0, 1, and 2 "
                   "(the logo front end, memory-card menus, and 3-slot save screen) are ported.",
-                  spyro::title_menu_state::kModeAddress,
+                  spyro::guest::kTitlescreenState,
                   st.mode);
     return false;
   }

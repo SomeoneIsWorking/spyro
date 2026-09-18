@@ -34,6 +34,36 @@ inline constexpr std::uint32_t kSpyro = 0x80078A58u;
 inline constexpr std::uint32_t kEnvironment = 0x800785A8u;
 inline constexpr std::uint32_t kEnvironmentOcclusionGroupCount = kEnvironment + 0x0Cu;
 
+// g_LoadStage (main.c): the streaming/load phase the main loop and the boot sequence both watch.
+inline constexpr std::uint32_t kLoadStage = 0x80075864u;
+
+// g_TitlescreenState (titlescreen.h): m_Mode, m_State, m_Tick, m_SubTick, m_SubState,
+// m_OptionSelected, in that order.
+inline constexpr std::uint32_t kTitlescreenState = 0x80078D78u;
+
+// g_LevelMobys (moby.h): pointer to the level's Moby array.
+inline constexpr std::uint32_t kLevelMobys = 0x80075828u;
+
+// g_Portals (portal.h) holds up to six Portal pointers; g_PortalCount says how many are live.
+inline constexpr std::uint32_t kPortals = 0x80078640u;
+inline constexpr std::uint32_t kPortalCount = 0x800758BCu;
+
+// The main loop's own clocks. g_LevelTicks advances per field from the VSync callback;
+// g_GameTick once per GS_Playing update; g_UnprocessedFrames counts fields the loop has not yet
+// consumed; g_DeltaTime is the lag the last update was told about (main.c clamps it to 2..4);
+// g_StateSwitch says this iteration's draw is skipped.
+inline constexpr std::uint32_t kLevelTicks = 0x800758C8u;
+inline constexpr std::uint32_t kGameTick = 0x8007572Cu;
+inline constexpr std::uint32_t kUnprocessedFrames = 0x80075760u;
+inline constexpr std::uint32_t kDeltaTime = 0x800756CCu;
+inline constexpr std::uint32_t kStateSwitch = 0x8007579Cu;
+
+// g_Pad (gamepad.h): m_Down at +0, m_Released at +4, m_Held at +8.
+inline constexpr std::uint32_t kPad = 0x80077378u;
+
+// g_DragonCutscene (dragon.h): a 0x24-byte WAD header, then the state machine.
+inline constexpr std::uint32_t kDragonCutscene = 0x80077030u;
+
 // Guest RAM is mirrored across KUSEG/KSEG0/KSEG1; a fixture that indexes a plain byte vector wants
 // the offset into the 2 MiB image rather than the mapped address.
 constexpr std::uint32_t ramOffset(std::uint32_t address) {

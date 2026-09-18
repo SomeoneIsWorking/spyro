@@ -1,4 +1,5 @@
 #include "fx_glow_sparkle.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "game.h"
@@ -12,7 +13,7 @@
 
 namespace {
 
-constexpr unsigned kDeltaTime = 0x800756CCu;
+using spyro::guest::kDeltaTime;
 
 bool submitGlows(Core *core) {
   const auto recipe = spyro::glow_recipe::derive(core);

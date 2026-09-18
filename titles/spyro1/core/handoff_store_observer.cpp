@@ -14,8 +14,8 @@ namespace spyro1 {
 namespace {
 
 using spyro::guest::kGamestate;
-constexpr std::uint32_t kLevelTick = 0x800758C8u;
-constexpr std::uint32_t kGameTick = 0x8007572Cu;
+using spyro::guest::kGameTick;
+using spyro::guest::kLevelTicks;
 constexpr std::uint32_t kLevelResetPc = 0x80013698u;
 constexpr std::uint32_t kGameResetPc = 0x800136A0u;
 constexpr std::uint32_t kStageZeroPc = 0x80013B4Cu;
@@ -68,7 +68,7 @@ HandoffStoreState readState(Core &core, const psx::cpu::StoreObservation &observ
       .word = core.mem_r32(address),
       .source = observation.gpr[source],
       .stage = core.mem_r32(kGamestate),
-      .levelTick = core.mem_r32(kLevelTick),
+      .levelTick = core.mem_r32(kLevelTicks),
       .gameTick = core.mem_r32(kGameTick),
       .cycle = observation.guestCycle,
   };

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import guest_globals
+
 from compare import (
     Checkpoint,
     CoreSession,
@@ -36,15 +38,16 @@ from drive import (
 
 name = "Spyro the Dragon (SCUS_942.28)"
 
-G_GAME_TICK = 0x8007572C          # g_GameTick: incremented once per GS_Playing update
-G_LEVEL_TICKS = 0x800758C8        # g_LevelTicks: incremented by the guest's VSync callback (per field)
-G_UNPROCESSED_FRAMES = 0x80075760  # g_UnprocessedFrames: fields since the main loop last consumed them
-G_DELTA_TIME = 0x800756CC         # g_DeltaTime: the lag the last update was told about (2..4 fields)
-G_STATE_SWITCH = 0x8007579C       # g_StateSwitch: the draw is skipped this iteration
-G_PAD = 0x80077378                # g_Pad: m_Down +0, m_Released +4, m_Held +8 (gamepad.h)
-G_SPYRO = 0x80078A58              # g_Spyro: m_Position at +0 (spyro.h), m_State at +0x78
-G_DRAGON_CUTSCENE = 0x80077030    # g_DragonCutscene (dragon.h): 0x24 WAD header, then the state machine
-D_OCCLUSION_RESULT = 0x80075844   # the collision query's occlusion group for g_Camera.m_OcclusionGroup
+# The shared globals come from the shipping owner through tools/guest_globals.py; see drive.py.
+G_GAME_TICK = guest_globals.kGameTick                    # incremented once per GS_Playing update
+G_LEVEL_TICKS = guest_globals.kLevelTicks                # incremented by the VSync callback, per field
+G_UNPROCESSED_FRAMES = guest_globals.kUnprocessedFrames  # fields since the main loop consumed them
+G_DELTA_TIME = guest_globals.kDeltaTime                  # the lag the last update was told about
+G_STATE_SWITCH = guest_globals.kStateSwitch              # the draw is skipped this iteration
+G_PAD = guest_globals.kPad                               # m_Down +0, m_Released +4, m_Held +8
+G_SPYRO = guest_globals.kSpyro                           # m_Position at +0, m_State at +0x78
+G_DRAGON_CUTSCENE = guest_globals.kDragonCutscene        # 0x24 WAD header, then the state machine
+D_OCCLUSION_RESULT = 0x80075844   # read only here: the collision query's result for the camera group
 
 declared = (
     DeclaredRange("gamestate", G_GAMESTATE, 4, True),

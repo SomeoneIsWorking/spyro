@@ -1,4 +1,5 @@
 #include "dragon_scene_recipe.h"
+#include "guest_globals.h"
 
 #include "core.h"
 
@@ -7,7 +8,7 @@ namespace {
 
 // g_DragonCutscene = 0x80077030 (asm/data/game.bss.s); the field offsets follow include/dragon.h,
 // whose 0x24-byte WAD header is confirmed by its own unk_0x40 comment naming 0x80077070.
-constexpr uint32_t kCutscene = 0x80077030u;
+using spyro::guest::kDragonCutscene;
 constexpr uint32_t kState = 0x28u;
 constexpr uint32_t kTicks = 0x3Cu;
 constexpr uint32_t kFade = 0x44u;
@@ -18,7 +19,7 @@ constexpr uint32_t kRescuedDragon = 0x90u;
 constexpr uint32_t kScreenBorderEnabled = 0x8007570Cu;
 constexpr uint32_t kBorderOverride = 0x800756C0u; // D_800756C0, the second border enable
 constexpr uint32_t kBurstGate = 0x80076248u;      // D_80076248.unk_0x0
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kLevelMobys;
 constexpr uint32_t kHud = 0x80077FA8u;
 constexpr uint32_t kHudMobys = 0x44u;
 constexpr uint32_t kMobyBytes = 0x58u;
@@ -74,12 +75,12 @@ State read(Core *core) {
   if (core == nullptr) {
     return state;
   }
-  state.state = core->mem_r32(kCutscene + kState);
-  state.ticks = (int32_t)core->mem_r32(kCutscene + kTicks);
-  state.fade = (int32_t)core->mem_r32(kCutscene + kFade);
-  state.cutsceneSpyro = core->mem_r32(kCutscene + kCutsceneSpyro);
-  state.cutsceneDragon = core->mem_r32(kCutscene + kCutsceneDragon);
-  state.rescuedDragon = core->mem_r32(kCutscene + kRescuedDragon);
+  state.state = core->mem_r32(kDragonCutscene + kState);
+  state.ticks = (int32_t)core->mem_r32(kDragonCutscene + kTicks);
+  state.fade = (int32_t)core->mem_r32(kDragonCutscene + kFade);
+  state.cutsceneSpyro = core->mem_r32(kDragonCutscene + kCutsceneSpyro);
+  state.cutsceneDragon = core->mem_r32(kDragonCutscene + kCutsceneDragon);
+  state.rescuedDragon = core->mem_r32(kDragonCutscene + kRescuedDragon);
   state.borderEnabled =
       core->mem_r32(kScreenBorderEnabled) != 0u || core->mem_r32(kBorderOverride) != 0u;
   state.burstActive = core->mem_r32(kBurstGate) != 0u;

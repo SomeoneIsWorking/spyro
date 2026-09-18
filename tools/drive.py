@@ -37,12 +37,16 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import guest_globals
+
 ROOT = Path(__file__).resolve().parent.parent
 
-# Guest addresses, from external/spyro-1's symbols over our byte-identical SCUS_942.28.
-G_GAMESTATE = 0x800757D8
-G_TITLESCREEN = 0x80078D78
-G_LOAD_STAGE = 0x80075864
+# Guest addresses. The shared ones come from the shipping owner, game/core/guest_globals.h, through
+# tools/guest_globals.py, so this driver and the product cannot read different memory. The two
+# level-transition words below are read here and nowhere else, so they stay with their only reader.
+G_GAMESTATE = guest_globals.kGamestate
+G_TITLESCREEN = guest_globals.kTitlescreenState
+G_LOAD_STAGE = guest_globals.kLoadStage
 G_LEVEL_TRANS_TICKS = 0x800756AC
 G_LEVEL_TRANS_HUD = 0x800756B0
 
@@ -55,15 +59,15 @@ GS_CREDITS = 15
 
 TSM_INIT, TSM_MENU, TSM_LOADING, TSM_DEMO = 0, 1, 2, 3
 
-# Steering inputs, from external/spyro-1 the same way the state words above are.
-G_CAMERA = 0x80076DD0        # 5 packed matrix words, then the position at +0x28
-G_LEVEL_MOBYS = 0x80075828   # pointer to the level's Moby array
+# Steering inputs. The addresses come from the same owner; the record layouts are this driver's own.
+G_CAMERA = guest_globals.kCamera            # 5 packed matrix words, then the position at +0x28
+G_LEVEL_MOBYS = guest_globals.kLevelMobys   # pointer to the level's Moby array
 MOBY_BYTES = 0x58
 MOBY_CLASS_WORD = 52         # the class is the high half of this word
 MOBY_STATE = 72
 MAX_LEVEL_MOBYS = 1024
-G_PORTALS = 0x80078640       # six Portal pointers
-G_PORTAL_COUNT = 0x800758BC
+G_PORTALS = guest_globals.kPortals
+G_PORTAL_COUNT = guest_globals.kPortalCount
 PORTAL_CENTER = 0x20         # Portal::m_Center, after the skybox pointer, counts and world sector
 
 

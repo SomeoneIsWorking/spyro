@@ -1,6 +1,7 @@
 #include "core.h"
 #include "fx_actor_draw.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "hw_bind.h"
 #include "spyro_game.h"
 #include "testutil.h"
@@ -13,7 +14,7 @@
 
 namespace {
 
-constexpr uint32_t kLevelMobys = 0x80075828u;
+using spyro::guest::kLevelMobys;
 constexpr uint32_t kMoby = 0x80010000u;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
 constexpr uint32_t kShadowStart = 0x800724f4u;

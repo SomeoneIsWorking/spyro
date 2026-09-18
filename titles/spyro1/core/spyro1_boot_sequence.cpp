@@ -1,4 +1,5 @@
 #include "spyro1_boot_sequence.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "guest_call.h"
@@ -156,8 +157,8 @@ void BootSequence::finalize(Core &core) {
   call(core, 0x8002D338u);
   core.mem_w32(0x80075918u, 0xFu);
   call(core, 0x8002D170u);
-  core.mem_w32(0x800756CCu, 2u);
-  core.mem_w32(0x80075760u, 0u);
+  core.mem_w32(spyro::guest::kDeltaTime, 2u);
+  core.mem_w32(spyro::guest::kUnprocessedFrames, 0u);
   core.mem_w32(0x800785CCu, 0x8000u);
   fields_.bootSequenceEnd();
   core.r[29] = originalStack_;
@@ -228,14 +229,14 @@ bool BootSequence::step(Core &core) {
       drawLogoField(core, logoSource_, logoDestination_, -0xE0 + iteration_ * 0x20);
       if (++iteration_ == 8) {
         iteration_ = 0;
-        core.mem_w32(0x80075864u, 3u);
+        core.mem_w32(spyro::guest::kLoadStage, 3u);
         core.mem_w32(0x8007566Cu, 0u);
         phase_ = Phase::AdvanceLoadState;
       }
       return false;
     case Phase::AdvanceLoadState:
       call(core, 0x80014564u);
-      if (core.mem_r32(0x80075864u) < 10u) {
+      if (core.mem_r32(spyro::guest::kLoadStage) < 10u) {
         deliverField(core, "boot-load-state");
         return false;
       }

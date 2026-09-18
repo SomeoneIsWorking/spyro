@@ -1,5 +1,6 @@
 #pragma once
 
+#include "guest_globals.h"
 #include "title_menu_recipe.h"
 
 #include <cstdint>
@@ -7,8 +8,6 @@
 class Core;
 
 namespace spyro::title_menu_state {
-
-inline constexpr uint32_t kModeAddress = 0x80078D78u;
 
 struct State {
   uint32_t mode = 0;

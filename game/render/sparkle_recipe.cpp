@@ -1,4 +1,5 @@
 #include "sparkle_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -12,7 +13,7 @@ namespace {
 
 // Addresses recovered from 0x800584C4's own instruction encodings.
 constexpr std::uint32_t kSparkles = 0x80077108u;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 // Record layout. The decomp header names +0x0D m_Speed and +0x14/+0x15 m_Fade/m_Size, but the
 // renderer uses them as the fade denominator, the size multiplier and the far depth limit, so the
 // measured roles are what the code below is written against.

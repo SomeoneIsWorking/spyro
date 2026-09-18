@@ -1,4 +1,5 @@
 #include "paired_actor_pose.h"
+#include "guest_globals.h"
 #include "paired_actor_depth.h"
 
 #include "actor_model_codec.h"
@@ -277,7 +278,7 @@ bool decode_pose(Core *c,
 }
 
 bool build_transform(Core *c, SpyroPairedActorTransform &out) {
-  constexpr uint32_t instance = 0x80078A58u, camera = 0x80076DD0u;
+  constexpr uint32_t instance = guest::kSpyro, camera = guest::kCamera;
   constexpr uint32_t sinTable = 0x8006CBF8u, cosTable = 0x8006CC78u;
   if (!c->rsub.projParams.geomValid()) {
     return false;

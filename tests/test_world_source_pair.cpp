@@ -1,3 +1,4 @@
+#include "guest_globals.h"
 #include "testutil.h"
 #include "world_source_pair.h"
 
@@ -10,7 +11,7 @@ using spyro::world_chunk_codec::Status;
 using spyro::world_source::Source;
 using spyro::world_source_pair::compatible;
 
-constexpr uint32_t kEnvironment = 0x785a8u;
+constexpr uint32_t kEnvironment = spyro::guest::ramOffset(spyro::guest::kEnvironment);
 constexpr uint32_t kSector = 0x91000u;
 constexpr uint32_t kLowMaterial = 0x93000u;
 constexpr uint32_t kHighMaterial = 0x94000u;

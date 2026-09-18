@@ -1,4 +1,5 @@
 #include "field_particle_type2_submitter.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "field_particles_recipe.h"
@@ -21,7 +22,7 @@
 namespace {
 
 constexpr uint32_t kProducerKey = 0x800573c8u;
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 
 psxport::native_projection::ProjectionParams projection(Core *core, int clipRight) {
   psxport::native_projection::ProjectionParams out{};

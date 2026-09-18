@@ -1,4 +1,5 @@
 #include "actor_scene_builder.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -15,7 +16,7 @@ namespace {
 constexpr uint32_t kLevelMobys = 0x80075828u;
 constexpr uint32_t kCategoryVisibility = 0x800771C8u;
 constexpr uint32_t kModels = 0x80076378u;
-constexpr uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kMobySize = 0x58u;
 constexpr uint32_t kMaxMobys = 4096u;
 // g_SonyImage.u.m_Draw.m_Moby holds 0x240 pointers; a list that is not terminated inside it is a

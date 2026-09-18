@@ -1,4 +1,5 @@
 #include "field_shadow_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -12,8 +13,8 @@
 namespace spyro::field_shadow_recipe {
 namespace {
 
-constexpr std::uint32_t kSpyro = 0x80078A58u;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
+using spyro::guest::kSpyro;
 constexpr std::uint32_t kModels = 0x80076378u;
 constexpr std::uint32_t kShadowState = 0x8007AA10u;
 constexpr std::uint32_t kDirectionTable = 0x8006E268u;

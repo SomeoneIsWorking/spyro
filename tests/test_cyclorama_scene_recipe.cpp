@@ -1,5 +1,6 @@
 #include "core.h"
 #include "cyclorama_scene_recipe.h"
+#include "guest_globals.h"
 #include "testutil.h"
 
 #include <cstdlib>
@@ -19,8 +20,8 @@ struct Harness {
     core->rsub.projParams.setGeomScreen(341.0f);
     core->mem_w32(spyro::cyclorama_scene_recipe::kSpinYaw, 0xfffu);
     core->mem_w32(spyro::cyclorama_scene_recipe::kSpinPitch, 0x800u);
-    core->mem_w32(spyro::cyclorama_scene_recipe::kCameraOcclusionGroup, 3u);
-    core->mem_w32(spyro::cyclorama_scene_recipe::kEnvironmentOcclusionGroupCount, 4u);
+    core->mem_w32(spyro::guest::kCameraOcclusionGroup, 3u);
+    core->mem_w32(spyro::guest::kEnvironmentOcclusionGroupCount, 4u);
   }
 };
 

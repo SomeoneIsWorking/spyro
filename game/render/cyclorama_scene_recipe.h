@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cyclorama_portal_mesh_recipe.h"
+#include "guest_globals.h"
 
 #include <cstdint>
 #include <vector>
@@ -18,10 +19,6 @@ constexpr uint32_t kSpinPitch = 0x800758fcu;
 constexpr uint32_t kPortalCount = 0x800758bcu;
 constexpr uint32_t kPortals = 0x80078640u;
 constexpr uint32_t kBroadVisibility = 0x800771c8u;
-constexpr uint32_t kCamera = 0x80076dd0u;
-constexpr uint32_t kCameraOcclusionGroup = kCamera + 0x54u;
-constexpr uint32_t kEnvironment = 0x800785a8u;
-constexpr uint32_t kEnvironmentOcclusionGroupCount = kEnvironment + 0x0cu;
 constexpr uint32_t kPortalCapacity = 6u;
 
 enum class Status : uint8_t {

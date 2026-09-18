@@ -4,6 +4,7 @@
 #include "core.h"
 #include "game.h"
 #include "glow_recipe.h"
+#include "guest_globals.h"
 #include "testutil.h"
 
 #include <array>
@@ -15,7 +16,7 @@ using spyro::glow_recipe::Recipe;
 using spyro::glow_recipe::Reject;
 using spyro::glow_recipe::Status;
 
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kGlows = 0x80078800u;
 constexpr uint32_t kRing = 0x80100000u;
 constexpr uint32_t kPosition = 0x80100100u;

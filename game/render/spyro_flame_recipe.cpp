@@ -1,4 +1,5 @@
 #include "spyro_flame_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -14,7 +15,7 @@ namespace {
 
 // Addresses recovered from 0x80058D64's own instruction encodings (asm/renderers/r_flame.s).
 constexpr std::uint32_t kFlame = 0x800786C8u;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 constexpr std::uint32_t kPartDescriptors = 0x8006D94Cu; // one word per part length
 constexpr std::uint32_t kPartPoints = 0x8006DAA8u;      // the eight parts' cross-section arrays
 constexpr std::uint32_t kTipColours = 0x8006E1A8u;      // four Gouraud words, +0x10 when superflame

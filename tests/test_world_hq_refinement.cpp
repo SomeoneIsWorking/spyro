@@ -1,3 +1,4 @@
+#include "guest_globals.h"
 #include "world_chunk_codec.h"
 #include "world_hq_refinement.h"
 #include "world_projection_math.h"
@@ -128,8 +129,8 @@ void test_near_quad_color_graph() {
 }
 
 void test_near_quad_texture_attribute() {
-  constexpr uint32_t kCamera = 0x76dd0u;
-  constexpr uint32_t kEnvironment = 0x785a8u;
+  constexpr uint32_t kCamera = spyro::guest::ramOffset(spyro::guest::kCamera);
+  constexpr uint32_t kEnvironment = spyro::guest::ramOffset(spyro::guest::kEnvironment);
   constexpr uint32_t kMaterial = 0x90000u;
   std::vector<uint8_t> bytes(0x200000u);
   writeIdentity(bytes, kCamera);
@@ -184,8 +185,8 @@ void test_near_quad_texture_attribute() {
 }
 
 void test_medium_quad_texture_attribute() {
-  constexpr uint32_t kCamera = 0x76dd0u;
-  constexpr uint32_t kEnvironment = 0x785a8u;
+  constexpr uint32_t kCamera = spyro::guest::ramOffset(spyro::guest::kCamera);
+  constexpr uint32_t kEnvironment = spyro::guest::ramOffset(spyro::guest::kEnvironment);
   constexpr uint32_t kMaterial = 0x90000u;
   std::vector<uint8_t> bytes(0x200000u);
   writeIdentity(bytes, kCamera);

@@ -1,4 +1,5 @@
 #include "dragon_burst_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -15,7 +16,7 @@ constexpr std::uint32_t kPosition = 0x04u;
 constexpr std::uint32_t kMatrix = 0x10u;
 constexpr std::uint32_t kRadius = 0x24u;
 constexpr std::uint32_t kColour = 0x2Bu;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 
 // The two rings walk the shared table backwards in 0x40-byte steps, which is an eighth of a turn,
 // and the outer ring starts half a step further round. Its radius is shifted two bits less, so it

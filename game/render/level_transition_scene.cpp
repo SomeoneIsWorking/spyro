@@ -1,4 +1,5 @@
 #include "level_transition_scene.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -25,7 +26,7 @@ constexpr std::uint32_t kSonyImageBytes = 0x900u;
 constexpr std::uint32_t kShadedMobyQueue = kSonyImage + 0x2400u;
 constexpr std::uint32_t kLevelTransHudActive = 0x800756B0u;
 constexpr std::uint32_t kEntranceSweep = 0x80075910u;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 constexpr std::uint32_t kCameraProjection = 0x00u;
 constexpr std::uint32_t kCameraView = 0x14u;
 constexpr std::uint32_t kCameraRotationX = 0x4Cu;

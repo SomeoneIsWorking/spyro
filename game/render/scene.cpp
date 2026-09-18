@@ -11,6 +11,7 @@
 // knowledge, and the whole point of this table is to be the porting backlog rather than a story
 // about one.
 #include "core.h"
+#include "guest_globals.h"
 #include "guest_gp.h"
 #include "proj_params.h" // ProjParams::geomValid — is the camera the game STATED available yet?
 #include "render.h"
@@ -21,7 +22,7 @@ namespace {
 // gp+0x574 — the STAGE SELECTOR. Both the per-frame update 0x8003385C and the render driver
 // 0x8001ED5C dispatch on it, so it names WHICH game mode is running and therefore which scene a
 // native renderer would have to produce.
-constexpr uint32_t kStageSelector = kGp + 0x574u; // 0x800757D8
+using spyro::guest::kGamestate;
 
 // ── The stage arms of the render driver 0x8001ED5C ───────────────────────────────────────────────
 // Recovered from the linear if-chain at 0x8001EDF8-0x8001EF80 and spot-checked against the
@@ -185,7 +186,7 @@ constexpr FieldLayer kFieldLayers[] = {
 //   * IT DOES NOT look below the stage. Two frames of the same stage drawing completely different
 //     content (a different level, a different menu page) are one identity to it.
 Scene SpyroRenderer::classifyScene() const {
-  const uint32_t s = mC->mem_r32(kStageSelector);
+  const uint32_t s = mC->mem_r32(kGamestate);
   for (const StageArm &a : kStageArms) {
     if (a.stage == s) {
       return {s, &a};

@@ -1,4 +1,5 @@
 #include "stage_update_observer.h"
+#include "guest_globals.h"
 
 #include "core.h"
 
@@ -9,15 +10,15 @@ namespace spyro1 {
 namespace {
 
 // Addresses and offsets from the authenticated Spyro 1 executable and external/spyro-1 symbols.
-constexpr std::uint32_t kStage = 0x800757D8u;
+using spyro::guest::kGamestate;
 constexpr std::uint32_t kLevelTick = 0x800758C8u;
 constexpr std::uint32_t kGameTick = 0x8007572Cu;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 constexpr std::uint32_t kCameraPosition = kCamera + 0x28u;
 constexpr std::uint32_t kCameraState = kCamera + 0x58u;
 constexpr std::uint32_t kCameraTargetState = kCamera + 0xC0u;
 constexpr std::uint32_t kCameraBlock = kCamera + 0xF0u;
-constexpr std::uint32_t kSpyroPosition = 0x80078A58u;
+using spyro::guest::kSpyro;
 constexpr std::uint32_t kCameraMode = 0x80075914u;
 constexpr std::uint32_t kLookMode = 0x8007592Cu;
 constexpr std::uint32_t kCameraEntranceTimer = 0x80075938u;
@@ -47,7 +48,7 @@ void StageUpdateObserver::beginSpriteQueue(Core &core, spyro::render::GteOffsetS
   }
   queueActive_ = true;
   activeQueue_ = {.ordinal = ++queueCalls_,
-                  .stage = core.mem_r32(kStage),
+                  .stage = core.mem_r32(kGamestate),
                   .gameTick = core.mem_r32(kGameTick),
                   .entry = entry};
 }
@@ -112,16 +113,16 @@ void StageUpdateObserver::beforeGte(
     return;
   }
   ++observer.stageRtpsOps_;
-  if (core->mem_r32(kStage) != 0u || core->mem_r32(kCameraTargetState) != 0u) {
+  if (core->mem_r32(kGamestate) != 0u || core->mem_r32(kCameraTargetState) != 0u) {
     return;
   }
 
   // func_80017AA4 loads this exact vector and camera rotation into GTE V0/CR0..4 before RTPS.
   // Lightrec does not currently supply an exact instruction PC to this callback, so require the
   // instruction AND its live operands, and refuse attribution unless exactly one candidate remains.
-  const std::uint32_t x = core->mem_r32(kSpyroPosition) - core->mem_r32(kCameraPosition);
-  const std::uint32_t y = core->mem_r32(kCameraPosition + 4u) - core->mem_r32(kSpyroPosition + 4u);
-  const std::uint32_t z = core->mem_r32(kCameraPosition + 8u) - core->mem_r32(kSpyroPosition + 8u);
+  const std::uint32_t x = core->mem_r32(kSpyro) - core->mem_r32(kCameraPosition);
+  const std::uint32_t y = core->mem_r32(kCameraPosition + 4u) - core->mem_r32(kSpyro + 4u);
+  const std::uint32_t z = core->mem_r32(kCameraPosition + 8u) - core->mem_r32(kSpyro + 8u);
   const std::uint32_t packedYz = (y & 0xFFFFu) | ((z & 0xFFFFu) << 16u);
   // VZ0 is a signed 16-bit GTE input even though the guest computes the subtraction in 32 bits.
   const std::uint32_t gteX = static_cast<std::uint32_t>(static_cast<std::int16_t>(x & 0xFFFFu));
@@ -193,7 +194,7 @@ void StageUpdateObserver::afterReturn(Core &core, std::uint32_t entry) {
     return;
   }
   ++matched_;
-  if (core.mem_r32(kStage) != 0u) {
+  if (core.mem_r32(kGamestate) != 0u) {
     return;
   }
   ++gameplay_;
@@ -214,7 +215,7 @@ void StageUpdateObserver::afterReturn(Core &core, std::uint32_t entry) {
       .gteOps = stageGteOps_,
       .rtpsOps = stageRtpsOps_,
       .projection = stageProjection_,
-      .player = position(core, kSpyroPosition),
+      .player = position(core, kSpyro),
       .camera = position(core, kCameraPosition),
   };
 }

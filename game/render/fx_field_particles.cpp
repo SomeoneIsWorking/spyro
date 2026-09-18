@@ -1,4 +1,5 @@
 #include "fx_field_particles.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "field_particle_type2_submitter.h"
@@ -20,7 +21,7 @@
 namespace {
 
 constexpr uint32_t kProducerKey = 0x800573c8u;
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 
 bool preflight(Core *core, const spyro::field_particles_recipe::Recipe &recipe) {
   if (recipe.status != spyro::field_particles_recipe::Status::Ready) {

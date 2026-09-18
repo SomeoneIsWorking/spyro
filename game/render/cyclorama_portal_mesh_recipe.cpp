@@ -17,6 +17,8 @@
 #include <utility>
 
 namespace spyro::cyclorama_portal_mesh {
+
+using spyro::guest::kCamera;
 namespace {
 
 using psxport::native_projection::FixedAffine;

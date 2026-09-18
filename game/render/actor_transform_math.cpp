@@ -1,4 +1,5 @@
 #include "actor_transform_math.h"
+#include "guest_globals.h"
 
 #include "core.h"
 
@@ -7,7 +8,7 @@
 namespace spyro::actor_transform_math {
 namespace {
 
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kSin = 0x8006cbf8u;
 constexpr uint32_t kCos = 0x8006cc78u;
 

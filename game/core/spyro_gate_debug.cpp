@@ -1,4 +1,5 @@
 #include "spyro_gate_debug.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include <cstdio>
@@ -10,14 +11,14 @@ namespace {
 
 constexpr uint32_t kRamBegin = 0x80000000u;
 constexpr uint32_t kRamEnd = 0x801fffffu;
-constexpr uint32_t kGamestate = 0x800757d8u;
+using spyro::guest::kGamestate;
 constexpr uint32_t kLoadStage = 0x80075864u;
 constexpr uint32_t kLevelId = 0x8007596cu;
 constexpr uint32_t kNextLevelId = 0x800758b4u;
 constexpr uint32_t kPortalCount = 0x800758bcu;
 constexpr uint32_t kPortals = 0x80078640u;
 constexpr uint32_t kLevelMobys = 0x80075828u;
-constexpr uint32_t kSpyro = 0x80078a58u;
+using spyro::guest::kSpyro;
 
 constexpr uint32_t kPortalPathMoby = 0x18u;
 constexpr uint32_t kPortalLevelId = 0x1cu;

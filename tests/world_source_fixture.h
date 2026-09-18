@@ -1,13 +1,14 @@
 #pragma once
 
+#include "guest_globals.h"
 #include <cstdint>
 #include <vector>
 
 // Synthetic authored world data shared by capture, sampling and presentation tests.
 namespace spyro::testing::world_source_fixture {
 
-constexpr uint32_t kEnvironment = 0x785a8u;
-constexpr uint32_t kCamera = 0x76dd0u;
+constexpr uint32_t kEnvironment = spyro::guest::ramOffset(spyro::guest::kEnvironment);
+constexpr uint32_t kCamera = spyro::guest::ramOffset(spyro::guest::kCamera);
 constexpr uint32_t kTable = 0x90000u;
 constexpr uint32_t kSector = 0x91000u;
 constexpr uint32_t kGroups = 0x92000u;

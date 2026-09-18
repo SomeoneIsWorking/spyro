@@ -25,6 +25,7 @@
 #include "game.h"       // Game::rq — the render queue the native producers emit into
 #include "gpu_vk.h"     // measured native/wide engine extents for the product-path announcement
 #include "guest_call.h" // Bounded runtime execution of the retained reference driver.
+#include "guest_globals.h"
 #include "level_transition_scene.h"
 #include "presentation_owner.h"
 #include "render.h"
@@ -39,8 +40,8 @@
 #include <stdlib.h> // abort
 
 namespace {
-constexpr uint32_t kCamera = 0x80076dd0u;
-constexpr uint32_t kStageSelector = 0x800757D8u;
+using spyro::guest::kCamera;
+using spyro::guest::kGamestate;
 constexpr uint32_t kStageSubstate = 0x80078D78u;
 constexpr uint32_t kStageSubSubstate = 0x80078D7Cu;
 constexpr uint32_t kStateSwitch = 0x8007579Cu;
@@ -300,7 +301,7 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
                 mC->pc,
                 mC->r[31],
                 mC->r[29],
-                mC->mem_r32(kStageSelector),
+                mC->mem_r32(kGamestate),
                 mC->mem_r32(kStageSubstate),
                 mC->mem_r32(kStageSubSubstate),
                 mC->mem_r32(kLoadStage),

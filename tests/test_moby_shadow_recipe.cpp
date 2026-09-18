@@ -1,5 +1,6 @@
 #include "core.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "moby_shadow_recipe.h"
 #include "testutil.h"
 
@@ -12,7 +13,7 @@ using spyro::moby_shadow_recipe::Recipe;
 using spyro::moby_shadow_recipe::Reject;
 using spyro::moby_shadow_recipe::Status;
 
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kShadowList = 0x800724f4u;
 constexpr uint32_t kMobyShadows = 0x80075ef8u;
 constexpr uint32_t kMoby = 0x80100000u;

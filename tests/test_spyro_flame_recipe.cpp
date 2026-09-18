@@ -4,6 +4,7 @@
 // it produces and, just as importantly, the cases where producing nothing is the right answer.
 #include "core.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "spyro_flame_recipe.h"
 #include "testutil.h"
 
@@ -16,7 +17,7 @@ using spyro::flame_recipe::Recipe;
 using spyro::flame_recipe::Reject;
 using spyro::flame_recipe::Status;
 
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kFlame = 0x800786c8u;
 constexpr uint32_t kPartDescriptors = 0x8006d94cu;
 constexpr uint32_t kPartPoints = 0x8006daa8u;

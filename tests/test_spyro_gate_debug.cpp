@@ -1,4 +1,5 @@
 #include "core.h"
+#include "guest_globals.h"
 #include "spyro_gate_debug.h"
 
 #include <cstdlib>
@@ -15,7 +16,7 @@ void require(bool condition, const char *what) {
 }
 
 void seedGate(Core &core) {
-  core.mem_w32(0x800757d8u, 0u);
+  core.mem_w32(spyro::guest::kGamestate, 0u);
   core.mem_w32(0x80075864u, 0xffffffffu);
   core.mem_w32(0x8007596cu, 10u);
   core.mem_w32(0x800758b4u, 14u);
@@ -41,7 +42,7 @@ void seedGate(Core &core) {
 void testInspectionAndTeleport() {
   auto core = std::make_unique<Core>();
   seedGate(*core);
-  core->mem_w32(0x80078a58u, 1u);
+  core->mem_w32(spyro::guest::kSpyro, 1u);
   core->mem_w32(0x80078a5cu, 2u);
   core->mem_w32(0x80078a60u, 3u);
   spyro::gate_debug::GateInfo gate;
@@ -51,7 +52,7 @@ void testInspectionAndTeleport() {
           "portal first-point decode");
   require(gate.nodes[1].x == -1000 && gate.nodes[1].z == -1200, "path node decode");
   require(spyro::gate_debug::teleportToGate(*core, 0u, 1u), "teleport accepted in field");
-  require(static_cast<int32_t>(core->mem_r32(0x80078a58u)) == -1000, "position x");
+  require(static_cast<int32_t>(core->mem_r32(spyro::guest::kSpyro)) == -1000, "position x");
   require(static_cast<int32_t>(core->mem_r32(0x80078a5cu)) == -1100, "position y");
   require(static_cast<int32_t>(core->mem_r32(0x80078a60u)) == -1200, "position z");
   require(static_cast<int32_t>(core->mem_r32(0x80078ae4u)) == -1000, "previous position x");
@@ -60,7 +61,7 @@ void testInspectionAndTeleport() {
 void testTeleportRefusesOutsideGameplay() {
   auto core = std::make_unique<Core>();
   seedGate(*core);
-  core->mem_w32(0x800757d8u, 1u);
+  core->mem_w32(spyro::guest::kGamestate, 1u);
   require(!spyro::gate_debug::teleportToGate(*core, 0u, 0u), "non-gameplay refusal");
 }
 

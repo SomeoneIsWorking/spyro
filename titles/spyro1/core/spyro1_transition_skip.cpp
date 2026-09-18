@@ -1,4 +1,5 @@
 #include "spyro1_transition_skip.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "guest_call.h"
@@ -10,7 +11,7 @@ namespace spyro1 {
 namespace {
 
 // g_Gamestate. Stage 1 is GS_LevelTransition, whose update is func_8002DF9C.
-constexpr std::uint32_t kStageSelector = 0x800757D8u;
+using spyro::guest::kGamestate;
 constexpr std::uint32_t kStageLevelTransition = 1u;
 
 // GS_ExitLevel, whose update is func_8002E084: Spyro glides out of the level while two counters
@@ -58,7 +59,7 @@ Cancellation classify(const TransitionState &state) {
 TransitionSkip::TransitionSkip(FieldScheduler &fields) : fields_(fields) {}
 
 void TransitionSkip::observe(Core &core) {
-  const TransitionState state{.stage = core.mem_r32(kStageSelector),
+  const TransitionState state{.stage = core.mem_r32(kGamestate),
                               .levelTransHudActive = core.mem_r32(kLevelTransHudActive),
                               .skipPressed = fields_.presentationSkipPressed()};
   switch (classify(state)) {
@@ -85,7 +86,7 @@ void TransitionSkip::observe(Core &core) {
                  "return-home glide cancelled ({}); guest 0x{:08X} left stage {} load stage {}",
                  cancellations_,
                  kReturnHome,
-                 core.mem_r32(kStageSelector),
+                 core.mem_r32(kGamestate),
                  core.mem_r32(kLoadStage));
     return;
   }

@@ -1,4 +1,5 @@
 #include "moby_shadow_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -15,7 +16,7 @@ namespace {
 // Addresses recovered from 0x80059F8C's own instruction encodings; see docs/issues/0103.
 constexpr std::uint32_t kShadowList = 0x800724F4u;  // D_8006FCF4 + 0x2800
 constexpr std::uint32_t kMobyShadows = 0x80075EF8u; // +0/+4 UVs, +8 the list-end cursor
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 constexpr std::uint32_t kMobyShadowDistance = 0x1Cu;
 constexpr std::uint32_t kMobyDepthOffset = 0x47u;
 constexpr std::uint32_t kFarViewZ = 0x1000u;

@@ -2,6 +2,7 @@
 #include "fx_sprite_queue.h"
 #include "game.h"
 #include "gte_state.h"
+#include "guest_globals.h"
 #include "hw_bind.h"
 #include "spyro_context.h"
 #include "stage_update_observer.h"
@@ -16,7 +17,7 @@ constexpr std::uint32_t kProjectionRtps = 0x4A180001u;
 
 void test_reached_and_unreachable_returns_use_the_same_sampler() {
   Core core;
-  core.mem_w32(0x800757D8u, 0u);
+  core.mem_w32(spyro::guest::kGamestate, 0u);
   core.mem_w32(0x800758C8u, 1u);
   core.mem_w32(0x8007572Cu, 1u);
   core.mem_w32(0x80076E28u, 0x80000010u);
@@ -26,7 +27,7 @@ void test_reached_and_unreachable_returns_use_the_same_sampler() {
   core.mem_w32(0x80078BECu, 2u);
   core.mem_w32(0x80076EC0u, 3u);
   core.mem_w32(0x80075938u, 45u);
-  core.mem_w32(0x80078A58u, 84992u);
+  core.mem_w32(spyro::guest::kSpyro, 84992u);
   core.mem_w32(0x80078A5Cu, 47125u);
   core.mem_w32(0x80078A60u, 9570u);
 
@@ -69,7 +70,7 @@ void test_reached_and_unreachable_returns_use_the_same_sampler() {
 
 void test_non_gameplay_returns_are_counted_without_samples() {
   Core core;
-  core.mem_w32(0x800757D8u, 13u);
+  core.mem_w32(spyro::guest::kGamestate, 13u);
   spyro1::StageUpdateObserver observed(true, kStageUpdate);
   observed.afterReturn(core, kStageUpdate);
   CHECK_EQ(observed.scanned(), 1u);
@@ -81,7 +82,7 @@ void test_non_gameplay_returns_are_counted_without_samples() {
 
 void test_sprite_queue_offset_boundaries_count_reached_and_unreachable_writes() {
   Core core;
-  core.mem_w32(0x800757D8u, 13u);
+  core.mem_w32(spyro::guest::kGamestate, 13u);
   core.mem_w32(0x8007572Cu, 0u);
   spyro1::StageUpdateObserver observed(true, kStageUpdate);
   observed.beginSpriteQueue(core, {256u << 16u, 120u << 16u});
@@ -188,13 +189,13 @@ void test_projection_reads_live_gte_result_and_rejects_wrong_operands() {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
   gte_bind(&core);
-  core.mem_w32(0x800757D8u, 0u);
+  core.mem_w32(spyro::guest::kGamestate, 0u);
   core.mem_w32(0x80076E90u, 0u);
   core.mem_w32(0x80075914u, 0x52u);
   core.mem_w32(0x8007592Cu, 0u);
   core.mem_w32(0x80078BECu, 0u);
   core.mem_w32(0x80076EC0u, 0u);
-  core.mem_w32(0x80078A58u, 66536u); // VZ0 port keeps only signed low 16 bits: 1000.
+  core.mem_w32(spyro::guest::kSpyro, 66536u); // VZ0 port keeps only signed low 16 bits: 1000.
   core.mem_w32(0x80078A5Cu, 100u);
   core.mem_w32(0x80078A60u, 200u);
   core.mem_w32(0x80076DF8u, 0u);
@@ -205,7 +206,7 @@ void test_projection_reads_live_gte_result_and_rejects_wrong_operands() {
   }
   const std::array<std::uint32_t, 5> identity{4096u, 0u, 4096u, 0u, 4096u};
   for (std::uint32_t index = 0; index < identity.size(); ++index) {
-    core.mem_w32(0x80076DD0u + index * 4u, identity[index]);
+    core.mem_w32(spyro::guest::kCamera + index * 4u, identity[index]);
     gte_write_ctrl(index, identity[index]);
   }
   gte_write_ctrl(26u, 1000u);

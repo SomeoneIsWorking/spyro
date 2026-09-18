@@ -1,18 +1,15 @@
 #pragma once
 
+#include "guest_globals.h"
+
 #include <compare>
 #include <cstdint>
 
 namespace spyro::field_environment {
 
-// Persistent game state consumed by FIELD layer 0x8002B9CC. The addresses are
-// named once here so the shipping owner and the retail-call oracle cannot
-// silently drift onto different fields.
-constexpr uint32_t kStageSelector = 0x800757d8u;
-constexpr uint32_t kCameraOcclusionGroup = 0x80076e24u;
-constexpr uint32_t kEnvironment = 0x800785a8u;
-constexpr uint32_t kOcclusionGroupCount = kEnvironment + 0x0cu;
-constexpr uint32_t kCullingDistance = kEnvironment + 0x28u;
+// Persistent game state consumed by FIELD layer 0x8002B9CC. The shared globals it reads live in
+// spyro::guest; only the addresses this layer alone touches are named here.
+constexpr uint32_t kCullingDistance = guest::kEnvironment + 0x28u;
 constexpr uint32_t kEdgeWorkArea = 0x8006fcf4u;
 constexpr uint32_t kEdgeWorkAreaSize = 0x1c00u;
 

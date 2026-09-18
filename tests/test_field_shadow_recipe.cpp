@@ -1,6 +1,7 @@
 #include "core.h"
 #include "field_shadow_recipe.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "testutil.h"
 
 #include <algorithm>
@@ -15,7 +16,7 @@ using spyro::field_shadow_recipe::Status;
 std::unique_ptr<Game> shadowFixture() {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
-  constexpr uint32_t camera = 0x80076dd0u;
+  constexpr uint32_t camera = spyro::guest::kCamera;
   constexpr uint32_t models = 0x80090000u;
   constexpr uint32_t animation = 0x80091000u;
   constexpr uint32_t radii = 0x00092000u;

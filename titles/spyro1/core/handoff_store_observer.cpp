@@ -1,4 +1,5 @@
 #include "handoff_store_observer.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "spyro1_field_scheduler.h"
@@ -12,7 +13,7 @@
 namespace spyro1 {
 namespace {
 
-constexpr std::uint32_t kStage = 0x800757D8u;
+using spyro::guest::kGamestate;
 constexpr std::uint32_t kLevelTick = 0x800758C8u;
 constexpr std::uint32_t kGameTick = 0x8007572Cu;
 constexpr std::uint32_t kLevelResetPc = 0x80013698u;
@@ -66,7 +67,7 @@ HandoffStoreState readState(Core &core, const psx::cpu::StoreObservation &observ
       .address = address,
       .word = core.mem_r32(address),
       .source = observation.gpr[source],
-      .stage = core.mem_r32(kStage),
+      .stage = core.mem_r32(kGamestate),
       .levelTick = core.mem_r32(kLevelTick),
       .gameTick = core.mem_r32(kGameTick),
       .cycle = observation.guestCycle,

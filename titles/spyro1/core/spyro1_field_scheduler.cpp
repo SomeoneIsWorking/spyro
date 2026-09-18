@@ -1,4 +1,5 @@
 #include "spyro1_field_scheduler.h"
+#include "guest_globals.h"
 
 #include "cfg.h"
 #include "core.h"
@@ -177,7 +178,7 @@ bool FieldScheduler::dispatchCallbacks() {
 }
 
 void FieldScheduler::serviceSkipMap(bool startEdge) {
-  constexpr std::uint32_t kStage = 0x800757D8u;
+  using spyro::guest::kGamestate;
   constexpr std::uint32_t kSubstate = 0x80078D78u;
   constexpr std::uint32_t kSubSubstate = 0x80078D7Cu;
   constexpr std::uint32_t kBootPhase = 0x80075864u;
@@ -189,7 +190,7 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
   if (startEdge) {
     ++skipMapStartEdges_;
   }
-  const std::uint32_t stage = core.mem_r32(kStage);
+  const std::uint32_t stage = core.mem_r32(kGamestate);
   const std::uint32_t substate = core.mem_r32(kSubstate);
   const std::uint32_t subSubstate = core.mem_r32(kSubSubstate);
   const std::uint32_t bootPhase = core.mem_r32(kBootPhase);

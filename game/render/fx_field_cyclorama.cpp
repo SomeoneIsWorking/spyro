@@ -1,4 +1,5 @@
 #include "fx_field_cyclorama.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "cyclorama_mask_recipe.h"
@@ -143,10 +144,8 @@ bool spyro_field_cyclorama_submit(Core *core) {
   spyro::cyclorama_mask_submitter::submit(core, core->game->rq, maskDraws, maskPlan);
   spyro::cyclorama_portal_submitter::submit(core, core->game->rq, farDraws, farPlan);
   spyro::cyclorama_portal_submitter::submit(core, core->game->rq, nearDraws, nearPlan);
-  if (!spyro_terrain_submit(core,
-                            recipe.mainSelection,
-                            spyro::cyclorama_scene_recipe::kCamera + 0x14u,
-                            spyro::cyclorama_scene_recipe::kCamera)) {
+  if (!spyro_terrain_submit(
+          core, recipe.mainSelection, spyro::guest::kCamera + 0x14u, spyro::guest::kCamera)) {
     lucent::debug("fieldsky",
                   "REFUSED terrain selection={} portals={} active={}",
                   recipe.mainSelection,

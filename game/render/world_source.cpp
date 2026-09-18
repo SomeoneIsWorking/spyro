@@ -1,4 +1,5 @@
 #include "world_source.h"
+#include "guest_globals.h"
 
 #include "world_material_codec.h"
 #include "world_projection_math.h"
@@ -10,8 +11,8 @@
 
 namespace spyro::world_source {
 namespace {
-constexpr uint32_t kEnvironment = 0x800785a8u;
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
+using spyro::guest::kEnvironment;
 // First transition descriptor through the last triangle rotation/attribute adjustment. These
 // are authored table inputs used by world_hq_refinement, not executable or projected data.
 constexpr uint32_t kRefinementTables = 0x8006cf98u;

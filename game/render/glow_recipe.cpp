@@ -1,4 +1,5 @@
 #include "glow_recipe.h"
+#include "guest_globals.h"
 
 #include "actor_transform_math.h"
 #include "core.h"
@@ -12,7 +13,7 @@ namespace {
 
 // Addresses recovered from 0x800580F4's own instruction encodings.
 constexpr std::uint32_t kGlows = 0x80078800u;
-constexpr std::uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 // Record layout, all measured at the loads in the loop body.
 constexpr std::uint32_t kCount = 0x00u;    // ring points; zero switches the glow off
 constexpr std::uint32_t kRing = 0x04u;     // pairs of screen-space direction words, stride 8

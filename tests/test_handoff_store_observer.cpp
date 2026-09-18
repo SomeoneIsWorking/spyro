@@ -1,6 +1,7 @@
 #include "core.h"
 #include "game.h"
 #include "game_runtime.h"
+#include "guest_globals.h"
 #include "handoff_store_observer.h"
 #include "image_identity.h"
 #include "lightrec_executor.h"
@@ -36,7 +37,7 @@ constexpr std::uint32_t kLoader = 0x80013B44u;
 constexpr std::uint32_t kPadVsync = 0x80053C68u;
 constexpr std::uint32_t kTick = 0x80033A68u;
 constexpr std::uint32_t kReturn = 0x80070000u;
-constexpr std::uint32_t kStage = 0x800757D8u;
+using spyro::guest::kGamestate;
 constexpr std::uint32_t kLevelTick = 0x800758C8u;
 constexpr std::uint32_t kGameTick = 0x8007572Cu;
 
@@ -116,7 +117,7 @@ void enableSyntheticFields(Game &game, SyntheticRuntime &runtime, SpyroContext &
 }
 
 void resetWords(Core &core) {
-  core.mem_w32(kStage, 13u);
+  core.mem_w32(kGamestate, 13u);
   core.mem_w32(kLevelTick, 5326u);
   core.mem_w32(kGameTick, 7u);
   core.r[8] = 0x80070000u;
@@ -132,7 +133,7 @@ void test_shipping_observer_captures_four_stores_and_unreachable_control() {
   writeCode(core);
   resetWords(core);
   runHandoff(core); // Warm the ordinary shipping JIT path before the observer is armed.
-  const auto plainStage = core.mem_r32(kStage);
+  const auto plainStage = core.mem_r32(kGamestate);
   const auto plainLevelTick = core.mem_r32(kLevelTick);
   const auto plainGameTick = core.mem_r32(kGameTick);
 
@@ -172,13 +173,13 @@ void test_shipping_observer_captures_four_stores_and_unreachable_control() {
   CHECK_EQ(samples[1].before.address, kGameTick);
   CHECK_EQ(samples[1].before.word, 7u);
   CHECK_EQ(samples[1].after.word, 0u);
-  CHECK_EQ(samples[2].before.address, kStage);
+  CHECK_EQ(samples[2].before.address, kGamestate);
   CHECK_EQ(samples[2].before.stage, 13u);
   CHECK_EQ(samples[2].after.stage, 0u);
   CHECK_EQ(samples[3].before.address, kGameTick);
   CHECK_EQ(samples[3].before.gameTick, 0u);
   CHECK_EQ(samples[3].after.gameTick, 1u);
-  CHECK_EQ(core.mem_r32(kStage), plainStage);
+  CHECK_EQ(core.mem_r32(kGamestate), plainStage);
   CHECK_EQ(core.mem_r32(kLevelTick), plainLevelTick);
   CHECK_EQ(core.mem_r32(kGameTick), plainGameTick);
   observer.finish();

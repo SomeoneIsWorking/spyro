@@ -1,4 +1,5 @@
 #include "field_environment_scene.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "world_scene_builder.h"
@@ -11,9 +12,9 @@ Status prepare(Core *core, Frame &frame) {
     return Status::InvalidCore;
   }
   const field_environment::State state{
-      .cameraOcclusionGroup = (int32_t)core->mem_r32(field_environment::kCameraOcclusionGroup),
-      .occlusionGroupCount = (int32_t)core->mem_r32(field_environment::kOcclusionGroupCount),
-      .stage = core->mem_r32(field_environment::kStageSelector)};
+      .cameraOcclusionGroup = (int32_t)core->mem_r32(guest::kCameraOcclusionGroup),
+      .occlusionGroupCount = (int32_t)core->mem_r32(guest::kEnvironmentOcclusionGroupCount),
+      .stage = core->mem_r32(guest::kGamestate)};
   frame.invocation = field_environment::derive(state);
   // Phase 1's animation channels run before anything reads the sector arrays, exactly where the
   // guest renderer runs them.

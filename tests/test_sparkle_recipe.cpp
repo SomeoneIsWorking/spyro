@@ -4,6 +4,7 @@
 // back — because a derivation that only got the geometry right would leave sparkles alive forever.
 #include "core.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "sparkle_recipe.h"
 #include "testutil.h"
 
@@ -15,7 +16,7 @@ namespace {
 using spyro::sparkle_recipe::Reject;
 using spyro::sparkle_recipe::Status;
 
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kSparkles = 0x80077108u;
 constexpr uint32_t kStride = 0x18u;
 constexpr uint32_t kSine = 0x8006cbf8u;

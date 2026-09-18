@@ -4,6 +4,7 @@
 #include "core.h"
 #include "dragon_burst_recipe.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "testutil.h"
 
 #include <array>
@@ -14,7 +15,7 @@ namespace {
 using spyro::dragon_burst::Status;
 
 constexpr uint32_t kBurst = 0x80076248u;
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kSine = 0x8006cbf8u;
 
 // The burst directly ahead of an identity camera. The sine table is filled with a real quarter-turn

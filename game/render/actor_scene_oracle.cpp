@@ -1,4 +1,5 @@
 #include "actor_scene_oracle.h"
+#include "guest_globals.h"
 
 #include "cfg.h"
 #include "core.h"
@@ -28,7 +29,7 @@ constexpr uint32_t kMobyBytes = 0x58u;
 constexpr uint32_t kMobyState = 72u;
 constexpr uint32_t kLevelMobys = 0x80075828u;
 constexpr uint32_t kMaxLevelMobys = 1024u;
-constexpr uint32_t kCamera = 0x80076DD0u;
+using spyro::guest::kCamera;
 
 constexpr uint32_t kseg(uint32_t address) {
   return 0x80000000u | (address & 0x1fffffu);

@@ -1,4 +1,5 @@
 #include "fx_field_tracers.h"
+#include "guest_globals.h"
 
 #include "core.h"
 #include "field_tracers_recipe.h"
@@ -20,7 +21,7 @@
 namespace {
 
 constexpr uint32_t kProducerKey = 0x800189f0u;
-constexpr uint32_t kCamera = 0x80076dd0u;
+using spyro::guest::kCamera;
 constexpr uint32_t kLevelId = 0x8007596cu;
 constexpr uint32_t kSqrtTable = 0x80074b84u;
 constexpr uint32_t kTracerCount = 0x80075684u;

@@ -6,6 +6,9 @@
 #include <span>
 
 namespace spyro::cyclorama_scene_recipe {
+
+using spyro::guest::kCameraOcclusionGroup;
+using spyro::guest::kEnvironmentOcclusionGroupCount;
 namespace {
 
 constexpr uint32_t kPortalWorldSector = 0x14u;

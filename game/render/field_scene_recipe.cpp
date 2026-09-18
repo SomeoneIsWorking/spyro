@@ -1,4 +1,5 @@
 #include "field_scene_recipe.h"
+#include "guest_globals.h"
 
 #include "core.h"
 
@@ -22,17 +23,17 @@ void writeBackground(Core *core, uint32_t drawEnv, const State &state) {
 } // namespace
 
 State read(Core *core) {
-  return {.environment = {.cameraOcclusionGroup =
-                              (int32_t)core->mem_r32(field_environment::kCameraOcclusionGroup),
-                          .occlusionGroupCount =
-                              (int32_t)core->mem_r32(field_environment::kOcclusionGroupCount),
-                          .stage = core->mem_r32(field_environment::kStageSelector)},
-          .backgroundR = core->mem_r8(kCycloramaBackground + 0u),
-          .backgroundG = core->mem_r8(kCycloramaBackground + 1u),
-          .backgroundB = core->mem_r8(kCycloramaBackground + 2u),
-          .fade = core->mem_r32(kFade),
-          .flightLevel = core->mem_r32(kFlightLevel) != 0u,
-          .playerVisible = core->mem_r32(kPlayerHidden) == 0u};
+  return {
+      .environment = {.cameraOcclusionGroup = (int32_t)core->mem_r32(guest::kCameraOcclusionGroup),
+                      .occlusionGroupCount =
+                          (int32_t)core->mem_r32(guest::kEnvironmentOcclusionGroupCount),
+                      .stage = core->mem_r32(guest::kGamestate)},
+      .backgroundR = core->mem_r8(kCycloramaBackground + 0u),
+      .backgroundG = core->mem_r8(kCycloramaBackground + 1u),
+      .backgroundB = core->mem_r8(kCycloramaBackground + 2u),
+      .fade = core->mem_r32(kFade),
+      .flightLevel = core->mem_r32(kFlightLevel) != 0u,
+      .playerVisible = core->mem_r32(kPlayerHidden) == 0u};
 }
 
 Plan derive(const State &state) {

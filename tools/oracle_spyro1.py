@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import guest_globals
+import spyro1_steering
 
 from compare import (
     Checkpoint,
@@ -24,7 +25,6 @@ from compare import (
     u32,
 )
 from drive import (
-    G_CAMERA,
     G_GAMESTATE,
     G_LOAD_STAGE,
     G_TITLESCREEN,
@@ -47,6 +47,8 @@ G_STATE_SWITCH = guest_globals.kStateSwitch              # the draw is skipped t
 G_PAD = guest_globals.kPad                               # m_Down +0, m_Released +4, m_Held +8
 G_SPYRO = guest_globals.kSpyro                           # m_Position at +0, m_State at +0x78
 G_DRAGON_CUTSCENE = guest_globals.kDragonCutscene        # 0x24 WAD header, then the state machine
+G_CAMERA = guest_globals.kCamera                          # 5 matrix words, position at +0x28
+G_LEVEL_ID = guest_globals.kLevelId                       # the level now resident
 D_OCCLUSION_RESULT = 0x80075844   # read only here: the collision query's result for the camera group
 
 declared = (
@@ -55,6 +57,7 @@ declared = (
     DeclaredRange("title.ticks", G_TITLESCREEN + 8, 8, False),        # m_Tick, m_SubTick
     DeclaredRange("title.sub_state_option", G_TITLESCREEN + 16, 8, True),  # m_SubState, m_OptionSelected
     DeclaredRange("load_stage", G_LOAD_STAGE, 4, True),
+    DeclaredRange("level_id", G_LEVEL_ID, 4, True),
     DeclaredRange("game_tick", G_GAME_TICK, 4, True),
     DeclaredRange("level_ticks", G_LEVEL_TICKS, 4, False),
     DeclaredRange("delta_time", G_DELTA_TIME, 4, False),
@@ -101,7 +104,8 @@ excluded = {
 
 # Representative Artisans input after arrival: the level fades in and hands the player control some
 # frames into GS_Playing (tools/drive.py --settle), so the first segment holds nothing for that
-# span. Then Spyro runs forward, turns, jumps standing, charges, and jumps while running.
+# span. Then Spyro runs forward, turns, jumps standing, charges, and jumps while running. These run
+# in the level the `level` checkpoint entered, not in the homeworld the walk started from.
 gameplay = (
     (frozenset(), 120),
     (frozenset({"up"}), 60),
@@ -143,6 +147,7 @@ class Observation:
     gamestate: int
     title: TitleState
     game_tick: int
+    level: int
 
     @property
     def at_save_picker(self) -> bool:
@@ -156,13 +161,14 @@ class Observation:
 def observe(core: CoreSession) -> Observation:
     raw = core.read(G_TITLESCREEN, 24)
     words = [int.from_bytes(raw[i:i + 4], "little") for i in range(0, 24, 4)]
-    return Observation(u32(core, G_GAMESTATE), TitleState(*words), u32(core, G_GAME_TICK))
+    return Observation(u32(core, G_GAMESTATE), TitleState(*words), u32(core, G_GAME_TICK),
+                       u32(core, G_LEVEL_ID))
 
 
 def summary(core: CoreSession) -> dict:
     seen = observe(core)
     return {"gamestate": seen.gamestate, "title": (seen.title.mode, seen.title.state, seen.title.sub_state),
-            "tick": seen.game_tick}
+            "tick": seen.game_tick, "level": seen.level}
 
 
 def advance(core: CoreSession, frames: int, strict: bool = False) -> None:
@@ -212,7 +218,72 @@ def reach_playing(driver: Driver, core: CoreSession, budget: int, settle: Settle
     return driver.drive(core, budget, lambda seen: seen.playing, new_game_pattern, "GS_Playing", settle)
 
 
+STEERING_STEP = 12  # game frames per steering decision: tools/drive.py's 24 fields, in this unit
+HOP_FRAMES = 4      # of each decision, the frames the jump is held for
+
+
+class PortalWalk:
+    """Walk one core to a homeworld portal and through it, steering from that core's own camera.
+
+    WHY A LEVEL ENTRY IS THE CHECKPOINT WORTH HAVING. Everything before it happens inside one
+    resident WAD image. A portal entry is where the product must discard and reload guest code at a
+    reused load address and invalidate every translation that came from it, which is the part of
+    the runtime a matched walk around Artisans cannot exercise at all.
+
+    The route policy is `spyro1_steering.Walk`, shared with tools/drive.py, so the interactive
+    driver and this checkpoint walk one route rather than two that agree by coincidence. Each core
+    gets its own instance: the oracle drives the console to the checkpoint first and the product
+    after, and if they disagree about where they are they walk apart, which the declared ranges
+    then report instead of comparing two different places.
+
+    `arrived=0` because standing near a portal is not entering one: the walk keeps closing the gap
+    until this core's own level id changes, and the shared stall rule tries the next portal if
+    walking into this one never does anything.
+    """
+
+    def __init__(self, core: CoreSession):
+        self._core = core
+        self._walk = spyro1_steering.Walk("portal", spyro1_steering.portal_targets(self._words),
+                                          arrived=0)
+        self._from = u32(core, G_LEVEL_ID)
+        self._buttons: frozenset[str] = frozenset()
+        self._hop = False
+        print(f"[oracle] {core.name}: walking out of level {self._from} through one of "
+              f"{len(self._walk.remaining)} portal(s): "
+              + ", ".join(target.what for target in self._walk.remaining))
+
+    def _words(self, address: int, count: int) -> list[int]:
+        raw = self._core.read(address, count * 4)
+        return [int.from_bytes(raw[i:i + 4], "little") for i in range(0, count * 4, 4)]
+
+    def left(self, seen: Observation) -> bool:
+        """Playable again, in a different level. The level id alone would park both cores inside
+        the entrance animation, where input is ignored and the following segments would compare a
+        cutscene rather than a level."""
+        return seen.level != self._from and seen.gamestate == GS_PLAYING
+
+    def __call__(self, frame: int, seen: Observation) -> frozenset[str]:
+        if seen.level != self._from:
+            return frozenset()  # through the portal; the entrance plays out on its own
+        if frame % STEERING_STEP == 0:
+            decision = self._walk.next(spyro1_steering.camera(self._words))
+            self._buttons = frozenset(decision.buttons)
+            self._hop = decision.hop
+            print(f"[oracle]   {self._core.name} f{frame}: {decision.describe()}")
+        if self._hop and frame % STEERING_STEP < HOP_FRAMES:
+            return self._buttons | {"cross"}
+        return self._buttons
+
+
+def reach_level(driver: Driver, core: CoreSession, budget: int, settle: Settle) -> tuple[int, frozenset[str]]:
+    walk = PortalWalk(core)
+    return driver.drive(core, budget, walk.left, walk, "a level change through a portal", settle)
+
+
 checkpoints = (
     Checkpoint("save_picker", reach_save_picker),
     Checkpoint("playing", reach_playing),
+    # The representative segments below then run in the level this one entered, immediately after
+    # the product discarded and reloaded guest code at a reused address.
+    Checkpoint("level", reach_level),
 )

@@ -38,6 +38,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import guest_globals
+import spyro1_steering
+from spyro1_steering import Refusal as SteeringRefusal
+from spyro1_steering import moby_class_targets, portal_targets
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -47,6 +50,7 @@ ROOT = Path(__file__).resolve().parent.parent
 G_GAMESTATE = guest_globals.kGamestate
 G_TITLESCREEN = guest_globals.kTitlescreenState
 G_LOAD_STAGE = guest_globals.kLoadStage
+G_LEVEL_ID = guest_globals.kLevelId
 G_LEVEL_TRANS_TICKS = 0x800756AC
 G_LEVEL_TRANS_HUD = 0x800756B0
 
@@ -59,24 +63,9 @@ GS_CREDITS = 15
 
 TSM_INIT, TSM_MENU, TSM_LOADING, TSM_DEMO = 0, 1, 2, 3
 
-# Steering inputs. The addresses come from the same owner; the record layouts are this driver's own.
-G_CAMERA = guest_globals.kCamera            # 5 packed matrix words, then the position at +0x28
-G_LEVEL_MOBYS = guest_globals.kLevelMobys   # pointer to the level's Moby array
-MOBY_BYTES = 0x58
-MOBY_CLASS_WORD = 52         # the class is the high half of this word
-MOBY_STATE = 72
-MAX_LEVEL_MOBYS = 1024
-G_PORTALS = guest_globals.kPortals
-G_PORTAL_COUNT = guest_globals.kPortalCount
-PORTAL_CENTER = 0x20         # Portal::m_Center, after the skybox pointer, counts and world sector
-
-
-def signed(value: int) -> int:
-    return value - 0x100000000 if value >= 0x80000000 else value
-
-
-class Refusal(RuntimeError):
-    """The requested state was not reached, and saying so beats returning a plausible frame."""
+# One refusal type for every named refusal a driver can make, so a steering refusal is reported the
+# same way as a navigation one instead of escaping as a traceback.
+Refusal = SteeringRefusal
 
 
 @dataclass(frozen=True)
@@ -201,210 +190,63 @@ class Port:
 
 
 
-def moby_class_targets(port: "Port", wanted_class: int) -> list[tuple[int, int, int]]:
-    """World positions of every live Moby of a class. Read once: level Mobys do not walk away."""
-    first = port.word(G_LEVEL_MOBYS)
-    if not (0x80000000 <= first < 0x80200000):
-        raise Refusal(f"g_LevelMobys holds 0x{first:08X}, which is not a RAM address")
-    words: list[int] = []
-    found: list[tuple[int, int, int]] = []
-    index = 0
-    while index < MAX_LEVEL_MOBYS:
-        need = (index + 1) * MOBY_BYTES // 4 + 1
-        while len(words) < need:
-            words.extend(port.words(first + len(words) * 4, 64))
-        base = index * MOBY_BYTES // 4
-        state = words[base + MOBY_STATE // 4]
-        if state & 0x80:
-            if (state & 0xFF) == 0xFF:
-                break
-            index += 1
-            continue
-        if (words[base + MOBY_CLASS_WORD // 4] >> 16) & 0xFFFF == wanted_class:
-            found.append(tuple(signed(words[base + 3 + i]) for i in range(3)))
-        index += 1
-    return found
-
-
-def portal_targets(port: "Port") -> list[tuple[int, int, int]]:
-    """Centres of the level's portals, which are a loaded table rather than Mobys.
-
-    A homeworld's portals are the only way into a level, and reaching a level is what the
-    return-home glide needs. g_Portals holds up to six pointers and g_PortalCount says how many are
-    live; each Portal carries its own centre after the skybox pointer, point count, unknown vector
-    and world sector.
-    """
-    count = port.word(G_PORTAL_COUNT)
-    if not 0 <= count <= 6:
-        raise Refusal(f"g_PortalCount holds {count}, which is outside the table's six slots")
-    found: list[tuple[int, int, int]] = []
-    for index in range(count):
-        portal = port.word(G_PORTALS + index * 4)
-        if not (0x80000000 <= portal < 0x80200000):
-            raise Refusal(
-                f"g_Portals[{index}] holds 0x{portal:08X}, which is not a RAM address, so the "
-                "portal table was read before the level finished loading"
-            )
-        center = tuple(signed(v) for v in port.words(portal + PORTAL_CENTER, 3))
-        # Printed per portal, not just counted: a centre in the wrong units or read from the wrong
-        # field looks exactly like an unreachable destination once the walk starts.
-        print(
-            f"seek: portal {index} at 0x{portal:08X} level {signed(port.word(portal + 0x1C))} "
-            f"center {center}",
-            file=sys.stderr,
-        )
-        found.append(center)
-    return found
-
-
 class Seeker:
-    """Walk to the nearest of a set of world positions, steering from the guest's own camera.
+    """Walk the product to one of a set of world positions, steering from the guest's own camera.
 
-    Holding one direction cannot reach anything: the pad is camera-relative, and Artisans' gems sit
-    50k units away on a bearing the start position does not face. A fixed input list cannot reach
-    them either, for the same reason every fixed route in this file was replaced. So this reads the
-    targets once, then each step re-reads the camera, converts them into view space exactly as the
-    renderer does, and presses the eight-way pad direction whose sector contains the nearest one's
-    bearing.
+    Holding one direction cannot reach anything: the pad is camera-relative, and Artisans' portals
+    sit tens of thousands of units away on a bearing the start position does not face. A fixed
+    input list cannot reach them either, for the same reason every fixed route in this file was
+    replaced.
 
-    The targets themselves come from a named source (`moby_class_targets`, `portal_targets`) so a
-    new destination is a reader, not a second copy of the steering loop.
+    The route policy and the geometry are `spyro1_steering.Walk`, shared with the oracle's
+    level-entry checkpoint so both walk one route. This class is only the part that is specific to
+    driving the product's REPL: press, run a fixed number of FIELDS, release.
     """
 
-    STEP = 24  # frames per steering decision; a whole walk cycle, short enough to correct a wall
-    ARRIVED = 500  # view-space units (~1/4 of world scale); close enough to be on screen
-    STALL_STEPS = 15  # steps without closing the gap before this target is abandoned
-    PROGRESS = 200  # view-space units that count as having closed the gap
-    # Steps of no progress before the walk starts hopping. Portals sit on raised platforms, so
-    # steering alone circles the base forever; a jump is ordinary traversal, not a state write.
-    JUMP_AFTER = 3
-    # Bearing offsets tried in turn once the straight line stops closing the gap. Walking around an
-    # obstacle is what a player does; pressing harder into the same wall is not. Index 0 is the
-    # straight line, so an unobstructed walk never detours.
-    DETOURS = (0, 60, -60, 120, -120)
+    STEP = 24  # fields per steering decision; a whole walk cycle, short enough to correct a wall
 
-    # 0 deg is straight ahead and +90 is screen-right, so these are the pad's own compass sectors.
-    SECTORS = (
-        (-157.5, ("down", "left")),
-        (-112.5, ("left",)),
-        (-67.5, ("up", "left")),
-        (-22.5, ("up",)),
-        (22.5, ("up", "right")),
-        (67.5, ("right",)),
-        (112.5, ("down", "right")),
-        (157.5, ("down",)),
-    )
-
-    def __init__(self, port: "Port", what: str, targets, budget: int = 6000):
+    def __init__(self, port: "Port", what: str, targets, budget: int = 6000,
+                 arrived: int | None = None, stop=None, stop_is: str = ""):
         self._port = port
-        self._what = what
-        self._targets = list(targets)
+        self._walk = spyro1_steering.Walk(what, list(targets), arrived=arrived)
         self._budget = budget
+        # A destination that must make something HAPPEN — a portal entry, not a portal visit — gives
+        # its own predicate, and the walk keeps closing the gap until that predicate holds. Ending
+        # at a proximity radius would report "reached" for a walk that never entered anything.
+        self._stop = stop
+        self._stop_is = stop_is or "the destination"
 
     def walk(self) -> int:
         """Returns the view-space distance actually reached, or refuses by name."""
-        targets = self._targets
-        if not targets:
-            raise Refusal(
-                f"nothing to seek: this level carries no {self._what}, so the target is wrong or "
-                "this is not the level that carries it"
-            )
-        print(f"seek: {len(targets)} live {self._what} target(s)", file=sys.stderr)
-        remaining = list(targets)
-        best = None
-        stalled = 0
+        # Printed per target, not just counted: a centre in the wrong units or read from the wrong
+        # field looks exactly like an unreachable destination once the walk starts.
+        for target in self._walk.remaining:
+            print(f"seek: {target.what} at {target.position}", file=sys.stderr)
         spent = 0
         while spent < self._budget:
-            if not remaining:
-                raise Refusal(
-                    f"every {self._what} target is unreachable from the start: each one stalled at "
-                    "a fixed distance, so the route needs a jump or a different level entry, not "
-                    "more walking"
-                )
-            index, distance, bearing = self._nearest(remaining)
-            if distance <= self.ARRIVED:
-                print(f"seek: reached {self._what} at {distance}", file=sys.stderr)
-                return distance
-            if best is None or distance < best - self.PROGRESS:
-                best, stalled = distance, 0
-            else:
-                stalled += 1
-                if stalled >= self.STALL_STEPS:
-                    # Blocked by geometry or standing under a ledge. Retail levels put dozens of
-                    # gems around one hub, so abandoning this one and taking the next nearest is a
-                    # real route, where pressing harder into the same wall is not.
-                    print(
-                        f"seek: {self._what} target {index} stuck at {distance}; trying the next "
-                        "nearest",
-                        file=sys.stderr,
-                    )
-                    remaining.pop(index)
-                    best, stalled = None, 0
-                    continue
-            hop = stalled >= self.JUMP_AFTER
-            detour = self.DETOURS[stalled % len(self.DETOURS)] if stalled else 0
-            steered = (bearing + detour + 180.0) % 360.0 - 180.0
-            print(
-                f"seek: {distance} away, bearing {bearing:+.0f}"
-                f"{f' detour {detour:+d}' if detour else ''}{' (hopping)' if hop else ''}",
-                file=sys.stderr,
-            )
-            buttons = self._sector(steered)
-            for button in buttons:
+            if self._stop is not None and self._stop():
+                print(f"seek: {self._stop_is} after {spent} field(s), "
+                      f"{self._walk.closest} from the nearest {self._walk.what}", file=sys.stderr)
+                return self._walk.closest or 0
+            decision = self._walk.next(spyro1_steering.camera(self._port.words))
+            if decision is None:
+                print(f"seek: reached {self._walk.what} at {self._walk.closest}", file=sys.stderr)
+                return self._walk.closest
+            print(f"seek: {decision.describe()}", file=sys.stderr)
+            for button in decision.buttons:
                 self._port.press(button)
-            if hop:
+            if decision.hop:
                 self._port.tap("cross", 8)
             self._port.run(self.STEP)
-            for button in buttons:
+            for button in decision.buttons:
                 self._port.release(button)
             spent += self.STEP
-        raise Refusal(
-            f"the nearest {self._what} was still about {best} away after {self._budget} steering "
-            "frames"
-        )
-
-    # -- observation --------------------------------------------------------
-
-    def _matrix(self, words: list[int]) -> list[list[int]]:
-        def half(value: int, high: bool) -> int:
-            part = (value >> 16) & 0xFFFF if high else value & 0xFFFF
-            return part - 0x10000 if part >= 0x8000 else part
-
-        return [
-            [half(words[0], False), half(words[0], True), half(words[1], False)],
-            [half(words[1], True), half(words[2], False), half(words[2], True)],
-            [half(words[3], False), half(words[3], True), half(words[4], False)],
-        ]
-
-    def _nearest(self, targets) -> tuple[int, int, float]:
-        observed = self._port.words(G_CAMERA, 14)
-        matrix = self._matrix(observed)
-        camera = [signed(observed[10 + i]) for i in range(3)]
-        best = None
-        for index, position in enumerate(targets):
-            view = self._view(matrix, camera, position)
-            distance = int(math.hypot(view[0], view[2]))
-            if best is None or distance < best[1]:
-                best = (index, distance, math.degrees(math.atan2(view[0], view[2])))
-        return best
-
-    @staticmethod
-    def _view(matrix, camera, position) -> list[int]:
-        # The renderer's own packing: X is target-minus-camera, Y and Z are camera-minus-target, all
-        # arithmetic-shifted down two, and the matrix rows consume them in Y/Z/X order.
-        relative = (
-            (position[0] - camera[0]) >> 2,
-            (camera[1] - position[1]) >> 2,
-            (camera[2] - position[2]) >> 2,
-        )
-        source = (relative[1], relative[2], relative[0])
-        return [sum(matrix[row][i] * source[i] for i in range(3)) >> 12 for row in range(3)]
-
-    def _sector(self, bearing: float) -> tuple[str, ...]:
-        for limit, buttons in self.SECTORS:
-            if bearing <= limit:
-                return buttons
-        return ("down", "left")  # past +157.5 the compass wraps back to the first sector
+        if self._stop is not None:
+            raise Refusal(
+                f"walked to within {self._walk.closest} of a {self._walk.what} over {spent} "
+                f"field(s), but {self._stop_is} never happened: being next to one is not entering it"
+            )
+        raise self._walk.exhausted(spent)
 
 
 class Navigator:
@@ -620,9 +462,12 @@ def main() -> int:
         if args.seek_class >= 0 and args.seek_portal:
             parser.error("--seek-class and --seek-portal name two different destinations")
         if args.seek_class >= 0:
-            Seeker(port, f"class {args.seek_class}", moby_class_targets(port, args.seek_class)).walk()
+            Seeker(port, f"class {args.seek_class}", moby_class_targets(port.words, args.seek_class)).walk()
         elif args.seek_portal:
-            Seeker(port, "portal", portal_targets(port)).walk()
+            entering = port.word(G_LEVEL_ID)
+            Seeker(port, "portal", portal_targets(port.words), arrived=0,
+                   stop=lambda: port.word(G_LEVEL_ID) != entering,
+                   stop_is=f"left level {entering}").walk()
         for button in args.hold:
             port.press(button)
         if args.hold:

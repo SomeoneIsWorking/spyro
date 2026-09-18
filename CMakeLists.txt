@@ -256,4 +256,8 @@ if(BUILD_TESTING)
   # ever silently stops matching the header's form, every driver would fall back to nothing at all.
   add_test(NAME guest_globals_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/guest_globals.py --selftest)
+  # The route both the interactive driver and the oracle's level checkpoint walk. A steering table
+  # that is quietly wrong still reaches destinations, by detouring; only a fixture catches it.
+  add_test(NAME spyro1_steering_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/spyro1_steering.py --selftest)
 endif()

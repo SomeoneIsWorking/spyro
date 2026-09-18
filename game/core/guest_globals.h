@@ -44,6 +44,11 @@ inline constexpr std::uint32_t kTitlescreenState = 0x80078D78u;
 // g_LevelMobys (moby.h): pointer to the level's Moby array.
 inline constexpr std::uint32_t kLevelMobys = 0x80075828u;
 
+// g_LevelId is the level now resident; g_NextLevelId the one a portal entry has requested. The
+// pair is how any owner tells "still here" from "a level change is under way".
+inline constexpr std::uint32_t kLevelId = 0x8007596Cu;
+inline constexpr std::uint32_t kNextLevelId = 0x800758B4u;
+
 // g_Portals (portal.h) holds up to six Portal pointers; g_PortalCount says how many are live.
 inline constexpr std::uint32_t kPortals = 0x80078640u;
 inline constexpr std::uint32_t kPortalCount = 0x800758BCu;

@@ -25,6 +25,7 @@ namespace {
 
 using spyro::dragon_scene::Producer;
 
+constexpr const char *kChannel = "dragon";
 constexpr unsigned kRecipeRefusal = 1u;
 constexpr uint32_t kRescuedText = 0x80018728u;
 constexpr uint32_t kCopyHudMobys = 0x80018880u;
@@ -75,25 +76,26 @@ void cameraShake(Core *core, int32_t ticks) {
 
 } // namespace
 
-unsigned dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidth) {
+spyro::ProducerRefusal
+dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidth) {
   if (core == nullptr) {
-    return kRecipeRefusal;
+    return spyro::refuse(kChannel, kRecipeRefusal, "no core");
   }
   const auto state = spyro::dragon_scene::read(core);
   // 0x8001CFDC runs the burst 0x80058864 before every branch, gated on D_80076248's enable word.
   // It links into the HUD ordering table rather than the world one, so it is a 2D overlay drawn
   // over whichever state composes below.
   if (!dragon_burst_submit(core)) {
-    return 0x80058864u;
+    return spyro::ProducerRefusal{0x80058864u, {}};
   }
   const auto plan = spyro::dragon_scene::plan(core, state);
   if (plan.status != spyro::dragon_scene::Status::Ready) {
-    lucent::debug("dragon",
-                  "REFUSED plan={} state={} ticks={}",
-                  spyro::dragon_scene::statusName(plan.status),
-                  state.state,
-                  state.ticks);
-    return kRecipeRefusal;
+    return spyro::refuse(kChannel,
+                         kRecipeRefusal,
+                         "plan={} state={} ticks={}",
+                         spyro::dragon_scene::statusName(plan.status),
+                         state.state,
+                         state.ticks);
   }
   spyro::dragon_scene::commit(core, plan);
   lucent::Line census;
@@ -133,11 +135,23 @@ unsigned dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int r
     case Producer::Regular:
       ok = spyro_actor_submit(core, source);
       break;
+    // These two carry their own reason, so they return it rather than collapsing into `ok` and
+    // losing it: the composed pass is the one layer that can say what it refused on.
     case Producer::Secondary:
-      ok = spyro_field_actor_composition_submit(core, {.secondary = true, .shaded = false});
+      if (const auto refusal =
+              spyro_field_actor_composition_submit(core, {.secondary = true, .shaded = false})) {
+        census.add(" REFUSED at secondary: {}", refusal.detail);
+        census.flush_debug(kChannel);
+        return refusal;
+      }
       break;
     case Producer::Shaded:
-      ok = spyro_field_actor_composition_submit(core, {.secondary = false, .shaded = true});
+      if (const auto refusal =
+              spyro_field_actor_composition_submit(core, {.secondary = false, .shaded = true})) {
+        census.add(" REFUSED at shaded: {}", refusal.detail);
+        census.flush_debug(kChannel);
+        return refusal;
+      }
       break;
     case Producer::MobyShadows:
       ok = spyro_moby_shadow_submit(core);
@@ -170,21 +184,22 @@ unsigned dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int r
       ok = spyro_screen_border_submit(core, drawOffsetX, drawOffsetY, renderWidth);
       break;
     case Producer::FieldChain:
-      if (const unsigned refused = spyro_field_model_chain_submit(core); refused != 0u) {
-        census.add(" REFUSED at 0x{:08X}", refused);
-        census.flush_debug("dragon");
-        return refused;
+      if (const auto refusal = spyro_field_model_chain_submit(core)) {
+        census.add(" REFUSED at 0x{:08X}: {}", refusal.producer, refusal.detail);
+        census.flush_debug(kChannel);
+        return refusal;
       }
       break;
     }
     if (!ok) {
-      census.add(" REFUSED at {}", spyro::dragon_scene::producerName(producer));
-      census.flush_debug("dragon");
-      return kRecipeRefusal;
+      const char *name = spyro::dragon_scene::producerName(producer);
+      census.add(" REFUSED at {}", name);
+      census.flush_debug(kChannel);
+      return spyro::ProducerRefusal{kRecipeRefusal, lucent::format("dragon producer {}", name)};
     }
   }
-  census.flush_debug("dragon");
-  return 0u;
+  census.flush_debug(kChannel);
+  return {};
 }
 
 bool spyro_dragon_scene_draws_player(Core *core) {

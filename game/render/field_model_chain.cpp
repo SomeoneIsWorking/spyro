@@ -13,33 +13,44 @@
 #include <array>
 #include <cstdint>
 
-unsigned spyro_field_model_chain_submit(Core *core) {
-  if (!spyro_actor_submit(core)) {
-    return 0x8001F798u;
+namespace {
+
+// A layer that only answers yes or no still names itself; the composed pass answers with what
+// it saw, and that detail travels unchanged to the fatal boundary.
+spyro::ProducerRefusal layer(bool composed, uint32_t producer) {
+  return composed ? spyro::ProducerRefusal{} : spyro::ProducerRefusal{producer, {}};
+}
+
+} // namespace
+
+spyro::ProducerRefusal spyro_field_model_chain_submit(Core *core) {
+  if (const auto refusal = layer(spyro_actor_submit(core), 0x8001F798u)) {
+    return refusal;
   }
-  if (!spyro_field_actor_composition_submit(core)) {
-    return 0x80020F34u;
+  if (const auto refusal = spyro_field_actor_composition_submit(core)) {
+    return refusal;
   }
   // 0x80019698 draws the moby shadows between the shaded pass and Spyro's own model, so this layer
   // belongs here rather than beside the Spyro shadow it superficially resembles.
-  if (!spyro_moby_shadow_submit(core)) {
-    return 0x80059F8Cu;
+  if (const auto refusal = layer(spyro_moby_shadow_submit(core), 0x80059F8Cu)) {
+    return refusal;
   }
-  if (!spyro_field_player_submit(core, spyro_paired_actor_state(core))) {
-    return 0x80023AC4u;
+  if (const auto refusal =
+          layer(spyro_field_player_submit(core, spyro_paired_actor_state(core)), 0x80023AC4u)) {
+    return refusal;
   }
-  if (!spyro_field_shadow_submit(core)) {
-    return 0x80059A48u;
+  if (const auto refusal = layer(spyro_field_shadow_submit(core), 0x80059A48u)) {
+    return refusal;
   }
   // The flame is called last of the model layers, only while it is active, and after Spyro's own
   // producer has published the orientation it reads.
-  if (!spyro_flame_submit(core)) {
-    return 0x80058D64u;
+  if (const auto refusal = layer(spyro_flame_submit(core), 0x80058D64u)) {
+    return refusal;
   }
   // The last call: glow halos then sparkles. The sparkle half also ages and kills its own records,
   // so this must run every field, not only when something is visible.
-  if (!glow_sparkle_submit(core)) {
-    return 0x80058BA8u;
+  if (const auto refusal = layer(glow_sparkle_submit(core), 0x80058BA8u)) {
+    return refusal;
   }
   // Diagnostic only and a no-op unless PSXPORT_ACTOR_SCENE_ORACLE=1. It runs retail's moby-chain
   // walker over the state the native producers have just read, so it must sit after every producer
@@ -56,5 +67,5 @@ unsigned spyro_field_model_chain_submit(Core *core) {
                                                              0x800580F4u,
                                                              0x800584C4u};
   spyro::actor_scene_oracle::compare(core, 0x80019698u, kActorPainters, "actor-scene-oracle");
-  return 0u;
+  return {};
 }

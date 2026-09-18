@@ -38,6 +38,7 @@
 #include <array>
 #include <lucent/log.h>
 #include <stdlib.h> // abort
+#include <string>
 
 namespace {
 using spyro::guest::kCamera;
@@ -70,6 +71,14 @@ const char *modelChainRefusal(unsigned producer) {
   default:
     return "a producer of 0x80019698 refused its atomic recipe";
   }
+}
+
+// Join the layer's name to what it actually saw. A producer address alone sent issue 0113 round
+// four days of "not reproducible": the abort named 0x80020F34 and stopped there, while the reason
+// sat on a debug channel nobody had enabled.
+std::string refusalMessage(const char *layer, const spyro::ProducerRefusal &refusal) {
+  return refusal.detail.empty() ? std::string(layer)
+                                : lucent::format("{} — {}", layer, refusal.detail);
 }
 
 // The dragon owner reports a guest address, or 1 when the composition itself could not be derived.
@@ -202,8 +211,8 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
         abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
       }
     }
-    if (const unsigned refused = spyro_field_model_chain_submit(mC); refused != 0u) {
-      abortUnimplemented(sc, modelChainRefusal(refused));
+    if (const auto refusal = spyro_field_model_chain_submit(mC)) {
+      abortUnimplemented(sc, refusalMessage(modelChainRefusal(refusal.producer), refusal).c_str());
     }
     if (!spyro_field_environment_submit(mC)) {
       abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");
@@ -244,8 +253,8 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     // 0x8001CFDC. The composition is one of eight authored branches selected by the cutscene's own
     // state, so the owner reports which layer refused rather than returning a bare false.
     const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
-    if (const unsigned refused = dragon_scene_submit(mC, ofsX, ofsY, renderWidth); refused != 0u) {
-      abortUnimplemented(sc, dragonRefusal(refused));
+    if (const auto refusal = dragon_scene_submit(mC, ofsX, ofsY, renderWidth)) {
+      abortUnimplemented(sc, refusalMessage(dragonRefusal(refusal.producer), refusal).c_str());
     }
     return;
   }

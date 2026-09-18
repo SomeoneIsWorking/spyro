@@ -8,6 +8,7 @@
 #include "field_shaded_queue_submitter.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "guest_globals.h"
 #include "producer_scope.h"
 #include "scene_painter_order.h"
 #include "secondary_actor_recipe.h"
@@ -21,6 +22,7 @@
 
 namespace {
 
+constexpr const char *kChannel = "fieldactors";
 constexpr uint32_t kSecondaryProducer = 0x80020f34u;
 constexpr uint32_t kShadedProducer = 0x80022a2cu;
 
@@ -40,9 +42,10 @@ bool drawAreaReady(const GpuState &gpu) {
 
 } // namespace
 
-bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition composition) {
+spyro::ProducerRefusal spyro_field_actor_composition_submit(Core *core,
+                                                            FieldActorComposition composition) {
   if (core == nullptr || core->game == nullptr) {
-    return false;
+    return spyro::refuse(kChannel, kSecondaryProducer, "no core");
   }
 
   spyro::secondary_actor_scene::Frame secondaryFrame{};
@@ -51,12 +54,12 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
   if (composition.secondary) {
     const auto secondaryScene = spyro::secondary_actor_scene::prepare(core, secondaryFrame);
     if (secondaryScene != spyro::secondary_actor_scene::Status::Ready) {
-      lucent::debug("fieldactors",
-                    "REFUSED secondary scene={} records={} shadows={}",
-                    spyro::secondary_actor_scene::status_name(secondaryScene),
-                    secondaryFrame.records.size(),
-                    secondaryFrame.shadows.size());
-      return false;
+      return spyro::refuse(kChannel,
+                           kSecondaryProducer,
+                           "secondary scene={} records={} shadows={}",
+                           spyro::secondary_actor_scene::status_name(secondaryScene),
+                           secondaryFrame.records.size(),
+                           secondaryFrame.shadows.size());
     }
     if (gpu_vk_wide_engine(core)) {
       const int32_t center = gpu_vk_wide_engine_w(core) / 2;
@@ -67,22 +70,25 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
     }
     secondaryRecipe = spyro::secondary_actor_recipe::derive(secondaryFrame);
     if (!secondaryReady(secondaryRecipe)) {
-      lucent::debug("fieldactors",
-                    "REFUSED secondary recipe={} reason={} record={} source_word={}",
-                    (uint32_t)secondaryRecipe.status,
-                    (uint32_t)secondaryRecipe.firstReason,
-                    secondaryRecipe.firstUnsupportedRecord,
-                    secondaryRecipe.firstUnsupportedSourceWord);
-      return false;
+      return spyro::refuse(kChannel,
+                           kSecondaryProducer,
+                           "secondary recipe={} reason={} record={} source_word={} control=0x{:08X}"
+                           " program_select=0x{:08X}",
+                           spyro::secondary_actor_recipe::status_name(secondaryRecipe.status),
+                           (uint32_t)secondaryRecipe.firstReason,
+                           secondaryRecipe.firstUnsupportedRecord,
+                           secondaryRecipe.firstUnsupportedSourceWord,
+                           secondaryRecipe.firstUnsupportedControl,
+                           core->mem_r32(spyro::guest::kSpecularProgramSelect));
     }
     secondaryPlan = spyro::actor_face_submitter::prepare(
         core->game->rq, kSecondaryProducer, secondaryRecipe.outputs, secondaryRecipe.faces);
     if (secondaryPlan.status != spyro::actor_face_submitter::Status::Ready &&
         secondaryPlan.status != spyro::actor_face_submitter::Status::ValidEmpty) {
-      lucent::debug("fieldactors",
-                    "REFUSED secondary submission={}",
-                    spyro::actor_face_submitter::statusName(secondaryPlan.status));
-      return false;
+      return spyro::refuse(kChannel,
+                           kSecondaryProducer,
+                           "secondary submission={}",
+                           spyro::actor_face_submitter::statusName(secondaryPlan.status));
     }
   }
 
@@ -95,33 +101,33 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
         gpu_vk_wide_engine(core) ? std::max(512, gpu_vk_wide_engine_w(core)) : 512;
     const auto shadedScene = spyro::field_shaded_queue_scene::prepare(core, clipRight, shadedFrame);
     if (shadedScene != spyro::field_shaded_queue_scene::Status::Ready) {
-      lucent::debug("fieldactors",
-                    "REFUSED shaded scene={} records={} shadows={}",
-                    spyro::field_shaded_queue_scene::statusName(shadedScene),
-                    shadedFrame.input.records.size(),
-                    shadedFrame.shadows.size());
-      return false;
+      return spyro::refuse(kChannel,
+                           kShadedProducer,
+                           "shaded scene={} records={} shadows={}",
+                           spyro::field_shaded_queue_scene::statusName(shadedScene),
+                           shadedFrame.input.records.size(),
+                           shadedFrame.shadows.size());
     }
     shadedRecipe = spyro::field_shaded_queue_recipe::derive(shadedFrame.input);
     if (!shadedReady(shadedRecipe)) {
-      lucent::debug("fieldactors",
-                    "REFUSED shaded recipe={} actor=0x{:08X} primitive={} candidates={}",
-                    spyro::field_shaded_queue_recipe::statusName(shadedRecipe.status),
-                    shadedRecipe.firstUnsupportedActor,
-                    shadedRecipe.firstUnsupportedPrimitive,
-                    shadedRecipe.candidates);
-      return false;
+      return spyro::refuse(kChannel,
+                           kShadedProducer,
+                           "shaded recipe={} actor=0x{:08X} primitive={} candidates={}",
+                           spyro::field_shaded_queue_recipe::statusName(shadedRecipe.status),
+                           shadedRecipe.firstUnsupportedActor,
+                           shadedRecipe.firstUnsupportedPrimitive,
+                           shadedRecipe.candidates);
     }
     shadedPlan = spyro::field_shaded_queue_submitter::prepare(queue, kShadedProducer, shadedRecipe);
     if (shadedPlan.status != spyro::field_shaded_queue_submitter::Status::Ready &&
         shadedPlan.status != spyro::field_shaded_queue_submitter::Status::ValidEmpty) {
-      lucent::debug("fieldactors",
-                    "REFUSED shaded submission={} admission_ready={} queued={} existing_faces={}",
-                    spyro::field_shaded_queue_submitter::statusName(shadedPlan.status),
-                    shadedPlan.admission.ready,
-                    shadedPlan.admission.queued,
-                    shadedPlan.admission.existingFaces);
-      return false;
+      return spyro::refuse(kChannel,
+                           kShadedProducer,
+                           "shaded submission={} admission_ready={} queued={} existing_faces={}",
+                           spyro::field_shaded_queue_submitter::statusName(shadedPlan.status),
+                           shadedPlan.admission.ready,
+                           shadedPlan.admission.queued,
+                           shadedPlan.admission.existingFaces);
     }
   }
 
@@ -137,8 +143,11 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
   if (!shadedFrame.shadows.empty() &&
       !spyro::actor_recipe_capture::physical_span(
           shadedShadowCursor + static_cast<uint32_t>(shadedFrame.shadows.size()) * 8u - 8u, 8u)) {
-    lucent::debug("fieldactors", "REFUSED combined shadow cursor=0x{:08X}", shadedShadowCursor);
-    return false;
+    return spyro::refuse(kChannel,
+                         kSecondaryProducer,
+                         "combined shadow cursor=0x{:08X} shadows={}",
+                         shadedShadowCursor,
+                         shadedFrame.shadows.size());
   }
   shadedFrame.shadowCursor = shadedShadowCursor;
 
@@ -160,17 +169,23 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
     const auto admission = queue.preflightPainterObjectBatch(
         std::span<const PainterObjectBatchEntry>(entries.data(), entryCount));
     if (!admission.accepted()) {
-      lucent::debug("fieldactors",
-                    "REFUSED batch admission={} item={} existing_objects={} existing_faces={}",
-                    (uint32_t)admission.refusal,
-                    admission.refusal_item,
-                    admission.existing_objects,
-                    admission.existing_faces);
-      return false;
+      return spyro::refuse(kChannel,
+                           kSecondaryProducer,
+                           "batch admission={} item={} existing_objects={} existing_faces={}",
+                           (uint32_t)admission.refusal,
+                           admission.refusal_item,
+                           admission.existing_objects,
+                           admission.existing_faces);
     }
   }
   if (!drawAreaReady(core->game->gpu)) {
-    return false;
+    return spyro::refuse(kChannel,
+                         kSecondaryProducer,
+                         "draw area x=[{},{}] y=[{},{}] is inverted",
+                         core->game->gpu.s_da_x0,
+                         core->game->gpu.s_da_x1,
+                         core->game->gpu.s_da_y0,
+                         core->game->gpu.s_da_y1);
   }
 
   // Every source and queue check is complete. The commits are adjacent and precede either
@@ -203,5 +218,5 @@ bool spyro_field_actor_composition_submit(Core *core, FieldActorComposition comp
                 secondaryFrame.shadows.size(),
                 shadedFrame.shadows.size(),
                 shadedShadowCursor + static_cast<uint32_t>(shadedFrame.shadows.size()) * 8u);
-  return true;
+  return {};
 }

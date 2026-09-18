@@ -44,6 +44,11 @@ inline constexpr std::uint32_t kTitlescreenState = 0x80078D78u;
 // g_LevelMobys (moby.h): pointer to the level's Moby array.
 inline constexpr std::uint32_t kLevelMobys = 0x80075828u;
 
+// The word 0x80020F34 stashes in HI for its whole run, and whose top byte selects between the
+// two per-face colour programs. The view-normal/specular arm at 0x80021C70 reads its low bits
+// as the material colour and its bits 18 and up as the specular exponent (issue 0113).
+inline constexpr std::uint32_t kSpecularProgramSelect = kGp + 0x30u; // 0x80075294
+
 // D_80074B84: the reciprocal-magnitude table the guest's normalisation reads after the GTE's
 // leading-zero count. Named once here because three owners reach it under three different names.
 inline constexpr std::uint32_t kMagnitudeTable = 0x80074B84u;

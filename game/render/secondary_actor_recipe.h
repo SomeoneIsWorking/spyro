@@ -10,6 +10,8 @@ namespace spyro::secondary_actor_recipe {
 
 enum class Status : uint8_t { Ready, ValidEmpty, UnsupportedPrefix, UnsupportedLighting };
 
+const char *status_name(Status status);
+
 struct Recipe {
   Status status = Status::ValidEmpty;
   actor_draw_recipe::Reason firstReason = actor_draw_recipe::Reason::None;
@@ -18,6 +20,7 @@ struct Recipe {
   uint32_t rejectedCandidates = 0;
   uint32_t firstUnsupportedRecord = 0;
   uint32_t firstUnsupportedSourceWord = 0;
+  uint32_t firstUnsupportedControl = 0; // the face's first prefix word, which selects the program
   std::vector<actor_prefix::Output> outputs;
   std::vector<actor_draw_recipe::Face> faces;
 };

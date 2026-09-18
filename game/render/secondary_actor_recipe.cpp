@@ -4,6 +4,20 @@
 
 namespace spyro::secondary_actor_recipe {
 
+const char *status_name(Status status) {
+  switch (status) {
+  case Status::Ready:
+    return "Ready";
+  case Status::ValidEmpty:
+    return "ValidEmpty";
+  case Status::UnsupportedPrefix:
+    return "UnsupportedPrefix";
+  case Status::UnsupportedLighting:
+    return "UnsupportedLighting";
+  }
+  return "unknown";
+}
+
 Recipe derive(const secondary_actor_scene::Frame &frame) {
   Recipe recipe{};
   recipe.sourceRecords = (uint32_t)frame.records.size();
@@ -36,6 +50,7 @@ Recipe derive(const secondary_actor_scene::Frame &frame) {
       recipe.status = Status::UnsupportedLighting;
       recipe.firstUnsupportedRecord = candidate.record;
       recipe.firstUnsupportedSourceWord = candidate.sourceWord;
+      recipe.firstUnsupportedControl = candidate.input.words[0];
       return recipe;
     }
   }

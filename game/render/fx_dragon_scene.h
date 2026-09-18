@@ -1,5 +1,7 @@
 #pragma once
 
+#include "producer_refusal.h"
+
 class Core;
 
 // Direct native owner of GS_Dragon's renderer 0x8001CFDC (stage 8) — the dragon-rescue cutscene.
@@ -7,7 +9,8 @@ class Core;
 // the branch itself is derived by dragon_scene_recipe and this owner only applies it. Returns the
 // guest address of the layer that refused, 1 when the composition itself could not be derived, or
 // 0 when the whole state composed.
-unsigned dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidth);
+spyro::ProducerRefusal
+dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidth);
 
 // Whether the composition this state will apply draws Spyro's model. The paired-actor ownership
 // gate is a per-frame contract checked in drawFrame: it demands exactly one invocation of

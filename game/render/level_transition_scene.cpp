@@ -136,7 +136,7 @@ Refusal submit(Core *core) {
                                      kCopyHudMobys,
                                      psx::cpu::ExecutionBudget::currentTurn(*core),
                                      "transition-hud-mobys");
-    if (!spyro_field_actor_composition_submit(core, {.secondary = false, .shaded = true})) {
+    if (spyro_field_actor_composition_submit(core, {.secondary = false, .shaded = true})) {
       return Refusal::ShadedActors;
     }
   }

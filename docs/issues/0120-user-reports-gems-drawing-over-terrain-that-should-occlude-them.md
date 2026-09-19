@@ -3,7 +3,7 @@ id: 120
 title: User reports gems drawing on top of terrain that should occlude them
 status: open
 related: 0105 (actor-vs-actor depth order, 5.07%). NOT established as the cause of this issue: that instrument walks retail's moby list and cannot see terrain. Both stay open until one measurement connects them.
-symptom: CAUSE LOCATED 2026-09-19 — the shaded-moby recipe subtracts an origin bias that equals its own mean sz to 0.9%, cancelling range and inverting the order (depth vs range r=-0.27, 15% of the OT table used). "Spyro looks like gems that should be behind terrain rendering on top" (user, 2026-09-19) — REPRODUCED at the framebuffer: at f2400 of artisans-arrival, 116 px show a violet object in the native where the console shows grass (reverse direction only 41 px). Separately, retail's moby walker shows a 5.07% actor-vs-actor depth-order disagreement, which is issue 0105; that instrument cannot see terrain and does not evidence this symptom
+symptom: PARTLY FIXED 2026-09-19 — the missing world ordering bin is recovered and verified (415/415 authored bins match retail, r=+1.0000 with range), but the VISIBLE symptom is unchanged because the GPU depth test uses per-vertex pzToOrd(viewZ), which is degenerate across range (0.022290 vs 0.022285 for ranges 15197 vs 8336). "Spyro looks like gems that should be behind terrain rendering on top" (user, 2026-09-19) — REPRODUCED at the framebuffer: at f2400 of artisans-arrival, 116 px show a violet object in the native where the console shows grass (reverse direction only 41 px). Separately, retail's moby walker shows a 5.07% actor-vs-actor depth-order disagreement, which is issue 0105; that instrument cannot see terrain and does not evidence this symptom
 state_items: S019, S020
 tags: render,depth,occlusion,oracle
 created: 2026-09-19
@@ -758,3 +758,70 @@ owner before wiring it, and do not substitute a constant.
 Falsifier unchanged in spirit and now correctly targeted: the authored WORLD bin for 0x80022A2C
 must track range (strong positive correlation with `t2`, where it is now -0.27), and node
 `8016F0C8` must reach retail's neighbourhood of 171 rather than 17-23.
+
+## 2026-09-19: the world bin is FIXED and verified; the visible symptom is NOT
+
+`Moby::m_DepthOffset` is the bias byte, confirmed by offset rather than by name: `m_Class` sits at
+0x36 (matching the oracle's known-good `kMobyClass = 54`) and `m_State` at 0x48 (`kMobyState = 72`),
+which puts `m_DepthOffset` -- declared immediately before `m_State` -- at exactly **0x47**, byte 3
+of the word `lw $s4, 0x44($fp)` loads, read with `sra` because the decomp declares it `char`. Its
+own doc comment is "Offsets the sorting depth of the entire Moby".
+
+So the recipe now computes, once per record:
+
+    worldBin = max((affine.t[2] >> 6) - m_DepthOffset, 0)
+
+and the submitter passes `queuedWorld(face.worldBin, face.paintGroup, face.otBin)` -- the world
+position, and the 288-entry sub-table index as the within-moby suborder. The suborder is inverted
+(`kQueuedWorldSubBins - 1 - subBin`) because retail chains its sub-table from the highest used entry
+downwards (0x80023990) so the highest sub-bin reaches the chain head and draws first, while
+`painterReplayBefore` orders `chain_suborder` smallest-first.
+
+**Measured, and the falsifier passes:**
+
+```
+  world_bin vs range (t2)  : r = +1.0000     (the sub-bin it replaced was -0.2745)
+  world_bin range          : 3 .. 185        (the sub-bin used only 16 .. 60 of 288)
+  authored bin vs retail   : 415 / 415  = 100.00%    (was 625/664, with all 39 misses here)
+  0x80022A2C in that set   : 54 submitted / 34 matched, 0 differing  (was 39/39 differing)
+```
+
+The painter is present in the comparison with 34 matched primitives, so the 100% is agreement and
+not an empty denominator. No record hit the new `worldBin >= kWorldOtBins` refusal. Gate 47/47.
+
+### And it does not change what the user sees
+
+Re-censused at f2400 of `artisans-arrival`, same predicate, fresh capture:
+
+```
+                              both  native-only  console-only
+  before the fix                20          116           41
+  after  the fix                20          116           41
+```
+
+The frame did change (the native PNG is 66230 bytes against 66322 before), so this is not a stale
+capture -- the violet pixels are simply the same ones. **The replay order is not what decides them.**
+
+`field_shaded_queue_submitter.cpp:65` sends `depth[i] = pzToOrd(face.vertices[i].viewZ)`, a
+per-vertex projected depth with no connection to the ordering-table arithmetic, and that is what the
+GPU depth test uses. The diff shows the problem directly: two objects at ranges 15197 and 8336 get
+native depths **0.022290 and 0.022285**, five parts per million apart, while retail puts them in
+bins 111 and 49. The depth-vs-retail disagreement rate is 6.43% and did not improve, as expected --
+nothing in this change touches `depth[]`.
+
+So issue 0120 has two faults, not one:
+
+1. **the world ordering position** -- missing entirely, now recovered and verified above; and
+2. **the submitted per-vertex depth** -- degenerate across range, which is what actually decides the
+   pixels the user is looking at. This is issue 0105's measurement seen from the other side.
+
+Fault 1 is real and worth having: the painter replay is what orders faces that tie on depth, and it
+was ordering them by an intra-object ordinal. But it was not the cause of the screenshot, and
+claiming the gem symptom fixed on the strength of 415/415 would be exactly the "green test cannot
+overrule the running product" failure this repo warns about.
+
+**Next, and this is now the whole issue:** find why `NativeProjectedVertex::pz` barely varies with
+range. `t2` (`affine.t[2]`, the view-space object origin) correlates +0.9999 with the projected sz
+sum over 7127 faces, so the per-object view depth IS right and available; the per-vertex `pz` that
+reaches `pzToOrd` is what collapses. Falsifier: native depth for the pair above must separate in
+proportion to 15197 vs 8336, and the 6.43% disagreement rate must fall.

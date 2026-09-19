@@ -203,7 +203,9 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
                                              .lightScale = mesh->lightScale,
                                              .lightEntry = mesh->lightEntry,
                                              .lightEntryIndex = mesh->lightEntryIndex,
-                                             .affine = affine};
+                                             .affine = affine,
+                                             .depthOffset =
+                                                 (int32_t)(int8_t)core->mem_r8(actor + 0x47u)};
     record.vertices.reserve(mesh->vertexCount);
     for (uint32_t i = 0; i < mesh->vertexCount; ++i) {
       record.vertices.push_back(decodeVertex(core, mesh->vertices + i * 3u));

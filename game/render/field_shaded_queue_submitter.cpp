@@ -23,7 +23,7 @@ Plan prepare(const RenderQueue &queue,
   }
   for (const auto &face : recipe.faces) {
     if ((face.vertexCount != 3u && face.vertexCount != 4u) ||
-        !scene_painter_order::queuedWorld(face.otBin, face.paintGroup).authored()) {
+        !scene_painter_order::queuedWorld(face.worldBin, face.paintGroup, face.otBin).authored()) {
       plan.status = Status::InvalidOrder;
       return plan;
     }
@@ -103,7 +103,7 @@ void submit(Core *core,
                       0.0f,
                       face.gouraud ? 1 : 0,
                       gpu.s_tp_dither,
-                      scene_painter_order::queuedWorld(face.otBin, face.paintGroup));
+                      scene_painter_order::queuedWorld(face.worldBin, face.paintGroup, face.otBin));
   }
 }
 

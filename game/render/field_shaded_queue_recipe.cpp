@@ -2,6 +2,7 @@
 
 #include "projection_stream.h"
 
+#include "scene_painter_order.h"
 #include "wide_clip_plan.h"
 
 #include <lucent/log.h>
@@ -196,6 +197,23 @@ Recipe derive(const Input &input, const Interval *interval) {
     case Projected::Own:
       break;
     }
+    // The moby's WORLD ordering-table bin, one per record. Retail computes it at r_moby.s
+    // 0x80022CD8-0x80022DA8 and parks it in the GTE's DQB register until 0x800239C4 reads it back
+    // to splice this producer's whole chain into `g_WorldOT` at that single bin:
+    //
+    //     sra $t9, $v1, 6        ; $v1 is TRZ, doubled at 0x80022CD4
+    //     sra $a0, $s4, 24       ; Moby::m_DepthOffset, signed
+    //     sub $t9, $t9, $a0
+    //     bgez/addi $t9, 0       ; clamped at 0
+    //
+    // The 288-entry table this recipe's `ot` indexes orders faces WITHIN one moby and is chained
+    // into that one world bin, so `ot` was never a world position. Submitting it as one is what
+    // let a distant gem outrank near terrain (issue 0120).
+    const int64_t worldBin =
+        std::max((int64_t)(record.affine.t[2] >> 6) - record.depthOffset, (int64_t)0);
+    if (worldBin >= scene_painter_order::kWorldOtBins) {
+      return refuse(std::move(recipe), Status::InvalidOtBin, record, 0);
+    }
     uint32_t commonClip = 0x0fu;
     for (const Vertex &vertex : projected) {
       commonClip &= spyro::wide::clipCode(vertex.sx, vertex.sy, input.clipRight);
@@ -254,7 +272,7 @@ Recipe derive(const Input &input, const Interval *interval) {
         continue;
       }
       const int64_t ot = depth >> 5;
-      if (ot < 0 || ot >= 288) {
+      if (ot < 0 || ot >= scene_painter_order::kQueuedWorldSubBins) {
         return refuse(std::move(recipe), Status::InvalidOtBin, record, primitiveOrdinal);
       }
       Face face{.actor = record.actor,
@@ -262,6 +280,7 @@ Recipe derive(const Input &input, const Interval *interval) {
                 .primitiveOrdinal = primitiveOrdinal,
                 .paintGroup = paintGroup++,
                 .otBin = (uint16_t)ot,
+                .worldBin = (uint16_t)worldBin,
                 .vertexCount = count,
                 .semiTransparent = variantOne ? record.lightEntryIndex == 0
                                               : (lit && nearCamera && firstFacing >= 0),
@@ -292,7 +311,7 @@ Recipe derive(const Input &input, const Interval *interval) {
                     // actor's view-Z origin, which this recipe uses as an APPROXIMATION of retail's
                     // TRZ (see the nearCamera comment above) -- if the bias is the fault, that
                     // approximation is where to look.
-                    "szsum={} t2={} bias={} depth={} ot={}",
+                    "szsum={} t2={} bias={} depth={} ot={} depth_offset={} world_bin={}",
                     record.actor,
                     record.actorOrdinal,
                     primitiveOrdinal,
@@ -312,7 +331,9 @@ Recipe derive(const Input &input, const Interval *interval) {
                     record.affine.t[2],
                     (int64_t)std::max(record.affine.t[2] - 256, 0) * 4,
                     depth,
-                    ot);
+                    ot,
+                    record.depthOffset,
+                    worldBin);
       for (uint32_t i = 0; i < count; ++i) {
         face.vertices[i] = projected[index[i]];
       }

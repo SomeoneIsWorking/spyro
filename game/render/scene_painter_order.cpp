@@ -47,13 +47,24 @@ PainterReplayOrder world(uint16_t otBin, uint32_t paintGroup, uint32_t paintSubo
           {otBin, linkOrdinal(LinkPhase::World, paintGroup), paintSuborder}};
 }
 
-PainterReplayOrder queuedWorld(uint16_t otBin, uint32_t paintGroup) {
-  if (paintGroup > kOrdinalMask) {
+PainterReplayOrder queuedWorld(uint16_t worldBin, uint32_t paintGroup, uint16_t subBin) {
+  if (paintGroup > kOrdinalMask || subBin >= kQueuedWorldSubBins) {
     return {};
   }
   // 0x80022A2C runs after both actor submitters and links each accepted
   // polygon at the OT head. Later accepted polygons therefore replay first.
-  return {kActorWorldTerrainDomain, {otBin, linkOrdinal(LinkPhase::QueuedWorld, paintGroup), 0}};
+  //
+  // The sub-bin is INVERTED. Retail walks its private sub-table from the highest used entry
+  // downwards (r_moby.s 0x80023990: `lw $v1, -0x4($s3)` then `addi $s3, $s3, -0x8`), so the
+  // highest sub-bin ends up at the chain head and is drawn FIRST -- which is right, because a
+  // larger sub-bin means a larger summed depth and so a farther face. `painterReplayBefore`
+  // orders chain_suborder the other way (smaller first), so handing it the raw sub-bin would
+  // replay each moby's faces inside-out. Subtracting from the table size is the whole correction
+  // and it is exact, not a tuning constant: the table is 0x900 bytes of 8-byte entries.
+  return {kActorWorldTerrainDomain,
+          {worldBin,
+           linkOrdinal(LinkPhase::QueuedWorld, paintGroup),
+           (uint16_t)(kQueuedWorldSubBins - 1u - subBin)}};
 }
 
 PainterReplayOrder actor(uint16_t otBin, uint32_t recordOrdinal, uint32_t chainOrdinal) {

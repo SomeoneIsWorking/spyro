@@ -35,6 +35,12 @@ struct Record {
   uint32_t lightEntry = 0;
   int32_t lightEntryIndex = 0;
   psxport::native_projection::FixedAffine affine{};
+  // `Moby::m_DepthOffset` (external/spyro-1 moby.h), the guest's own "offsets the sorting depth of
+  // the entire Moby" byte at `actor + 0x47`. Retail subtracts it from the moby's WORLD ordering-
+  // table bin at r_moby.s 0x80022D9C-0x80022DA0 (`sra $a0, $s4, 24` -- arithmetic, because the
+  // field is a signed char). Captured here rather than read from guest memory inside the recipe so
+  // the recipe stays a pure function of its Input and the world bin is testable without a Core.
+  int32_t depthOffset = 0;
   std::vector<psxport::native_projection::ModelVertex> vertices;
   std::vector<Primitive> primitives;
 };
@@ -60,7 +66,11 @@ struct Face {
   uint32_t actorOrdinal = 0;
   uint32_t primitiveOrdinal = 0;
   uint32_t paintGroup = 0;
+  // `otBin` is the index into 0x80022A2C's private 288-entry within-moby table; `worldBin` is the
+  // single bin the whole moby's chain is spliced into in `g_WorldOT`. They are different
+  // quantities and only the second places this face against the rest of the scene.
   uint16_t otBin = 0;
+  uint16_t worldBin = 0;
   uint8_t vertexCount = 0;
   bool semiTransparent = false;
   bool gouraud = false;

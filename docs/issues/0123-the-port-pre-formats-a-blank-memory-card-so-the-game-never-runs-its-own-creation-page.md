@@ -132,19 +132,77 @@ never run in this port.
 the ONLY channel a libmcrd consumer can see a card failure through, because the BIOS call's return
 value is a "busy, retry" flag and cannot carry one.
 
+## The guest side, recovered from the binary
+
+Spyro opens EIGHT card event specs, all `mode=0x1000` (EvMdINTR), on both classes, and then polls
+them with TestEvent. The four handlers are identical five-instruction stubs, each setting its own
+flag word -- so unlike Spider-Man's status codes there is no overwrite-ordering hazard here:
+
+| spec | handler | sets |
+|---|---|---|
+| `0x0004` EvSpIOE | `0x80067DD0` | `[0x80075B2C] = 1` |
+| `0x8000` EvSpERROR | `0x80067DE4` | `[0x80075B30] = 1` |
+| `0x0100` EvSpTIMOUT | `0x80067DF8` | `[0x80075B34] = 1` |
+| `0x2000` EvSpNEW | `0x80067E0C` | `[0x80075B38] = 1` |
+
+The wait routine is `0x80068264`. It spins while all four flags are zero, then returns
+`(IOE | ERROR<<1 | TIMOUT<<2 | NEW<<3) >> 1` (`sra $v0, $s0, 1` at `0x80068320`) and clears them:
+
+| what fired | returns |
+|---|---|
+| IOE | 0 |
+| ERROR | 1 |
+| TIMOUT | 2 |
+| **NEW** | **4** |
+
+Measured with TestEvent traced (61,689 calls over the stalling run): handles `F1000001`/`F1000005`
+-- the two IOE specs -- fired 5,139 and 5,140 times. The ERROR, TIMOUT and NEW handles fired **zero**
+times each, on both classes. The runtime has only two deliveries in it, `0x0004` and `0x8000`, and
+nothing anywhere can emit `0x2000` or `0x0100`.
+
+So the port can only ever make this routine return 0, "completed, nothing special". The
+unformatted-card answer is unreachable by construction, which is the mechanism behind the 5,135
+re-asks.
+
+## An EvSpNEW attempt, and what it measured
+
+Implemented `Memcard::formatted()` and `deliverNewCard()` (EvSpNEW on both classes), reported it
+from `_card_info` when the card lacks the MC magic, and removed the pre-format. Result on a genuinely
+blank card:
+
+| | stopgap (pre-format) | EvSpNEW, announced every call | EvSpNEW, announced once |
+|---|---|---|---|
+| title state | reaches picker | `state=2, sub_state=0, tick=140` | `state=1, sub_state=12, tick=5105` |
+| `A0:0xAB` | 55 | 2166 | 5135 |
+| `A0:0xAC` `_card_load` | 2 | 1084 | 3 |
+| `B0:0x4E` `_card_read` | 2 | 1084 | 2 |
+| `B0:0x32` open | 5 | 0 | 3 |
+| reaches picker | yes | no | no |
+
+Two findings, one useful and one falsified:
+
+* Announcing EvSpNEW on every call MOVES the guest: it leaves the sub_state-12 loop entirely, enters
+  a different title state, and starts cycling load/read/chan 1,084 times without opening a file --
+  consistent with a card-scan or creation path, but it does not complete.
+* Announcing it ONCE, on the theory that EvSpNEW is a detection rather than a standing condition, is
+  byte-identically the original stall (5135/3/3/38/2/2, tick 5105). That theory is dead: the guest
+  clears its flags after each read and needs the condition re-asserted.
+
+Reverted, because shipping either arm replaces a stopgap that reaches gameplay with a product that
+does not. The pre-format remains, and remains a stopgap.
+
 ## What is actually open
 
-Make `_card_info` report the card's real state instead of unconditional success, then remove the
-pre-format and confirm the product draws `CREATING SAVE FILE...` and reaches the picker on its own.
-Two things are still unknown and should be measured before the handler is written:
+The standing-EvSpNEW arm is the closest anything has come: it is the first change that moves Spyro
+out of the stall. What it does not do is finish, and the next question is narrow -- what the
+1,084-iteration `_card_load` / `_card_read` / `_card_chan` cycle is looking for in the card image it
+reads back. It never calls `_card_write`, so it is not formatting; it is reading and rejecting.
 
-* which event spec Spyro is waiting on -- `deliverError` is the documented failure channel, but
-  whether Spyro's poll loop is watching for it here is not yet measured;
-* whether `_card_load` (3 calls in the stalling run, 2 in the control) carries the same answer and
-  needs the same treatment.
+Recover the caller of `0x80068264` in that path and see what it does with the returned 4, then make
+`_card_read` answer an unformatted card the way hardware does. The discriminator is unchanged: the
+blank-card run's `B0:0x33/0x34/0x36` stop being zero and `A0:0xAB` stops running into the thousands.
 
-The discriminator is the histogram above: the fix is right when the unformatted run's `B0:0x33/0x34/
-0x36` stop being zero and `A0:0xAB` stops running into the thousands.
+Do not re-try the one-shot latch; it is measured and dead.
 
 ## Bearing on the user's report
 

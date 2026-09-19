@@ -56,7 +56,7 @@ naturally".
   `m_DemoType` is a level type, **and `g_LoadStage == 13`** — so a press during the load latches and
   fires when the load completes, rather than being dropped or jumping it.
 - `observe` dispatches the guest's own `func_8004AC24(1)` then `LoadLevel(1)`, on the
-  `ReturnHomeSequence` precedent (which dispatches guest 0x8002C664 rather than transcribing its ten
+  `ReturnHomeSequence` precedent (which dispatches guest 0x8002C664 rather than hand-copying its ten
   globals). **Do not write `m_Tick`.** Claim C179 — "Boot-logo Start clock advancement is not a valid
   skip route" — is already falsified in this repo, and a timer write is the same move.
 
@@ -88,7 +88,7 @@ sit within 0x400 bytes of both a reference to `m_Tick` (0x80078D80) and an immed
 the `GamestateCutsceneTransition` body; only 0x80033160 is preceded by the Spyro reset.
 
 So the cancellation dispatches guest 0x8004AC24 then guest 0x80015370, each with a1/a0 = 1, on the
-`ReturnHomeSequence` precedent. Nothing is transcribed and no timer is written.
+`ReturnHomeSequence` precedent. Nothing is hand-copied and no timer is written.
 
 ## Acceptance
 
@@ -97,3 +97,42 @@ So the cancellation dispatches guest 0x8004AC24 then guest 0x80015370, each with
   Spyro reset, and the oracle's decisive ranges agree with a run that let the flyby finish.
 - A press before the load completes is honoured when it completes, never dropped silently.
 - `drive.py --skip-transitions` covers this screen too, so the route is exercised by the gate.
+
+## RESOLVED 2026-09-19 — implemented, and exercised live
+
+`Cancellation::CutsceneTransitionFlyby` in `titles/spyro1/core/spyro1_transition_skip.cpp`. On a
+Start or Cross edge while `GS_TitleScreen` is in `TSM_Demo`/`TSS_Active` on the `TSD_Level` path, it
+dispatches the guest's own `0x8004AC24(1)` then `0x80015370(1)` — the pair at `0x80033158`/
+`0x80033160`. Nothing is hand-copied, and `m_Tick` is not written.
+
+A press arriving while the level is still streaming is **held**, not obeyed: `flybyPressHeld_` is
+cleared the instant the card is no longer up and the cancellation still waits for the guest's own
+`g_LoadStage == 13` gate. So pressing Start the moment the card appears ends it as early as the game
+itself could, and never earlier.
+
+`TSD_DemoLevel` and `TSD_Cutscene` are deliberately left alone — their terminals are not recovered
+(two unlocated demo globals, and a different ending entirely). A press on those falls through.
+
+### Live evidence, under the user's own settings
+
+`tools/drive.py --skip-transitions` now presses Start on the flyby as well as the tally, so the
+navigator issues the press pre-arrival. Two runs, both with `psxport_settings.ini` (`aspect=3`,
+`fps60=1`) rather than the empty default agent settings:
+
+| run | arrival | wall |
+|---|---|---|
+| without the press | `GS_Playing` at frame 6360 | 43.8 s |
+| with the press | `GS_Playing` at frame **5600** | 26.1 s |
+
+    [transition] level flyby cancelled (1); guest 0x8004AC24 then 0x80015370
+                 left stage 0 load stage 4294967295 title mode 3 state 2
+
+`stage 0` is `GS_Playing` and `load stage -1` is the value `LoadLevel`'s own `case 13` writes when a
+level load completes (`external/spyro-1/src/loaders.c:1860`) — the cancellation left the game exactly
+where the natural route leaves it, 760 fields earlier.
+
+Both new unit discriminators were checked by breaking what they test: removing the `g_LoadStage`
+gate fails `testHonoursTheFlybysLoadGate`, and dropping `demoType` from `flybyCardUp` fails
+`testLeavesTheUnrecoveredFlybyPathsAlone`.
+
+Route and addresses recorded in `docs/findings/start-skip-map.md`.

@@ -34,10 +34,50 @@ constexpr std::uint64_t kReturnHomeCycles = 2u << 20;
 // whole terminal transition, not a shortcut past part of it.
 constexpr std::uint32_t kLevelTransHudActive = 0x800756B0u;
 
-// g_LoadStage, reported so a cancellation can be read against the load it did not touch.
+// g_LoadStage, reported so a cancellation can be read against the load it did not touch, and the
+// flyby's own load gate.
 using spyro::guest::kLoadStage;
 
+// GS_TitleScreen. gamestates/update.c dispatches GamestateCutsceneTransition -- the flyby card the
+// game shows on its way into a level -- from this stage when m_Mode is TSM_Demo; TitlescreenUpdate
+// owns every other mode, so the mode is part of identifying the screen rather than a refinement.
+using spyro::guest::kTitlescreenState;
+constexpr std::uint32_t kStageTitleScreen = 13u;
+constexpr std::uint32_t kTitleModeDemo = 3u;    // TSM_Demo
+constexpr std::uint32_t kTitleStateActive = 2u; // TSS_Active, the flyby animation itself
+constexpr std::uint32_t kDemoTypeLevel = 1u;    // TSD_Level
+
+// titlescreen.h, four-byte fields in declaration order.
+constexpr std::uint32_t kTitleMode = kTitlescreenState + 0x00u;
+constexpr std::uint32_t kTitleState = kTitlescreenState + 0x04u;
+constexpr std::uint32_t kTitleDemoType = kTitlescreenState + 0x1Cu;
+
+// The level path's terminal transition, recovered from SCUS_942.28 rather than named by the decomp:
+// 0x80033158 is `jal 0x8004AC24` and 0x80033160, eight bytes later, is `jal 0x80015370`, which is
+// exactly the `func_8004AC24(1); LoadLevel(1); return;` the decompiled TSS_Active branch ends on.
+// 0x80015370 is LoadLevel on three independent checks -- it is the only one of func_8002DF9C's jal
+// targets that both reads and writes g_LoadStage (twenty accesses, three of them sw), one of its
+// eight call sites is 0x8002DFE8 inside func_8002DF9C, and it appears in this pair. See
+// docs/issues/0129.
+//
+// Both are dispatched rather than hand-copied, and the card the player sees here is TSD_Level,
+// whose terminal is these two calls and nothing else: the two demo globals in the decompiled branch
+// belong to TSD_DemoLevel, and the TSD_Cutscene path ends somewhere else entirely. Those two
+// screens are therefore deliberately NOT cancellable -- their terminals are not recovered, and
+// approximating one is the fast-forward this class exists to avoid.
+constexpr std::uint32_t kResetSpyroForGameplay = 0x8004AC24u;
+constexpr std::uint32_t kLoadLevel = 0x80015370u;
+constexpr std::uint32_t kLoadStageLevelReady = 13u;
+// LoadLevel at its final stage finishes a level whose data is already resident, and the Spyro reset
+// is a leaf. A budget neither can exhaust is a budget that cannot report the call going wrong.
+constexpr std::uint64_t kFlybyTerminalCycles = 32u << 20;
+
 } // namespace
+
+bool flybyCardUp(const TransitionState &state) {
+  return state.stage == kStageTitleScreen && state.titleMode == kTitleModeDemo &&
+         state.titleState == kTitleStateActive && state.demoType == kDemoTypeLevel;
+}
 
 Cancellation classify(const TransitionState &state) {
   if (!state.skipPressed) {
@@ -53,15 +93,38 @@ Cancellation classify(const TransitionState &state) {
   if (state.stage == kStageExitLevel) {
     return Cancellation::ReturnHomeSequence;
   }
+  // The load gate is the guest's, not a courtesy: GamestateCutsceneTransition runs its terminal
+  // only once g_LoadStage reaches 13, and the flyby is what holds the screen while the level
+  // streams. A press before then is held by observe and classified on a later frame, so the card is
+  // cancelled early but the level is never entered half-loaded.
+  if (flybyCardUp(state) && state.loadStage == kLoadStageLevelReady) {
+    return Cancellation::CutsceneTransitionFlyby;
+  }
   return Cancellation::None;
 }
 
 TransitionSkip::TransitionSkip(FieldScheduler &fields) : fields_(fields) {}
 
 void TransitionSkip::observe(Core &core) {
-  const TransitionState state{.stage = core.mem_r32(kGamestate),
-                              .levelTransHudActive = core.mem_r32(kLevelTransHudActive),
-                              .skipPressed = fields_.presentationSkipPressed()};
+  TransitionState state{.stage = core.mem_r32(kGamestate),
+                        .levelTransHudActive = core.mem_r32(kLevelTransHudActive),
+                        .titleMode = core.mem_r32(kTitleMode),
+                        .titleState = core.mem_r32(kTitleState),
+                        .demoType = core.mem_r32(kTitleDemoType),
+                        .loadStage = core.mem_r32(kLoadStage),
+                        .skipPressed = fields_.presentationSkipPressed()};
+
+  // Start is a single-frame edge, and the flyby's load can outlast it by hundreds of frames.
+  // Holding the press is what lets the player press once, early, and still have the card end the
+  // instant its level is ready -- as against writing m_Tick, which would end the card before the
+  // load and is the fast-forward this class refuses.
+  if (!flybyCardUp(state)) {
+    flybyPressHeld_ = false;
+  } else {
+    flybyPressHeld_ = flybyPressHeld_ || state.skipPressed;
+    state.skipPressed = flybyPressHeld_;
+  }
+
   switch (classify(state)) {
   case Cancellation::None:
     return;
@@ -88,6 +151,30 @@ void TransitionSkip::observe(Core &core) {
                  kReturnHome,
                  core.mem_r32(kGamestate),
                  core.mem_r32(kLoadStage));
+    return;
+  case Cancellation::CutsceneTransitionFlyby:
+    flybyPressHeld_ = false;
+    psx::cpu::dispatchGuestToReturn1(core,
+                                     kResetSpyroForGameplay,
+                                     1u,
+                                     psx::cpu::ExecutionBudget::fromCycles(kFlybyTerminalCycles),
+                                     "transition-flyby-reset-spyro");
+    psx::cpu::dispatchGuestToReturn1(core,
+                                     kLoadLevel,
+                                     1u,
+                                     psx::cpu::ExecutionBudget::fromCycles(kFlybyTerminalCycles),
+                                     "transition-flyby-load-level");
+    ++cancellations_;
+    lucent::info("transition",
+                 "level flyby cancelled ({}); guest 0x{:08X} then 0x{:08X} left stage {} load "
+                 "stage {} title mode {} state {}",
+                 cancellations_,
+                 kResetSpyroForGameplay,
+                 kLoadLevel,
+                 core.mem_r32(kGamestate),
+                 core.mem_r32(kLoadStage),
+                 core.mem_r32(kTitleMode),
+                 core.mem_r32(kTitleState));
     return;
   }
 }

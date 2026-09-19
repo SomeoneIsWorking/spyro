@@ -62,6 +62,7 @@ GS_CUTSCENE = 14
 GS_CREDITS = 15
 
 TSM_INIT, TSM_MENU, TSM_LOADING, TSM_DEMO = 0, 1, 2, 3
+TSS_ACTIVE = 2  # the flyby animation itself, as against its setup and loading phases
 
 # One refusal type for every named refusal a driver can make, so a steering refusal is reported the
 # same way as a navigation one instead of escaping as a traceback.
@@ -317,6 +318,7 @@ class Navigator:
         spent = 0
         while spent < self._budget:
             state = self._port.gamestate()
+            title = self._port.title()
             if state == GS_PLAYING:
                 return
             # Exercises the port's own Start cancellation of the level-transition tally. The press is
@@ -327,6 +329,16 @@ class Navigator:
                 self._skip_transitions
                 and state == GS_LEVEL_TRANSITION
                 and self._port.word(G_LEVEL_TRANS_HUD) != 0
+            ):
+                self._port.tap("start")
+            # The same press on the "THE ADVENTURE BEGINS..." flyby. Pressed on sight, including
+            # while the level is still streaming: the port holds an early press until its load gate
+            # opens, so pressing early is the case worth exercising rather than one to avoid.
+            if (
+                self._skip_transitions
+                and state == GS_TITLE_SCREEN
+                and title.mode == TSM_DEMO
+                and title.state == TSS_ACTIVE
             ):
                 self._port.tap("start")
             if state not in (
@@ -402,8 +414,8 @@ def main() -> int:
     parser.add_argument(
         "--skip-transitions",
         action="store_true",
-        help="press Start on the level-transition tally while driving in, exercising the port's "
-        "cancellation of that screen",
+        help="press Start on the level-transition tally and the level flyby while driving in, exercising the port's "
+        "cancellation of those screens",
     )
     parser.add_argument("--hold", action="append", default=[], help="button held after arrival")
     parser.add_argument("--hold-frames", type=int, default=60)

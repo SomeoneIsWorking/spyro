@@ -87,6 +87,59 @@ sub-level, not in a homeworld. Both routes therefore sit behind the portal block
 with the flag on and one with it off both reach `GS_Playing` at frame 6361 and log no cancellation.
 The mechanism is proven by unit test only until a portal can be traversed.
 
+## The level flyby ("THE ADVENTURE BEGINS...")
+
+The card the player sees on the way into a level is `GamestateCutsceneTransition`
+(`gamestates/update.c`), reached from `GS_TitleScreen = 13` when `g_TitlescreenState.m_Mode` is
+`TSM_Demo`; `TitlescreenUpdate` owns every other mode of that same gamestate, so the mode is part of
+identifying the screen rather than a refinement of it. The card itself is the `TSS_Active` arm, which
+flies Spyro along a five-segment scripted path while `m_Tick` counts to 384.
+
+Its terminal transition depends on `m_DemoType`, and only one of the three is recovered:
+
+- **`TSD_Level = 1`** is the card the user sees — `draw.c:func_8001E6B8` draws "THE ADVENTURE
+  BEGINS..." on this path, or "THE ADVENTURE CONTINUES..." when `g_VisitedFlags[0]` is set. Its
+  terminal is `func_8004AC24(1); LoadLevel(1); return;` and **nothing else**.
+- `TSD_DemoLevel = 2` runs the same two calls but first writes `g_DemoMode` and `g_DemoFadeTimer`,
+  neither of whose guest addresses is recovered here.
+- `TSD_Cutscene = 0` ends somewhere else entirely: `ClearImage`, `AllocateBuffers(1)`, a load loop to
+  stage 10, then `StartCutscenePlayback()` and `g_StateSwitch = 1`.
+
+So only `TSD_Level` is cancellable, and the other two are deliberately absent rather than
+approximated.
+
+### The two guest addresses, recovered numerically
+
+The decomp names `func_8004AC24` in its own symbol but gives `LoadLevel` no address. It is
+**`0x80015370`**, established from the shipping `SCUS_942.28` three independent ways:
+
+1. Of `func_8002DF9C`'s three non-tally `jal` targets it is the only one that both reads **and**
+   writes `g_LoadStage` (`0x80075864`) — twenty accesses, three of them `sw`. `0x80037BD4` reads it
+   once and never writes, so it is a consumer; `0x8004A7EC` never touches it.
+2. Scanning the whole text for `jal 0x80015370` gives eight call sites, one of which is
+   `0x8002DFE8`, inside `func_8002DF9C` (`0x8002DF9C..0x8002DFF8`) — the call this document's
+   level-transition section already described in prose, arrived at from the opposite direction.
+3. It appears in the terminal pair itself: `0x80033158` is `jal 0x8004AC24` and `0x80033160`, eight
+   bytes later, is `jal 0x80015370`. Four of the eight `LoadLevel` sites sit within `0x400` bytes of
+   both a reference to `m_Tick` (`0x80078D80`) and an immediate `384`, which locates
+   `GamestateCutsceneTransition`'s body; only this one is preceded by the Spyro reset.
+
+### The load gate is the guest's, and the press is held rather than obeyed early
+
+The terminal has **two** conditions: `m_Tick >= 384`, which is presentation, and `g_LoadStage == 13`,
+which is I/O. `spyro1_transition_skip.cpp` honours the second and cancels only the first. A Start or
+Cross edge arriving while the level is still streaming is **held** — `flybyPressHeld_`, cleared the
+moment the card is no longer up — and classified on a later frame once the load gate opens. Nothing
+writes `m_Tick`: claim C179 already established that advancing a clock is not a valid skip route, and
+this is the same move.
+
+The cancellation itself is two scoped dispatches of the guest's own calls, `0x8004AC24(1)` then
+`0x80015370(1)`, on the `func_8002C664` precedent — no global is hand-copied.
+
+`tests/test_transition_skip.cpp` covers the load gate, the two unrecovered demo paths, and the
+titlescreen menu (the same gamestate, where Start is the menu's own confirm). Both new discriminators
+were checked by removing the thing they test and watching them fail, not by reading them.
+
 ## Transition screens still without a recovered cancellation
 
 Each of these has a named natural terminal writer but no exercised route, so none is installed:
@@ -129,6 +182,11 @@ the full 7800 fields), and the boot-skip routes already shipped rely on that sam
 
 Any future skip verification for a pre-gameplay state therefore needs a pre-arrival input path; the
 drive's arrival-gated route cannot express it, and that is a harness gap rather than a title defect.
+
+PARTLY CLOSED 2026-09-19. `--skip-transitions` now also presses Start on the flyby card during the
+approach, alongside the level-transition tally, so the navigator does issue pre-arrival edges on the
+two screens it can positively identify. The general gap remains: `--hold`, `--tap` and `--after` are
+still arrival-gated, so boot, the logos and the intro still need a REPL `press` issued directly.
 
 The portal traversal remains a separate blocker: the type-6 collision surface writes the transition
 globals, and a visible portal still reaches the unowned `0x80050BD0` mask/near-family/painter path.

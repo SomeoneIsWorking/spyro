@@ -1,8 +1,8 @@
 ---
 id: 123
-title: The port pre-formats a blank memory card, so the game never runs its own "CREATING SAVE FILE..." page
+title: The port never reports a card as NEW since power-on, so the game skips its own "CREATING SAVE FILE..." page
 status: open
-symptom: at the save_picker checkpoint the console reference shows "CREATING SAVE FILE..." and the product shows the three-slot picker; the product reaches the checkpoint 61 game frames sooner, and 51.89% of pixels differ
+symptom: at the save_picker checkpoint the console reference shows "CREATING SAVE FILE..." and the product shows the three-slot picker; the product reaches the checkpoint 61 game frames sooner, and 51.89% of pixels differ. Proven 2026-09-19 NOT to be a card-format difference: giving the reference the product's own formatted card is byte-identical
 state_items: S019
 tags: memcard,oracle,picture,parity
 created: 2026-09-19
@@ -22,7 +22,69 @@ created: 2026-09-19
 1" line, and the world and Spyro behind the panel all match. The panel contents are different pages
 of the same dialog.
 
-## The mechanism
+## The mechanism -- CORRECTED 2026-09-19; the section below it was wrong
+
+**The premise that the two cores get differently FORMATTED cards is false, and it was measured
+false.** Both cards are formatted. `vendor/beetle-psx/mednafen/psx/frontio.c`
+`InputDevice_Memcard_Ctor` ends with the comment `/* Init memcard as formatted. */` and a call to
+`InputDevice_Memcard_Format`, which writes the same `MC` header and 15 free directory entries the
+product writes. The reference has never handed Spyro an unformatted card.
+
+The falsifier was run. `tools/oracle/compare.py` grew `--console-card CARD.MCR`, which starts the
+reference from a given 128 KiB image through the libretro save-RAM pointer the core exposes for
+slot 1. Handed the product's own formatted blank card (`MC`, dir entry 0 = `0xA0` free, sha256
+`77d33c6b…`), the run is **byte-identical to the baseline**:
+
+| | baseline | reference given the product's card |
+|---|---|---|
+| console reaches `save_picker` | 748 game frames | 748 |
+| product reaches `save_picker` | 687 | 687 |
+| pixels differing | 63768/122880 (51.89%) | 63768/122880 (51.89%) |
+| worst tiles | (256,176):255 (352,192):255 | identical |
+
+Making the card images equal changed nothing, so the card's CONTENTS were never the difference.
+
+### What the difference actually is
+
+A PSX memory card answers the device-select flag byte with **bit 3 (0x08) set from power-on until
+the console successfully WRITES a frame to it**. That is a property of the card device, not of the
+bytes on it: a freshly formatted card still reports new. The BIOS turns that flag into `EvSpNEW`,
+and that is what makes Spyro draw `CREATING SAVE FILE...`.
+
+Beetle models exactly this (`frontio.c`): `presence_new` is set in `InputDevice_Memcard_Power`,
+transmitted as `self->transmit_buffer = self->presence_new ? 0x08 : 0x00` on device select, and
+cleared in ONE place -- the write-end path, after a frame is committed. Not on a read, and not
+after the first announcement.
+
+`runtime/psx/memcard.cpp` has no such flag. `card_hle_a0` answers `_card_info` and `_card_load`
+with `deliverComplete` + `V0 = 1` unconditionally, which tells every title that every card has
+already been used with it. That is why the port skips the first-run page, and it is why the
+pre-format looks like the cause: pre-formatting makes an unconditional "all fine" answer true
+enough to get past the check.
+
+### The faithful implementation was written and measured, and it is not enough
+
+`Memcard` gained `mNewSincePowerOn` (true at construction, cleared in `writeFrame` on a successful
+frame write -- the hardware lifetime exactly), `deliverNewCard` (EvSpNEW on both classes), and
+`card_hle_a0` reporting NEW while the flag stands. Built, driven with `tools/drive.py gameplay`:
+
+```
+drive.py REFUSED: never reached the save picker within 12000 frames;
+  last gamestate=13 title=TitleState(mode=1, state=2, tick=140, sub_tick=6, sub_state=0, option=0)
+[card] BIOS card syscalls (at shutdown): 5456 call(s), 0 unhandled.
+       called: A0:0xAB=2166, A0:0xAC=1084, B0:0x35=38, B0:0x4E=1084, B0:0x50=1084
+```
+
+Byte-identical to the earlier "EvSpNEW announced every call" arm, and for a reason that is now
+clear: **no card frame is ever written, so the flag can never clear.** `B0:0x32` open is 0 and the
+38 `B0:0x35` writes are not card writes (nothing is open), so `writeFrame` is never reached. The
+flag standing forever and "announce on every call" are the same run.
+
+Reverted. Shipping it replaces a product that reaches gameplay with one that stalls, which is worse
+for a player than the known divergence. The pre-format remains a STOPGAP, now with the right name
+on it: the port cannot report a new card, and it cannot serve the creation path a new card starts.
+
+## The earlier mechanism section, retained because the harness detail in it is still true
 
 The two cores are not given the same card, although the harness intends to.
 `external/psxport/tools/oracle/compare.py::fresh_card` points the product at a path that does not
@@ -194,9 +256,30 @@ does not. The pre-format remains, and remains a stopgap.
 ## What is actually open
 
 The standing-EvSpNEW arm is the closest anything has come: it is the first change that moves Spyro
-out of the stall. What it does not do is finish, and the next question is narrow -- what the
-1,084-iteration `_card_load` / `_card_read` / `_card_chan` cycle is looking for in the card image it
-reads back. It never calls `_card_write`, so it is not formatting; it is reading and rejecting.
+out of the stall. What it does not do is finish. The 1,084-iteration cycle is now RECOVERED from the binary, and it
+is not "reading and rejecting a card image" -- it is Spyro correctly re-handling a standing new-card
+condition:
+
+* `0x80068920` is a leaf probe: `_card_chan(chan)` then `_card_read(chan, 0x3F, buf=0)`. Its only
+  caller is `0x800666DC`, inside the card state machine.
+* The wait routine `0x80068264` returns 4 for NEW, and `0x8006679C` stores that 4 into the card
+  condition word `[0x80075B54]`.
+* `[0x80075B54]` has exactly two readers outside the state machine. `0x80067D28` is the RESULT
+  PUBLISHER: it copies the result `[0x80075B50]` to `[0x80075B94]` and the condition to
+  `[0x80075B98]`, clears both, and calls the title's registered callback `[0x80075B90](result,
+  condition)`.
+* The state handler at `0x800666A4` advances only on condition 0 (-> state `0x1E`) or 3 (re-probe
+  -> state `0x15`). A 4 falls through unchanged, so a condition that never stops being 4 re-issues
+  forever.
+
+So the guest is being told "new card" truthfully and is doing the right thing with it. What the
+port does not serve is the rest of the creation path: the title never gets to open and write a save
+file, so the condition never ends. The open question is therefore no longer "what does it reject"
+but **which BIOS call in Spyro's creation sequence the port answers in a way that prevents the file
+from ever being opened** -- `B0:0x32` open is called 0 times on this path.
+
+Do not re-try the one-shot latch, NEW-on-`_card_info`-only, or "clear the flag on read"; all three
+are measured dead, and the third is also wrong against hardware.
 
 Recover the caller of `0x80068264` in that path and see what it does with the returned 4, then make
 `_card_read` answer an unformatted card the way hardware does. The discriminator is unchanged: the

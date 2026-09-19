@@ -38,14 +38,15 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 ## Current focus
 
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
-of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
-issue 0110). The world, the player model, the regular actor layer and now the secondary actor layer
-are reconstructed in an in-between present. The terrain producer `0x8004EBA8`, which owns 90% of
-every item still replayed verbatim, has been split into owners so its corpus survives a game update;
-next is its temporal source, and then a frame-time budget on a released host. Shadows,
-glow, sparkles, particles and tracers are NOT next: measured together they draw about 32 faces per
-logic frame. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
-a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
+of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 checkpoints, 6,305 decisive
+range comparisons, zero divergences; issue 0110). The world, the player model, the regular and
+secondary actor layers, the world-shaded sprite queue and the terrain producer `0x8004EBA8` are all
+reconstructed in an in-between present, which brings the reconstructed share of captured items to
+0.955. Next is a frame-time budget on a released host: 3.6 million interpolated prims per 3,374
+extra presents is an unmeasured cost. Shadows, glow, sparkles, particles and tracers are NOT next:
+measured together they draw about 32 faces per game update, and what remains replayed verbatim is
+82% the unattributed 2D and HUD layer. Widening the route past Artisans is blocked on issue 0114,
+because the pacing residual steers a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
 conformance.
 
 ## Hosted verification and host gaps
@@ -872,6 +873,42 @@ extra reads are of in-bounds memory and their results are carried, not acted on 
 retail checks late, an out-of-RAM face table and an out-of-RAM colour word, travel as flags for the
 recipe to refuse on at the point it reaches them. The cost of those reads is unmeasured, as is the
 frame-time budget on any released host.
+
+The terrain layer then gained its temporal source on 2026-09-19, and it is the largest single change
+to what an in-between present contains. Its endpoint is the captured corpus; the pairing is
+`instance_pairing` keyed on the guest object pointer; the identity rule is the mesh the interval
+indexes, meaning the vertex corpus and the face list over it; and the route to the queue is
+`terrain_emit`, which the game update takes as well. What is this layer's own is where its motion
+lives. The guest loads its view matrix with a zero translation and bakes each object's world
+position into its vertex coordinates, so a frame's camera motion appears in the rotation and in
+every object's vertices at once. The interval samples both. Sampling only the matrix would hold the
+world still while the camera turned.
+
+Measured on 2026-09-19 over the same 7,200-field Artisans replay, with the reaches, widescreen and
+fps60 verdicts all passing: the looks-right fps60 leg reports 3,607,931 interpolated prims across
+the same 3,374 extra presents, against 2,155,839 before. By the per-producer census the
+reconstructed share of captured items rose from 0.572 to 0.955, and items still replayed verbatim
+fell from 1,482,522 to 341,856. The terrain interval is admitted on 2,608 of 3,382 game updates.
+Across 13,040 emissions 162,710 of 163,270 objects carry a sampled transform and 7,260,356
+in-between faces were published; 560 objects have no predecessor, the identity rule rejected none,
+and the sampler refused none.
+
+Zero incompatible against a denominator of 163,270 is a rule that ran and matched everything on this
+route, not one that was never reached. Terrain object meshes are static, so a changed vertex or face
+count would mean a different object reached through the same guest pointer — which this route never
+produces. The rule is exercised in its own tests, where disconnecting it fails two of four. The
+recipe's own `sampled` counter independently reports the same 162,710, and its `sampleDeclined`
+counter reports no object whose interval the projection refused.
+
+What is left replayed verbatim is no longer terrain. Of the remaining 341,856 items, 281,828 (82.4%)
+are layer 3 with no producer attribution, which is the 2D and HUD layer; about 53,000 belong to five
+guest-side producers in the 0x80057000-0x8005A000 range; and 1,572 are terrain itself, from the 774
+game updates whose interval was not admitted. The 485-checkpoint per-frame Artisans oracle still
+matches the full-console reference on all 6,305 decisive range comparisons with zero divergences, so
+the game-update route is unchanged. Two adjacent in-between presents were inspected directly and
+show terrain, sky and actors in register with coherent motion between them, but a still image and a
+prim count do not prove temporal smoothness, and no frame-time budget has been measured on any
+released host.
 
 Which producer to reconstruct next was measured rather than assumed, and the answer was not the one
 on the list. The fps60 presenter could say how much of a captured frame replayed verbatim and the

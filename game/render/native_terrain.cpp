@@ -7,12 +7,14 @@
 #include "core.h"
 #include "game.h"
 #include "render_queue.h"
+#include "spyro_context.h"
 #include "terrain_emit.h"
 #include "terrain_scene.h"
 
 #include <array>
 #include <cstdint>
 #include <lucent/log.h>
+#include <utility>
 
 namespace {
 
@@ -20,10 +22,12 @@ bool submitTerrain(Core *core,
                    int32_t selector,
                    const std::array<uint32_t, 5> &cull,
                    const std::array<uint32_t, 5> &view) {
-  const auto captured = spyro::terrain_scene::capture(*core, selector, cull, view);
+  auto &history = spyro_context(*core).terrainTemporal;
+  auto captured = spyro::terrain_scene::capture(*core, selector, cull, view);
   if (captured.status != spyro::terrain_scene::Status::Ready) {
     lucent::error(
         "terraindirect", "REFUSED capture selector={} first={}", selector, captured.refusal);
+    history.refuse();
     return false;
   }
   RenderQueue &queue = core->game->rq;
@@ -42,6 +46,7 @@ bool submitTerrain(Core *core,
                   spyro::terrain_recipe::statusName(prepared.recipe.status),
                   spyro::terrain_submitter::statusName(prepared.submitter.status),
                   prepared.recipe.refusal);
+    history.refuse();
     return false;
   }
   if (prepared.status == spyro::terrain_emit::Status::ValidEmpty) {
@@ -50,9 +55,13 @@ bool submitTerrain(Core *core,
                   prepared.recipe.objects,
                   prepared.recipe.candidates,
                   prepared.recipe.rejects);
+    // An update that drew no terrain is still an endpoint: reconstructing the interval that reaches
+    // it must produce the same nothing, not the update before it.
+    history.retain(std::move(captured.input));
     return true;
   }
   spyro::terrain_emit::publish(*core, queue, prepared);
+  history.retain(std::move(captured.input));
   return true;
 }
 

@@ -1,5 +1,7 @@
 #include "temporal_scene.h"
 
+#include "terrain_emit.h"
+
 #include "actor_stage.h"
 #include "actor_temporal.h"
 #include "core.h"
@@ -80,7 +82,7 @@ public:
     const auto &context = spyro_context(core);
     return context.pairedActor.temporal_eligible || context.worldTemporal.eligible() ||
            context.actorTemporal.eligible() || context.secondaryActorTemporal.eligible() ||
-           context.shadedQueueTemporal.eligible();
+           context.shadedQueueTemporal.eligible() || context.terrainTemporal.eligible();
   }
 
   bool owns(const RqItem &item) const override {
@@ -93,7 +95,9 @@ public:
            (context.secondaryActorTemporal.eligible() &&
             producerItem(item, spyro::secondary_actor_emit::kProducerKey)) ||
            (context.shadedQueueTemporal.eligible() &&
-            producerItem(item, spyro::field_shaded_queue_emit::kProducerKey));
+            producerItem(item, spyro::field_shaded_queue_emit::kProducerKey)) ||
+           (context.terrainTemporal.eligible() &&
+            producerItem(item, spyro::terrain_emit::kProducerKey));
   }
 
   void reconstruct(Core &core, float t) override {
@@ -110,6 +114,7 @@ public:
     reconstructLayer(core, context.actorTemporal, t, "actortemporal");
     reconstructLayer(core, context.secondaryActorTemporal, t, "secondarytemporal");
     reconstructLayer(core, context.shadedQueueTemporal, t, "shadedtemporal");
+    reconstructLayer(core, context.terrainTemporal, t, "terraintemporal");
   }
 
   void rotate(Core &core) override {
@@ -118,6 +123,7 @@ public:
     spyro_context(core).actorTemporal.rotate();
     spyro_context(core).secondaryActorTemporal.rotate();
     spyro_context(core).shadedQueueTemporal.rotate();
+    spyro_context(core).terrainTemporal.rotate();
   }
 
 private:
@@ -213,6 +219,15 @@ bool SpyroTemporalSceneAdmission::shadedQueue(Core &core) {
       core, "shaded-queue-temporal-preflight", layerSampler(core, history, "shadedtemporal"));
 }
 
+bool SpyroTemporalSceneAdmission::terrain(Core &core) {
+  const auto &history = spyro_context(core).terrainTemporal;
+  if (!history.paired()) {
+    return false;
+  }
+  return interval(
+      core, "terrain-temporal-preflight", layerSampler(core, history, "terraintemporal"));
+}
+
 void spyro_temporal_scene_begin(
     Core &core, uint64_t scene, bool pairedScene, bool reference, bool active) {
   auto &context = spyro_context(core);
@@ -220,6 +235,7 @@ void spyro_temporal_scene_begin(
   context.actorTemporal.begin(scene, reference, active);
   context.secondaryActorTemporal.begin(scene, reference, active);
   context.shadedQueueTemporal.begin(scene, reference, active);
+  context.terrainTemporal.begin(scene, reference, active);
   spyro_paired_actor_frame_begin(context.pairedActor, pairedScene, reference, active);
 }
 
@@ -245,6 +261,11 @@ void spyro_temporal_scene_prepare(Core &core) {
                 "shaded queue interval frame={} admitted={}",
                 context.shadedQueueTemporal.frameSerial(),
                 context.shadedQueueTemporal.eligible());
+  context.terrainTemporal.admit(context.temporalAdmission.terrain(core));
+  lucent::debug("terraintemporal",
+                "terrain interval frame={} admitted={}",
+                context.terrainTemporal.frameSerial(),
+                context.terrainTemporal.eligible());
   if (paired.was_fps60_active && paired.endpoints_compatible) {
     // Preserve paired-only admission when the world lacks a complete matching source.
     paired.temporal_eligible = spyro_paired_actor_fps60_eligible(paired);

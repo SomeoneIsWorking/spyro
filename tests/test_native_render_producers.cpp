@@ -59,8 +59,11 @@ constexpr uint32_t kObject = 0x80013000u;
 constexpr uint32_t kFace = kObject + 40u;
 constexpr uint32_t kScratchVertex = 0x1f80000cu;
 
-void prepare_terrain(Game &game) {
+// The terrain producer retains its captured corpus as the next update's interpolation endpoint,
+// which is per-Core title state, so the context is part of its contract and not test scaffolding.
+void prepare_terrain(Game &game, SpyroContext &context) {
   Core &core = game.core;
+  core.gameCtx = &context;
   game.mods.aspect = ASPECT_4_3;
   gte_bind(&core);
   for (uint32_t reg = 0; reg < 32u; ++reg) {
@@ -97,7 +100,8 @@ void prepare_terrain(Game &game) {
 
 void test_owned_terrain_vertices_submit() {
   auto game = std::make_unique<Game>();
-  prepare_terrain(*game);
+  SpyroContext context{};
+  prepare_terrain(*game, context);
   CHECK(spyro_terrain_submit(&game->core, -1, kMatrix, kMatrix));
   CHECK_EQ(game->rq.n, 1);
   CHECK_EQ(game->rq.items[0].painter_object, 0x8004eba8u);
@@ -106,7 +110,8 @@ void test_owned_terrain_vertices_submit() {
 void test_external_terrain_vertices_refuse_independently_of_scratch() {
   for (const uint32_t scratchClip : {0u, 0x1fu}) {
     auto game = std::make_unique<Game>();
-    prepare_terrain(*game);
+    SpyroContext context{};
+    prepare_terrain(*game, context);
     Core &core = game->core;
     // Index three is outside the three native vertices. The retired path read this scratch slot
     // and accepted the face as clipped when all five clip flags were present.

@@ -8,6 +8,7 @@
 #include "runtime_run.h"
 #include "secondary_actor_temporal.h"
 #include "temporal_scene.h"
+#include "terrain_temporal.h"
 #include "world_temporal.h"
 
 class Core;
@@ -22,6 +23,7 @@ struct SpyroContext {
   spyro::actor_temporal::History actorTemporal{};
   spyro::secondary_actor_temporal::History secondaryActorTemporal{};
   spyro::field_shaded_queue_temporal::History shadedQueueTemporal{};
+  spyro::terrain_temporal::History terrainTemporal{};
   SpyroTemporalSceneAdmission temporalAdmission{};
   SpyroPresentationOwner presentationOwner{};
 };

@@ -101,25 +101,26 @@ void emitLine(Core *core,
 
 } // namespace
 
-bool spyro_field_particles_submit(Core *core) {
+spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   const auto recipe = spyro::field_particles_recipe::derive(ram);
   if (!preflight(core, recipe)) {
-    lucent::debug("particles",
-                  "REFUSED status={} why={} type={} slot={:08X} records={} points={} lines={} "
-                  "type2={}",
-                  spyro::field_particles_recipe::statusName(recipe.status),
-                  recipe.refusal,
-                  recipe.refusedType,
-                  recipe.refusedAddress,
-                  recipe.records,
-                  recipe.points.size(),
-                  recipe.lines.size(),
-                  recipe.texturedQuads.size());
-    return false;
+    return spyro::refuse(
+        "particles",
+        0x800573C8u,
+        "particles producer 0x800573C8 refused its atomic type-0/type-2 recipe: "
+        "status={} why={} type={} slot={:08X} records={} points={} lines={} type2={}",
+        spyro::field_particles_recipe::statusName(recipe.status),
+        recipe.refusal,
+        recipe.refusedType,
+        recipe.refusedAddress,
+        recipe.records,
+        recipe.points.size(),
+        recipe.lines.size(),
+        recipe.texturedQuads.size());
   }
   if (recipe.status == spyro::field_particles_recipe::Status::ValidEmpty) {
-    return true;
+    return {};
   }
 
   const int clipRight = gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
@@ -198,7 +199,14 @@ bool spyro_field_particles_submit(Core *core) {
   }
   for (const auto &quad : recipe.texturedQuads) {
     if (!spyro_field_particle_type2_submit(core, quad)) {
-      return false;
+      return spyro::refuse("particles",
+                           0x800573C8u,
+                           "particles producer 0x800573C8 could not submit a type-2 textured quad "
+                           "(records={} points={} lines={} type2={})",
+                           recipe.records,
+                           recipe.points.size(),
+                           recipe.lines.size(),
+                           recipe.texturedQuads.size());
     }
   }
   lucent::debug("particles",
@@ -207,5 +215,5 @@ bool spyro_field_particles_submit(Core *core) {
                 recipe.points.size(),
                 recipe.lines.size(),
                 recipe.texturedQuads.size());
-  return true;
+  return {};
 }

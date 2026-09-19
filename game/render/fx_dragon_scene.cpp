@@ -172,7 +172,13 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
       ok = spyro_field_cyclorama_submit(core);
       break;
     case Producer::Particles:
-      ok = spyro_field_particles_submit(core);
+      // Carries its own reason, so it takes the refusal-returning arm rather than collapsing to
+      // `ok` and losing what the producer saw.
+      if (const auto refusal = spyro_field_particles_submit(core)) {
+        census.add(" REFUSED at particles: {}", refusal.detail);
+        census.flush_debug(kChannel);
+        return refusal;
+      }
       break;
     case Producer::ScreenFade:
       ok = spyro_screen_fade_submit(

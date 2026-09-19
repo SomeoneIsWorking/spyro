@@ -3,7 +3,7 @@ id: 120
 title: User reports gems drawing on top of terrain that should occlude them
 status: open
 related: 0105 (actor-vs-actor depth order, 5.07%). NOT established as the cause of this issue: that instrument walks retail's moby list and cannot see terrain. Both stay open until one measurement connects them.
-symptom: "Spyro looks like gems that should be behind terrain rendering on top" (user, 2026-09-19) — REPRODUCED at the framebuffer: at f2400 of artisans-arrival, 116 px show a violet object in the native where the console shows grass (reverse direction only 41 px). Separately, retail's moby walker shows a 5.07% actor-vs-actor depth-order disagreement, which is issue 0105; that instrument cannot see terrain and does not evidence this symptom
+symptom: CAUSE LOCATED 2026-09-19 — the shaded-moby recipe subtracts an origin bias that equals its own mean sz to 0.9%, cancelling range and inverting the order (depth vs range r=-0.27, 15% of the OT table used). "Spyro looks like gems that should be behind terrain rendering on top" (user, 2026-09-19) — REPRODUCED at the framebuffer: at f2400 of artisans-arrival, 116 px show a violet object in the native where the console shows grass (reverse direction only 41 px). Separately, retail's moby walker shows a 5.07% actor-vs-actor depth-order disagreement, which is issue 0105; that instrument cannot see terrain and does not evidence this symptom
 state_items: S019, S020
 tags: render,depth,occlusion,oracle
 created: 2026-09-19
@@ -572,3 +572,87 @@ This is the second attribution mistake in this issue, after the `painter=` corre
 had the same shape: a probe field was read as answering a question it does not answer. Treat any
 remaining claim here that rests on a single probe field as unconfirmed until the field's own
 definition has been checked in `render_queue.h`.
+
+## 2026-09-19: CAUSE LOCATED — the origin bias cancels the range, and inverts the order
+
+Measured on 7,127 shaded-moby faces from one `--seek-class 83` gameplay run
+(`PSXPORT_DEBUG=shadedface`, the per-face line now prints each term of the OT arithmetic):
+
+```
+  szsum vs t2   : r=+0.9999     the sum of the four projected sz tracks range, as it must
+  depth vs t2   : r=-0.2747     what survives the bias does NOT -- it runs BACKWARDS
+  szsum range   : 1689 .. 48513   spread 46824
+  depth range   :  525 ..  1938   spread  1413      (33x compression)
+  ot    range   :   16 ..    60   of 288 bins -- 15.3% of the table ever used
+  mean |szsum/4 - t2| = 55.4   against a mean t2 of 6192.1
+```
+
+That last line is the whole defect. `field_shaded_queue_recipe.cpp` computes
+
+```cpp
+depth -= (int64_t)std::max(record.affine.t[2] - 256, 0) * 4;
+```
+
+and `t2` is, to **0.9%**, exactly `szsum / 4` -- the face's own mean projected depth. So the bias is
+`szsum - 1024` and the subtraction leaves a near-constant `depth ~ 1024` no matter how far away the
+object is. What remains is not range at all, it is the spread of the four vertices about the object
+origin, which is why `depth` correlates with range at -0.27 instead of +1.
+
+`ProjParams::pzToOrd` is reversed-Z and the compare is `GREATER_OR_EQUAL`, so a larger depth wins.
+An ordering whose range term has been cancelled and slightly inverted therefore lets a distant gem
+beat near terrain -- the reported symptom, arrived at from the arithmetic rather than from the
+pixels.
+
+Retail does not do this. Its bins track range: bin 171 at distance 26333 against bin 105 at 17518,
+a bin ratio of 1.63 against a distance ratio of 1.50. The port collapses the same scene into bins
+16-60.
+
+### The bias term itself is correctly recovered; the value fed to it is not
+
+Read `r_moby.s` 0x80022DA8-0x80022DB8:
+
+```
+80022DA8   addi $t8, $v1, -0x100      # t8 = TRZ - 256
+80022DB0   bgez $t8, .L80022DBC
+80022DB4    sll $t8, $t8, 2           # delay slot: ALWAYS runs, so t8 = (TRZ-256) * 4
+80022DB8   addi $t8, $zero, 0x0       # ... clamped to 0 when negative
+80022DC4   ctc2 $v1, C2_TRZ           # and $v1 is proven to be TRZ two instructions later
+```
+
+`max(TRZ - 256, 0) * 4` is exactly what the recipe implements, so the FORMULA is right. What is
+wrong is the operand: the recipe's own comment says "TRZ is approximated by the actor's view-Z
+origin", and that approximation makes the bias equal the quantity it is subtracted from. Retail
+derives TRZ through 0x80022CCC-0x80022D18 -- a doubling, then an optional GTE `GPF` scaled by the
+byte at `0x57($fp)` and shifted right 5 -- before it reaches `ctc2`. The port skips all of that.
+
+### Two smaller arithmetic differences found in the same read, not yet the cause
+
+Both real OT arms (quad 0x800233E0-0x800233FC, triangle 0x800234B4-0x800234DC) end:
+
+```
+  v0 = sz0+sz1+sz2+sz3 - t8 ;  if (v0 <= 0) reject ;  v0 >>= 5 ;  v0 += (s0 & 3)
+```
+
+* Retail adds `(s0 & 3)`, a 0..3 sub-bin from the primitive word, AFTER the shift. The recipe does
+  not add it anywhere.
+* The recipe adds `512` to `depth` before the shift when `reverseFacing` (+16 bins). Neither real
+  arm has that. The only `+0x200` in the function is at 0x80023800, in a DIFFERENT arm that sums
+  only two sz and is guarded by `bgez $t6`. It was borrowed from the wrong path.
+
+Neither accounts for a 154-bin gap, so they are corrections to make, not the fault.
+
+### Falsifier
+
+Recovering retail's TRZ derivation must: raise authored-bin agreement above 625/664, move node
+`8016F0C8` from bins 17-23 toward retail's 171, restore `depth vs t2` to a strong positive
+correlation, and spread the used bins well beyond 16-60. If the correlation stays near zero the
+diagnosis here is wrong.
+
+### Next measurement
+
+The remaining unknown is the unit relationship between retail's TRZ and its sz table at
+`0x200($vN)`. Static reading of the frustum tests (0x80022C08-0x80022C94, constants 0x4D/0x66/0x28
+and a 0x1100 compare) puts pre-doubling `$v1` in the same unit and magnitude as the port's `t2`
+(450..12148), but under every consistent reading of that the retail bias would collapse its own
+range too, which it demonstrably does not. So the assumption to break is the sz unit, and settling
+it needs the console oracle to read retail's actual `0x200` table rather than more static reading.

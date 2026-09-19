@@ -381,6 +381,36 @@ def _report_authored_bins(pairs) -> None:
     for delta, r, n in sorted(off, key=lambda e: -abs(e[0]))[:5]:
         print(f"      worst {n.node} painter=0x{n.painter} native bin {n.ot_bin} "
               f"vs retail {r.ot_bin} ({delta:+d})")
+    _report_bin_discriminators(authored, off)
+
+
+def _report_bin_discriminators(authored, off) -> None:
+    """What the DIFFERING primitives share that the AGREEING ones do not.
+
+    Listing only the differing set's painters and nodes cannot discriminate anything: if all 664
+    comparisons come from one painter then so do all 39, and "they are all 0x80022A2C" would read
+    as a cause while being a tautology. So every attribute prints BOTH counts and the share, and an
+    attribute whose differing share matches its overall share is explicitly called not a
+    discriminator rather than left for the reader to notice.
+    """
+    bad_keys = {(id(r), id(n)) for _, r, n in off}
+    print("\n    what the differing set shares that the agreeing set does not:")
+    for label, key in (("painter", lambda r, n: f"0x{n.painter}"),
+                       ("node", lambda r, n: n.node)):
+        overall = Counter(key(r, n) for r, n in authored)
+        bad = Counter(key(r, n) for r, n in authored if (id(r), id(n)) in bad_keys)
+        print(f"      by {label}:")
+        for value, bad_count in bad.most_common(6):
+            total = overall[value]
+            share = 100.0 * bad_count / total
+            base = 100.0 * len(off) / len(authored)
+            verdict = ("CONCENTRATED" if share > 3 * base
+                       else "not a discriminator -- it differs at about the overall rate")
+            print(f"        {value:<14} {bad_count}/{total} differ ({share:.1f}% vs {base:.1f}% "
+                  f"overall) {verdict}")
+        clean = [v for v in overall if v not in bad]
+        print(f"        and {len(clean)} {label}(s) with ZERO disagreement: "
+              f"{', '.join(sorted(clean)[:6]) or 'none'}")
 
 
 

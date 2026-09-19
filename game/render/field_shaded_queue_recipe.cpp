@@ -283,7 +283,16 @@ Recipe derive(const Input &input, const Interval *interval) {
       lucent::debug("shadedface",
                     "actor=0x{:08X} ordinal={} prim={} count={} lit={} variant1={} reverse={} "
                     "firstFacing={} rgb=0x{:08X} base=0x{:08X} scale=0x{:08X} entry=0x{:08X} "
-                    "entryIndex={} colour=0x{:08X}",
+                    "entryIndex={} colour=0x{:08X} "
+                    // The OT-bin arithmetic, term by term. The line printed the colour branch and
+                    // nothing about depth, so a bin disagreeing with retail by 154 could not be
+                    // attributed to the sz sum, the origin bias or the shift. Retail computes the
+                    // same three at r_moby.s 0x800233E0-0x800233FC; printing each separately is
+                    // what lets ONE of them be blamed instead of the recipe as a whole. `t2` is the
+                    // actor's view-Z origin, which this recipe uses as an APPROXIMATION of retail's
+                    // TRZ (see the nearCamera comment above) -- if the bias is the fault, that
+                    // approximation is where to look.
+                    "szsum={} t2={} bias={} depth={} ot={}",
                     record.actor,
                     record.actorOrdinal,
                     primitiveOrdinal,
@@ -297,7 +306,13 @@ Recipe derive(const Input &input, const Interval *interval) {
                     record.lightScale,
                     record.lightEntry,
                     record.lightEntryIndex,
-                    primitive.normal);
+                    primitive.normal,
+                    (int64_t)projected[index[0]].sz + projected[index[1]].sz +
+                        projected[index[2]].sz + projected[index[3]].sz,
+                    record.affine.t[2],
+                    (int64_t)std::max(record.affine.t[2] - 256, 0) * 4,
+                    depth,
+                    ot);
       for (uint32_t i = 0; i < count; ++i) {
         face.vertices[i] = projected[index[i]];
       }

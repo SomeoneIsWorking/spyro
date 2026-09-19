@@ -371,7 +371,7 @@ def environment(disc: str | None) -> dict[str, str]:
     sys.path.insert(0, str(ROOT / "external" / "psxport" / "tools"))
     from port.launch_environment import agent_environment
 
-    env = agent_environment(dict(os.environ))
+    env = agent_environment(dict(os.environ), SHIPPING_SETTINGS)
     env.update(
         PSXPORT_REPL="1",
         PSXPORT_WATCHDOG="0",
@@ -379,7 +379,6 @@ def environment(disc: str | None) -> dict[str, str]:
     )
     if disc:
         env["PSXPORT_SPYRO_DISC"] = disc
-    env["PSXPORT_SETTINGS"] = str(SHIPPING_SETTINGS)
     return env
 
 

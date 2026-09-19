@@ -825,3 +825,101 @@ range. `t2` (`affine.t[2]`, the view-space object origin) correlates +0.9999 wit
 sum over 7127 faces, so the per-object view depth IS right and available; the per-vertex `pz` that
 reaches `pzToOrd` is what collapses. Falsifier: native depth for the pair above must separate in
 proportion to 15197 vs 8336, and the 6.43% disagreement rate must fall.
+
+## 2026-09-19 (later): the depth and the authored bin are two different scales, per producer
+
+Measured on psxport `077f5d0c`, spyro `3b4fbe6`, over the full `artisans-arrival` replay with
+`PSXPORT_ACTOR_SCENE_ORACLE=1 PSXPORT_DEBUG=actororacle`, 833,749 native item lines in the tail.
+
+**The recipe is exonerated, by the tool's own words.** `tools/actor_oracle_diff.py`:
+
+```
+  authored bin vs retail bin (independent of depth):
+    compared 655 of 655 matched primitive(s) that carry one
+    identical to retail : 655  (100.00%)
+    every authored bin matches retail, so the recipe is NOT the fault here;
+    look at the ordering rule and the depth buffer instead.
+```
+
+**And here is the ordering rule failing, on one named pair.** Retail puts the gem BEHIND; the port's
+submitted depths put it IN FRONT, which is the screenshot:
+
+| object | class | retail bin | native depth | port's verdict |
+|---|---|---|---|---|
+| `8016F0C8` | 83 (gem) | **171** (farther) | 0.012709 | **nearer** |
+| `8016FA10` | 10 | **105** (nearer) | 0.009630 | farther |
+
+Larger depth wins under `GREATER_OR_EQUAL`, so the gem beats the object retail ordered in front of
+it.
+
+**The scale disagreement, with a denominator.** If a producer's depth and its authored bin came from
+the same view Z, then `ord x bin` is one constant for every producer (`ord ~ nearp/pz` and
+`bin ~ pz/64` give `nearp/64 = 2.66`). Measured over 833,749 items, median with the p10..p90 band:
+
+| producer | items | median ord x bin | p10 | p90 |
+|---|---|---|---|---|
+| `0x80023AC4` paired actor | 216,249 | **0.90** | 0.85 | 0.94 |
+| `0x80059A48` Spyro shadow | 19,264 | 1.06 | 0.87 | 1.12 |
+| `0x80020F34` secondary actor | 90,567 | 1.09 | 1.07 | 1.12 |
+| `0x800580F4` glow | 9,632 | 1.26 | 1.22 | 1.29 |
+| `0x8001F798` actor draw | 432,477 | 1.30 | 0.77 | 2.28 |
+| `0x80022A2C` shaded moby / gems | 47,132 | **2.31** | 2.16 | 2.36 |
+| `0x800584C4` sparkle | 3,920 | 4.66 | 4.56 | 5.29 |
+| `0x80059F8C` unidentified | 14,508 | **4.89** | 4.80 | 4.97 |
+
+Each producer's own band is tight -- these are per-producer constants, not noise -- and they span
+**5.4x** between the extremes. Only `0x80022A2C` is near the 2.66 a self-consistent producer should
+give. One shared D32 buffer cannot arbitrate between eight different scales, so the authored order
+loses wherever two producers meet.
+
+### FALSIFIED: a per-producer near plane
+
+`proj_params.h` documents exactly this failure ("a frame in which producers disagree puts their faces
+on two different depth scales in ONE shared D32 buffer -- the shape of a wrong-occlusion report") and
+ships `PSXPORT_DEBUG=projplane` for it. Run over the same replay, 40,000 observations:
+
+```
+  36960  projH 341 -> 341 (unchanged)
+   3040  projH 0 -> 341 CHANGED
+```
+
+Every change is the first install. `projH` is 341 for every producer all frame, so `pzToOrd` is one
+function with one near plane and the spread above is NOT a near-plane disagreement. The hypothesis is
+dead; do not re-derive it.
+
+### Correction to the earlier entry
+
+The reading above it -- "per-vertex depth degenerate across range", "0.022290 vs 0.022285" -- was
+partly my own measurement error. `shadedface`'s `szsum` is always a FOUR-term sum
+(`projected[index[0..3]].sz`) even when `count=3`, so dividing it by `count` inflates a triangle's
+mean by 4/3. Dividing by 4 instead, over 200,000 faces:
+
+```
+  count=3: 137,670 faces   (szsum/4)/t2  median 0.9931  p10 0.9817  p90 0.9999
+  count=4:  62,330 faces   (szsum/4)/t2  median 0.9931  p10 0.9829  p90 1.0026
+```
+
+So `0x80022A2C`'s per-vertex depth DOES track its object's view Z, and its depth and bin are mutually
+consistent -- which is why it is the one producer near 2.66. `m_DepthOffset` is also not the
+mechanism: it was 4 on all 200,000 faces (5 distinct mobys), moving the bin by a median 4.0%.
+
+### Next: the depth must stop being a second opinion
+
+Within an authored painter domain the replay key IS the order -- it is retail's own OT, now verified
+655/655 -- so the depth buffer must only separate BINS and never contradict them. The framework
+already does exactly this for `sort_key` items: `rq_apply_ot_lifo_depths` gives a whole bucket one
+band depth, and its comment says why ("the depth buffer stops being a second opinion that has to be
+argued with"). `render_queue.cpp:1903` excludes `it.painter_object`, and every Spyro prim carries
+one, so no Spyro face has ever reached it.
+
+Falsifier for the fix: the `ord x bin` table above must collapse to ONE constant across all eight
+producers, the `8016F0C8` / `8016FA10` pair must invert to match retail, and the f2400 violet census
+(20 both / 116 native-only / 41 console-only) must fall.
+
+### Instrument defect found while doing this
+
+`ProjParams::reportProjH` is documented in `proj_params.h` as saying "which plane was installed by
+whom", so that "they all agree" and "nobody measured" are different answers. The implementation
+prints only `projH {} -> {}` with no owner, so a run in which one producer never installs a plane is
+indistinguishable from one where all agree. The verdict above survives that gap only because the
+distribution is two-valued and every CHANGED line is a 0 -> 341 first install.

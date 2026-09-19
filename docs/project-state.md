@@ -797,6 +797,26 @@ the oracle observes, so widescreen is non-invasive to the simulation. It is not 
 additional horizontal pixels are correct — the oracle compares guest state at checkpoints, not
 images.
 
+Drawn-coverage measurement (2026-09-19, psxport `a1537b73`'s `coverage` measure over every paired
+4:3/16:9 capture in `scratch/`, 11 pairs). The number is the aspect of everything the port actually
+drew, which is what moves when a picture genuinely widens rather than merely rescales:
+
+| scene | 4:3 | 16:9 | |
+|---|---|---|---|
+| Artisans 3D scenes (f3000/3700/3750, five directories) | 1.429 | 1.912 | wider |
+| `looks-right` f399 | 2.286 | 3.054 | wider |
+| level-intro card (f3300) | 1.992 | 2.000 | no gain — the scene is black, so there was nothing to gain |
+| `secondary` f399 | 1.466 | 1.470 | no gain — **not identified** |
+
+Eight of eleven confirm the widened picture carries genuinely more content and is not the same
+picture scaled down. Tomba! 2, measured the same way, has three full-screen 2D pages that do NOT
+widen (its issue 0010); Spyro has no equivalent finding yet, but `secondary` f399 is an unexplained
+no-gain scene and is recorded here rather than assumed benign.
+
+This measurement exists because `looks_right.py`'s `widescreen` check asks only whether the two PNGs
+DIFFER, which rescaling also satisfies. Earlier "widescreen PASS" lines in this document therefore
+do not by themselves establish that a scene gained coverage.
+
 Gap: complete scene variants, horizontal culling owners, and same-state oracle visual comparison
 remain unqualified. Additional coverage in Artisans does not prove the whole game, and only the
 courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;

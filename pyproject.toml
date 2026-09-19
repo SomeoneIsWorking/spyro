@@ -5,6 +5,8 @@ description = "Locked bootstrap environment for the Spyro native port"
 requires-python = ">=3.11"
 dependencies = [
     "capstone>=5,<6",
+    # external/psxport/tools/port/fps60_check.py compares captured frames pixel-for-pixel.
+    "pillow>=10,<12",
 ]
 
 [tool.uv]

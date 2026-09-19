@@ -988,8 +988,40 @@ animation state that was not advanced at an endpoint. The diagnostic also report
 and painter denominators; its existing synthetic tests distinguish valid output from malformed or
 unadvanced midpoint sources. Both focused temporal tests and the two touched TUs' clang-tidy pass.
 
+The first measurement of what the interpolated present actually LOOKS like in gameplay was taken
+2026-09-19, through `tools/drive.py gameplay --hold left` rather than the recorded pad, because that
+pad never leaves the save-file dialog (issue 0116). 238 real/interp/real triples at 16:9 with fps60
+on, 684x240, 16-pixel tiles, captured with `PSXPORT_DEBUG=fps60dump,fps60seq` in one run so the
+frames and the owner log share their fences:
+
+| verdict | tiles | share |
+|---|---|---|
+| STATIC | 23,616 | 15.4% |
+| BETWEEN (lerped) | 123,279 | 80.3% |
+| STALE | 132 | 0.1% |
+| AHEAD | 6,483 | 4.2% |
+
+Endpoint tiles split by whether their content actually translated between the two real frames: of
+the 132 STALE, 118 did not move and 14 did; of the 6,483 AHEAD, 866 did not move and **5,617 did**.
+So the picture is overwhelmingly interpolated, and what fails does so by snapping FORWARD — 4,918 of
+the AHEAD tiles are a clean 2-pixel translation.
+
+That last number is the shape of the defect and it is not yet explained. A tile that takes the newer
+frame is what an unblendable state change looks like (an animation frame flip, a newly visible
+object), which is correct output; a 2-pixel translation is not that. The attribution cannot presently
+say whose it is: `fps60_check --seq` credits only 57.5% of the moving tiles, and 40.0% of the moved
+endpoint tiles, to a run, and says so. Spyro's fps60seq extents and its presented frame are not
+describing the same pixels — run bounding box x=[-1024..1024) y=[-345..1264) against a 684x240 frame
+— where Tomba! 2's agree exactly and attribute 100%. Reconciling those two spaces is what this
+measurement needs next.
+
 Gap: newly visible animated sectors need a faithful endpoint-state lifecycle; regular actors, shadows,
-particles and other unowned temporal sources lack complete matching-source interpolation.
+particles and other unowned temporal sources lack complete matching-source interpolation. The
+gameplay measurement above is unattributed because the fps60seq extents are in a different
+coordinate space than the presented frame, and the 5,617 forward-snapping tiles have no owner until
+that is fixed. Everything measured through `replays/gameplay/artisans-arrival.pad` — the looks-right
+fps60 and widescreen verdicts and the frame-time budget in Current focus — describes the save-file
+dialog rather than gameplay (issue 0116).
 
 The endpoint lifecycle is now owned for visible world animation channels. When a previous source
 contains a pending channel, temporal admission decodes that channel through the same pure animation

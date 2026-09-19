@@ -80,14 +80,37 @@ the two legs:
 Every region aligns at the same +86, and the background is byte-identical there, so the widening
 itself is clean and the actor is not displaced. Content genuinely differs only in that one box.
 
-### Falsifier
+### What the wide-only pixels actually are
 
-Producer counts at the same frame, 4:3 -> 16:9, after the particle fix: terrain `8004EBA8` 425->515,
-world `800258F0` 477->573, actor `8001F798` 320->388 (all correct -- that IS the widening),
-`80022A2C` 76->76, `80023AC4` 184->184, `80059A48` 16->16, `800580F4` 8->8.
+Clustered: the 241 wide-only orange pixels form 14 connected components, ALL inside
+narrow-x 112..203, y 96..131 -- Spyro's own sprite box -- and they are Spyro's own horn, wing and
+belly colours. So this is not foreign geometry appearing; **Spyro himself renders differently at
+16:9 within the shared field**. The paired-actor producer `80023AC4` emits 184 primitives at both
+aspects, so it is the same primitives drawn differently rather than extra ones.
 
-So the extra geometry in the shared field must come from terrain, the world scene, or the actor
-producer. Bisect by producer: suppress each of the three in turn at 16:9 and re-measure the
-wide-only orange pixel count. The one whose suppression takes it to zero owns the defect. Do not
-guess from the colour -- two guesses have already been wrong in this investigation (the displacement
-that was not one, and the particle write that was real but not this cause).
+### The bisect, run: a blunt suppression arm is not viable
+
+Producer counts at the same frame, 4:3 -> 16:9, after the particle fix: terrain `8004EBA8`
+425->515, world `800258F0` 477->573, actor `8001F798` 320->388 (all correct -- that IS the
+widening), `80022A2C` 76->76, `80023AC4` 184->184, `80059A48` 16->16, `800580F4` 8->8.
+
+Suppressing `80023AC4` at `field_model_chain.cpp` (wrapping its `layer(...)` call in `if (false)`)
+and rebuilding makes the product CRASH on the seek route -- both the 4:3 and 16:9 arms die with the
+REPL pipe closing. Spyro's absence violates an invariant downstream; `fx_paired_actor.cpp` checks
+for `painter_object == 0x80023AC4u` in at least two places (lines ~345 and ~699). Do not repeat this
+arm. A viable bisect needs a non-destructive filter -- keep the producer running and its painter
+object published, and drop only its emitted primitives -- or a direct comparison of the projected
+vertex stream at the two aspects.
+
+### Next step
+
+Compare `80023AC4`'s projected vertices at 4:3 and 16:9 for one frame. Every other region of the
+picture aligns at dx=+86 with the background byte-identical, so the question is narrow: which term
+in the paired actor's projection does not reduce to a uniform +86 horizontal shift when the wide
+engine widens `ofx`. Note that the particle producers had exactly this shape of bug (defect 1), and
+that `particle_screen_space.h` now states the invariant the paired actor should also satisfy.
+
+Do not guess from pixel colour. Three readings in this investigation were wrong before measurement
+corrected them: an apparent actor displacement that measured +86 like everything else, the particle
+guest-write that was a real defect but not this cause, and a purple-pixel bbox whose predicate was
+catching the whole frame.

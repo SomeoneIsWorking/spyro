@@ -778,9 +778,29 @@ proportions, and the level-intro card's 2D text stays centred. The default watch
 route: a level load blocks presentation past its three-second frame-progress timeout, so an
 unattended replay run must raise `PSXPORT_WATCHDOG`.
 
+Oracle state parity with widescreen ON (2026-09-19, `tools/oracle_compare.py --bios ../SCPH1001.BIN
+--frame-step 1 --product-env PSXPORT_WATCHDOG=60 --product-env PSXPORT_SETTINGS=<wide.ini>`): 485
+checkpoints, 6,305 decisive range comparisons, **0 divergences**, run complete. The baseline leg —
+same route, same checkpoints, enhancements off — is also 485/6,305/0, so the widescreen leg is
+compared against a reference the product already matches rather than against a lower bar. The
+comparator was shown the other answer first: `--selftest` seeded a byte at 0x80078A58 and the run
+DETECTED it, so a silent comparator cannot account for the zero.
+
+The enhancement was proven live in that exact run rather than inferred. The oracle's own product log
+(`scratch/oracle/native.log`) carries `[wide] native picture: aspect=1 wide_engine=1
+native_width=512 render_width=684` and `[cfg] PSXPORT_SETTINGS = ... [env]`. This matters because
+`tools/drive.py` overrides `PSXPORT_SETTINGS` from its own `--settings` flag: a first proof attempt
+through that tool reported `aspect=0 wide_engine=0 render_width=512` while appearing to pass.
+
+What this does and does not establish: widening the projection to 684 px perturbs **no** guest state
+the oracle observes, so widescreen is non-invasive to the simulation. It is not evidence that the
+additional horizontal pixels are correct — the oracle compares guest state at checkpoints, not
+images.
+
 Gap: complete scene variants, horizontal culling owners, and same-state oracle visual comparison
 remain unqualified. Additional coverage in Artisans does not prove the whole game, and only the
-courtyard and the intro card are covered by captures.
+courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
+the visual half of that gap is still open.
 
 ### S020 — Source-based 60fps interpolation
 
@@ -804,6 +824,19 @@ On the Lightrec product (2026-09-18): the looks-right fps60 leg over the same 7,
 reports 1,216,422 interpolated prims across 3,374 extra presents, so the extra presents carry
 reconstructed geometry rather than duplicated frames. Still images and a prim count do not prove
 temporal smoothness, and no frame-time budget has been measured on any released host.
+
+Oracle state parity with interpolated 60fps ON (2026-09-19, same driver and route as S019, with
+`--product-env PSXPORT_FPS60=1`): 485 checkpoints, 6,305 decisive range comparisons, **0
+divergences**, run complete — identical to the enhancements-off baseline leg. The product log of
+that run states `[fps60] TRUE per-object interpolated 60fps ON (source: env)` and `[cfg]
+PSXPORT_FPS60 = true [env]`, so the tier was live and not silently refused. That refusal is a real
+branch, not a hypothetical: `SpyroRuntime` declares `temporalInterpolation = false`, and only
+`Spyro1Runtime`'s `RenderCapabilities::interpolatedNative()` override turns it on, so a title that
+inherited the base would log `interpolated 60fps REFUSED` and still pass every checkpoint.
+
+This establishes that reconstructing and presenting midpoint frames writes no guest state the oracle
+observes. It does not establish that the interpolated pictures themselves are right: the extra
+presents are never sampled by the comparator, which reads guest memory at logic-frame checkpoints.
 
 Regular actors — the 0x8001F798 producer, the largest FIELD actor layer — gained their own temporal
 source on 2026-09-19. The producer retains its own record corpus as one endpoint per logic frame;

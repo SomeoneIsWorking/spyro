@@ -1,11 +1,11 @@
 ---
 id: 103
 title: Freeing a dragon aborts: GS_Dragon (stage 8) has no native producer
-status: open
+status: resolved
 symptom: the port aborts during Artisans gameplay with 'NATIVE RENDER NOT IMPLEMENTED — stage selector = 8 (no producer is registered for this stage)'; reported by the operator as a crash when Spyro breathes fire
 tags: render,field,cutscene,dragon,producer,crash
 created: 2026-09-08
-updated: 2026-09-19
+updated: 2026-09-20
 ---
 
 ## Symptom
@@ -614,3 +614,26 @@ Correction to this issue's earlier note: it said the abort "aborts the ORACLE, n
 holds for the specific run recorded there, but it should not be read as every oracle run being at
 risk -- other picture-oracle runs over the same title completed 4,951 frames without hitting it. A
 run is at risk only if its route reaches one of the eight arms above.
+
+## RESOLVED 2026-09-20 — stage 8 is reached during gameplay and renders, measured rather than assumed
+
+The documented repro at the top of this issue now exits 0. On its own that means nothing: this issue
+already warned that an inventory "says nothing about whether a route REACHES a given arm", and a
+clean run is equally consistent with a working dragon producer and with a run that never met a
+dragon. The log could not tell them apart — it records no stage selectors at all.
+
+`tools/drive.py` now answers it. Every run prints a gamestate census with its denominator, split at
+arrival, and names the states it did NOT reach as well as those it did:
+
+    gamestates over 717 samples (10 frames apart): playing=64, dragon=62, title_screen=296,
+    cutscene=295; never reached: level_transition, entrance_animation, credits
+      | since GS_Playing: playing=19, dragon=62
+
+All 62 `GS_Dragon` samples fall after gameplay began, so the dragon-rescue cutscene ran for roughly
+620 frames of actual play, and the run logged zero `NATIVE RENDER NOT IMPLEMENTED` and zero
+`fatal boundary` lines. The same line reports three states as never reached, so it is not a counter
+that can only print presence.
+
+The census samples every 10 frames, so a state shorter than that could still be missed; `GS_Dragon`
+is nowhere near that short. The other seven unhandled arms in the inventory above remain open and
+are now answerable the same way: drive a route and read whether its census reaches the arm.

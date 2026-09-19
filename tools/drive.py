@@ -70,6 +70,18 @@ GS_CUTSCENE = 14
 GS_CREDITS = 15
 
 TSM_INIT, TSM_MENU, TSM_LOADING, TSM_DEMO = 0, 1, 2, 3
+
+# Named so a census line reads as game states rather than as integers. These are the states a Spyro 1
+# route can enter; the census reports the ones it did not reach as well as the ones it did.
+GAMESTATE_NAMES = {
+    GS_PLAYING: "playing",
+    GS_LEVEL_TRANSITION: "level_transition",
+    8: "dragon",
+    GS_ENTRANCE_ANIMATION: "entrance_animation",
+    GS_TITLE_SCREEN: "title_screen",
+    GS_CUTSCENE: "cutscene",
+    GS_CREDITS: "credits",
+}
 TSS_ACTIVE = 2  # the flyby animation itself, as against its setup and loading phases
 
 # One refusal type for every named refusal a driver can make, so a steering refusal is reported the
@@ -107,13 +119,65 @@ class Port:
             bufsize=1,
         )
         self.frame = 0
+        # Every gamestate this run was ever observed in, and how many samples saw it. A driven run
+        # that ends without its symptom proves nothing unless the state under test was reached, and
+        # until now no driver could say: issue 0103's documented repro exits 0 either because the
+        # dragon producer works or because the run never met a dragon, and the log cannot tell them
+        # apart.
+        self.gamestate_census: dict[int, int] = {}
+        # The census restarted at arrival. A whole-run census cannot tell "the dragon cutscene
+        # rendered during gameplay" from "the attract sequence happened to pass through it on the
+        # way in", and those are different answers to issue 0103.
+        self._census_at_arrival: dict[int, int] = {}
         self._await_prompt()
 
     # -- public API ---------------------------------------------------------
 
+    # A state the game passes through in a few frames is invisible to a sampler that only looks once
+    # per call, and calls here are as long as --hold-frames. Advancing in bounded chunks costs a REPL
+    # round trip each and gives every run the same resolution; the guest advances the same number of
+    # frames either way, and held buttons are separate commands so chunking cannot drop an input.
+    SAMPLE_FRAMES = 10
+
     def run(self, frames: int) -> int:
-        self._send(f"run {max(1, frames)}")
-        return self._await_prompt()
+        remaining = max(1, frames)
+        result = 0
+        while remaining > 0:
+            step = min(self.SAMPLE_FRAMES, remaining)
+            self._send(f"run {step}")
+            result = self._await_prompt()
+            remaining -= step
+            state = self.gamestate()
+            self.gamestate_census[state] = self.gamestate_census.get(state, 0) + 1
+        return result
+
+    def mark_arrival(self) -> None:
+        self._census_at_arrival = dict(self.gamestate_census)
+
+    def census_line(self) -> str:
+        """One line naming every gamestate reached, with its denominator.
+
+        Printed whether or not anything went wrong, and it names the states NOT seen among the ones
+        a Spyro route can reach, because "the dragon cutscene never happened" and "the dragon
+        cutscene rendered fine" are the two readings of a clean run that have to be told apart.
+        """
+        total = sum(self.gamestate_census.values())
+        if not total:
+            return "gamestates: nothing sampled (no frames were advanced)"
+        seen = ", ".join(f"{GAMESTATE_NAMES.get(state, str(state))}={count}"
+                         for state, count in sorted(self.gamestate_census.items()))
+        missing = [name for state, name in sorted(GAMESTATE_NAMES.items())
+                   if state not in self.gamestate_census]
+        line = (f"gamestates over {total} samples ({self.SAMPLE_FRAMES} frames apart): {seen}"
+                + (f"; never reached: {', '.join(missing)}" if missing else ""))
+        after = {state: count - self._census_at_arrival.get(state, 0)
+                 for state, count in self.gamestate_census.items()
+                 if count - self._census_at_arrival.get(state, 0) > 0}
+        if not self._census_at_arrival:
+            return line + "; gameplay never started, so none of this is a gameplay observation"
+        since = ", ".join(f"{GAMESTATE_NAMES.get(state, str(state))}={count}"
+                          for state, count in sorted(after.items()))
+        return line + f" | since GS_Playing: {since or 'nothing sampled'}"
 
     def tap(self, button: str, frames: int = 4) -> None:
         self._send(f"tap {button} {frames}")
@@ -494,6 +558,7 @@ def main() -> int:
     try:
         Navigator(port, skip_transitions=args.skip_transitions).reach_gameplay()
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
+        port.mark_arrival()
         if args.settle:
             port.run(args.settle)
         if args.gate_teleport:
@@ -533,10 +598,12 @@ def main() -> int:
             port.run(1)
     except Refusal as refusal:
         print(f"drive.py REFUSED: {refusal}", file=sys.stderr)
+        print(f"  {port.census_line()}", file=sys.stderr)
         print(f"  run log: {args.log}", file=sys.stderr)
         port.end()
         return 2
     code = port.end()
+    print(port.census_line(), file=sys.stderr)
     print(f"run log: {args.log} (exit {code})", file=sys.stderr)
     return code
 

@@ -5,7 +5,7 @@ status: open
 symptom: the port aborts during Artisans gameplay with 'NATIVE RENDER NOT IMPLEMENTED — stage selector = 8 (no producer is registered for this stage)'; reported by the operator as a crash when Spyro breathes fire
 tags: render,field,cutscene,dragon,producer,crash
 created: 2026-09-08
-updated: 2026-09-14
+updated: 2026-09-19
 ---
 
 ## Symptom
@@ -544,3 +544,30 @@ step, the `(factor * scale) >> 12` product, and the `boost` term. This is a <=1/
 rounding difference in a 12-bit fixed-point chain on 0.2% of one arm's primitives, it is invisible on
 screen, and it is now localised to a single arm and bisected past the transform — so it is recorded
 here as a known frontier rather than chased further by trialling formulae.
+
+### Note (2026-09-19)
+2026-09-19: the same abort at a SECOND stage selector, so this is a class, not one missing producer.
+
+A picture-oracle run over the title's scripted route died at frame 5064 with the identical fatal from
+the identical call path:
+
+    [render:error] NATIVE RENDER NOT IMPLEMENTED — stage selector = 2 (no producer is registered for this stage)
+    [render:error]   fatal boundary: guest pc=0xDEAD0000 ra=0xDEAD0000 sp=0x801FFFF8 stage=2/3/2 load_stage=4294967295 state_switch=0
+    SpyroRenderer::abortUnimplemented <- SpyroRenderer::renderScene <- SpyroRenderer::drawFrame
+    <- spyro1::Spyro1FrameDriver::stepFrame <- FrameLoopShell::step <- dc_step_frame <- main
+
+This issue records stage 8 (GS_Dragon). Stage 2 is a different producer with the same cause, and the
+stage=2/3/2 triple says the selector, not a transient, is what is unhandled.
+
+Consequence worth naming: this aborts the ORACLE, not just play. The picture oracle reported
+"native REPL exited (code 139) while waiting for '80000000:'" and then fell back to comparing its
+scripted checkpoints, so a run that looks like it produced comparisons actually lost its requested
+route first. Any picture evidence from a run that also contains this fatal must be re-read with that
+in mind -- including the 51.89% save_picker and 18.50% playing differences that run reported, which
+are additionally suspect because the two cores reached those checkpoints at different game frames
+(console 748 / native 687, and console 1532 / native 2300) -- that is issue 0119's state-mismatch
+problem, not necessarily a rendering difference.
+
+Suggested framing: enumerate which stage selectors have a registered producer and which do not, and
+make the missing set a known list rather than something each route discovers by dying. A count with
+a denominator is worth more here than fixing stage 2 alone.

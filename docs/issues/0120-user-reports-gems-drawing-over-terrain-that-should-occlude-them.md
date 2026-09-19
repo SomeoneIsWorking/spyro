@@ -497,3 +497,61 @@ ask whether terrain submitted any covering primitive at that pixel with `PSXPORT
 submitted nothing there, this is missing terrain, not a gem sorting in front of it, and the cause is
 in a different producer entirely. Designing that negative first matters here: "no terrain prim
 covered this pixel" and "terrain covered it and lost the depth test" look identical on screen.
+
+## 2026-09-19: the row probe answered the "did terrain even cover it" question
+
+The discriminator named above was run. `PSXPORT_QROW=103,236,254` and `PSXPORT_PRIMAT=244,103` over
+the product, 2,666 reported frames at that row, 18,256 pixel-probe lines.
+
+The instrument reports the other answer, so its positives mean something: of the 2,666 rows, **191
+reported `0 of 19 pixel(s) covered`**, two reported partial coverage (12 and 15 of 19), and the rest
+reported 19 of 19. It distinguishes "nothing in the queue covered this pixel" from "something dark
+covered it" — the uncovered case prints `------`, never black.
+
+Who wins that row, over every reported frame:
+
+```
+  29737  800258F0   world scene
+   8131  8004EBA8   terrain
+   3619  00000000   NO PAINTER OBJECT AT ALL
+   3187  8001F798   actor draw
+   2284  800573C8   field particles
+     56  80023AC4   paired actor
+```
+
+So terrain and the world scene do cover this row, in quantity. The answer to "is terrain missing
+there" is no. Actors do win 3,187 pixels at this row across the run; whether any of those wins is
+wrong is still not established, because this run had no matched console frame to compare against.
+
+At the one frame the final pixel probe reported, the winning primitive at (244,103) is green
+terrain, correctly:
+
+```
+[primat-rq] FINAL f5063 @(244,103) display=(0,240)+512x240 compare=GREATER_OR_EQUAL
+  shipping(valid=true order=1314 seq=759 node=8016D758 D32=0.150659949 texel=1E06 writes=true)
+[qrow] f5063 y=103 x=236..254 scanned 3891 prim(s), 19 of 19 pixel(s) covered
+  colours: 4B8F40 4C8F40 4C9048 419037 419038 379140 379140 429138 ...   (all greens)
+  owners:  755@800258F0 x19
+```
+
+### Two things this run surfaced that are not this issue
+
+**3,619 pixels are won by a primitive whose painter object is 0x00000000.** That is 7% of the wins
+at this row. A primitive winning the depth test with no recorded painter cannot be attributed to any
+producer, which makes it invisible to every producer-keyed instrument including the actor oracle.
+Worth its own issue; it may also be why some producer censuses do not add up.
+
+**`node=8016D758` appears on primitives whose painter is `800258F0`.** That node is one of the three
+class-83 GEM records from issue 0111, but the painter is the world scene. Every one of the 19 pixels
+in the final row carries that same node with that same painter. Most likely `diag.beginObject` is
+not cleared when the shaded queue finishes, so later world-scene primitives inherit the last gem
+node. If so, `node=` is unreliable for attribution and any earlier reading that leaned on it should
+be re-checked — including this issue's own first, corrected, attribution mistake.
+
+### The run did not complete, and that matters
+
+It died at frame 5064 with `NATIVE RENDER NOT IMPLEMENTED — stage selector = 2`, recorded against
+issue 0103. The requested `--route`/`--play` never drove the comparison; the oracle fell back to its
+scripted checkpoints. The probe data above is still good — those frames really were rendered and
+really were probed — but this run produced no matched native/console pair at the coordinate, so it
+cannot close this issue.

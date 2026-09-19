@@ -687,3 +687,74 @@ and the linked position for one known primitive rather than by reading more asse
 None of this weakens the measurement above. That the port's own bias cancels the port's own range,
 at r = -0.27 over 7,127 faces, is a fact about the port and is wrong whatever retail turns out to
 do.
+
+## 2026-09-19: ROOT CAUSE — the port authors the INTRA-OBJECT face order as if it were the world bin
+
+The contradiction above is resolved, and candidate (2) was right in a stronger form than guessed:
+the two `bin` numbers are indices into **two different ordering tables**.
+
+Measured, not inferred. The oracle's `kOtPointer` is `0x80075820`, and `external/spyro-1`'s
+`game.sbss.s:333` gives that address the name **`g_WorldOT`**. A run prints
+`ot_base=0x801BFBB8 ot_is_8006FCF4=false` on all 190 frames: the oracle walks the world OT, while
+`func_80022A2C` links its packets into a private 288-entry sub-table at `D_8006FCF4` (r_moby.s
+0x80023290 sets the base, 0x80023418 does the `sll v0,3; add v0,s1`).
+
+The two are joined at the end of the producer (0x80023958-0x800239EC):
+
+```
+.L80023958   sub $v0, $s3, $s2        # s2/s3 are the lowest/highest sub-bin used
+.L80023990   lw  $v1, -0x4($s3)       # walk the 288-entry sub-table from the FAR END down,
+             addi $s3, $s3, -0x8      #   chaining its packets into ONE list
+.L800239B8   lui $v1, %hi(g_WorldOT)
+             cfc2 $a0, C2_DQB         # the world bin, carried in the GTE's DQB register
+             sll  $a0, $a0, 3         #   * 8 bytes per entry
+.L800239EC   add  $v1, $v1, $a0       # and the whole chain is spliced in at THAT ONE bin
+```
+
+So the 288-bin table orders faces **within one moby**, and the moby as a whole gets a single world
+position from `DQB`, which the same function computed per object:
+
+```
+80022CD8   sra  $t9, $v1, 6           # v1 is TRZ, already doubled at 80022CD4
+80022D9C   sra  $a0, $s4, 24          # the object's own bias byte, from lw 0x44($fp)
+80022DA0   sub  $t9, $t9, $a0
+80022DA4   bgez $t9, .L80022DB0
+80022DAC   addi $t9, $zero, 0x0       # clamped at 0
+80023288   ctc2 $t9, C2_DQB           # parked in DQB until the splice reads it back
+```
+
+    worldBin = max((TRZ*2 >> 6) - (s4 >> 24), 0)
+
+**The port computes nothing corresponding to this.** `field_shaded_queue_recipe.cpp` produces only
+the intra-object face index and `field_shaded_queue_emit.cpp` submits it as
+`scene_painter_order::queuedWorld(face.otBin, face.paintGroup)` -- an intra-object ordinal presented
+as a world-ordering position. Gems therefore sort against terrain by their face order within the
+gem, which is unrelated to how far away the gem is. That is the user's symptom, fully accounted for.
+
+It also explains the split that pointed here, which nothing else did: **0x80022A2C differs on 39 of
+39 while five other painters differ on none**. Those five author world-OT positions directly and are
+comparable with retail's `bin` as the diff assumed; only this producer goes through a private
+sub-table, so only its numbers were being compared across two index spaces.
+
+### What this retracts
+
+The "94.13% of authored bins match retail" figure is sound for the five direct painters and
+**meaningless for 0x80022A2C** -- for that producer it compared a sub-table index against a world
+OT position. The "native bin 17 vs retail 171 (-154)" line is not a 154-bin error in one quantity;
+it is two different quantities. The 7,127-face measurement is unaffected: it is internal to the port.
+
+The bias finding also re-reads. `max(TRZ-256,0)*4` genuinely belongs to the intra-object sub-bin
+(0x800233EC), and `t2 ~ szsum/4` collapsing it is still wrong -- but its consequence is now a
+squashed face order WITHIN a moby, not a wrong world position. The world position is missing
+outright, which is the larger fault and the one to fix first.
+
+### Next
+
+Author the world bin from `max((TRZ*2 >> 6) - biasByte, 0)` and keep the sub-table index as the
+within-object suborder, which is what `PainterReplayOrder{ot_bin, link_ordinal, chain_suborder}`
+is already shaped for. `biasByte` is the top byte of the word at `0x44($fp)`; identify its native
+owner before wiring it, and do not substitute a constant.
+
+Falsifier unchanged in spirit and now correctly targeted: the authored WORLD bin for 0x80022A2C
+must track range (strong positive correlation with `t2`, where it is now -0.27), and node
+`8016F0C8` must reach retail's neighbourhood of 171 rather than 17-23.

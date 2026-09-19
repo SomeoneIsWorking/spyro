@@ -475,6 +475,14 @@ void compare(Core *core,
   lucent::debug("actororacle",
                 "retail side: body=0x{:08X} shaded_list={}->{} shaded_flagged={}->{} "
                 "walked={} refusal={} scanned={} below_filter={} refused={} decoded={} "
+                // The ordering table this walk actually read. `bin=` is an index into THIS base,
+                // and the shaded-moby arm links its packets at `D_8006FCF4 + ot*8` (r_moby.s
+                // 0x80023290 sets the base, 0x80023418 does the `sll v0,3; add v0,s1`). Whether a
+                // retail `bin` is comparable at all with the port's authored OT index depends
+                // entirely on those two being the same table, and issue 0120 compared them for a
+                // whole session without checking. Printing it lets the assumption be falsified
+                // rather than relied on.
+                "ot_base=0x{:08X} ot_is_8006FCF4={} "
                 "pool_from=0x{:08X}",
                 retailBody,
                 shadedBefore.records,
@@ -487,6 +495,8 @@ void compare(Core *core,
                 counters.belowFilter,
                 counters.refused,
                 retail.size(),
+                otBase,
+                otBase == 0x8006FCF4u,
                 savedCursor);
 
   if (counters.refused != 0) {

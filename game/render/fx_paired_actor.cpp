@@ -94,9 +94,7 @@ project_rtps(uint32_t d0, uint32_t d1, const std::array<uint32_t, 27> &cr) {
   using namespace psxport::native_projection;
   const uint32_t c0 = cr[0], c1 = cr[1], c2 = cr[2], c3 = cr[3], c4 = cr[4];
   FixedAffine affine{};
-  affine.m = {{{(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
-               {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
-               {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}}};
+  affine.m = rotationFromControlWords({c0, c1, c2, c3, c4});
   affine.t = {{(int32_t)cr[5], (int32_t)cr[6], (int32_t)cr[7]}};
   const NativeProjectedVertex p = project(affine,
                                           {(int32_t)cr[24], (int32_t)cr[25], (uint16_t)cr[26]},

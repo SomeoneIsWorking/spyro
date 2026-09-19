@@ -2,6 +2,7 @@
 #include "core.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "native_projection.h"
 #include "painter_submission_preflight.h"
 #include "producer_scope.h"
 #include "proj_params.h"
@@ -84,9 +85,7 @@ int64_t terrain_wrap44(int64_t v) {
 void terrain_raw_xyz(int vx, int vy, int vz, float &x, float &y, float &z) {
   const uint32_t c0 = gte_read_ctrl(0), c1 = gte_read_ctrl(1), c2 = gte_read_ctrl(2),
                  c3 = gte_read_ctrl(3), c4 = gte_read_ctrl(4);
-  const int32_t m[3][3] = {{(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
-                           {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
-                           {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}};
+  const auto m = psxport::native_projection::rotationFromControlWords({c0, c1, c2, c3, c4});
   const int32_t tr[3] = {
       (int32_t)gte_read_ctrl(5), (int32_t)gte_read_ctrl(6), (int32_t)gte_read_ctrl(7)};
   const int16_t v[3] = {(int16_t)vx, (int16_t)vy, (int16_t)vz};

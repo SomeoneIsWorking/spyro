@@ -81,9 +81,7 @@ psxport::native_projection::FixedAffine affineFrom(const Input &input,
   const uint32_t c0 = input.matrixWords[0], c1 = input.matrixWords[1], c2 = input.matrixWords[2],
                  c3 = input.matrixWords[3], c4 = input.matrixWords[4];
   psxport::native_projection::FixedAffine affine{};
-  affine.m = {{{(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
-               {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
-               {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}}};
+  affine.m = psxport::native_projection::rotationFromControlWords({c0, c1, c2, c3, c4});
   const uint8_t shift = input.transformShift & 31u;
   // 0x8001F84C shifts the view translation into model space and then, at 0x8001F864, scales it by
   // the Moby's own byte — the same field and the same GPF idiom the shaded renderer 0x80022A2C

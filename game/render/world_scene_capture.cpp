@@ -299,9 +299,7 @@ void noteCoarseHighProjection(Core *core, uint32_t sector, uint32_t cacheAddress
   const uint32_t c2 = gte_read_ctrl(2);
   const uint32_t c3 = gte_read_ctrl(3);
   const uint32_t c4 = gte_read_ctrl(4);
-  snapshot.affine.m = {{{(int16_t)c0, (int16_t)(c0 >> 16), (int16_t)c1},
-                        {(int16_t)(c1 >> 16), (int16_t)c2, (int16_t)(c2 >> 16)},
-                        {(int16_t)c3, (int16_t)(c3 >> 16), (int16_t)c4}}};
+  snapshot.affine.m = psxport::native_projection::rotationFromControlWords({c0, c1, c2, c3, c4});
   snapshot.affine.t = {
       {(int32_t)gte_read_ctrl(5), (int32_t)gte_read_ctrl(6), (int32_t)gte_read_ctrl(7)}};
   snapshot.projection = {.ofx = (int32_t)gte_read_ctrl(24),

@@ -48,3 +48,25 @@ The durable fix is probably not a re-recorded pad, which would rot the same way.
 because "every scripted route in this project so far was a fixed list of run N / tap lines. That
 works exactly once." Giving `looks_right` an observed route rather than a recorded one would make
 its verdicts about gameplay and keep them that way.
+
+## What was done
+
+`looks_right.py` now takes `--route`, a command template carrying `{shot}`, `{settings}` and `{log}`,
+and runs it in place of launching the binary with a pad (psxport 48717689 onward). The route owns
+when the game is worth looking at and captures one shot itself, so the tool no longer picks a frame
+number in advance; it drops the frame cap and the fixed shot frame for a routed run, because both
+would cut the drive short or fire wherever it had got to. Nothing about Spyro's menus moved into the
+framework: what the route knows stays in `tools/drive.py`, and the template is the whole interface.
+
+The verdicts are now taken as:
+
+```sh
+uv run --frozen python external/psxport/tools/port/looks_right.py \
+  --binary build/bin/spyro_port --repository . \
+  --route 'uv run --frozen python tools/drive.py gameplay --hold left --hold-frames 180 \
+           --shot {shot} --settings {settings} --log {log}'
+```
+
+Remaining: the pad itself is still broken and still in the repository, and the two candidate causes
+above are still undistinguished. That matters less now that no verdict depends on it, but a replay
+that silently describes a different screen than its name says is a trap for the next reader.

@@ -1,6 +1,9 @@
 # Project state
 
-Factual capability coverage for Spyro 1 native/Lightrec execution and presentation. Atomic work lives in
+Factual capability coverage for the Spyro trilogy's native/Lightrec execution and presentation.
+Goal G001 is three products, so Spyro 2 and Spyro 3 carry their own rows here even though neither is
+being implemented yet; a capability nobody has started is `missing`, not absent from the inventory.
+Atomic work lives in
 `docs/issues/`, ownership and placement in `docs/codemap.md`, and the ordered binary-evidence chain
 in `docs/re-frontier.md`.
 
@@ -34,6 +37,14 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image | partial | S005 | G003 |
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
+| S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
+| S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | missing | — | G001 |
+| S024 | Spyro 2 reaches representative gameplay through native/Lightrec execution | missing | S006, S008 | G001, G002 |
+| S025 | Spyro 3 reaches representative gameplay through native/Lightrec execution | missing | S008, S023 | G001, G002 |
+| S026 | Spyro 2 widescreen renders additional horizontal scene coverage without stretching | missing | S024 | G003 |
+| S027 | Spyro 3 widescreen renders additional horizontal scene coverage without stretching | missing | S025 | G003 |
+| S028 | Spyro 2 presents interpolated 60fps from captured source geometry | missing | S024 | G003 |
+| S029 | Spyro 3 presents interpolated 60fps from captured source geometry | missing | S025 | G003 |
 
 ## Current focus
 
@@ -42,15 +53,27 @@ of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 checkpoint
 range comparisons, zero divergences; issue 0110). The world, the player model, the regular and
 secondary actor layers, the world-shaded sprite queue and the terrain producer `0x8004EBA8` are all
 reconstructed in an in-between present, which brings the reconstructed share of captured items to
-0.955. That cost is now measured on a local Linux x86-64 Clang build, offscreen and unpaced, over
-3,360 product steps of the same route (`PSXPORT_DEBUG=perf`, which the framework profiler reports a
-p50/p95/p99 distribution through as of psxport 2746c080): 4:3 2.25/3.00/3.75 ms, 16:9
-2.50/3.25/4.00 ms, and interpolated 60fps 5.25/6.25/7.25 ms against the 33.37 ms a two-field product
-step has. At 60fps the present CPU holds 4.65 ms of a 5.19 ms average step and the guest update
-holds 0.04 ms, so the port is present-bound with about 4.6x headroom on this host. Exactly one frame
-per run misses, by a wide margin: the first gameplay step stalls about 3.0 s decoding CD audio out
-of the cold CHD, which trips the default 3 s frame watchdog and makes every unattended long run
-abort unless `PSXPORT_WATCHDOG` is raised (issue 0115). No released host is qualified by this: a
+0.955. That cost has been re-measured on gameplay, and the earlier figure was an under-estimate because it
+was taken on the save-file dialog (issue 0116). On a local Linux x86-64 Clang build, offscreen and
+unpaced, driven to Artisans through `tools/drive.py gameplay` and walked left with
+`PSXPORT_DEBUG=perf`, the profiler's rolling 60-step averages separate the two screens plainly:
+
+| leg | on the menu | in Artisans |
+|---|---|---|
+| 4:3 | 1.3-1.4 ms | 4.6-5.5 ms |
+| 16:9 | 1.3-1.6 ms | 5.1-6.5 ms |
+| interpolated 60fps | 1.5-1.8 ms | 9.8-10.2 ms |
+
+Against the 33.37 ms a two-field product step has, interpolated 60fps gameplay leaves about 3.3x
+headroom on this host, not the 4.6x the dialog measurement suggested. The port stays present-bound:
+in the 60fps gameplay window the present CPU holds 9.13 ms of a 10.23 ms step while the guest update
+holds 1.10 ms. Gameplay percentiles are not quoted because the profiler's p50/p95/p99 distribution is
+cumulative over the whole run, so it cannot be separated from the ~2,900 boot and menu steps that
+precede the ~300 gameplay ones; the rolling windows are what distinguishes them. Exactly one frame
+per run still misses, by a wide margin: the first gameplay step stalls about 3.0 s decoding CD audio
+out of the cold CHD (3,101 ms, 3,135 ms and 3,189 ms in the three legs above), which trips the
+default 3 s frame watchdog and makes every unattended long run abort unless `PSXPORT_WATCHDOG` is
+raised (issue 0115). No released host is qualified by this: a
 maintainer build on one desktop is not the AppImage, the APK or the browser package. Shadows, glow,
 sparkles, particles and tracers are NOT next:
 measured together they draw about 32 faces per game update, and what remains replayed verbatim is
@@ -1006,9 +1029,9 @@ the 132 STALE, 118 did not move and 14 did; of the 6,483 AHEAD, 866 did not move
 So the picture is overwhelmingly interpolated, and what fails does so by snapping FORWARD — 4,918 of
 the AHEAD tiles are a clean 2-pixel translation.
 
-That last number is the shape of the defect and it is not yet explained. A tile that takes the newer
-frame is what an unblendable state change looks like (an animation frame flip, a newly visible
-object), which is correct output; a clean 2-pixel translation is not that.
+That last number is the shape of the defect. A tile that takes the newer frame is what an
+unblendable state change looks like (an animation frame flip, a newly visible object), which is
+correct output; a clean 2-pixel translation is not that.
 
 It is now fully attributed. The first attempt credited only 57.5% of the moving tiles to a run,
 because the dump captures the VRAM display region while a run's extent is in the buffer the queue
@@ -1024,19 +1047,52 @@ logs takes the coverage to **100.0% of the moving tiles and 100.0% of the defect
 | layer 1 (world) | 95,023 | 3,041 | 54.0% |
 | layer 0 (background) | 28,256 | 2,590 | 46.0% |
 
-The four largest single owners are `0x8016F1D0` and `0x8016EC50`, each appearing as both a verbatim
-and a TIER1 run — the same guest instance drawn reconstructed in one layer and replayed in another.
-That is the thread to pull: two thirds of the defect is content still replayed verbatim, matching
-Tomba! 2's result, but a third of it is reconstructed content that interpolates and still lands on
-an endpoint, and the split of one instance across both ownerships suggests the two are related.
+**The forward snap is explained, and it is not an interpolation defect.** Forcing the interpolation
+factor to its previous endpoint (`PSXPORT_FPS60_TFORCE=0`) over the same deterministic 478-frame
+route separates the two populations completely:
+
+| | moved to the PREVIOUS endpoint | moved to the NEXT endpoint |
+|---|---|---|
+| t = 0.5 (product) | 14 | 5,617 |
+| t = 0.0 (forced) | 105,850 | 5,542 |
+
+105,836 tiles moved when `t` moved. The forward-snapping population did not, and it matches owner by
+owner to within a few tiles — `0x8016F1D0` verbatim 1,126 against 1,120, `0x8016EC50` verbatim 828
+against 822, the unattributed TIER1 world run 710 against 698. Content that does not respond to the
+interpolation factor is not being interpolated at all.
+
+The mechanism is `Fps60::presentPass`. Both presents of a fence run over the *same* captured queue
+and differ only in `t`; only the items the scene source `owns` are replaced by reconstructed ones,
+and everything else keeps its exact captured values — which are the current game update's. So an
+item with no native producer is drawn in the in-between present at the position the NEXT real frame
+will show it, a whole frame early. That is the 2-pixel translation: it is this route's per-update
+camera motion, delivered at the wrong time.
+
+The 32.7% TIER1 share was a tile-granularity artifact, not reconstructed content failing to lerp.
+Attribution credits the smallest run covering a tile, and a reconstructed run's screen area also
+holds verbatim pixels drawn by other items. Of the 1,838 forward-snapping tiles filed under a TIER1
+run, **1,832 (99.7%) also have verbatim content drawn over them**; only 6 tiles across 238 triples
+sit where nothing but reconstructed content is drawn (psxport 48717689). So essentially the whole
+defect is content no native producer reconstructs — the same root cause as Tomba! 2's layer-2
+result, and one that will not close by changing the lerp.
 
 Gap: newly visible animated sectors need a faithful endpoint-state lifecycle; regular actors, shadows,
-particles and other unowned temporal sources lack complete matching-source interpolation. The
-5,617 forward-snapping tiles are attributed but not explained: 67.3% is content still replayed
-verbatim, and the remaining 32.7% is reconstructed content that snaps forward anyway, which the
-interpolation itself owns. Everything measured through `replays/gameplay/artisans-arrival.pad` — the looks-right
-fps60 and widescreen verdicts and the frame-time budget in Current focus — describes the save-file
-dialog rather than gameplay (issue 0116).
+particles and other unowned temporal sources lack complete matching-source interpolation. Closing the
+forward snap means reconstructing the producers still listed as verbatim above, not adjusting
+interpolation. The looks-right verdicts have been re-taken on gameplay. They were previously run through
+`replays/gameplay/artisans-arrival.pad`, which never leaves the save-file dialog (issue 0116);
+`external/psxport/tools/port/looks_right.py` now takes `--route`, a command template the title fills
+in, and Spyro's is `tools/drive.py gameplay --hold left --hold-frames 180`. On that route all three
+verdicts pass: reaches with no failure mark, widescreen differing from 4:3, and fps60 reporting
+3,125,946 interpolated prims over 3,105 extra presents (psxport b1ed4202). The 4:3 and 16:9 captures
+show Artisans with Spyro, the archway and a gem in them, and the 16:9 one shows world to the left
+and right that 4:3 does not — a wider view, not a stretched one. Looking at them is still the rest of
+the check; no tool in this repository can say it looks right.
+
+The oracle comparison is not affected by that and never was. `tools/oracle_compare.py` builds its
+route from `tools/drive.py`'s observing Navigator rather than from a pad file, and arrives in
+Artisans; its 485 checkpoints over 6,305 decisive range comparisons with zero divergences describe
+gameplay. Issue 0116 reaches the looks-right verdicts and the frame-time budget only.
 
 The endpoint lifecycle is now owned for visible world animation channels. When a previous source
 contains a pending channel, temporal admission decodes that channel through the same pure animation
@@ -1087,3 +1143,34 @@ has not been compared against the console's own PCM;
 nothing has been verified through a real audio device (headless `PSXPORT_WAV` captures only).
 
 Related goal: G002.
+
+### S023-S029 — Spyro 2 and Spyro 3
+
+**Status: missing, and deliberately not started.** Goal G001 is three products, so these rows exist
+to keep the inventory honest about what the repository does not yet do. Nothing below is evidence of
+work in progress.
+
+Both titles are held behind Spyro 1 by the single-title rule in `CLAUDE.md`: "Finish Spyro 1 before
+continuing title-specific Spyro 2 or Spyro 3 implementation." Spyro 1 has not finished — S011
+(representative gameplay conformance on each released host) is `missing`, every platform release row
+is `missing`, and S020's in-between present still replays unreconstructed producers. Starting a
+second title now would split the one maintainer across two incomplete ports.
+
+What exists for each is only binary facts, and they are recorded rather than verified by execution:
+
+| | identity | entry | game main | libetc VSync | measured boundary |
+|---|---|---|---|---|---|
+| Spyro 2 | `SCUS_944.25` | `0x8005478C` | `0x80011ADC` | `0x80058EDC` | three black display fields, then stops at `0x80011B1C` (S006) |
+| Spyro 3 | `SCUS_944.67` | `0x80059444` | `0x8001200C` | `0x8005956C` | none — disc provenance and product execution are both unverified |
+
+Spyro 3 is the weaker of the two: its addresses come from executable analysis, and no run of any kind
+has been recorded against it. S022 in this document was a detail section with no row in the table
+until 2026-09-19, and Spyro 3 had neither; both are inventory defects rather than lost work.
+
+The widescreen and 60fps rows are listed separately per title because they are separately observable
+against the baseline and will not come for free from Spyro 1. Spyro 1's interpolation is built out of
+title-owned producers that read Spyro 1's game state — the terrain, actor and shaded-sprite sources
+named in S020 — and none of them transfers to another title's scene layout. What does transfer is the
+framework: the temporal presenter, the pairing walk, the projection stream and the measurement tools.
+
+Related goals: G001, G002, G003.

@@ -46,6 +46,13 @@ Local Linux x86-64 Clang build, offscreen and unpaced, 3,360 product steps of
 `replays/gameplay/artisans-arrival.pad`, `PSXPORT_DEBUG=perf`. Exactly one frame per run lands past
 the range, and it is this one.
 
+The p50/p95/p99 columns above are not gameplay: that pad never leaves the save-file dialog (issue
+0116), and the distribution is in any case cumulative over a run that is mostly boot and menus. The
+worst column is unaffected, because the stall is one step and the same one. Re-measured on the
+observed `tools/drive.py gameplay` route on 2026-09-19 the stall is still there and still alone:
+3,101 ms at 4:3, 3,135 ms at 16:9 and 3,189 ms at interpolated 60fps, one step beyond the range in
+each. The gameplay step costs themselves are in `docs/project-state.md` Current focus.
+
 ## What would resolve it
 
 Not a longer watchdog and not a smaller decode. The CD audio read happens synchronously on the

@@ -71,13 +71,16 @@ holds 1.10 ms. Gameplay percentiles are not quoted because the profiler's p50/p9
 cumulative over the whole run, so it cannot be separated from the ~2,900 boot and menu steps that
 precede the ~300 gameplay ones; the rolling windows are what distinguishes them. Exactly one frame
 per run still misses, by a wide margin: about 3.0 s (3,101 ms, 3,135 ms and 3,189 ms in the three
-legs above), which trips the default 3 s frame watchdog and makes every unattended long run abort
-unless `PSXPORT_WATCHDOG` is raised (issue 0115). That was read as a cold CHD hunk cache and it is
-not: measured 2026-09-19 the worst single `chd_read` is 21.2 ms and 8,066 of 8,461 hunk fills are
-first visits, so the cache is not thrashing. One `CDC_GetCDAudioSample` call walks the XA read head
-from LBA 0 to LBA 53,874 hunting for a sector that passes Spyro's file 1/channel 4 filter, because
-the XA stream keeps its own disc cursor instead of the drive's. Naming that cause is progress; the
-fix is gated on an RE question recorded in the issue. No released host is qualified by this: a
+legs above), which tripped the default 3 s frame watchdog and made every unattended long run abort
+unless `PSXPORT_WATCHDOG` was raised (issue 0115). **That is fixed at the cause (psxport
+`892e9550`, 2026-09-19).** It was read as a cold CHD hunk cache and it was not; it was also not a
+missing Setloc. libcd's `CdControl` sends the Setloc itself for a position-carrying command, and the
+framework's `CdControl` override read only the command byte and dropped the position, so the XA
+cursor stayed at LBA 0 while Spyro had asked for LBA 113,448 and scanned until it hit unrelated
+audio. The stream now starts where the guest asked: skipped sectors 9 -> **0**, disc hunk fills
+8,461 -> **841**, time in `chd_read` 3,611.9 ms -> **403.2 ms**, worst single fill 21.2 ms -> **0.9
+ms**. A 1,300-frame `looks_right.py` run that previously died with `watchdog STUCK` now completes
+and passes all four checks, and oracle parity is unchanged with widescreen and fps60 both live. No released host is qualified by this: a
 maintainer build on one desktop is not the AppImage, the APK or the browser package. Shadows, glow,
 sparkles, particles and tracers are NOT next:
 measured together they draw about 32 faces per game update, and what remains replayed verbatim is
@@ -1217,15 +1220,21 @@ nothing has been verified through a real audio device (headless `PSXPORT_WAV` ca
 **What that scan actually costs, measured 2026-09-19.** "Scans forward" is not a figure of speech and
 it is not free. The port keeps a SECOND disc cursor: the data path tracks the head in `cd.sec_lba`
 while the XA stream keeps its own `s_lba`, which starts at 0. On the `tools/drive.py gameplay` route
-the stream starts at LBA 0 and the scan reaches LBA 53,874 — about 122 MB and 7,400 CHD hunk
+the stream started at LBA 0 and the scan reached LBA 53,874 — about 122 MB and 7,400 CHD hunk
 decompressions — **inside a single 1/44100 s output sample**, because the pull loop re-enters
-`xa_decode_next_sector` as soon as its 64-sector guard expires. That is the three-second stall
-recorded as [issue 0115](issues/0115-the-first-gameplay-frame-stalls-three-seconds-in-cd-audio.md),
-and the whole route decodes only 446 audio sectors from 1,046,950 pulls. Real hardware has one head
-and Spyro interleaves its music with level data in the same stream; psxport already models that in
-`cdc_native`'s drive (`push_mode`), which Spyro does not use. No `Setloc` is logged before the read
-at all, so where the driver believes the head is remains an open RE question and is the gate on the
-fix.
+`xa_decode_next_sector` as soon as its 64-sector guard expires. That was the three-second stall
+recorded as [issue 0115](issues/0115-the-first-gameplay-frame-stalls-three-seconds-in-cd-audio.md).
+
+**Resolved 2026-09-19.** The open RE question — "no `Setloc` is logged before the read at all, so
+where does the driver believe the head is?" — had a third answer neither hypothesis covered: libcd's
+`CdControl` (`0x80063EAC`) consults a per-command table (`0x80074DAC`) and sends the Setloc ITSELF
+for `0x03`, `ReadN`, `SeekL`, `SeekP` and `ReadS`. Spyro's sound driver at `0x800568D0` does
+`CdIntToPos(lba, &loc); CdControl(CdlReadS, &loc, 0)` and needs no Setloc of its own. The framework
+override that replaced `CdControl` read only the command byte, so the position was thrown away.
+Fixed in psxport `892e9550`, which applies the position through one owner shared by the explicit and
+implicit Setloc; the stream now starts at the traced LBA 113,448 and the scan is gone. The
+second-cursor observation stands as a design note — pacing head advance at the guest's declared
+drive speed is still worth doing — but it is no longer needed to end the stall.
 
 Related goal: G002.
 

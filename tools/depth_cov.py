@@ -76,9 +76,24 @@ def main():
     if not log:
         sys.exit("give a log path or --run")
 
+    # THE RENDER PATH DECIDES WHETHER THIS TOOL CAN SEE ANYTHING. The [ndepth fN] lines it parses are
+    # emitted from the framework's gpu_native.cpp, the GUEST-OT compositor. On render path `native`
+    # (PC producers -> SDL_GPU) that code never runs, so every counter is structurally zero. Measured
+    # 2026-09-19: a drive.py gameplay route that HAD reached Artisans reported "59 sampled frames, 0
+    # carrying primitives", which reads as "scanned and found no depth" and is really "never ran".
+    # Refuse by name instead (I051).
+    text = open(log, errors="ignore").read()
+    path = re.search(r"\[render\] render path = (\w+)", text)
+    if path and path.group(1) != "psx":
+        sys.exit(f"{log}: render path is '{path.group(1)}', not the guest-OT path this tool reads.\n"
+                 f"The [ndepth fN] summaries come from gpu_native.cpp, which a native-producer run "
+                 f"never executes, so a zero here would mean NOTHING WAS MEASURED, not 0% depth.\n"
+                 f"Whole-run native coverage is render_depth_coverage_report (instrument I051), which "
+                 f"currently has no call site in this repository.")
+
     frames, cur = [], None
     rec = hit = miss = 0
-    for line in open(log, errors="ignore"):
+    for line in text.splitlines():
         m = re.search(r"\[ndepth f(\d+)\] real-depth\(3D\) prims=(\d+)\s+OT-band\(2D\) prims=(\d+)", line)
         if m:
             cur = (int(m.group(1)), int(m.group(2)), int(m.group(3)))

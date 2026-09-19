@@ -1,7 +1,7 @@
 ---
 id: C143
 kind: claim
-status: holds
+status: unmeasurable
 created: 2026-07-30
 tags: render,widescreen,depth
 ---
@@ -17,3 +17,23 @@ Enabled the latch (s_prev_had3d/s_prev_had_bg2d no longer rolled on a zero-primi
 ## What would falsify it
 
 native depth coverage rising enough that s_seen3d is set by real world prims — then the widen would move only screen-space content and this measurement should show the caption moving while sky and ground do not
+
+## NOT CHECKABLE 2026-09-19 — and it describes a path the product no longer uses
+
+Two separate reasons, both measured:
+
+1. **The falsifier cannot be evaluated.** It names native depth coverage rising. The instrument for
+   that, I051 `render_depth_coverage_report`, has no call site left in this repository, and
+   `tools/depth_cov.py` parses the framework's guest-OT `[ndepth fN]` lines instead. See I051.
+2. **The mechanism is not on the shipping path.** This claim is about psxport's widescreen 2D widen
+   inside the guest-OT compositor (`gpu_native.cpp`), where the 2D/3D split rides on per-primitive
+   depth. The product's render path is `native` — "[render] render path = native — geometry from
+   PC-NATIVE producers, rasterized by the PC rasterizer (SDL_GPU)" — which never executes that
+   compositor. So even a depth-coverage number would not decide whether Spyro's 2D content widens.
+
+What replaces it: 2D placement on the native path is the render queue's 2D space, `RQ_2D_AUTHORED_4_3`
+(centred by the queue) versus `RQ_2D_WIDE_FINAL` (identity, already canvas coordinates). Only three
+producers here declare one — `fx_screen_fade`, `fx_dragon_burst`, `fx_screen_border`, all
+`RQ_2D_WIDE_FINAL`. Whether every other 2D/HUD producer is correctly placed is the open question, and
+it is the same shape as Tomba! 2's issue 0010, which was found by measuring drawn coverage per scene
+rather than by reasoning about depth.

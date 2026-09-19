@@ -1,7 +1,7 @@
 ---
 id: 115
 title: One audio sample scans 54,000 disc sectors, so a step stalls three seconds and trips the frame watchdog
-status: open
+status: resolved
 symptom: a single CDC_GetCDAudioSample call walks the XA read head from LBA 0 to LBA 53,874 looking for a matching sector, decompressing about 7,400 CHD hunks (122 MB) inside one 22.7 us output sample, so no frame presents for ~3.0 s and the default 3 s watchdog aborts the process
 state_items: S011, S020, S022
 tags: performance, disc, audio, watchdog, startup, cd-model
@@ -106,3 +106,63 @@ a 3 s freeze for silence. The pacing and the shared cursor land together or not 
 
 Not a longer watchdog: raising `PSXPORT_WATCHDOG` hides it and leaves 3.6 s of wasted decompression
 and a head 54,000 sectors from where hardware would have it.
+
+## RESOLVED 2026-09-19 — there was no missing Setloc; CdControl's own Setloc was dropped
+
+The section above asked which of two things was happening, and said the answer decided the fix.
+It was neither. **libcd's `CdControl` performs the Setloc itself.**
+
+`CdControl(com, param, result)` at `0x80063EAC` inspects a per-command table at `0x80074DAC` and,
+when the command's entry is nonzero, sends command `0x02` carrying `param` BEFORE sending `com`:
+
+```
+80063F38  beqz  $s1, 0x80063f68      ; param == NULL -> nothing to send
+80063F40  lw    $v0, ($s6)           ; s6 = 0x80074DAC + (cmd << 2)
+80063F48  beqz  $v0, 0x80063f68      ; this command takes no position -> skip
+80063F4C  addiu $a0, $zero, 2        ; <- Setloc
+80063F50  move  $a1, $s1             ; ...with the caller's param
+80063F58  jal   0x80064cec
+```
+
+The table marks `0x03`, `ReadN (0x06)`, `SeekL (0x15)`, `SeekP (0x16)` and `ReadS (0x1B)` as
+position-carrying. It is libcd's table, so it is the same in every PsyQ title.
+
+Spyro's sound driver at `0x800568D0`-`0x800568F0` does exactly what that allows:
+
+```
+800568D0  addiu $s0, $sp, 0x18       ; a 3-byte MSF buffer
+800568DC  lw    $a0, 0x74b8($at)     ; the track's LBA
+800568E0  jal   0x80064094           ; CdIntToPos(lba, &loc)  (+150, /75, /60, BCD)
+800568E8  addiu $a0, $zero, 0x1b     ; CdlReadS
+800568EC  move  $a1, $s0             ; with the position
+800568F0  jal   0x80063eac           ; CdControl
+```
+
+So it never issues a Setloc because it does not have to. `cd_override.cpp` replaced `CdControl` and
+read only the command byte, dropping the position. The traced parameter `25 14 48` is BCD MSF
+25:14:48 = **LBA 113,448**, well inside this 281,270-sector disc — the port started from LBA 0
+instead and scanned until it hit unrelated audio, which is why the music was wrong as well as late.
+
+Fixed in psxport `892e9550`. Measured on the same `tools/drive.py gameplay` route:
+
+| | before | after |
+|---|---:|---:|
+| skipped non-matching sectors | 9 | **0** |
+| XA stream start | LBA 0 | **LBA 113,448** |
+| disc hunk fills | 8,461 | **841** |
+| time in `chd_read` | 3,611.9 ms | **403.2 ms** |
+| worst single fill | 21.2 ms | **0.9 ms** |
+
+A `looks_right.py` boot run that previously died with `watchdog STUCK` in `CDC_GetCDAudioSample`
+now completes. At 2,600 fields with shots at four fences it captures 4/4 and passes `reaches`,
+`widescreen`, `coverage` (1.429 -> 1.912 on all four, each capture a distinct picture by sha256) and
+`fps60` (1,253,413 interpolated prims over 1,081 extra presents). The first run of this was quoted at
+1,300 fields, where `reaches` passed on 1 capture of 4 requested because the tool did not then check
+the count; psxport `10071776` makes that a failure and names the cause — `--frames` bounds FIELDS
+while `--shot-at` counts PRESENTATION FENCES, and 1,300 fields produced 868 fences. Oracle parity is
+unchanged with widescreen and fps60 both proven live in the product log: 36 checkpoints, 468
+decisive comparisons, 0 divergences, `complete: true`.
+
+Item 3 of "What would resolve it" — pacing head advance at the guest's declared drive speed — is NOT
+done and is no longer needed to end the stall, since the head now starts where the guest asked. It
+remains worth doing on its own merits and is not tracked by this issue.

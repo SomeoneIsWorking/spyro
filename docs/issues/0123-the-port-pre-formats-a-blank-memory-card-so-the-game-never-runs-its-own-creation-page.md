@@ -73,22 +73,78 @@ and the syscall could not drift), removed the pre-format, rebuilt, re-ran: **byt
 same sub_state 12, same 6000 frames. Spyro does not call B0:0x41 here. The change was reverted rather
 than left in the tree as an unexercised handler.
 
+## The instrument that was going to answer this did not work, and that was the finding
+
+The step recorded above said `card_overrides_init` enables `Memcard::setVerbose` when the lucent
+channel `card` is on, so "every B0 file handler then logs its function and arguments". That was
+wrong in two ways, and both were measured on 2026-09-19:
+
+* `mVerbose` gated 14 log sites, but it was latched ONCE at `card_overrides_init` from
+  `lucent::channel_on("card")`. With `PSXPORT_DEBUG=card` set, a run that reached gameplay through
+  the save menu and a run that stalled in title sub_state 12 for 12,000 fields emitted the SAME two
+  card lines. The flag was answering the channel question at the wrong time, for the whole run.
+* The dispatcher's `default: return 0` -- "this runtime has no implementation" -- logged and counted
+  nothing at all. A missing handler was invisible by construction.
+
+So the silence was the instrument, not the guest, and reading it as "Spyro makes no card calls"
+would have been a false conclusion drawn from a broken tool. Fixed in psxport: the 14 gated calls
+are now plain `lucent::debug("card", ...)` (the logger owns channel filtering, and it asks per
+call), `runtime/psx/card_syscall_log.*` counts every dispatched function handled and unhandled, and
+`Game::~Game` reports the totals with their denominator whether or not anything was called.
+
+## What the working instrument says
+
+Same route, same binary, the only difference being whether the card image was pre-formatted:
+
+| function | reaches gameplay | stalls in sub_state 12 |
+|---|---|---|
+| `A0:0xAB` `_card_info(port)` | 55 | **5135** |
+| `A0:0xAC` `_card_load` | 2 | 3 |
+| `B0:0x32` open | 5 | 3 |
+| `B0:0x33` lseek | 2 | **0** |
+| `B0:0x34` read | 1 | **0** |
+| `B0:0x35` write | 39 | 38 |
+| `B0:0x36` close | 3 | **0** |
+| `B0:0x4E` `_card_read` | 2 | 2 |
+| `B0:0x50` `_card_chan` | 2 | 2 |
+| **unhandled** | **0** | **0** |
+
+Nothing is missing a handler. With an unformatted card Spyro opens, never seeks, never reads, never
+closes, and polls `_card_info` 5,135 times.
+
+## The cause
+
+`card_hle_a0` answers `_card_info(port)` -- and `_card_load` -- the same way whatever the card holds:
+
+```
+Memcard::deliverComplete(c);
+c->r[V0] = 1;
+```
+
+It always reports the operation completed successfully. It has no way to say "this card is not
+formatted", which is exactly the state a real PSX reports for a brand-new card and exactly what
+makes the console reference draw `CREATING SAVE FILE...`. Spyro asks, is told everything is fine,
+finds the card unusable, and asks again -- forever. Pre-formatting the image makes the
+unconditional answer true, which is why the stopgap works and why the game's own creation path has
+never run in this port.
+
+`Memcard::deliverError` already exists for precisely this: its comment says the ERROR event spec is
+the ONLY channel a libmcrd consumer can see a card failure through, because the BIOS call's return
+value is a "busy, retry" flag and cannot carry one.
+
 ## What is actually open
 
-The guest call Spyro makes in title sub_state 12 while the reference is drawing `CREATING SAVE
-FILE...` is unidentified. Finding it is the next step, and it needs a card-channel trace from the
-product itself:
+Make `_card_info` report the card's real state instead of unconditional success, then remove the
+pre-format and confirm the product draws `CREATING SAVE FILE...` and reaches the picker on its own.
+Two things are still unknown and should be measured before the handler is written:
 
-* `card_overrides_init` enables `Memcard::setVerbose` when the lucent channel `card` is on, and every
-  B0 file handler then logs its function and arguments.
-* `tools/picture_oracle.py --product-env PSXPORT_DEBUG=card` does NOT surface those lines -- the
-  product's own output is not captured on that path. Drive the product alone
-  (`tools/drive.py`, or the binary through `external/psxport/tools/port/launch_environment.py::
-  agent_environment`) with `PSXPORT_DEBUG=card`, hold it in the save menu, and read which B0 function
-  is called and what it returns.
+* which event spec Spyro is waiting on -- `deliverError` is the documented failure channel, but
+  whether Spyro's poll loop is watching for it here is not yet measured;
+* whether `_card_load` (3 calls in the stalling run, 2 in the control) carries the same answer and
+  needs the same treatment.
 
-Do not implement another handler before that trace names one. Two guesses have now cost a build and
-a run each.
+The discriminator is the histogram above: the fix is right when the unformatted run's `B0:0x33/0x34/
+0x36` stop being zero and `A0:0xAB` stops running into the thousands.
 
 ## Bearing on the user's report
 

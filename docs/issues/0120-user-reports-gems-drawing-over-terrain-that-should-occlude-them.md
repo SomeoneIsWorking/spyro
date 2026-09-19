@@ -656,3 +656,34 @@ and a 0x1100 compare) puts pre-doubling `$v1` in the same unit and magnitude as 
 (450..12148), but under every consistent reading of that the retail bias would collapse its own
 range too, which it demonstrably does not. So the assumption to break is the sz unit, and settling
 it needs the console oracle to read retail's actual `0x200` table rather than more static reading.
+
+### The obvious explanation for WHY retail differs does not survive its own check
+
+The tempting reading is a unit mismatch: that retail's sz table holds RTPS `SZ3` while the port's
+`projected[].sz` holds a raw view-Z, so the port's bias and its sum coincidentally annihilate while
+retail's do not. That reading fails. The GTE computes
+
+    MAC3 = (TRZ*4096 + R31*VX + R32*VY + R33*VZ) >> 12   ->   SZ3 ~ TRZ + rotated_local_z/4096
+
+so retail's `SZ3` is ALSO approximately `TRZ`, its four-vertex sum is also approximately `4*TRZ`,
+and `szsum - max(TRZ-256,0)*4` would leave retail with about 1024 too -- bin ~32, not the bin 171
+the oracle reads off its ordering table. Under the same arithmetic retail should collapse exactly
+as the port does, and it does not.
+
+So one of these three is false and the measurement has not yet said which:
+
+1. retail's sz table at `$gp + 0x200 + index*4` is not `SZ3`;
+2. the `bin` the oracle reports is not the index this arithmetic produces -- note 0x80023290-
+   0x800232A0 sets `s1 = D_8006FCF4`, `s2 = s1 + 0x900` (0x900/8 = 288 eight-byte entries) and the
+   `.L80023440` arm indexes by `s2 - v0`, i.e. from the OTHER end, so an OT position and this `v0`
+   need not increase together;
+3. the port's `t2` is not retail's TRZ after all, despite `FixedAffine::t` being the GTE translation
+   vector.
+
+(2) is the cheapest to settle and the most likely, because it would also explain the direction: a
+reversed OT walk turns a small `v0` into a large reported bin. Settle it by reading `D_8006FCF4`
+and the linked position for one known primitive rather than by reading more assembly.
+
+None of this weakens the measurement above. That the port's own bias cancels the port's own range,
+at r = -0.27 over 7,127 faces, is a fact about the port and is wrong whatever retail turns out to
+do.

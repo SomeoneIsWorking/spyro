@@ -70,10 +70,14 @@ in the 60fps gameplay window the present CPU holds 9.13 ms of a 10.23 ms step wh
 holds 1.10 ms. Gameplay percentiles are not quoted because the profiler's p50/p95/p99 distribution is
 cumulative over the whole run, so it cannot be separated from the ~2,900 boot and menu steps that
 precede the ~300 gameplay ones; the rolling windows are what distinguishes them. Exactly one frame
-per run still misses, by a wide margin: the first gameplay step stalls about 3.0 s decoding CD audio
-out of the cold CHD (3,101 ms, 3,135 ms and 3,189 ms in the three legs above), which trips the
-default 3 s frame watchdog and makes every unattended long run abort unless `PSXPORT_WATCHDOG` is
-raised (issue 0115). No released host is qualified by this: a
+per run still misses, by a wide margin: about 3.0 s (3,101 ms, 3,135 ms and 3,189 ms in the three
+legs above), which trips the default 3 s frame watchdog and makes every unattended long run abort
+unless `PSXPORT_WATCHDOG` is raised (issue 0115). That was read as a cold CHD hunk cache and it is
+not: measured 2026-09-19 the worst single `chd_read` is 21.2 ms and 8,066 of 8,461 hunk fills are
+first visits, so the cache is not thrashing. One `CDC_GetCDAudioSample` call walks the XA read head
+from LBA 0 to LBA 53,874 hunting for a sector that passes Spyro's file 1/channel 4 filter, because
+the XA stream keeps its own disc cursor instead of the drive's. Naming that cause is progress; the
+fix is gated on an RE question recorded in the issue. No released host is qualified by this: a
 maintainer build on one desktop is not the AppImage, the APK or the browser package. Shadows, glow,
 sparkles, particles and tracers are NOT next:
 measured together they draw about 32 faces per game update, and what remains replayed verbatim is
@@ -1142,6 +1146,19 @@ nothing is streaming — so it enters in the SPU mix or the sink conversion; it 
 device but it is why "non-silent PCM" cannot be used as an audio test); the intro cutscene's music
 has not been compared against the console's own PCM;
 nothing has been verified through a real audio device (headless `PSXPORT_WAV` captures only).
+
+**What that scan actually costs, measured 2026-09-19.** "Scans forward" is not a figure of speech and
+it is not free. The port keeps a SECOND disc cursor: the data path tracks the head in `cd.sec_lba`
+while the XA stream keeps its own `s_lba`, which starts at 0. On the `tools/drive.py gameplay` route
+the stream starts at LBA 0 and the scan reaches LBA 53,874 — about 122 MB and 7,400 CHD hunk
+decompressions — **inside a single 1/44100 s output sample**, because the pull loop re-enters
+`xa_decode_next_sector` as soon as its 64-sector guard expires. That is the three-second stall
+recorded as [issue 0115](issues/0115-the-first-gameplay-frame-stalls-three-seconds-in-cd-audio.md),
+and the whole route decodes only 446 audio sectors from 1,046,950 pulls. Real hardware has one head
+and Spyro interleaves its music with level data in the same stream; psxport already models that in
+`cdc_native`'s drive (`push_mode`), which Spyro does not use. No `Setloc` is logged before the read
+at all, so where the driver believes the head is remains an open RE question and is the gate on the
+fix.
 
 Related goal: G002.
 

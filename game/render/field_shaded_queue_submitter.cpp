@@ -57,12 +57,18 @@ void submit(Core *core,
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
+    // Banded on the recovered world bin. This producer is the one the user's report names: retail
+    // ordered gem 8016F0C8 at bin 171 BEHIND object 8016FA10 at bin 105, and the per-vertex depths
+    // this used to send (0.012709 against 0.009630) put it in front (issue 0120).
+    PainterReplayOrder replay =
+        scene_painter_order::queuedWorld(face.worldBin, face.paintGroup, face.otBin);
+    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (uint32_t i = 0; i < face.vertexCount; ++i) {
       xs[i] = face.vertices[i].sx + gpu.s_off_x;
       ys[i] = face.vertices[i].sy + gpu.s_off_y;
       screenX[i] = face.vertices[i].screenX + (float)gpu.s_off_x;
       screenY[i] = face.vertices[i].screenY + (float)gpu.s_off_y;
-      depth[i] = core->rsub.projParams.pzToOrd(face.vertices[i].viewZ);
+      depth[i] = band;
       red[i] = (uint8_t)face.rgb[i];
       green[i] = (uint8_t)(face.rgb[i] >> 8);
       blue[i] = (uint8_t)(face.rgb[i] >> 16);
@@ -103,7 +109,7 @@ void submit(Core *core,
                       0.0f,
                       face.gouraud ? 1 : 0,
                       gpu.s_tp_dither,
-                      scene_painter_order::queuedWorld(face.worldBin, face.paintGroup, face.otBin));
+                      replay);
   }
 }
 

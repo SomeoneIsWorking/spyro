@@ -4,6 +4,8 @@
 
 #include <cstdint>
 
+class ProjParams;
+
 namespace spyro::scene_painter_order {
 
 // Cutscene handler 0x8001E9C8 builds one OT in this exact producer sequence: actor,
@@ -41,5 +43,28 @@ PainterReplayOrder particle(uint16_t otBin, uint32_t scanOrdinal, uint32_t chain
 PainterReplayOrder cyclorama(uint32_t chainOrdinal);
 PainterReplayOrder cycloramaPortal(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);
 PainterReplayOrder cycloramaMask(uint16_t otBin, uint32_t portalOrdinal, uint32_t faceOrdinal);
+
+// The one depth every face at `order.key.ot_bin` is drawn at, stored into `order.band_ord` and
+// returned so the caller submits the same value in RqItem::depth.
+//
+// The console had no depth buffer: g_WorldOT decided what covered what, and these producers all
+// link into that one table. Per-vertex depth is therefore a SECOND opinion, and it was the losing
+// one -- measured over 833,749 faces, `ord x bin` was 0.90 to 4.89 across eight producers, so at
+// one bin they submitted depths up to 5.4x apart and the buffer ordered them by that instead (issue
+// 0120). Banding puts the whole domain back on its ordering table: the buffer separates bins and
+// nothing else, which is what the hardware did.
+//
+// A bin is a quantised view Z, so the depth is that Z through the same `pzToOrd` every producer
+// already uses -- the domain keeps the position in the buffer it has always had, and only the
+// disagreement inside it goes away. Any strictly decreasing map of the bin would reproduce retail's
+// order; this one also keeps the domain composable with the world prims that are not in it.
+//
+// Refuses a bin whose view Z would reach the far plane, where two bins would share one depth and
+// silently merge.
+float bandDepth(const ProjParams &projection, PainterReplayOrder &order);
+
+// g_WorldOT's bin is the view Z shifted right by six, which `field_shaded_queue_recipe` inverts
+// here and the actor scene oracle confirmed at 655/655 bins against retail.
+inline constexpr uint16_t kWorldOtBinShift = 6u;
 
 } // namespace spyro::scene_painter_order

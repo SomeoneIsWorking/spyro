@@ -923,3 +923,65 @@ whom", so that "they all agree" and "nobody measured" are different answers. The
 prints only `projH {} -> {}` with no owner, so a run in which one producer never installs a plane is
 indistinguishable from one where all agree. The verdict above survives that gap only because the
 distribution is two-valued and every CHANGED line is a 0 -> 341 first install.
+
+## 2026-09-19 (later still): the band is built and enforced, and it moves NO pixel I can reach
+
+Both halves exist. Framework: `PainterReplayOrder::band_ord` plus `painter_band_depth.*`, which
+refuses a frame where one bin carries two depths, a nearer bin is given a farther depth, or the
+submitted depth is not the declared one (psxport `4c720e38`, `b1242c07`, gate 164/164). Title:
+`scene_painter_order::bandDepth` returns `pzToOrd(ot_bin << 6)` and eleven submitters send it.
+
+It fires. On the picture oracle's own artisans route, every frame:
+
+```
+[painterband] f1 1 authored domain(s): 830 of 1320 command(s) banded across 407 bin(s), 490 kept per-vertex depth
+```
+
+**And the picture does not change, at all.** Paired measurement -- the banded build, then the same
+tree with the title half stashed and rebuilt, same route, same `--play 1600 --frame-step 200`:
+
+| | result |
+|---|---|
+| native PNGs compared | 8 |
+| byte-identical | 8 of 8 |
+| violet census, both arms | f200 42 · f400 42 · f600 41 · f800 58 · f1000 58 · f1200 43 · f1400 55 · f1600 86 native-only |
+
+Not one pixel differs. The same holds standing next to a gem: `drive.py gameplay --seek-class 83`
+reached class 83 at distance 208 on both builds and produced the same file, md5
+`7d895eff0c1e5f231b8a6ca8d448f191`.
+
+**That is not the falsifier failing, and it must not be recorded as one.** Neither scene contains the
+defect. The gem-seek shot puts Spyro in FRONT of the gem, where nothing occludes it, so no depth
+contest happens at all. The route frames f200..f1600 have a non-zero but UNCHANGED violet count,
+which says their violet disagreement has some other cause. The pair that does exhibit it,
+`8016F0C8` at bin 171 against `8016FA10` at bin 105, was measured at f2400.
+
+**f2400 is no longer reachable, and that is a separate regression.** The native run aborts first:
+
+```
+[render:error] NATIVE RENDER NOT IMPLEMENTED — stage selector = 2 (no producer is registered for this stage)
+[render:error]   fatal boundary: guest pc=0xDEAD0000 stage=2/3/2 load_stage=4294967295
+```
+
+The abort is the known missing `0x8001A40C` producer, but WHEN the route meets it has moved: the
+same route reached play-frame 4800 at 15:14, 2400 at 17:04, and now stops between 1600 and 2400.
+The title half is not the cause -- with it stashed, `--play 2400` fails identically. The only
+product change in that window is `987eaa1` (17:06), which recovered the shaded-moby world bin.
+
+So the state of this issue is: the recipe is exonerated (655/655), the eight-scale depth
+disagreement is measured, the fix for it is built and mechanically enforced, and it is **unverified
+against the defect** because no scene that exhibits the defect is currently reachable.
+
+Falsifier, unchanged and still open: the `ord x bin` table must collapse to one constant, the
+`8016F0C8` / `8016FA10` pair must invert, and the f2400 census (20 / 116 / 41) must fall.
+
+Next, in order: recover a reachable scene that shows a gem behind terrain -- either by restoring the
+route's reach past play-frame 1700, or by implementing the `0x8001A40C` stage-2 producer that ends
+the abort. Until one of those lands, no claim about this defect being fixed is supportable.
+
+### Instrument defect: a deliberate refusal arrives as signal 11
+
+`SpyroRenderer::abortUnimplemented` is a by-name refusal, and it reaches the driver as
+`native REPL exited (code 139)` with a `[watchdog] FAULT (signal) signal = 11` backtrace. A refusal
+that is indistinguishable from a segfault costs a reader the first minutes of every such failure; it
+cost them here.

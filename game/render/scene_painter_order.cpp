@@ -1,5 +1,7 @@
 #include "scene_painter_order.h"
 
+#include "proj_params.h"
+
 namespace spyro::scene_painter_order {
 namespace {
 
@@ -188,6 +190,22 @@ PainterReplayOrder cycloramaMask(uint16_t otBin, uint32_t portalOrdinal, uint32_
   return {
       kActorWorldTerrainDomain,
       {otBin, linkOrdinal(LinkPhase::Cyclorama, kOrdinalMask - portalOrdinal + 1u), faceOrdinal}};
+}
+
+float bandDepth(const ProjParams &projection, PainterReplayOrder &order) {
+  const float viewZ = (float)((uint32_t)order.key.ot_bin << kWorldOtBinShift);
+  const float nearPz = projection.projNearPz();
+  // Past the far plane `pzToOrd` saturates, so two bins would land on one depth and the frame would
+  // be ordered by whichever drew last -- exactly the silent reordering banding exists to stop. It
+  // cannot be reached by a bin the game authored (the far plane is 65535, so this is bin 1024 and
+  // up against a 0x800-entry table whose observed range is 3..500), so it is a refusal, not a
+  // clamp.
+  if (!(viewZ > nearPz) || viewZ >= 65535.0f) {
+    order.band_ord = 0.0f;
+    return 0.0f;
+  }
+  order.band_ord = projection.pzToOrd(viewZ);
+  return order.band_ord;
 }
 
 } // namespace spyro::scene_painter_order

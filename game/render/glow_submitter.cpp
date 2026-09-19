@@ -52,13 +52,18 @@ void submit(Core *core, RenderQueue &queue, const glow_recipe::Recipe &recipe, c
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
+    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
+    // buffer separates bins and never contradicts it (issue 0120).
+    PainterReplayOrder replay =
+        scene_painter_order::glow(face.otBin, face.recordIndex, face.fanOrdinal);
+    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (std::size_t v = 0; v < face.vertices.size(); ++v) {
       const auto &vertex = face.vertices[v];
       xs[v] = vertex.sx + gpu.s_off_x;
       ys[v] = vertex.sy + gpu.s_off_y;
       screenX[v] = vertex.screenX + (float)gpu.s_off_x;
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
-      depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
+      depth[v] = band;
     }
     // Only the centre carries the record's colour. The ring is black, which is what makes the halo
     // fall off; writing the colour to all three would paint a flat triangle.
@@ -101,7 +106,7 @@ void submit(Core *core, RenderQueue &queue, const glow_recipe::Recipe &recipe, c
                       0.0f,
                       0,
                       kDither,
-                      scene_painter_order::glow(face.otBin, face.recordIndex, face.fanOrdinal));
+                      replay);
   }
 }
 

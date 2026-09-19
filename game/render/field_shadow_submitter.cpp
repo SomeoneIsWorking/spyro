@@ -51,13 +51,17 @@ void submit(Core *core,
     unsigned char red[4] = {0x80u, 0u, 0u, 0u};
     unsigned char green[4] = {0x80u, 0u, 0u, 0u};
     unsigned char blue[4] = {0x60u, 0u, 0u, 0u};
+    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
+    // buffer separates bins and never contradicts it (issue 0120).
+    PainterReplayOrder replay = scene_painter_order::spyroShadow(face.otBin, face.fanOrdinal);
+    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (std::size_t v = 0; v < 3u; ++v) {
       const auto &vertex = face.vertices[v];
       xs[v] = vertex.sx + gpu.s_off_x;
       ys[v] = vertex.sy + gpu.s_off_y;
       screenX[v] = vertex.screenX + (float)gpu.s_off_x;
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
-      depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
+      depth[v] = band;
     }
     queue.emitOrQueue(
         core,
@@ -97,7 +101,7 @@ void submit(Core *core,
         0.0f,
         1,
         1,
-        scene_painter_order::spyroShadow(face.otBin, face.fanOrdinal));
+        replay);
   }
 }
 

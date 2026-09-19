@@ -37,3 +37,29 @@ producers here declare one — `fx_screen_fade`, `fx_dragon_burst`, `fx_screen_b
 `RQ_2D_WIDE_FINAL`. Whether every other 2D/HUD producer is correctly placed is the open question, and
 it is the same shape as Tomba! 2's issue 0010, which was found by measuring drawn coverage per scene
 rather than by reasoning about depth.
+
+## The obvious successor hypothesis is FALSE, checked 2026-09-19
+
+Reframing C143 as a render-queue 2D-space question raises an immediate suspicion: a 2D producer
+whose x came out of a WIDENED projection but which does not declare `RQ_2D_WIDE_FINAL` gets centred a
+second time, landing one margin off its anchor. That is Tomba! 2 kanban #73, and the margin for
+Spyro's 512 -> 684 display is exactly **86 px** — the same number C143 measured moving. It looks like
+the answer. It is not.
+
+`fx_sprite_queue` is the producer that fits the shape: it pushes `RQ_HUD` / `RQ_OM_2D_FG` from
+`project_screen_vertex`, a real GTE RTPS, and declares no space. But the framework does not widen the
+guest GTE at all — `gte_beetle.cpp`: "PSXPORT_WIDE is PC-native widescreen now: the GTE keeps its
+NATIVE projection (NO squish) and the renderer re-centers the geometry into a wider scratch
+framebuffer at a true wider FOV", with `widescreen_hack = 0`. The sprite queue's own constants agree:
+`kQueueExitOfx = 0x01000000` is OFX 256, half of this game's native 512, and every completed
+traversal restores the guest's screen centre.
+
+So that producer's x IS authored 4:3, and the queue centring it is correct. The three producers that
+do declare `RQ_2D_WIDE_FINAL` — `fx_screen_fade`, `fx_dragon_burst`, `fx_screen_border` — are the
+ones fed by the widened NATIVE camera, and they are declared correctly.
+
+What remains genuinely open is the Tomba!-2-issue-0010 question proper: whether a full-screen 2D page
+should be centred or have its margins owned. Spyro's pages are the title menu and save picker, and no
+capture route reaches them — the boot route hits `abortUnimplemented` on the particles producer
+`0x800573C8` at around fence 2,000 (open issue 0103). Measuring them is blocked on that, not on this
+claim.

@@ -42,8 +42,17 @@ of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 checkpoint
 range comparisons, zero divergences; issue 0110). The world, the player model, the regular and
 secondary actor layers, the world-shaded sprite queue and the terrain producer `0x8004EBA8` are all
 reconstructed in an in-between present, which brings the reconstructed share of captured items to
-0.955. Next is a frame-time budget on a released host: 3.6 million interpolated prims per 3,374
-extra presents is an unmeasured cost. Shadows, glow, sparkles, particles and tracers are NOT next:
+0.955. That cost is now measured on a local Linux x86-64 Clang build, offscreen and unpaced, over
+3,360 product steps of the same route (`PSXPORT_DEBUG=perf`, which the framework profiler reports a
+p50/p95/p99 distribution through as of psxport 2746c080): 4:3 2.25/3.00/3.75 ms, 16:9
+2.50/3.25/4.00 ms, and interpolated 60fps 5.25/6.25/7.25 ms against the 33.37 ms a two-field product
+step has. At 60fps the present CPU holds 4.65 ms of a 5.19 ms average step and the guest update
+holds 0.04 ms, so the port is present-bound with about 4.6x headroom on this host. Exactly one frame
+per run misses, by a wide margin: the first gameplay step stalls about 3.0 s decoding CD audio out
+of the cold CHD, which trips the default 3 s frame watchdog and makes every unattended long run
+abort unless `PSXPORT_WATCHDOG` is raised (issue 0115). No released host is qualified by this: a
+maintainer build on one desktop is not the AppImage, the APK or the browser package. Shadows, glow,
+sparkles, particles and tracers are NOT next:
 measured together they draw about 32 faces per game update, and what remains replayed verbatim is
 82% the unattributed 2D and HUD layer. Widening the route past Artisans is blocked on issue 0114,
 because the pacing residual steers a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full

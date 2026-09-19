@@ -119,10 +119,13 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
     return;
   }
 
+  GpuPerf &perf = core.game->perf;
+  perf.frameBegin();
   const std::uint32_t frame = ++gameplayFrame_;
   fields_.beginLogicFrame();
   core.game->timing.logicFrame = frame;
   core.rsub.otAttr.beginLogicFrame(frame);
+  perf.markPre();
 
   // Retail main.c ends each iteration with `if (!g_StateSwitch) GamestateDraw();` and the draw's
   // two-field wait is the only wait in the loop. While a state switch is pending (a loader stage,
@@ -130,6 +133,7 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
   // display interrupts that land during its own guest work, which the guest-time host clock now
   // delivers deterministically. One product step is therefore one drawn iteration, preceded by
   // however many draw-less iterations the guest chains in front of it.
+  perf.phaseBegin(GpuPerf::Phase::GameLogic);
   while (runGuestUpdate(core)) {
     if (fields_.fieldsThisLogicFrame() > kSuppressedFieldLimit) {
       lucent::error("frameloop",
@@ -141,7 +145,11 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
     }
   }
 
+  perf.phaseEnd(GpuPerf::Phase::GameLogic);
+
+  perf.phaseBegin(GpuPerf::Phase::Present);
   renderer_->drawFrame();
+  perf.phaseEnd(GpuPerf::Phase::Present);
   // The native renderer's commit owns the single visible fence, but it does not itself run the
   // field scheduler. Deliver the retail tail explicitly without presenting a second picture.
   if (fields_.fieldsThisLogicFrame() < kFieldsPerLogicFrame &&
@@ -158,6 +166,7 @@ void Spyro1FrameDriver::stepFrame(Core &core, std::uint32_t) {
                   fields_.fieldsThisLogicFrame());
     std::abort();
   }
+  perf.frameEnd();
 }
 
 FieldScheduler &Spyro1FrameDriver::fields() {

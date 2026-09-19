@@ -383,15 +383,6 @@ void SpyroRenderer::drawFrame() {
   // re-frontier `frame.own-render-driver` parts (1) and (2), written from the game's own DRAWENV.
   prepareScene(sc);
   mEnv = nativeFrameBegin(mC);
-  if (!mVideoModeAnnounced) {
-    mVideoModeAnnounced = true;
-    lucent::info("wide",
-                 "native picture: aspect={} wide_engine={} native_width={} render_width={}",
-                 mC->game->mods.aspect,
-                 gpu_vk_wide_engine(mC),
-                 mC->game->gpu.s_disp_w,
-                 gpu_vk_wide_engine_w(mC));
-  }
   renderScene(sc);
   if (!spyro_paired_actor_frame_finish(paired, false, pairedState)) {
     abort();

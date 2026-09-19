@@ -403,7 +403,13 @@ def main() -> int:
         metavar="NAME=VALUE",
         help="extra PSXPORT_* knob for this run, e.g. --env PSXPORT_RENDER_PATH=gte",
     )
-    parser.add_argument("--settings", default="scratch/spyro-runtime/settings.ini")
+    parser.add_argument(
+        "--settings",
+        default="tools/shipping_settings.ini",
+        help="PSXPORT_SETTINGS for this run; the default turns on the two enhancements under test "
+        "(widescreen and interpolated 60fps), because the previous default named a file that did "
+        "not exist and silently gated the product with both of them off",
+    )
     parser.add_argument(
         "--settle",
         type=int,
@@ -460,7 +466,16 @@ def main() -> int:
     if args.debug:
         env["PSXPORT_DEBUG"] = args.debug
     if args.settings:
-        env["PSXPORT_SETTINGS"] = args.settings
+        # A settings path the product cannot open is worse than none: the run proceeds on defaults
+        # and looks exactly like a run that honoured the file, which is how six weeks of Spyro
+        # evidence came to be collected with widescreen and fps60 off. Refuse by name instead.
+        settings = Path(args.settings)
+        if not settings.is_file():
+            parser.error(
+                f"--settings {args.settings} does not exist; the product would silently run on "
+                "defaults, with the enhancements under test switched off"
+            )
+        env["PSXPORT_SETTINGS"] = str(settings.resolve())
     for entry in args.env:
         name, separator, value = entry.partition("=")
         if not separator:

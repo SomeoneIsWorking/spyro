@@ -58,3 +58,27 @@ the user's settings reached GS_Playing normally, so this is not "everything is b
 2. Re-run the oracle and picture comparisons under `aspect=3 fps60=1` and record what differs.
 3. A run whose settings file does not exist should say so by name. Falling back to all-defaults
    silently is how this went unnoticed.
+
+## RESOLVED 2026-09-19 — the default is now the shipping configuration, and a missing file refuses
+
+Two changes, both in `tools/drive.py`:
+
+1. `--settings` defaults to the tracked `tools/shipping_settings.ini` (`aspect=3`, `fps60=1`) instead
+   of `scratch/spyro-runtime/settings.ini`, which did not exist. Only those two keys are set: every
+   other knob stays at the product default, so a gate exercises the shipping path rather than one
+   operator's preferences.
+2. A `--settings` path the product cannot open is now a named refusal. That was the actual defect —
+   the run proceeded on defaults and looked exactly like a run that had honoured the file, which is
+   how the whole body of green Spyro evidence came to be collected with both features off.
+
+Verified end to end: a driven run with no `--settings` at all now logs
+
+    [cfg]   PSXPORT_FPS60 = true [value]
+    [wide] native picture: aspect=3 wide_engine=1
+
+and reaches `GS_Playing` at frame 6360, the same arrival as an explicit run against the operator's
+own `psxport_settings.ini`. `--settings scratch/does-not-exist.ini` refuses by name.
+
+This does not retroactively validate anything. Every result recorded before today still carries the
+configuration it was measured under, and the oracle and picture comparisons named in this issue still
+need re-running under the enhancements.

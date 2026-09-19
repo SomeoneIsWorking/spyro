@@ -1,7 +1,7 @@
 ---
 id: 126
 title: The `playing` picture checkpoint compares two different moments of the level intro, so its 18.49% ranks nothing
-status: open
+status: resolved
 symptom: tools/picture_oracle.py reports 22717/122880 pixels (18.49%) differing at the `playing` checkpoint with EVERY picture-decisive range equal, so it reads as a rendering defect. It is not one — the reference is on the black "THE ADVENTURE BEGINS…" card and the product is already in the lit Artisans courtyard
 state_items: S019, S020
 tags: oracle,picture,instrument,checkpoint
@@ -90,3 +90,62 @@ instead of printing an uninterpretable percentage), or move the gameplay picture
 settled in-level state both cores can be driven to and compared at. The second is also what issue
 0120's remaining open item needs — a console-comparable scene with an occluded gem — so one
 settled-gameplay checkpoint would serve both.
+
+## RESOLVED 2026-09-20 — a settled checkpoint, and a comparator that separates rounding from rendering
+
+Two changes, because the checkpoint alone would have produced a second uninterpretable number.
+
+### 1. `settled_play`, and `playing` no longer photographed
+
+`tools/oracle_spyro1.py` gained `SETTLED_GAME_TICK = 180` and a `settled_play` checkpoint driven to
+`gamestate == GS_PLAYING and g_GameTick >= 180`. `g_GameTick` counts GS_Playing updates and is
+already a decisive range, so the shutter is aligned by a quantity the RAM comparison independently
+checks — unlike GS_Playing itself, which this issue showed becomes true mid-intro. Measured:
+
+```
+[picture] console: settled_play after 179 game frames
+[picture] native:  settled_play after 179 game frames
+```
+
+The same count on both cores, against 1532 vs 2300 at `playing`. Both frames are the Artisans
+courtyard from the same camera with Spyro on the pad — a real comparison, which `playing` never was.
+
+`playing` is kept as a STATE checkpoint and declared `not_picture_comparable` (a new
+`compare.Checkpoint` field, honoured by `picture.py`), so the run prints the reason instead of the
+18.49%. Withholding also skips `advance_to_presented` there: that advance is per-core and unequal,
+and paying it for a photo nobody takes would leave the two cores at different game frames.
+
+### 2. The count was measuring rounding
+
+`settled_play` first reported 54.62% of pixels differing. The magnitudes were banded on multiples of
+8 — one 15-bit PSX colour step in 8-bit output (255/31 = 8.22) — and **29.45% of the whole frame
+differed by exactly one step**, which no player can see. `compare_pictures` counted any inequality,
+so rounding and a missing object were the same number.
+
+`PictureDiff` now carries `significant` (magnitude beyond one colour step) and a magnitude
+distribution, ranks `worst_tiles` by significant pixels only, and leads its printed line with the
+colour difference while keeping the bare count beside it (the selftest keys on bit-identity and
+must not move). At `settled_play`:
+
+| measure | pixels | share |
+|---|---|---|
+| differ at all | 67113 | 54.62% |
+| a different COLOUR (> 1 step) | 30922 | 25.16% |
+| > 2 steps | 17666 | 14.38% |
+| > 4 steps | 10180 | 8.28% |
+| > 8 steps | 4792 | 3.90% |
+
+### What the frame actually shows
+
+`scratch/picture/settled_play.magnitude.png` maps the magnitudes. The residual is three things and
+no fourth: every polygon EDGE outlined (sub-pixel rasterisation placement), dither speckle across
+textured ground and sky, and two concentrated blobs at roughly (272,112) and (320,96) — Sparx and a
+sparkle effect, whose positions live in the moby arrays this title excludes. There is no solid
+contiguous region drawn wrongly, which is the signature issue 0120 is looking for and the reason
+that issue stays open rather than closing here.
+
+### What this does NOT say
+
+`settled_play` is one scene with no occluded gem in it, so it does not answer issue 0120; it makes
+0120 answerable, which is what this issue owed it. 25.16% is still a spread, edge-dominated
+residual and is not a clean bill of health for the renderer — it is a number that can now be read.

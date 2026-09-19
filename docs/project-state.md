@@ -878,6 +878,18 @@ widescreen visual evidence remains the port's own 4:3-vs-16:9 pair rather than a
 courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
 the visual half of that gap is still open.
 
+2026-09-20: the 4:3 console picture comparison it falls back to is now interpretable, which it was
+not. `settled_play` (GS_Playing at g_GameTick 180) is reached by both cores after the SAME 179 game
+frames, against 1532 vs 2300 at the old `playing` checkpoint, so the Artisans courtyard is
+photographed at one moment on both sides; and the comparator now separates a 15-bit colour-rounding
+difference from a real one. The courtyard reads 30922/122880 pixels (25.16%) a different COLOUR,
+spread over 352/480 tiles, with 36191 further pixels differing by one colour step or less. The
+residual is polygon edges, dither, and two moby objects (Sparx and a sparkle); no contiguous region
+is drawn wrongly. That is the first readable gameplay picture number this project has, and it is
+still a spread residual, not a clean bill of health -- it is measured under
+`tools/reference_settings.ini` (4:3, fps60 off), because a widescreen frame is a different SIZE and
+an interpolated one corresponds to no guest state. See docs/issues/0126.
+
 ### S020 — Source-based 60fps interpolation
 
 Evidence: Spyro 1 installs a per-instance temporal scene source. It reconstructs the compatible

@@ -123,10 +123,13 @@ excluded = {
 }
 
 # Representative Artisans input after arrival: the level fades in and hands the player control some
-# frames into GS_Playing (tools/drive.py --settle), so the first segment holds nothing for that
-# span. Then Spyro runs forward, turns, jumps standing, charges, and jumps while running. Run these
-# with --frame-step 1: a segment-end comparison cannot tell a state that never diverged from one
-# that diverged and came back.
+# frames into GS_Playing, and the last checkpoint already stands in the finished scene
+# (SETTLED_GAME_TICK), so the opening held-nothing segment is now the settle the route wants rather
+# than the one it needs. It is kept because it is also the only segment that compares a scene with
+# no input at all, which is what separates a rendering difference from an input-delivery one. Then
+# Spyro runs forward, turns, jumps standing, charges, and jumps while running. Run these with
+# --frame-step 1: a segment-end comparison cannot tell a state that never diverged from one that
+# diverged and came back.
 gameplay = (
     (frozenset(), 120),
     (frozenset({"up"}), 60),
@@ -239,9 +242,34 @@ def reach_playing(driver: Driver, core: CoreSession, budget: int, settle: Settle
     return driver.drive(core, budget, lambda seen: seen.playing, new_game_pattern, "GS_Playing", settle)
 
 
+# Game ticks into GS_Playing at which the Artisans level intro is over on BOTH cores, so a picture
+# taken here is of the same moment and not of two points on one animation (docs/issues/0126).
+# `g_GameTick` counts GS_Playing updates and is already a decisive range, so driving to a tick value
+# aligns the shutter by a quantity the RAM comparison independently checks -- unlike GS_Playing
+# itself, which becomes true while the card is still up on one core and the courtyard is already lit
+# on the other. Measured on the product (issue 0126's table): 54% non-black one frame in, 93% by 30
+# and unchanged at 90. 180 is six times the measured settle, with no input held, so both cores stand
+# Spyro on the pad in a finished scene.
+SETTLED_GAME_TICK = 180
+
+
+def reach_settled_play(driver: Driver, core: CoreSession, budget: int, settle: Settle) -> tuple[int, frozenset[str]]:
+    return driver.drive(core, budget,
+                        lambda seen: seen.playing and seen.game_tick >= SETTLED_GAME_TICK,
+                        new_game_pattern, f"GS_Playing at g_GameTick {SETTLED_GAME_TICK}", settle)
+
+
 checkpoints = (
     Checkpoint("save_picker", reach_save_picker),
-    Checkpoint("playing", reach_playing),
+    Checkpoint("playing", reach_playing,
+               not_picture_comparable=(
+                   "GS_Playing becomes true DURING the level intro, and the intro's phase -- card "
+                   "up, fading, lit -- is in no declared range, so the guard passes while the "
+                   "reference is still on the black card and the product is already in the lit "
+                   "courtyard. The 18.49% that produced ranked nothing (docs/issues/0126). The "
+                   "state comparison keeps this checkpoint: state is exactly what it does align. "
+                   "`settled_play` below is the picture-comparable gameplay state")),
+    Checkpoint("settled_play", reach_settled_play),
     # The gameplay segments then run in Artisans, where this route arrives. A level entry is the
     # checkpoint worth having, because it is the only place the product must discard and reload
     # guest code at a reused address and invalidate every translation that came from it. It is not

@@ -36,6 +36,8 @@ import picture  # noqa: E402
 
 OUT_DIR = ROOT / "scratch" / "picture"
 DEFAULT_BIOS = ROOT.parent / "SCPH1001.BIN"
+# Why this run does not use tools/shipping_settings.ini: see the file's own header.
+REFERENCE_SETTINGS = TOOLS / "reference_settings.ini"
 
 
 def main() -> int:
@@ -47,7 +49,7 @@ def main() -> int:
     if not disc:
         print("REFUSED: no disc; set PSXPORT_SPYRO_DISC in the environment or .env", file=sys.stderr)
         return 2
-    environment = drive.environment(disc)
+    environment = drive.environment(disc, REFERENCE_SETTINGS)
     environment.update(compare.product_env(args))
     product = compare.Product(ROOT / args.executable, ROOT / args.binary, environment, ROOT, Path(disc))
     return picture.run(title, product, args, OUT_DIR)

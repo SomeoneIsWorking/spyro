@@ -1107,3 +1107,32 @@ A direct visual confirmation against the console at a scene where a gem is actua
 evidence above is a construction proof (retail's bins, retail's order, order is the only authority),
 not a picture, and the recorded route that produced the user's frame can no longer reach it. The
 remaining step is a console-comparable checkpoint in a scene with an occluded gem.
+
+
+## 2026-09-20 — the console-comparable checkpoint now exists, and this scene is clean
+
+Issue 0126's blocker is gone. `tools/oracle_spyro1.py` gained `settled_play`, driven to
+`GS_Playing and g_GameTick >= 180`; both cores reach it after the SAME 179 game frames, so the
+Artisans courtyard is photographed at one moment on both and the comparison is real for the first
+time.
+
+The comparator was also changed, because it could not have shown this symptom if it were there.
+`compare_pictures` counted any pixel inequality, and 29.45% of this frame differs by exactly one
+15-bit colour step — rounding a player cannot see. A gem drawn in front of terrain is a CONCENTRATED
+block of large-magnitude difference, and it would have been invisible inside a 54.62% headline.
+`PictureDiff` now separates `significant` (beyond one colour step) from the bare count and ranks
+`worst_tiles` by significant pixels only, so a mislaid object is what the tool points at.
+
+What the courtyard shows (`scratch/picture/settled_play.magnitude.png`): polygon EDGES outlined
+everywhere (sub-pixel rasterisation placement), dither speckle over textured ground and sky, and two
+concentrated blobs near (272,112) and (320,96) that are Sparx and a sparkle — moby positions, which
+this title excludes from the declared ranges. **No solid contiguous region is drawn wrongly**, which
+is the signature this issue is looking for.
+
+### Why this does NOT close the issue
+
+The courtyard at `settled_play` has no gem behind an occluder in it, so a clean frame here is not an
+answer to the report. What changed is that the instrument can now give one: the remaining step is
+unchanged in kind but no longer blocked — drive `settled_play`'s route on to a scene where a gem sits
+behind terrain, and read the significant-difference map there. A CONCENTRATED large-magnitude blob at
+the gem is the symptom; its absence, in a scene that actually contains the case, is the clearance.

@@ -571,3 +571,46 @@ problem, not necessarily a rendering difference.
 Suggested framing: enumerate which stage selectors have a registered producer and which do not, and
 make the missing set a known list rather than something each route discovers by dying. A count with
 a denominator is worth more here than fixing stage 2 alone.
+
+### Note (2026-09-19)
+2026-09-19: the denominator this issue asked for. 8 of 16 stage arms have a producer.
+
+The suggestion above was to enumerate which stage selectors have a registered producer rather than
+let each route discover a gap by dying. Done, by reading the dispatch in render_frame.cpp against
+the 16-arm table in scene.cpp (which its own comment records as cross-validated against the vendored
+decomp's GamestateDraw on all sixteen arms).
+
+HANDLED (8):
+  0  GS_Playing / FIELD        via isFieldStage
+  4  GS_Respawn                via isFieldStage
+  5  GS_GameOver               via isFieldStage
+  1  GS_LevelTransition        level_transition_scene::submit
+  9  GS_EntranceAnimation      level_transition_scene::submit (shares arm 1's guest handler)
+  8  GS_Dragon                 dragon_scene_submit
+  13 GS_TitleScreen            falls through to the front-end path
+  14 GS_Cutscene               falls through
+
+ABORTS with "no producer is registered for this stage" (8):
+  2  GS_PauseMenu       guest handler 0x8001A40C
+  3  GS_InventoryMenu   guest handler 0x8001A40C   <- SAME handler as 2
+  6  GS_OldDragon       guest handler 0x8001A40C   <- SAME handler as 2 and 3
+  7  GS_FlightResults   INDIRECT (*[0x8007567C])(), an overlay function
+  10 GS_ExitLevel       guest handler 0x8001C694
+  11 GS_Fairy           guest handler 0x8001D718
+  12 GS_Balloonist      guest handler 0x8001E24C
+  15 GS_Credits         SPLIT on [0x80075704]<99, one arm an overlay function
+
+The useful shape: arms 2, 3 and 6 share ONE guest handler, so a single producer for 0x8001A40C
+closes three of the eight gaps -- including GS_PauseMenu, which is reachable by pressing Start in
+ordinary play and is the arm that killed the run recorded above. Arms 7 and 15 are the hardest of
+the remaining five because their handlers are overlay data rather than resident code.
+
+What this does NOT say: that the eight unhandled arms are equally urgent, or that any of them is
+partially implemented. The dispatch either recognises a stage or aborts, so this is a binary
+inventory, not a progress measure. It also says nothing about whether a route REACHES a given arm;
+that is a separate question per replay.
+
+Correction to this issue's earlier note: it said the abort "aborts the ORACLE, not just play". That
+holds for the specific run recorded there, but it should not be read as every oracle run being at
+risk -- other picture-oracle runs over the same title completed 4,951 frames without hitting it. A
+run is at risk only if its route reaches one of the eight arms above.

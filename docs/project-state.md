@@ -806,12 +806,26 @@ drew, which is what moves when a picture genuinely widens rather than merely res
 | Artisans 3D scenes (f3000/3700/3750, five directories) | 1.429 | 1.912 | wider |
 | `looks-right` f399 | 2.286 | 3.054 | wider |
 | level-intro card (f3300) | 1.992 | 2.000 | no gain — the scene is black, so there was nothing to gain |
-| `secondary` f399 | 1.466 | 1.470 | no gain — **not identified** |
+| `secondary` f399 | 1.466 | 1.470 | no gain — IDENTIFIED: the Universal boot logo, an upload-only guest-VRAM 2D picture ([0118](issues/0118-the-24bpp-boot-logo-gets-a-black-band-through-it-in-widescreen.md)) |
 
 Eight of eleven confirm the widened picture carries genuinely more content and is not the same
 picture scaled down. Tomba! 2, measured the same way, has three full-screen 2D pages that do NOT
-widen (its issue 0010); Spyro has no equivalent finding yet, but `secondary` f399 is an unexplained
-no-gain scene and is recorded here rather than assumed benign.
+widen (its issue 0010).
+
+`secondary` f399 was recorded here as unexplained rather than assumed benign, and that was right: it
+is the Universal Interactive Studios boot logo, and at 16:9 it was **visibly broken** — an opaque
+black band straight through the picture at display columns 342..454. The cause was in psxport, not
+this port: `plan_wide_margin` built its coverage rect from display widths in VRAM halfword space,
+which is correct at 15bpp but two thirds of the intended position at 24bpp, where a pixel spans 1.5
+halfwords. Fixed in psxport `ac3d1db4`; verified gone by re-measuring interior black column runs
+(160-px run at sink columns 480..639 present pre-fix, absent after, with both legs still carrying the
+same 487 display columns of picture). See issue
+[0118](issues/0118-the-24bpp-boot-logo-gets-a-black-band-through-it-in-widescreen.md).
+
+The remaining no-gain is now explained rather than unknown: the logo is an upload-only guest-VRAM
+picture with no geometry to widen, and this port's 2D widen is deliberately disabled (claim C143), so
+it is left-anchored inside a correctly black margin. Widening a 2D-only boot picture is gated on
+C143 and is a separate item.
 
 This measurement exists because `looks_right.py`'s `widescreen` check asks only whether the two PNGs
 DIFFER, which rescaling also satisfies. Earlier "widescreen PASS" lines in this document therefore

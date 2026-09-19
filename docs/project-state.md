@@ -852,8 +852,20 @@ change and the widescreen particle count falls from 20 to 12. Second, and STILL 
 (241 px). Every region of the frame aligns at dx=+86 with the background byte-identical, so it is
 wide-only geometry rather than a misalignment. See issue 0124 for the per-producer bisect.
 
-Gap: complete scene variants, horizontal culling owners, and same-state oracle visual comparison
-remain unqualified. S019 cannot go beyond `partial` while issue 0124's second defect is open. Additional coverage in Artisans does not prove the whole game, and only the
+Both issue-0124 defects are now fixed. The paired actor was projected about the 4:3 centre while the
+world used the widened one, so Spyro sat ~86 px left of the scene at 16:9; `wide_screen_space.h` owns
+the horizontal centre for every producer and the measures on the same scene went Spyro-box MAE
+28.02 -> 2.60, wide-only pixels in the shared field 241 -> 0, overlap differing 6.8% -> 3.0% (the
+residual being grass dither). All six scenes re-read WIDENED with separations of 8.0x to 20.5x,
+roughly double the pre-fix figures. Oracle parity with widescreen ON after both fixes is 485
+checkpoints / 6,305 decisive comparisons / 0 divergences / complete, with the seeded-byte selftest
+DETECTED in the same configuration.
+
+Gap: complete scene variants and horizontal culling owners remain unqualified -- six Artisans
+gameplay scenes plus the courtyard and intro card do not prove the whole game, and no other level has
+been captured. A same-state oracle VISUAL comparison under widescreen is still not possible: the
+picture oracle correctly refuses to compare a 684-wide product against a 512-wide reference, so the
+widescreen visual evidence remains the port's own 4:3-vs-16:9 pair rather than a console comparison. Additional coverage in Artisans does not prove the whole game, and only the
 courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
 the visual half of that gap is still open.
 

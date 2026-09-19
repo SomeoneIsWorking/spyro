@@ -6,11 +6,11 @@
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
-#include "particle_screen_space.h"
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "wide_screen_space.h"
 #include "world_chunk_codec.h"
 #include "world_projection_math.h"
 
@@ -113,9 +113,9 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     return {};
   }
 
-  const int clipRight = spyro::particle_screen_space::drawClipRight(core);
+  const int clipRight = spyro::wide_screen_space::drawClipRight(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = spyro::particle_screen_space::projection(core, clipRight);
+  const auto params = spyro::wide_screen_space::projection(core, clipRight);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
@@ -133,11 +133,11 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     // widened one. Writing the widened answer here made widescreen change guest memory.
     const bool depthAndRowOk = projected.sz != 0u && projected.sz < 0x2000u && otDepth > 2 &&
                                projected.sy > 0 && projected.sy < 256;
-    const bool guestVisible = depthAndRowOk && spyro::particle_screen_space::guestOnScreenX(
-                                                   core, clipRight, projected.sx);
+    const bool guestVisible =
+        depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, clipRight, projected.sx);
     core->mem_w8(point.address + 3u, guestVisible ? 1u : 0u);
     const bool visible =
-        depthAndRowOk && spyro::particle_screen_space::drawnOnScreenX(clipRight, projected.sx);
+        depthAndRowOk && spyro::wide_screen_space::drawnOnScreenX(clipRight, projected.sx);
     if (!visible) {
       continue;
     }

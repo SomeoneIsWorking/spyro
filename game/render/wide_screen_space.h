@@ -1,4 +1,4 @@
-// Horizontal screen-space policy for the two field-particle producers.
+// Horizontal screen-space policy for every producer that projects world geometry.
 //
 // WHY THIS EXISTS. Both particle producers write a visibility byte back into the guest's own
 // particle record, standing in for the guest routine they replace. Both computed that byte from the
@@ -17,7 +17,14 @@
 
 struct Core;
 
-namespace spyro::particle_screen_space {
+namespace spyro::wide_screen_space {
+
+// The horizontal centre this frame's geometry is projected about: the widened half-width when the
+// wide engine is on, else the projection's own offset. Every producer that projects world geometry
+// needs this, and each one used to spell it `gpu_vk_wide_engine_w(core) / 2` for itself -- which is
+// how the paired actor (Spyro) came to be missing it and to be drawn about the 4:3 centre while the
+// world around him was drawn about the widened one (issue 0124).
+int32_t horizontalCenter(Core *core);
 
 // The horizontal window the guest's own routine tests against. Retail renders 512 px wide and its
 // particle visibility test is written against that window, whatever this port presents into.
@@ -39,4 +46,4 @@ bool guestOnScreenX(Core *core, int drawClipRight, int32_t drawnX);
 // Whether this port will draw at this x -- the widened window.
 bool drawnOnScreenX(int drawClipRight, int32_t drawnX);
 
-} // namespace spyro::particle_screen_space
+} // namespace spyro::wide_screen_space

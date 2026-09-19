@@ -1,7 +1,7 @@
 ---
 id: 124
 title: Widescreen decided guest particle visibility, and still draws wide-only geometry inside the shared field of view
-status: partially-fixed
+status: fixed
 symptom: the same deterministic gameplay frame emits 8 field-particle primitives at 4:3 and 20 at 16:9, and a solid (248,96,0) quad appears 261 px deep inside the shared field of view where the 4:3 frame draws grass
 state_items: S019
 tags: widescreen,particles,guest-state,parity
@@ -90,27 +90,59 @@ aspects, so it is the same primitives drawn differently rather than extra ones.
 
 ### The bisect, run: a blunt suppression arm is not viable
 
-Producer counts at the same frame, 4:3 -> 16:9, after the particle fix: terrain `8004EBA8`
-425->515, world `800258F0` 477->573, actor `8001F798` 320->388 (all correct -- that IS the
-widening), `80022A2C` 76->76, `80023AC4` 184->184, `80059A48` 16->16, `800580F4` 8->8.
-
 Suppressing `80023AC4` at `field_model_chain.cpp` (wrapping its `layer(...)` call in `if (false)`)
-and rebuilding makes the product CRASH on the seek route -- both the 4:3 and 16:9 arms die with the
-REPL pipe closing. Spyro's absence violates an invariant downstream; `fx_paired_actor.cpp` checks
-for `painter_object == 0x80023AC4u` in at least two places (lines ~345 and ~699). Do not repeat this
-arm. A viable bisect needs a non-destructive filter -- keep the producer running and its painter
-object published, and drop only its emitted primitives -- or a direct comparison of the projected
-vertex stream at the two aspects.
+and rebuilding makes the product CRASH on the seek route at both aspects -- `fx_paired_actor.cpp`
+checks for that painter object in at least two places, so Spyro's absence violates an invariant
+downstream. Do not repeat that arm.
 
-### Next step
+## Defect 2: the paired actor was projected about the 4:3 centre -- FIXED
 
-Compare `80023AC4`'s projected vertices at 4:3 and 16:9 for one frame. Every other region of the
-picture aligns at dx=+86 with the background byte-identical, so the question is narrow: which term
-in the paired actor's projection does not reduce to a uniform +86 horizontal shift when the wide
-engine widens `ofx`. Note that the particle producers had exactly this shape of bug (defect 1), and
-that `particle_screen_space.h` now states the invariant the paired actor should also satisfy.
+`ProjParams::setGeomOfxForAspect` is declared and documented as "the title FrameDriver re-asserts it
+per frame", and **nothing anywhere calls it** -- not the framework, not `game/`, not `titles/`. So
+`geomOfx()` is always the 4:3 centre, and every producer supplies the aspect itself. Five do, each
+spelling it `gpu_vk_wide_engine_w(...) / 2` for itself:
+`fx_actor_draw.cpp`, `secondary_actor_emit.cpp`, and the two particle producers (via defect 1's fix).
 
-Do not guess from pixel colour. Three readings in this investigation were wrong before measurement
-corrected them: an apparent actor displacement that measured +86 like everything else, the particle
-guest-write that was a real defect but not this cause, and a purple-pixel bbox whose predicate was
-catching the whole frame.
+The paired actor did not. `paired_actor_pose.cpp` read `geomOfx()` raw, so at 16:9 **Spyro was
+projected about x=256 while the world around him was projected about x=342** -- he sat ~86 px left
+of where the scene put him. That is exactly what the pixels said: his purple spans absolute x 15..258
+at 4:3 and 101..258 at 16:9, the RIGHT EDGE IDENTICAL in both, i.e. not shifted by the +86 every
+other region shifts by.
+
+`game/render/wide_screen_space.{h,cpp}` (renamed from defect 1's `particle_screen_space`, since it
+now serves every producer) owns `horizontalCenter(core)`, and the paired actor, both actor producers
+and both particle producers read it instead of spelling the expression again.
+
+Measured on the same deterministic scene, before -> after:
+
+| measure | before | after |
+|---|---|---|
+| Spyro-box MAE at dx=+86 | 28.02 | **2.60** |
+| wide-only orange pixels in the shared field | 241 | **0** |
+| overlap pixels differing at all | 6.815% | **2.961%** |
+
+The 4:3 capture is byte-identical throughout (`0d75310b5286c78fea18f82e629c1fea`), and migrating the
+other producers onto the owner is byte-identical on BOTH legs, so it is a true no-op refactor. The
+residual 2.96% is dithering on grass -- the most common differing colours on both sides are adjacent
+grass shades.
+
+Re-swept, all six scenes improved; translation error roughly halved and separation roughly doubled:
+
+| scene | before | after |
+|---|---|---|
+| seek d=2500 | 7.36 / 10.3x | 3.67 / **20.5x** |
+| seek d=1500 | 11.10 / 6.4x | 7.25 / **9.6x** |
+| seek d=800 | 15.13 / 5.7x | 10.81 / **8.0x** |
+| hold left | 10.16 / 4.6x | 3.55 / **12.5x** |
+| hold up | 10.86 / 5.1x | 5.91 / **9.0x** |
+
+Oracle parity with widescreen ON after both fixes: **485 checkpoints, 6,305 decisive comparisons, 0
+divergences, complete**, and `--selftest` in the same configuration seeded a byte at 0x80078A58 and
+the comparator DETECTED it, so the zero is not a silent comparator.
+
+## Note for the framework
+
+`setGeomOfxForAspect` has no caller. Either a title is supposed to call it and none does -- in which
+case every producer's local re-centre is working around that -- or it is dead and should go. Worth
+resolving in psxport; it is what made this defect possible and what makes it easy to reintroduce in
+the next producer.

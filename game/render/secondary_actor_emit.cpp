@@ -1,4 +1,5 @@
 #include "secondary_actor_emit.h"
+#include "wide_screen_space.h"
 
 #include "actor_prefix_builder.h"
 #include "core.h"
@@ -16,7 +17,7 @@ void recenter(Core &core, secondary_actor_scene::Frame &frame) {
   if (!gpu_vk_wide_engine(&core)) {
     return;
   }
-  const int32_t center = gpu_vk_wide_engine_w(&core) / 2;
+  const int32_t center = spyro::wide_screen_space::horizontalCenter(&core);
   for (auto &record : frame.records) {
     record.actor.input.projection.ofx = center << 16;
     record.actor.expected = actor_prefix::build(record.actor.input);

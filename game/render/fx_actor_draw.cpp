@@ -1,4 +1,5 @@
 #include "fx_actor_draw.h"
+#include "wide_screen_space.h"
 
 #include "actor_emit.h"
 #include "actor_recipe_capture.h"
@@ -54,7 +55,7 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
                   input.matrixWords[4]);
   }
   if (gpu_vk_wide_engine(c)) {
-    const int32_t center = gpu_vk_wide_engine_w(c) / 2;
+    const int32_t center = spyro::wide_screen_space::horizontalCenter(c);
     for (auto &record : records) {
       record.input.projection.ofx = center << 16;
       record.expected = spyro::actor_prefix::build(record.input);

@@ -1,6 +1,7 @@
 #include "paired_actor_pose.h"
 #include "guest_globals.h"
 #include "paired_actor_depth.h"
+#include "wide_screen_space.h"
 
 #include "actor_model_codec.h"
 #include "core.h"
@@ -409,7 +410,12 @@ bool build_transform(Core *c, SpyroPairedActorTransform &out) {
       out.layer_cr[layer][5 + i] = (uint32_t)layerTr[i];
     }
   }
-  out.ofx = (uint32_t)(int32_t)c->rsub.projParams.geomOfx() << 16;
+  // The centre this frame projects about -- widened when the wide engine is on. Reading geomOfx()
+  // raw drew Spyro about the 4:3 centre while the world around him used the widened one, so at 16:9
+  // he sat ~86 px left of where the scene put him (issue 0124). Nothing calls
+  // ProjParams::setGeomOfxForAspect, so geomOfx() is always the 4:3 centre; each producer supplies
+  // the aspect itself, and this one was missing it.
+  out.ofx = (uint32_t)spyro::wide_screen_space::horizontalCenter(c) << 16;
   out.ofy = (uint32_t)(int32_t)c->rsub.projParams.geomOfy() << 16;
   out.h = (uint32_t)(int32_t)c->rsub.projParams.geomH();
   const uint32_t table = c->mem_r32(kActorTable);

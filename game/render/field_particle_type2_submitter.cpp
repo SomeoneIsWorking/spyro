@@ -5,12 +5,12 @@
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
-#include "particle_screen_space.h"
 #include "particle_sine_table.h"
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "wide_screen_space.h"
 #include "world_chunk_codec.h"
 #include "world_projection_math.h"
 
@@ -34,9 +34,9 @@ int16_t angleValue(uint16_t angle) {
 bool spyro_field_particle_type2_submit(
     Core *core, const spyro::field_particles_recipe::TexturedQuad &particle) {
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
-  const int clipRight = spyro::particle_screen_space::drawClipRight(core);
+  const int clipRight = spyro::wide_screen_space::drawClipRight(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = spyro::particle_screen_space::projection(core, clipRight);
+  const auto params = spyro::wide_screen_space::projection(core, clipRight);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
@@ -95,15 +95,15 @@ bool spyro_field_particle_type2_submit(
   const int tpage = (int)((particle.uvTpage >> 16) & 0xffffu);
   const int mode = (tpage >> 7) & 3;
   const int32_t otDepth = (int32_t)(center.sz >> 5) - (int32_t)particle.depthBias;
-  // See particle_screen_space.h: the guest's byte uses the guest's horizontal window, the draw uses
+  // See wide_screen_space.h: the guest's byte uses the guest's horizontal window, the draw uses
   // the widened one. They were the same value, so widescreen wrote different guest memory.
   const bool depthAndRowOk =
       center.sz >= 0x80u && center.sz < 0x2000u && otDepth >= 0 && center.sy > 0 && center.sy < 256;
   const bool guestVisible =
-      depthAndRowOk && spyro::particle_screen_space::guestOnScreenX(core, clipRight, center.sx);
+      depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, clipRight, center.sx);
   core->mem_w8(particle.address + 3u, guestVisible ? 1u : 0u);
   const bool visible =
-      depthAndRowOk && spyro::particle_screen_space::drawnOnScreenX(clipRight, center.sx);
+      depthAndRowOk && spyro::wide_screen_space::drawnOnScreenX(clipRight, center.sx);
   if (!visible) {
     return true;
   }

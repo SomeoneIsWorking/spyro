@@ -79,6 +79,18 @@ declared = (
     DeclaredRange("pad.held", G_PAD + 8, 4, True),
 )
 
+# What must ALSO match before a picture comparison means anything (external/psxport/tools/oracle/
+# picture.py). `decisive` above answers "may the simulation differ here"; this answers "may the
+# PICTURE differ here", and they are not the same question. The camera is informational for the RAM
+# comparison on purpose -- its phase offset from g_LevelTicks (issue 0110/0114) cannot change
+# whether the game behaves -- but it moves every pixel. Measured 2026-09-19: at a dragon-cutscene
+# frame with gamestate, level_id, game_tick, state_switch and player.position all equal, the product
+# framed the dragon about 25px left and 20px below the reference and 87% of pixels differed. Without
+# the camera here that reads as a rendering defect, which is the one thing this tool exists not to
+# invent. The dragon cutscene's own fade/tick state is in for the same reason: it decides what is
+# drawn over the scene.
+picture_decisive = tuple(r.name for r in declared if r.decisive) + ("camera", "dragon_cutscene")
+
 excluded = {
     "g_LevelTicks (informational only)":
         "counted per delivered field by the VSync callback. The product spends the two-field draw "

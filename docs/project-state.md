@@ -1008,18 +1008,33 @@ the AHEAD tiles are a clean 2-pixel translation.
 
 That last number is the shape of the defect and it is not yet explained. A tile that takes the newer
 frame is what an unblendable state change looks like (an animation frame flip, a newly visible
-object), which is correct output; a 2-pixel translation is not that. The attribution cannot presently
-say whose it is: `fps60_check --seq` credits only 57.5% of the moving tiles, and 40.0% of the moved
-endpoint tiles, to a run, and says so. Spyro's fps60seq extents and its presented frame are not
-describing the same pixels — run bounding box x=[-1024..1024) y=[-345..1264) against a 684x240 frame
-— where Tomba! 2's agree exactly and attribute 100%. Reconciling those two spaces is what this
-measurement needs next.
+object), which is correct output; a clean 2-pixel translation is not that.
+
+It is now fully attributed. The first attempt credited only 57.5% of the moving tiles to a run,
+because the dump captures the VRAM display region while a run's extent is in the buffer the queue
+drew into — and Spyro double-buffers, alternating display origin 0,0 and 0,240 every present, so
+half the frames sat 240 rows from their own geometry. Correcting for the origin the runtime already
+logs takes the coverage to **100.0% of the moving tiles and 100.0% of the defects** (psxport
+0b638ad0). Across 82 owner rows:
+
+| split | lerped | moved endpoint | share of the defect |
+|---|---|---|---|
+| verbatim | 35,141 | 3,789 | 67.3% |
+| TIER1 | 88,138 | 1,842 | 32.7% |
+| layer 1 (world) | 95,023 | 3,041 | 54.0% |
+| layer 0 (background) | 28,256 | 2,590 | 46.0% |
+
+The four largest single owners are `0x8016F1D0` and `0x8016EC50`, each appearing as both a verbatim
+and a TIER1 run — the same guest instance drawn reconstructed in one layer and replayed in another.
+That is the thread to pull: two thirds of the defect is content still replayed verbatim, matching
+Tomba! 2's result, but a third of it is reconstructed content that interpolates and still lands on
+an endpoint, and the split of one instance across both ownerships suggests the two are related.
 
 Gap: newly visible animated sectors need a faithful endpoint-state lifecycle; regular actors, shadows,
 particles and other unowned temporal sources lack complete matching-source interpolation. The
-gameplay measurement above is unattributed because the fps60seq extents are in a different
-coordinate space than the presented frame, and the 5,617 forward-snapping tiles have no owner until
-that is fixed. Everything measured through `replays/gameplay/artisans-arrival.pad` — the looks-right
+5,617 forward-snapping tiles are attributed but not explained: 67.3% is content still replayed
+verbatim, and the remaining 32.7% is reconstructed content that snaps forward anyway, which the
+interpolation itself owns. Everything measured through `replays/gameplay/artisans-arrival.pad` — the looks-right
 fps60 and widescreen verdicts and the frame-time budget in Current focus — describes the save-file
 dialog rather than gameplay (issue 0116).
 

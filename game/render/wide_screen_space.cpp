@@ -8,7 +8,7 @@ namespace {
 
 // The horizontal offset the port projected with, minus the one the guest's own projection uses.
 // Zero unless the wide engine widened the window.
-int32_t horizontalOffsetDelta(Core *core, int drawRight) {
+int32_t horizontalOffsetDelta(Core *core) {
   if (!gpu_vk_wide_engine(core)) {
     return 0;
   }
@@ -18,10 +18,12 @@ int32_t horizontalOffsetDelta(Core *core, int drawRight) {
 } // namespace
 
 int32_t horizontalCenter(Core *core) {
-  if (gpu_vk_wide_engine(core)) {
-    return (int32_t)(gpu_vk_wide_engine_w(core) / 2);
-  }
-  return (int32_t)core->rsub.projParams.geomOfx();
+  // The framework already answers this, for both aspects: gpu_vk_wide_engine_ofx is the render
+  // width for the selected aspect divided by two, and that width collapses to the guest's own
+  // GP1 horizontal resolution when the wide engine is off. This used to spell the wide half-width
+  // here and fall back to projParams.geomOfx(), which is a second implementation of the same
+  // number -- MEASURED equal at both aspects on the class-83 route before the delegation landed.
+  return (int32_t)gpu_vk_wide_engine_ofx(core);
 }
 
 int drawClipRight(Core *core) {
@@ -31,7 +33,7 @@ int drawClipRight(Core *core) {
   return kGuestClipRight;
 }
 
-psxport::native_projection::ProjectionParams projection(Core *core, int drawRight) {
+psxport::native_projection::ProjectionParams projection(Core *core) {
   psxport::native_projection::ProjectionParams out{};
   out.ofx = (int32_t)(core->rsub.projParams.geomOfx() * 65536.0f);
   out.ofy = (int32_t)(core->rsub.projParams.geomOfy() * 65536.0f);
@@ -42,8 +44,8 @@ psxport::native_projection::ProjectionParams projection(Core *core, int drawRigh
   return out;
 }
 
-bool guestOnScreenX(Core *core, int drawRight, int32_t drawnX) {
-  const int32_t guestX = drawnX - horizontalOffsetDelta(core, drawRight);
+bool guestOnScreenX(Core *core, int32_t drawnX) {
+  const int32_t guestX = drawnX - horizontalOffsetDelta(core);
   return guestX > 0 && guestX < kGuestClipRight;
 }
 

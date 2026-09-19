@@ -19,11 +19,12 @@ struct Core;
 
 namespace spyro::wide_screen_space {
 
-// The horizontal centre this frame's geometry is projected about: the widened half-width when the
-// wide engine is on, else the projection's own offset. Every producer that projects world geometry
-// needs this, and each one used to spell it `gpu_vk_wide_engine_w(core) / 2` for itself -- which is
-// how the paired actor (Spyro) came to be missing it and to be drawn about the 4:3 centre while the
-// world around him was drawn about the widened one (issue 0124).
+// The horizontal centre this frame's geometry is projected about, for either aspect. Every
+// producer that projects world geometry needs it, and each one used to spell
+// `gpu_vk_wide_engine_w(core) / 2` for itself -- which is how the paired actor (Spyro) came to be
+// missing it and to be drawn about the 4:3 centre while the world around him was drawn about the
+// widened one (issue 0124). The number itself belongs to the framework; this is the name Spyro's
+// producers ask for it by.
 int32_t horizontalCenter(Core *core);
 
 // The horizontal window the guest's own routine tests against. Retail renders 512 px wide and its
@@ -34,14 +35,14 @@ inline constexpr int kGuestClipRight = 512;
 // guest's own. Was duplicated in both particle submitters.
 int drawClipRight(Core *core);
 
-// Projection parameters for a particle, for a given draw window. `ofx` is the only field the wide
-// engine changes; `ofy` and `h` come from the frame's own projection either way.
-psxport::native_projection::ProjectionParams projection(Core *core, int drawClipRight);
+// Projection parameters for a particle. `ofx` is the only field the wide engine changes; `ofy`
+// and `h` come from the frame's own projection either way.
+psxport::native_projection::ProjectionParams projection(Core *core);
 
 // Whether the guest's own projection would have called this x horizontally on-screen, given the x
-// THIS port projected with `drawClipRight`. The two projections differ only by their horizontal
-// offset, so subtracting that difference recovers the guest's x exactly.
-bool guestOnScreenX(Core *core, int drawClipRight, int32_t drawnX);
+// THIS port projected. The two projections differ only by their horizontal offset, so subtracting
+// that difference recovers the guest's x exactly.
+bool guestOnScreenX(Core *core, int32_t drawnX);
 
 // Whether this port will draw at this x -- the widened window.
 bool drawnOnScreenX(int drawClipRight, int32_t drawnX);

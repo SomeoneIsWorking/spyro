@@ -36,7 +36,7 @@ bool spyro_field_particle_type2_submit(
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   const int clipRight = spyro::wide_screen_space::drawClipRight(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = spyro::wide_screen_space::projection(core, clipRight);
+  const auto params = spyro::wide_screen_space::projection(core);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
@@ -100,7 +100,7 @@ bool spyro_field_particle_type2_submit(
   const bool depthAndRowOk =
       center.sz >= 0x80u && center.sz < 0x2000u && otDepth >= 0 && center.sy > 0 && center.sy < 256;
   const bool guestVisible =
-      depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, clipRight, center.sx);
+      depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, center.sx);
   core->mem_w8(particle.address + 3u, guestVisible ? 1u : 0u);
   const bool visible =
       depthAndRowOk && spyro::wide_screen_space::drawnOnScreenX(clipRight, center.sx);

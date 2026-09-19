@@ -115,7 +115,7 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
 
   const int clipRight = spyro::wide_screen_space::drawClipRight(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = spyro::wide_screen_space::projection(core, clipRight);
+  const auto params = spyro::wide_screen_space::projection(core);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
@@ -134,7 +134,7 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     const bool depthAndRowOk = projected.sz != 0u && projected.sz < 0x2000u && otDepth > 2 &&
                                projected.sy > 0 && projected.sy < 256;
     const bool guestVisible =
-        depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, clipRight, projected.sx);
+        depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, projected.sx);
     core->mem_w8(point.address + 3u, guestVisible ? 1u : 0u);
     const bool visible =
         depthAndRowOk && spyro::wide_screen_space::drawnOnScreenX(clipRight, projected.sx);

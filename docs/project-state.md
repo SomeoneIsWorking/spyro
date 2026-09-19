@@ -878,6 +878,14 @@ widescreen visual evidence remains the port's own 4:3-vs-16:9 pair rather than a
 courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
 the visual half of that gap is still open.
 
+2026-09-20: widescreen RENDER correctness is now measured, not only state parity.
+`tools/widescreen_check.py` drives one settled state at 4:3 and at 16:9 and compares the product
+with itself: 512 -> 684, the central 512 columns surviving at 2.17% a different colour, both 86px
+margins 93.3% non-black with ~580 distinct colours and 0/85 repeated columns. A stretch of the same
+frame reads 53.91% in the centre, so the check separates them by 25x. This does not establish that
+the extra geometry is correct -- no 16:9 reference exists -- but it does establish that the picture
+is extended rather than resampled, which is the distinction S019 is about.
+
 2026-09-20, CORRECTION: the "14/14 checkpoints byte-identical with the enhancements off versus on"
 recorded above was NOT a widescreen measurement. tools/shipping_settings.ini asked for aspect=3,
 ASPECT_AUTO, which resolves to the sink's aspect; an agent run is headless, so both arms rendered

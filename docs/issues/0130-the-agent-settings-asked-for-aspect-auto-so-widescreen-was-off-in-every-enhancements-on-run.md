@@ -71,3 +71,42 @@ Both `tools/shipping_settings.ini` files name `aspect=1` and say why AUTO cannot
 agent gate. The deeper hole is that nothing CHECKS the announced geometry against what the settings
 asked for: psxport's picture_announce exists precisely because "an enhancement that silently fails
 to engage produces a run indistinguishable from one that engaged", and no gate reads its line.
+
+
+## 2026-09-20 — widescreen render correctness, measured
+
+The remaining item above is closed, and the console turned out to be the wrong reference for it. A
+console is 4:3, so it has nothing to say about the extra area. The product is asked about ITSELF at
+one settled state under two settings, which is enough because widescreen is *defined* as a
+deterministic horizontal extension about the same centre: the central 512 columns must survive, and
+the margins must contain scene.
+
+`tools/widescreen_check.py`, over psxport's `oracle/widescreen.py`:
+
+```
+[widescreen] narrow: native picture: aspect=0 wide_engine=0 native_width=512 render_width=512
+[widescreen] wide:   native picture: aspect=1 wide_engine=1 native_width=512 render_width=684
+[widescreen] 512 -> 684 (+86 per side): EXTENDS
+[widescreen]   centre: 2671/122880 a different COLOUR (2.17%, tolerance 10%) — survived
+[widescreen]   left margin:  93.3% non-black, 582 colours, 0/85 repeated columns — scene
+[widescreen]   right margin: 93.3% non-black, 579 colours, 0/85 repeated columns — scene
+```
+
+Both runs announce their geometry and the tool REFUSES if either does not, so an aspect that failed
+to engage cannot be read as a result — which is this issue's whole subject.
+
+### The discriminators, run against the fakes rather than reasoned about
+
+* A nearest-neighbour **stretch** of the same frame reads **53.91%** in the centre against the real
+  extension's 2.17%: a factor of twenty-five.
+* **0 of 85** margin columns are identical to the panel's first. A smear would be 85 of 85.
+* The centre's 2.17% residual has **0 of 2671** pixels within 8 columns of either crop edge. It is
+  interior, which is what a screen-space dither phase shift looks like when every pixel moves 86
+  columns, and not the boundary artefact a mis-centred crop would produce.
+
+### What it still does not say
+
+That the extra geometry is CORRECT. Nothing available can say that without a 16:9 reference, and
+none exists. It says the coverage is present, varied, and not fabricated from the 4:3 frame — which
+is exactly the difference between widescreen and stretching, and no other instrument here measured
+it.

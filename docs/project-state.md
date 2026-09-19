@@ -878,6 +878,13 @@ widescreen visual evidence remains the port's own 4:3-vs-16:9 pair rather than a
 courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
 the visual half of that gap is still open.
 
+2026-09-20, CORRECTION: the "14/14 checkpoints byte-identical with the enhancements off versus on"
+recorded above was NOT a widescreen measurement. tools/shipping_settings.ini asked for aspect=3,
+ASPECT_AUTO, which resolves to the sink's aspect; an agent run is headless, so both arms rendered
+512 wide. Re-run with aspect=1, the product announcing render_width=684: 15 checkpoints, 0 decisive
+divergences, complete. That is the widescreen state-parity claim, evidenced for the first time. See
+docs/issues/0130.
+
 2026-09-20: the 4:3 console picture comparison it falls back to is now interpretable, which it was
 not. `settled_play` (GS_Playing at g_GameTick 180) is reached by both cores after the SAME 179 game
 frames, against 1532 vs 2300 at the old `playing` checkpoint, so the Artisans courtyard is

@@ -60,13 +60,35 @@ naturally".
   globals). **Do not write `m_Tick`.** Claim C179 — "Boot-logo Start clock advancement is not a valid
   skip route" — is already falsified in this repo, and a timer write is the same move.
 
-## Blocked on one address
+## UNBLOCKED: LoadLevel is 0x80015370, and the terminal pair is at 0x80033158/0x80033160
 
-`func_8004AC24` is 0x8004AC24 by its own name. `LoadLevel`'s guest address is NOT yet recovered —
-the decomp names it without an address and the port only mentions it in a comment
-(`spyro1_transition_skip.cpp:71`, "func_8002DF9C calls LoadLevel(1)"). Recover it by decoding the
-`jal` target inside func_8002DF9C from the shipping executable, the way `tools/re_globals.py` decodes
-global accesses numerically, and verify the same target appears in the flyby's own branch.
+`func_8004AC24` is 0x8004AC24 by its own name. `LoadLevel` is **0x80015370**, established three
+independent ways from the shipping executable rather than by assumption:
+
+1. **It owns g_LoadStage.** Of the three candidate `jal` targets inside func_8002DF9C, only
+   0x80015370 both reads AND writes 0x80075864 — twenty accesses including three `sw`
+   (`tools/re_globals.py --img scratch/assets/spyro1/SCUS_942.28 0x80015370`). 0x80037BD4 reads it
+   once and writes it never, so it is a consumer; 0x8004A7EC never touches it.
+2. **It matches the one call site already documented.** Scanning the whole 0x65800 text for
+   `jal 0x80015370` gives 8 sites, one of which is 0x8002DFE8 — inside func_8002DF9C
+   (0x8002DF9C..0x8002DFF8). That is the call `spyro1_transition_skip.cpp:71` already describes in
+   prose, arrived at here from the other direction.
+3. **It appears in the terminal pair itself**, below.
+
+The flyby's terminal route is at:
+
+```
+0x80033158   jal 0x8004AC24     # func_8004AC24(1) -- reset Spyro for actual gameplay
+0x80033160   jal 0x80015370     # LoadLevel(1)
+```
+
+Two consecutive calls eight bytes apart, exactly the decompiled `func_8004AC24(1); LoadLevel(1);
+return;`. Four of the eight `LoadLevel` call sites (0x80032D34, 0x80033104, 0x80033160, 0x800334BC)
+sit within 0x400 bytes of both a reference to `m_Tick` (0x80078D80) and an immediate 384, which is
+the `GamestateCutsceneTransition` body; only 0x80033160 is preceded by the Spyro reset.
+
+So the cancellation dispatches guest 0x8004AC24 then guest 0x80015370, each with a1/a0 = 1, on the
+`ReturnHomeSequence` precedent. Nothing is transcribed and no timer is written.
 
 ## Acceptance
 

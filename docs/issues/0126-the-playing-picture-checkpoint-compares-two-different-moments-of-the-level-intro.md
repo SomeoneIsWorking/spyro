@@ -137,7 +137,8 @@ must not move). At `settled_play`:
 
 ### What the frame actually shows
 
-`scratch/picture/settled_play.magnitude.png` maps the magnitudes. The residual is three things and
+the run now writes `<checkpoint>.magnitude.png` beside each capture, painting
+rounding black, a shade out blue, a different colour amber and a gross difference red. The residual is three things and
 no fourth: every polygon EDGE outlined (sub-pixel rasterisation placement), dither speckle across
 textured ground and sky, and two concentrated blobs at roughly (272,112) and (320,96) — Sparx and a
 sparkle effect, whose positions live in the moby arrays this title excludes. There is no solid

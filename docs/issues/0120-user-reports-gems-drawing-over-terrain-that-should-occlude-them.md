@@ -1123,7 +1123,7 @@ block of large-magnitude difference, and it would have been invisible inside a 5
 `PictureDiff` now separates `significant` (beyond one colour step) from the bare count and ranks
 `worst_tiles` by significant pixels only, so a mislaid object is what the tool points at.
 
-What the courtyard shows (`scratch/picture/settled_play.magnitude.png`): polygon EDGES outlined
+What the courtyard shows (the run writes `settled_play.magnitude.png` beside the captures): polygon EDGES outlined
 everywhere (sub-pixel rasterisation placement), dither speckle over textured ground and sky, and two
 concentrated blobs near (272,112) and (320,96) that are Sparx and a sparkle — moby positions, which
 this title excludes from the declared ranges. **No solid contiguous region is drawn wrongly**, which

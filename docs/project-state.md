@@ -862,6 +862,27 @@ reports 1,216,422 interpolated prims across 3,374 extra presents, so the extra p
 reconstructed geometry rather than duplicated frames. Still images and a prim count do not prove
 temporal smoothness, and no frame-time budget has been measured on any released host.
 
+Interpolation measured AT THE PIXELS for the first time (2026-09-19,
+`external/psxport/tools/port/fps60_check.py --dir scratch/framedump --tile 16`, 81 real/interp/real
+triples captured with `PSXPORT_DEBUG=fps60dump` on the `--seek-class 83` gameplay route):
+
+| class | tiles | share | what it means |
+|---|---|---|---|
+| BETWEEN | 38,233 | 98.3% | differs from BOTH endpoints -- the shape of a genuinely lerped prim |
+| AHEAD | 318 | 0.8% | identical to real(N) |
+| STALE | 239 | 0.6% | identical to real(N-1) |
+| STATIC | 90 | 0.2% | all three agree; not evidence either way |
+
+An endpoint tile is only a defect if its content actually moved, so the same run measures the best
+integer translation per tile: of the 557 endpoint tiles, **423 translated 0px** (sub-pixel change
+quantised onto one side, which is correct output) and **134 translated a whole pixel or more while
+still being drawn at an endpoint**. That 134 -- 0.34% of tiles -- is the residual, and it
+concentrates on the y=0 tile row. The instrument reports all four classes and both sides of the
+0px/1px+ split from one run, so this is a measurement rather than a confirmation.
+
+This is the evidence S020 previously lacked: the oracle parity below shows interpolation does not
+CHANGE guest state, which is necessary but says nothing about whether the extra frames interpolate.
+
 Oracle state parity with interpolated 60fps ON (2026-09-19, same driver and route as S019, with
 `--product-env PSXPORT_FPS60=1`): 485 checkpoints, 6,305 decisive range comparisons, **0
 divergences**, run complete — identical to the enhancements-off baseline leg. The product log of

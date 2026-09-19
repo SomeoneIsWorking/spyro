@@ -12,8 +12,8 @@
 #pragma once
 
 #include "actor_recipe_capture.h"
+#include "instance_pairing.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -49,18 +49,7 @@ inline constexpr size_t kMismatchCount = (size_t)Mismatch::PrimitiveCount + 1u;
 
 const char *mismatchName(Mismatch mismatch);
 
-struct Census {
-  uint32_t actors = 0;       // records in the current endpoint
-  uint32_t interpolated = 0; // paired with a compatible predecessor and sampled
-  uint32_t unpaired = 0;     // the frame before it drew this instance fewer times, or not at all
-  uint32_t incompatible = 0; // a predecessor existed but described a different model
-  uint32_t refused = 0;      // the sampler declined, so the record fell back to its own endpoint
-  // `incompatible` split by the field that differed, indexed by `Mismatch`. Slot 0 stays zero.
-  std::array<uint32_t, kMismatchCount> mismatches{};
-
-  // The field that rejected the most records, or `None` when none were rejected.
-  Mismatch worstMismatch() const;
-};
+using Census = instance_pairing::ReasonedCensus<Mismatch, kMismatchCount>;
 
 // Two records describe the same actor when everything the sampler reads from the current endpoint
 // alone is already identical in the previous one. Anything else is a different model reached
@@ -72,9 +61,10 @@ bool compatible(const actor_recipe_capture::Record &previous,
                 const actor_recipe_capture::Record &current);
 
 // Sample each record of `current` in place against its counterpart in `previous` at `t`. Pairing is
-// by Moby instance, in occurrence order within one frame. An unpaired, incompatible or declined
-// record keeps the pose its own frame built, which is what this logic frame shows anyway and is
-// strictly closer than replaying the previous frame's picture for it.
+// `instance_pairing::walk` over the Moby instance; this layer supplies the identity rule above and
+// the prefix sampler. An unpaired, incompatible or declined record keeps the pose its own frame
+// built, which is what this logic frame shows anyway and is strictly closer than replaying the
+// previous frame's picture for it.
 void sample(std::span<const actor_recipe_capture::Record *const> previous,
             std::span<actor_recipe_capture::Record *const> current,
             double t,

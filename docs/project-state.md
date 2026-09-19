@@ -40,9 +40,9 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
 of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
 issue 0110). The world, the player model, the regular actor layer and now the secondary actor layer
-are reconstructed in an in-between present. Next: give the remaining FIELD producers — world-shaded
-sprites, shadows, particles — their own temporal sources, and measure a frame-time budget on a
-released host. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
+are reconstructed in an in-between present. Next: give the remaining FIELD producers — shadows,
+particles, glow, tracers — their own temporal sources, and measure a frame-time budget on a released
+host. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
 a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
 conformance.
 
@@ -783,7 +783,8 @@ sampled pose: 755 are incompatible (525 a changed model descriptor, 220 a change
 have no predecessor, and the sampler refused none. The 485-comparison per-frame Artisans oracle run
 still matches the full-console reference with zero divergences, so the logic-frame route is
 unchanged. Secondary actors (0x80020F34), world-shaded sprites (0x80022A2C), shadows, particles,
-glow and tracers still replay verbatim in an in-between present.
+glow and tracers still replayed verbatim in an in-between present at that point; the first two have
+since gained their own sources.
 
 Secondary actors — the 0x80020F34 layer, the second largest FIELD actor layer — gained their own
 temporal source on 2026-09-19. It owns nothing the regular layer already owns: the endpoint
@@ -804,6 +805,44 @@ passes few secondary actors: driven to Artisans through `tools/drive.py gameplay
 the layer draws up to 82 faces per frame with 557 of 567 reconstructions sampled. Prim counts and
 admission rates prove the path is exercised, not that the motion is smooth, and no frame-time budget
 has been measured on any released host.
+
+World-shaded sprites — the 0x80022A2C layer, the other half of the FIELD composition — gained their
+own temporal source on 2026-09-19. Its endpoint is the recipe's own input rather than the scene
+frame: the rest of a scene frame is the shadow cursor and the visited/transformed actor lists, which
+a reconstruction never commits and never reads. Its sampling is not the actor layers'. A
+compressed-model actor is sampled by rebuilding its pose from two keyframe streams, while a
+shaded-queue record carries its mesh already decoded, so the interval is between two transforms over
+one vertex corpus and is applied inside the recipe, in view space, before projection. Only the
+pairing is shared, which is why `instance_pairing` was extracted from `actor_pairing` first: the
+occurrence-ordered walk over guest instances does not depend on what a record contains, so the
+identity rule and the sampler arrive as arguments.
+
+Measured on 2026-09-19 over the same 7,200-field Artisans replay, with the same three verdicts
+passing: the looks-right fps60 leg reports 2,155,839 interpolated prims across the same 3,374 extra
+presents, against 2,141,330 before. The FIELD composition runs on 430 of 3,382 logic frames and
+refuses none; the shaded interval is admitted on 429 of them. Across 2,145 reconstructions — three
+admission samples and two presented ones per admitted interval — 9,250 of 9,260 records carry a
+sampled transform, 10 have no predecessor, and the identity rule rejected none. Zero incompatible
+against a denominator of 9,260 is a rule that ran and matched everything on this route, not one that
+was never reached: the recipe's own `sampled` counter independently reports the same 9,250, and its
+`sampleDeclined` counter reports no record whose interval the projection refused. The layer
+published 72,557 in-between faces. The 485-comparison per-frame Artisans oracle run still matches
+the full-console reference on every decisive range with zero divergences, so the logic-frame route is
+unchanged. The gain over the secondary layer's landing is small because this route draws few shaded
+sprites; prim counts and admission rates prove the path is exercised, not that the motion is
+smooth.
+
+`fx_field_shaded_queue.cpp` was removed in the same change, for the same reason `fx_secondary_actor`
+was: a standalone producer for this layer with no caller anywhere in the repository. The live owner
+is `fx_field_actor_composition`, because the secondary and world-shaded layers share one guest
+shadow-list transaction.
+
+Three duplications were removed as part of the work rather than after it. The occurrence-ordered
+pairing walk and the reason-split census are now `instance_pairing`, used by both actor layers and
+the shaded layer. The derive/preflight/publish route is `field_shaded_queue_emit`, taken by the
+logic frame and the reconstruction alike, so a reconstructed picture cannot differ from the logic
+frame's for reasons nobody chose. And the inverted-draw-area predicate, which seven producers had
+each spelled out, is now `spyro::draw_area::ready`.
 
 `fx_secondary_actor.cpp` was removed in the same change. It was a standalone secondary producer with
 no caller: the live owner has been `fx_field_actor_composition` since issue 0099, because the

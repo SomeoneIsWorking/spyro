@@ -1,5 +1,7 @@
 #include "field_shaded_queue_recipe.h"
 
+#include "projection_stream.h"
+
 #include "wide_clip_plan.h"
 
 #include <lucent/log.h>
@@ -93,16 +95,72 @@ uint32_t shadeVariantOne(const Record &record, uint32_t colour) {
   return channel(linear[0]) | (channel(linear[1]) << 8) | (channel(linear[2]) << 16);
 }
 
-Vertex projectVertex(const psxport::native_projection::FixedAffine &affine,
-                     const psxport::native_projection::ProjectionParams &projection,
-                     psxport::native_projection::ModelVertex source) {
-  const auto result = psxport::native_projection::project(affine, projection, source);
+Vertex asVertex(const psxport::native_projection::NativeProjectedVertex &result) {
   return {.sx = result.sx,
           .sy = result.sy,
           .sz = result.sz,
           .screenX = result.px,
           .screenY = result.py,
           .viewZ = result.pz};
+}
+
+// The predecessor of `input.records[index]`, or nullptr when there is none to sample against. A
+// paired record must present the same model to the sampler: each endpoint's own model vertex goes
+// through its own transform, so a differing vertex count has no correspondence to sample.
+const Record *pairedEndpoint(const Interval *interval, size_t index, const Record &record) {
+  if (interval == nullptr || index >= interval->previous.size()) {
+    return nullptr;
+  }
+  const Record *const endpoint = interval->previous[index];
+  if (endpoint == nullptr || endpoint->vertices.size() != record.vertices.size()) {
+    return nullptr;
+  }
+  return endpoint;
+}
+
+// What a record's geometry was actually projected through. `Declined` is not `Own`: one means the
+// record had no predecessor to sample against, the other that it had one and the framework refused
+// the interval. A single "not sampled" count could not tell a rule that ran from one that did not.
+enum class Projected : uint8_t { Own, Sampled, Declined, Unavailable };
+
+// Project one record's model vertices, through the interval when it has a predecessor. The
+// framework refuses an interval whose endpoints carry wrapped accumulator history, which has no
+// defined interpolation; that record falls back to its own transform rather than losing its
+// geometry. `Unavailable` cannot occur in practice — endpoint mode never refuses — and is reported
+// rather than assumed away.
+Projected projectRecord(const Record &record,
+                        const Record *endpoint,
+                        const psxport::native_projection::ProjectionParams &projection,
+                        double t,
+                        std::vector<Vertex> &projected) {
+  projected.clear();
+  projected.reserve(record.vertices.size());
+  bool declined = false;
+  if (endpoint != nullptr) {
+    const ProjectionStream interval(endpoint->affine, record.affine, projection, t);
+    bool complete = true;
+    for (size_t i = 0; i < record.vertices.size() && complete; ++i) {
+      const auto sampled = interval.project(endpoint->vertices[i], record.vertices[i]);
+      complete = sampled.has_value();
+      if (complete) {
+        projected.push_back(asVertex(*sampled));
+      }
+    }
+    if (complete) {
+      return Projected::Sampled;
+    }
+    declined = true;
+    projected.clear();
+  }
+  const ProjectionStream own(record.affine, projection);
+  for (const auto &source : record.vertices) {
+    const auto result = own.project(source, source);
+    if (!result) {
+      return Projected::Unavailable;
+    }
+    projected.push_back(asVertex(*result));
+  }
+  return declined ? Projected::Declined : Projected::Own;
 }
 
 Recipe refuse(Recipe recipe, Status status, const Record &record, uint32_t primitive) {
@@ -114,20 +172,32 @@ Recipe refuse(Recipe recipe, Status status, const Record &record, uint32_t primi
 }
 } // namespace
 
-Recipe derive(const Input &input) {
+Recipe derive(const Input &input, const Interval *interval) {
   Recipe recipe{};
   recipe.sourceRecords = (uint32_t)input.records.size();
   uint32_t paintGroup = 0;
-  for (const Record &record : input.records) {
+  std::vector<Vertex> projected;
+  for (size_t recordIndex = 0; recordIndex < input.records.size(); ++recordIndex) {
+    const Record &record = input.records[recordIndex];
     if (record.vertices.empty() || record.vertices.size() > 127u || input.clipRight <= 0) {
       return refuse(std::move(recipe), Status::InvalidInput, record, 0);
     }
-    std::vector<Vertex> projected;
-    projected.reserve(record.vertices.size());
+    const Record *const endpoint = pairedEndpoint(interval, recordIndex, record);
+    switch (projectRecord(
+        record, endpoint, input.projection, interval ? interval->t : 1.0, projected)) {
+    case Projected::Sampled:
+      ++recipe.sampled;
+      break;
+    case Projected::Declined:
+      ++recipe.sampleDeclined;
+      break;
+    case Projected::Unavailable:
+      return refuse(std::move(recipe), Status::InvalidInput, record, 0);
+    case Projected::Own:
+      break;
+    }
     uint32_t commonClip = 0x0fu;
-    for (const auto &source : record.vertices) {
-      projected.push_back(projectVertex(record.affine, input.projection, source));
-      const Vertex &vertex = projected.back();
+    for (const Vertex &vertex : projected) {
       commonClip &= spyro::wide::clipCode(vertex.sx, vertex.sy, input.clipRight);
     }
     if (record.clipMode && commonClip != 0u) {

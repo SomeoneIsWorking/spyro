@@ -107,9 +107,11 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/actor_scene_oracle.cpp
   game/render/gpu_packet_decode.cpp
   game/render/field_scene_recipe.cpp
+  game/render/field_shaded_queue_emit.cpp
   game/render/field_shaded_queue_recipe.cpp
   game/render/field_shaded_queue_scene.cpp
   game/render/field_shaded_queue_submitter.cpp
+  game/render/field_shaded_queue_temporal.cpp
   game/render/field_shadow_recipe.cpp
   game/render/field_shadow_submitter.cpp
   game/render/moby_shadow_recipe.cpp
@@ -138,7 +140,6 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/fx_field_environment.cpp
   game/render/fx_field_particles.cpp
   game/render/fx_field_player_actor.cpp
-  game/render/fx_field_shaded_queue.cpp
   game/render/fx_field_shadow.cpp
   game/render/fx_moby_shadow.cpp
   game/render/fx_field_tracers.cpp
@@ -224,7 +225,7 @@ if(BUILD_TESTING)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)
-  foreach(test_name IN ITEMS native_render_producers face_light_program secondary_actor_recipe secondary_actor_temporal temporal_scene world_animation world_source_pair world_temporal actor_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix glow_recipe sparkle_recipe dragon_scene_recipe dragon_burst_recipe actor_scale_translation field_particles_recipe actor_global_order field_scheduler transition_skip cyclorama_portal_mesh_recipe hud_text_builder level_transition_tally_recipe field_shaded_queue_recipe field_shaded_queue_scene gpu_packet_decode)
+  foreach(test_name IN ITEMS native_render_producers face_light_program secondary_actor_recipe secondary_actor_temporal temporal_scene world_animation world_source_pair world_temporal actor_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix glow_recipe sparkle_recipe dragon_scene_recipe dragon_burst_recipe actor_scale_translation field_particles_recipe actor_global_order field_scheduler transition_skip cyclorama_portal_mesh_recipe hud_text_builder level_transition_tally_recipe field_shaded_queue_recipe field_shaded_queue_scene field_shaded_queue_temporal gpu_packet_decode)
     add_executable(test_${test_name} tests/test_${test_name}.cpp)
     target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
     target_link_libraries(test_${test_name} PRIVATE spyro_runtime)

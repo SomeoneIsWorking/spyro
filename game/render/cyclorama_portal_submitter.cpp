@@ -1,6 +1,7 @@
 #include "cyclorama_portal_submitter.h"
 
 #include "core.h"
+#include "draw_area.h"
 #include "game.h"
 #include "gpu_vk.h"
 #include "producer_scope.h"
@@ -126,7 +127,7 @@ Plan prepare(const Core *core,
     return plan;
   }
   const GpuState &gpu = core->game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
+  if (!spyro::draw_area::ready(gpu)) {
     plan.status = Status::InvalidDrawArea;
     plan.faces.clear();
     return plan;

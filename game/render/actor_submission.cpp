@@ -1,6 +1,7 @@
 #include "actor_submission.h"
 
 #include "core.h"
+#include "draw_area.h"
 #include "game.h"
 #include "producer_scope.h"
 #include "render_queue.h"
@@ -30,7 +31,7 @@ Plan prepare(const Core &core,
     return prepared;
   }
   const GpuState &gpu = core.game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
+  if (!spyro::draw_area::ready(gpu)) {
     prepared.status = Status::DrawArea;
     return prepared;
   }

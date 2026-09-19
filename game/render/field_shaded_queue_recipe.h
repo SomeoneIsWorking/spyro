@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace spyro::field_shaded_queue_recipe {
@@ -72,12 +73,32 @@ struct Recipe {
   uint32_t sourceRecords = 0;
   uint32_t candidates = 0;
   uint32_t rejected = 0;
+  // Records projected through an interval rather than their own transform, and records that had a
+  // predecessor but whose interval the framework refused. Both are zero on a logic frame; in a
+  // sampled frame `sampled == 0` with a nonzero denominator is a rule that ran and matched nothing,
+  // which a single counter could not distinguish from one that never ran.
+  uint32_t sampled = 0;
+  uint32_t sampleDeclined = 0;
   uint32_t firstUnsupportedActor = 0;
   uint32_t firstUnsupportedPrimitive = 0;
   std::vector<Face> faces;
 };
 
-Recipe derive(const Input &input);
+// Where a record's geometry is sampled from. Without one, every record is projected through its
+// own transform, which is the logic frame's own picture. With one, a record that has a paired
+// predecessor is projected through the interval between the two transforms, in view space, before
+// projection — never by blending two already-projected vertices, which would blend two saturated,
+// wrapped results and could not recover a rotation.
+//
+// `previous[i]` is the predecessor of `input.records[i]`, or nullptr where that record was
+// unpaired. A record whose interval the framework refuses falls back to its own transform: the
+// picture the logic frame would have shown is strictly closer than replaying the previous one.
+struct Interval {
+  std::span<const Record *const> previous;
+  double t = 1.0;
+};
+
+Recipe derive(const Input &input, const Interval *interval = nullptr);
 
 // Named so a refusal reports WHICH condition failed rather than a bare enum value.
 const char *statusName(Status status);

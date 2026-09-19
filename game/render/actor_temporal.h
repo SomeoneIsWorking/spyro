@@ -32,6 +32,9 @@ using Status = actor_stage::Temporal;
 // every sample; they are never retained as interpolation inputs.
 class History {
 public:
+  // Named so a shared reconstruction can declare the census its layer reports into.
+  using Census = actor_pairing::Census;
+
   void begin(uint64_t scene, bool reference, bool active) {
     pair_.begin(scene, reference, active);
   }

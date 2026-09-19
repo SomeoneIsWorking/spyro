@@ -2,6 +2,7 @@
 
 #include "actor_temporal.h"
 #include "archive_transfer.h"
+#include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
 #include "presentation_owner.h"
 #include "runtime_run.h"
@@ -20,6 +21,7 @@ struct SpyroContext {
   spyro::world_temporal::History worldTemporal{};
   spyro::actor_temporal::History actorTemporal{};
   spyro::secondary_actor_temporal::History secondaryActorTemporal{};
+  spyro::field_shaded_queue_temporal::History shadedQueueTemporal{};
   SpyroTemporalSceneAdmission temporalAdmission{};
   SpyroPresentationOwner presentationOwner{};
 };

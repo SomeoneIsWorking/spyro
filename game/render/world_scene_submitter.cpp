@@ -1,6 +1,7 @@
 #include "world_scene_submitter.h"
 
 #include "core.h"
+#include "draw_area.h"
 #include "game.h"
 #include "gpu_vk.h"
 #include "render_queue.h"
@@ -90,7 +91,7 @@ std::optional<DrawState> captureDrawState(Core &core) {
     return std::nullopt;
   }
   const GpuState &gpu = core.game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
+  if (!spyro::draw_area::ready(gpu)) {
     return std::nullopt;
   }
   return DrawState{.offsetX = gpu.s_off_x,

@@ -11,6 +11,7 @@
 #include "spyro_game.h"
 #include "wide_clip_plan.h"
 
+#include "draw_area.h"
 #include <array>
 #include <cstdint>
 #include <lucent/log.h>
@@ -312,7 +313,7 @@ bool terrain_submit_direct(Core *c,
     return false;
   }
   const GpuState gpu = c->game->gpu;
-  if (gpu.s_da_x0 > gpu.s_da_x1 || gpu.s_da_y0 > gpu.s_da_y1) {
+  if (!spyro::draw_area::ready(gpu)) {
     return false;
   }
   const int da_x1 =

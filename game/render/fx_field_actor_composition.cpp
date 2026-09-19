@@ -3,13 +3,12 @@
 #include "actor_face_submitter.h"
 #include "actor_recipe_capture.h"
 #include "core.h"
-#include "field_shaded_queue_recipe.h"
+#include "draw_area.h"
+#include "field_shaded_queue_emit.h"
 #include "field_shaded_queue_scene.h"
-#include "field_shaded_queue_submitter.h"
 #include "game.h"
 #include "gpu_vk.h"
 #include "guest_globals.h"
-#include "producer_scope.h"
 #include "scene_painter_order.h"
 #include "secondary_actor_emit.h"
 #include "secondary_actor_scene.h"
@@ -25,16 +24,7 @@ namespace {
 
 constexpr const char *kChannel = "fieldactors";
 constexpr uint32_t kSecondaryProducer = spyro::secondary_actor_emit::kProducerKey;
-constexpr uint32_t kShadedProducer = 0x80022a2cu;
-
-bool shadedReady(const spyro::field_shaded_queue_recipe::Recipe &recipe) {
-  return recipe.status == spyro::field_shaded_queue_recipe::Status::Ready ||
-         recipe.status == spyro::field_shaded_queue_recipe::Status::ValidEmpty;
-}
-
-bool drawAreaReady(const GpuState &gpu) {
-  return gpu.s_da_x0 <= gpu.s_da_x1 && gpu.s_da_y0 <= gpu.s_da_y1;
-}
+constexpr uint32_t kShadedProducer = spyro::field_shaded_queue_emit::kProducerKey;
 
 spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   if (core == nullptr || core->game == nullptr) {
@@ -78,8 +68,7 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
 
   RenderQueue &queue = core->game->rq;
   spyro::field_shaded_queue_scene::Frame shadedFrame{};
-  spyro::field_shaded_queue_recipe::Recipe shadedRecipe{};
-  spyro::field_shaded_queue_submitter::Plan shadedPlan{};
+  spyro::field_shaded_queue_emit::Prepared shaded{};
   if (composition.shaded) {
     const int32_t clipRight =
         gpu_vk_wide_engine(core) ? std::max(512, gpu_vk_wide_engine_w(core)) : 512;
@@ -92,28 +81,25 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
                            shadedFrame.input.records.size(),
                            shadedFrame.shadows.size());
     }
-    shadedRecipe = spyro::field_shaded_queue_recipe::derive(shadedFrame.input);
-    if (!shadedReady(shadedRecipe)) {
+    shaded = spyro::field_shaded_queue_emit::prepare(*core, queue, shadedFrame.input);
+    if (shaded.status != spyro::field_shaded_queue_emit::Status::Ready &&
+        shaded.status != spyro::field_shaded_queue_emit::Status::ValidEmpty) {
       return spyro::refuse(kChannel,
                            kShadedProducer,
-                           "shaded recipe={} actor=0x{:08X} primitive={} candidates={}",
-                           spyro::field_shaded_queue_recipe::statusName(shadedRecipe.status),
-                           shadedRecipe.firstUnsupportedActor,
-                           shadedRecipe.firstUnsupportedPrimitive,
-                           shadedRecipe.candidates);
-    }
-    shadedPlan = spyro::field_shaded_queue_submitter::prepare(queue, kShadedProducer, shadedRecipe);
-    if (shadedPlan.status != spyro::field_shaded_queue_submitter::Status::Ready &&
-        shadedPlan.status != spyro::field_shaded_queue_submitter::Status::ValidEmpty) {
-      return spyro::refuse(kChannel,
-                           kShadedProducer,
-                           "shaded submission={} admission_ready={} queued={} existing_faces={}",
-                           spyro::field_shaded_queue_submitter::statusName(shadedPlan.status),
-                           shadedPlan.admission.ready,
-                           shadedPlan.admission.queued,
-                           shadedPlan.admission.existingFaces);
+                           "shaded stage={} recipe={} actor=0x{:08X} primitive={} candidates={} "
+                           "submission={} admission_ready={} queued={} existing_faces={}",
+                           spyro::actor_stage::name(shaded.status),
+                           spyro::field_shaded_queue_recipe::statusName(shaded.recipe.status),
+                           shaded.recipe.firstUnsupportedActor,
+                           shaded.recipe.firstUnsupportedPrimitive,
+                           shaded.recipe.candidates,
+                           spyro::field_shaded_queue_submitter::statusName(shaded.submitter.status),
+                           shaded.submitter.admission.ready,
+                           shaded.submitter.admission.queued,
+                           shaded.submitter.admission.existingFaces);
     }
   }
+  const auto &shadedRecipe = shaded.recipe;
 
   // Both scene preparations read the same cursor. Rebase the second commit to the first call's
   // output, preserving the retail one-list transaction instead of letting the second call overwrite
@@ -162,7 +148,7 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
                            admission.existing_faces);
     }
   }
-  if (!drawAreaReady(core->game->gpu)) {
+  if (!spyro::draw_area::ready(core->game->gpu)) {
     return spyro::refuse(kChannel,
                          kSecondaryProducer,
                          "draw area x=[{},{}] y=[{},{}] is inverted",
@@ -185,10 +171,8 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
     // An empty picture is still an endpoint: the next frame can interpolate against a scene that
     // drew nothing. A frame this layer did not compose at all is a gap, refused below.
   }
-  if (shadedPlan.status == spyro::field_shaded_queue_submitter::Status::Ready) {
-    ProducerScope producer(&core->rsub.producerScope, kShadedProducer, "spriteq:world-shaded");
-    spyro::field_shaded_queue_submitter::submit(
-        core, queue, kShadedProducer, shadedRecipe, shadedPlan);
+  if (composition.shaded) {
+    spyro::field_shaded_queue_emit::publish(*core, queue, shaded);
   }
   lucent::debug("fieldactors",
                 "PASS secondary_faces={} face_light={} shaded_faces={} secondary_shadows={} "
@@ -199,10 +183,13 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
                 secondaryFrame.shadows.size(),
                 shadedFrame.shadows.size(),
                 shadedShadowCursor + static_cast<uint32_t>(shadedFrame.shadows.size()) * 8u);
+  // An empty picture is still an endpoint: the next frame can interpolate against a scene that
+  // drew nothing.
   if (composition.secondary) {
-    // An empty picture is still an endpoint: the next frame can interpolate against a scene that
-    // drew nothing.
     spyro_context(*core).secondaryActorTemporal.retain(std::move(secondaryFrame));
+  }
+  if (composition.shaded) {
+    spyro_context(*core).shadedQueueTemporal.retain(std::move(shadedFrame.input));
   }
   return {};
 }
@@ -212,12 +199,18 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
 spyro::ProducerRefusal spyro_field_actor_composition_submit(Core *core,
                                                             FieldActorComposition composition) {
   const auto refusal = compose(core, composition);
-  if (refusal && composition.secondary && core != nullptr && core->game != nullptr) {
-    // This layer was asked to compose and something refused, so it published no picture and there
-    // is no endpoint to interpolate toward. The interval that would have ended here is dropped
-    // rather than spanning the gap. A shaded-only call must NOT refuse here: the secondary call
-    // that shares its logic frame has already retained that frame's endpoint.
+  if (!refusal || core == nullptr || core->game == nullptr) {
+    return refusal;
+  }
+  // A layer this call was asked to compose published no picture, so there is no endpoint to
+  // interpolate toward and the interval that would have ended here is dropped rather than spanning
+  // the gap. Only the layers this call owns are refused: the other call that shares this logic
+  // frame may already have retained its own endpoint.
+  if (composition.secondary) {
     spyro_context(*core).secondaryActorTemporal.refuse();
+  }
+  if (composition.shaded) {
+    spyro_context(*core).shadedQueueTemporal.refuse();
   }
   return refusal;
 }

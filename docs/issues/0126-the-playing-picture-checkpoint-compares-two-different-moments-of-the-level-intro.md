@@ -149,3 +149,32 @@ that issue stays open rather than closing here.
 `settled_play` is one scene with no occluded gem in it, so it does not answer issue 0120; it makes
 0120 answerable, which is what this issue owed it. 25.16% is still a spread, edge-dominated
 residual and is not a clean bill of health for the renderer — it is a number that can now be read.
+
+
+## 2026-09-20, second defect of the same kind: a whiteout is as uninformative as a blank frame
+
+Driving the scripted route on from `settled_play` found the same failure one step along.
+`--play 480 --frame-step 60` compared at f180 and reported **23.94% of pixels a different COLOUR**
+with every decisive range equal. Both frames were a near-white flash: the reference 56.76% one
+colour, the product 87.76%. The number was about which moment of the flash each core was on.
+
+The existing refusal did not catch it, because a fade is not `uniform` — it is one colour plus faint
+tints, so `distinct_colours` was 28 and 102, not 1. `Picture` now carries `modal_share`, the share of
+the frame the single commonest colour covers, counted on the console's own 15-bit grid so a dithered
+fade still reads as one colour, and `at()` refuses above half. Real Artisans scenes in the same run
+measured 6.67%–14.82% (the 6.67% being the letterbox bar), so the separation is a factor of three
+and the threshold is a statement — "over half this frame is one colour" — rather than a fitted knob.
+
+Both answers, in the shipping artifact, one run:
+
+```
+[picture] settled_play:      30922/122880 a different COLOUR (25.16%)
+[picture] played-480f-f60:   30596/122880 a different COLOUR (24.90%)
+[picture] played-480f-f120:  30684/122880 a different COLOUR (24.97%)
+[picture] played-480f-f180: REFUSED — 87.76% of the product picture is a single colour ...
+[picture] played-480f-f240: REFUSED — not at the same guest state: dragon_cutscene (+4: native 03 console 02)
+```
+
+So the comparable gameplay window is currently `settled_play` plus 120 frames of the scripted route,
+ended by a flash and then by the camera/cutscene-tick residual of issues 0110/0114 — not by
+anything this instrument can fix.

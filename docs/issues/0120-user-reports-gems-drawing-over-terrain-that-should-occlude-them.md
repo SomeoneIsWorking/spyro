@@ -1136,3 +1136,10 @@ answer to the report. What changed is that the instrument can now give one: the 
 unchanged in kind but no longer blocked — drive `settled_play`'s route on to a scene where a gem sits
 behind terrain, and read the significant-difference map there. A CONCENTRATED large-magnitude blob at
 the gem is the symptom; its absence, in a scene that actually contains the case, is the clearance.
+
+How far that route currently reaches, measured the same day with `--play 480 --frame-step 60`:
+`settled_play` and 120 further frames of the scripted route compare (24.90% and 24.97% significant,
+the same spread residual as the courtyard); f180 is refused as a whiteout and f240 on the
+camera/cutscene-tick residual of issues 0110/0114. So the comparable gameplay window is about 120
+frames of forward-and-turn motion, which does not leave the courtyard. Reaching a gem behind an
+occluder needs either that residual closed (0114) or a scene with the case closer to the spawn.

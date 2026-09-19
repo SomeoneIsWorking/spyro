@@ -40,9 +40,10 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
 of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
 issue 0110). The world, the player model, the regular actor layer and now the secondary actor layer
-are reconstructed in an in-between present. Next: give the remaining FIELD producers — shadows,
-particles, glow, tracers — their own temporal sources, and measure a frame-time budget on a released
-host. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
+are reconstructed in an in-between present. Next: the terrain producer `0x8004EBA8`, which owns 90%
+of every item still replayed verbatim, and then a frame-time budget on a released host. Shadows,
+glow, sparkles, particles and tracers are NOT next: measured together they draw about 32 faces per
+logic frame. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
 a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
 conformance.
 
@@ -836,6 +837,18 @@ smooth.
 was: a standalone producer for this layer with no caller anywhere in the repository. The live owner
 is `fx_field_actor_composition`, because the secondary and world-shaded layers share one guest
 shadow-list transaction.
+
+Which producer to reconstruct next was measured rather than assumed, and the answer was not the one
+on the list. The fps60 presenter could say how much of a captured frame replayed verbatim and the
+sequence dump could say in which layer, but neither could say whose, because several producers draw
+into the world layer and one run spanned them all. Adding the painter object to that run's key
+(psxport 4598acd6) made the remainder attributable. Over 1,577 extra presents of the same replay,
+1,482,522 items replayed verbatim and 1,335,351 of them — 90.1% — came from the terrain producer
+`0x8004EBA8` alone. The 2D layer accounts for another 9.8%. The producers this document had listed as
+next — shadows, glow, sparkles, particles, tracers — do not appear in the verbatim total at all;
+instrumented separately over the same route they draw about 32 faces per logic frame between them,
+so all five together would have moved the reconstructed share by under one percent. Terrain is the
+next source.
 
 Three duplications were removed as part of the work rather than after it. The occurrence-ordered
 pairing walk and the reason-split census are now `instance_pairing`, used by both actor layers and

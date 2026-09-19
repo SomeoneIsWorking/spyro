@@ -279,13 +279,6 @@ SpyroPairedRebuildResult emit_faces(Core *c,
     const uint16_t clut = (uint16_t)(face.packet_attr[0] >> 16),
                    tpage = (uint16_t)(face.packet_attr[1] >> 16);
     const uint32_t nv = face.quad ? 4u : 3u;
-    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-    // buffer separates bins and never contradicts it (issue 0120).
-    PainterReplayOrder replayOrder =
-        authoredReplay
-            ? spyro::scene_painter_order::pairedActor(mapping.bins[faceIndex], faceOrdinal)
-            : PainterReplayOrder{};
-    const float band = spyro::scene_painter_order::bandDepth(c->rsub.projParams, replayOrder);
     for (uint32_t v = 0; v < nv; ++v) {
       xs[v] = face.vertex[v].x + destination.off_x;
       ys[v] = face.vertex[v].y + destination.off_y;
@@ -297,7 +290,7 @@ SpyroPairedRebuildResult emit_faces(Core *c,
       rs[v] = rgb;
       gs[v] = rgb >> 8;
       bs[v] = rgb >> 16;
-      depth[v] = replayOrder.banded() ? band : proj_pz_to_ord((float)face.vertex[v].view_z);
+      depth[v] = proj_pz_to_ord((float)face.vertex[v].view_z);
     }
     rq.emitOrQueue(c,
                    1,
@@ -335,7 +328,9 @@ SpyroPairedRebuildResult emit_faces(Core *c,
                    0.0f,
                    0,
                    0,
-                   replayOrder);
+                   authoredReplay ? spyro::scene_painter_order::pairedActor(mapping.bins[faceIndex],
+                                                                            faceOrdinal)
+                                  : PainterReplayOrder{});
   }
   return SpyroPairedRebuildResult::Emitted;
 }

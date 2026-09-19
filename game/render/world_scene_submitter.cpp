@@ -149,11 +149,6 @@ void emitPrepared(Core *core,
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
-    // Banded: the whole domain replays g_WorldOT, so the depth buffer separates bins and nothing
-    // else. Per-vertex depth here was a second opinion the buffer preferred (issue 0120).
-    PainterReplayOrder replay =
-        scene_painter_order::world(face.otBin, face.paintGroup, face.paintSuborder);
-    const float band = scene_painter_order::bandDepth(depthProjection, replay);
     for (uint32_t i = 0; i < count; ++i) {
       const auto &vertex = face.vertices[i];
       xs[i] = vertex.sx + draw.offsetX;
@@ -165,7 +160,7 @@ void emitPrepared(Core *core,
       red[i] = (uint8_t)vertex.rgb;
       green[i] = (uint8_t)(vertex.rgb >> 8);
       blue[i] = (uint8_t)(vertex.rgb >> 16);
-      depth[i] = band;
+      depth[i] = depthProjection.pzToOrd(vertex.viewZ);
     }
     const bool textured = face.material.textured;
     queue.emitOrQueue(core,
@@ -204,7 +199,7 @@ void emitPrepared(Core *core,
                       0.0f,
                       1,
                       textured ? (face.material.tpage >> 9) & 1u : draw.dither,
-                      replay);
+                      scene_painter_order::world(face.otBin, face.paintGroup, face.paintSuborder));
   }
 }
 

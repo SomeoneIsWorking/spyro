@@ -420,6 +420,15 @@ def main() -> int:
         "guest camera each step; Spyro 1's gems are classes 83..87",
     )
     parser.add_argument(
+        "--seek-arrived",
+        type=int,
+        default=None,
+        metavar="UNITS",
+        help="stop the seek at this view-space distance instead of walking all the way in. Standing "
+        "next to a Moby puts it in front of the camera with nothing between, which cannot exhibit an "
+        "occlusion defect; stopping short is how a scene where terrain covers it is reached",
+    )
+    parser.add_argument(
         "--gate-teleport",
         default="",
         metavar="GATE:NODE",
@@ -462,7 +471,12 @@ def main() -> int:
         if args.seek_class >= 0 and args.seek_portal:
             parser.error("--seek-class and --seek-portal name two different destinations")
         if args.seek_class >= 0:
-            Seeker(port, f"class {args.seek_class}", moby_class_targets(port.words, args.seek_class)).walk()
+            Seeker(
+                port,
+                f"class {args.seek_class}",
+                moby_class_targets(port.words, args.seek_class),
+                arrived=args.seek_arrived,
+            ).walk()
         elif args.seek_portal:
             entering = port.word(G_LEVEL_ID)
             Seeker(port, "portal", portal_targets(port.words), arrived=0,

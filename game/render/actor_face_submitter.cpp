@@ -117,15 +117,6 @@ void submit(Core *core,
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
-    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-    // buffer separates bins and never contradicts it (issue 0120).
-    PainterReplayOrder replayOrder =
-        layer == Layer::Regular
-            ? scene_painter_order::actor(
-                  replayFace.otBin, replayFace.recordOrdinal, replayFace.chainOrdinal)
-            : scene_painter_order::secondaryActor(
-                  replayFace.otBin, replayFace.recordOrdinal, replayFace.chainOrdinal);
-    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replayOrder);
     for (uint32_t i = 0; i < count; ++i) {
       const uint32_t source = order[i];
       xs[i] = (int16_t)face.input.xy[source] + gpu.s_off_x;
@@ -138,12 +129,18 @@ void submit(Core *core,
       red[i] = rgb;
       green[i] = rgb >> 8;
       blue[i] = rgb >> 16;
-      depth[i] = band;
+      depth[i] = core->rsub.projParams.pzToOrd(face.input.viewZ[source]);
     }
     // The moby instance this face belongs to. RQ_WORLD items take their dbg_node from this scope,
     // which is what gives every downstream consumer — the objid overlay, the depth-contest
     // diagnostics, the actor-scene oracle — per-instance identity instead of one anonymous blob.
     core->rsub.diag.beginObject(face.moby);
+    const PainterReplayOrder replayOrder =
+        layer == Layer::Regular
+            ? scene_painter_order::actor(
+                  replayFace.otBin, replayFace.recordOrdinal, replayFace.chainOrdinal)
+            : scene_painter_order::secondaryActor(
+                  replayFace.otBin, replayFace.recordOrdinal, replayFace.chainOrdinal);
     queue.emitOrQueue(core,
                       1,
                       RQ_WORLD,

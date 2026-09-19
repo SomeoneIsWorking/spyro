@@ -56,17 +56,13 @@ void submit(Core *core, RenderQueue &queue, const flame_recipe::Recipe &recipe, 
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
-    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-    // buffer separates bins and never contradicts it (issue 0120).
-    PainterReplayOrder replay = scene_painter_order::flame(face.otBin, face.part, face.faceOrdinal);
-    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (std::size_t v = 0; v < face.nv; ++v) {
       const auto &vertex = face.vertices[v];
       xs[v] = vertex.sx + gpu.s_off_x;
       ys[v] = vertex.sy + gpu.s_off_y;
       screenX[v] = vertex.screenX + (float)gpu.s_off_x;
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
-      depth[v] = band;
+      depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
       us[v] = face.u[v];
       vs[v] = face.v[v];
       red[v] = face.red[v];
@@ -123,7 +119,7 @@ void submit(Core *core, RenderQueue &queue, const flame_recipe::Recipe &recipe, 
                       0.0f,
                       0,
                       dither,
-                      replay);
+                      scene_painter_order::flame(face.otBin, face.part, face.faceOrdinal));
   }
 }
 

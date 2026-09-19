@@ -161,18 +161,13 @@ void submit(Core *core, RenderQueue &queue, std::span<const Draw> draws, const P
     int xs[3]{}, ys[3]{}, us[3]{}, vs[3]{};
     float screenX[3]{}, screenY[3]{}, depth[3]{};
     unsigned char red[3]{}, green[3]{}, blue[3]{};
-    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-    // buffer separates bins and never contradicts it (issue 0120). The plan already carries the
-    // replay position; the band is that position's one depth.
-    PainterReplayOrder replay = ref.replay;
-    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (size_t vertexIndex = 0; vertexIndex < face.vertices.size(); ++vertexIndex) {
       const auto &vertex = face.vertices[vertexIndex];
       xs[vertexIndex] = vertex.sx + gpu.s_off_x;
       ys[vertexIndex] = vertex.sy + gpu.s_off_y;
       screenX[vertexIndex] = vertex.screenX + (float)gpu.s_off_x;
       screenY[vertexIndex] = vertex.screenY + (float)gpu.s_off_y;
-      depth[vertexIndex] = band;
+      depth[vertexIndex] = core->rsub.projParams.pzToOrd(vertex.viewZ);
       red[vertexIndex] = (uint8_t)vertex.rgb;
       green[vertexIndex] = (uint8_t)(vertex.rgb >> 8);
       blue[vertexIndex] = (uint8_t)(vertex.rgb >> 16);
@@ -213,7 +208,7 @@ void submit(Core *core, RenderQueue &queue, std::span<const Draw> draws, const P
                       0.0f,
                       face.gouraud ? 1 : 0,
                       gpu.s_tp_dither,
-                      replay);
+                      ref.replay);
   }
 }
 

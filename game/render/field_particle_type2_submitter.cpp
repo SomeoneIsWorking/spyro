@@ -97,6 +97,10 @@ bool spyro_field_particle_type2_submit(
                                (unsigned char)((particle.colorCommand >> 16) & 0xffu),
                                (unsigned char)((particle.colorCommand >> 16) & 0xffu),
                                (unsigned char)((particle.colorCommand >> 16) & 0xffu)};
+  const float depth[4] = {core->rsub.projParams.pzToOrd(center.pz),
+                          core->rsub.projParams.pzToOrd(center.pz),
+                          core->rsub.projParams.pzToOrd(center.pz),
+                          core->rsub.projParams.pzToOrd(center.pz)};
   const int clut = (int)((particle.uvClut >> 16) & 0xffffu);
   const int tpage = (int)((particle.uvTpage >> 16) & 0xffffu);
   const int mode = (tpage >> 7) & 3;
@@ -110,53 +114,47 @@ bool spyro_field_particle_type2_submit(
 
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "particles:type2");
   core->game->gpu.s_seen3d = 1;
-  // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-  // buffer separates bins and never contradicts it (issue 0120).
-  PainterReplayOrder replay = spyro::scene_painter_order::particle(
-      (uint16_t)std::clamp<int32_t>(otDepth, 0, 2047), particle.scanOrdinal, 0u);
-  const float band = spyro::scene_painter_order::bandDepth(core->rsub.projParams, replay);
-  const float centerOrd = core->rsub.projParams.pzToOrd(center.pz);
-  const float faceOrd = replay.banded() ? band : centerOrd;
-  const float depth[4] = {faceOrd, faceOrd, faceOrd, faceOrd};
-  core->game->rq.emitOrQueue(core,
-                             1,
-                             RQ_WORLD,
-                             RQ_OM_DEPTH,
-                             4,
-                             ((particle.colorCommand >> 24) & 0x20u) != 0,
-                             0,
-                             xs,
-                             ys,
-                             nullptr,
-                             nullptr,
-                             us,
-                             vs,
-                             rs,
-                             gs,
-                             bs,
-                             depth,
-                             mode,
-                             (tpage & 0xf) * 64,
-                             ((tpage >> 4) & 1) * 256,
-                             (clut & 0x3f) * 16,
-                             (clut >> 6) & 0x1ff,
-                             core->game->gpu.s_tw_mx,
-                             core->game->gpu.s_tw_my,
-                             core->game->gpu.s_tw_ox,
-                             core->game->gpu.s_tw_oy,
-                             core->game->gpu.s_da_x0,
-                             core->game->gpu.s_da_y0,
-                             core->game->gpu.s_da_x1,
-                             core->game->gpu.s_da_y1,
-                             (tpage >> 5) & 3,
-                             nullptr,
-                             -1,
-                             faceOrd,
-                             0,
-                             0,
-                             replay,
-                             0,
-                             (uint32_t)otDepth);
+  core->game->rq.emitOrQueue(
+      core,
+      1,
+      RQ_WORLD,
+      RQ_OM_DEPTH,
+      4,
+      ((particle.colorCommand >> 24) & 0x20u) != 0,
+      0,
+      xs,
+      ys,
+      nullptr,
+      nullptr,
+      us,
+      vs,
+      rs,
+      gs,
+      bs,
+      depth,
+      mode,
+      (tpage & 0xf) * 64,
+      ((tpage >> 4) & 1) * 256,
+      (clut & 0x3f) * 16,
+      (clut >> 6) & 0x1ff,
+      core->game->gpu.s_tw_mx,
+      core->game->gpu.s_tw_my,
+      core->game->gpu.s_tw_ox,
+      core->game->gpu.s_tw_oy,
+      core->game->gpu.s_da_x0,
+      core->game->gpu.s_da_y0,
+      core->game->gpu.s_da_x1,
+      core->game->gpu.s_da_y1,
+      (tpage >> 5) & 3,
+      nullptr,
+      -1,
+      core->rsub.projParams.pzToOrd(center.pz),
+      0,
+      0,
+      spyro::scene_painter_order::particle(
+          (uint16_t)std::clamp<int32_t>(otDepth, 0, 2047), particle.scanOrdinal, 0u),
+      0,
+      (uint32_t)otDepth);
   lucent::debug("particles",
                 "type2 ordinal={} address=0x{:08x} depth={}",
                 particle.scanOrdinal,

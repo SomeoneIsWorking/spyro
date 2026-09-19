@@ -88,18 +88,13 @@ void submit(Core *core,
     unsigned char red[4]{}, green[4]{}, blue[4]{};
     const std::uint8_t uvU[3] = {plan.u0, plan.u1, plan.u0};
     const std::uint8_t uvV[3] = {plan.v0, plan.v1, (std::uint8_t)(plan.v0 + kThirdVertexVStep)};
-    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-    // buffer separates bins and never contradicts it (issue 0120).
-    PainterReplayOrder replay =
-        scene_painter_order::mobyShadow(face.otBin, shadowOrdinal, face.fanOrdinal);
-    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (std::size_t v = 0; v < 3u; ++v) {
       const auto &vertex = face.vertices[v];
       xs[v] = vertex.sx + gpu.s_off_x;
       ys[v] = vertex.sy + gpu.s_off_y;
       screenX[v] = vertex.screenX + (float)gpu.s_off_x;
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
-      depth[v] = band;
+      depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
       us[v] = uvU[v];
       vs[v] = uvV[v];
       red[v] = face.grey;
@@ -142,7 +137,7 @@ void submit(Core *core,
                       0.0f,
                       0,
                       plan.dither,
-                      replay);
+                      scene_painter_order::mobyShadow(face.otBin, shadowOrdinal, face.fanOrdinal));
     core->rsub.diag.endObject();
   }
 }

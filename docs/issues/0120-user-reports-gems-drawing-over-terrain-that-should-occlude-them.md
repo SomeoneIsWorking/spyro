@@ -1001,3 +1001,60 @@ defect being fixed is supportable.
 `native REPL exited (code 139)` with a `[watchdog] FAULT (signal) signal = 11` backtrace. A refusal
 that is indistinguishable from a segfault costs a reader the first minutes of every such failure; it
 cost them here.
+
+## 2026-09-19 (final): the depth buffer is NOT a second authority here — the premise was wrong
+
+Everything above from "the depth must stop being a second opinion" onwards rests on one claim: that
+the port replays the authored order AND depth-tests, so the depth buffer wins silently where they
+disagree. **That claim is false for a regrouped painter range, and it is now measured.**
+
+The probe is `drive.py gameplay --seek-class 83 --seek-arrived 1000`, which re-steers from the guest
+camera every step and so reproduces a scene exactly (two runs of one binary gave byte-identical
+frames at 4000, 3000, 2000 and 1000 units). `field_shaded_queue_submitter` is the gem producer named
+in the report. Forcing its submitted depth, and nothing else:
+
+| what the gem producer submitted | picture |
+|---|---|
+| the banded per-bin depth | reference |
+| `0.99` on every vertex -- nearest possible | byte-identical |
+| `0.0` on every vertex -- farthest possible | byte-identical |
+| unchanged depth, colour forced to red | **DIFFERS** |
+
+The colour row is what makes the other three mean anything: the producer demonstrably draws
+thousands of pixels in this scene, so "no change" is a real negative and not a probe that never ran.
+Nearest and farthest are the widest spread the depth band admits. They agree. **The submitted depth
+does not reach the picture for these draws.**
+
+The mechanism is in `render_queue.cpp:emitItem`: under `mPainterRegrouping` it calls
+`gpu_vk_set_order_override(core, mPainterPresentationRank)`, and `GpuVkState::set_order` derives the
+primitive's depth from that rank. The replay order is the whole answer; `RqItem::depth` is dead for
+a painter range.
+
+### What that costs, and what it buys
+
+Reverted as built on a disproven premise:
+
+* spyro `2b6c5da` -- the eleven banded submitters and `scene_painter_order::bandDepth`. It was inert,
+  which is exactly what this predicts.
+* psxport's `painter_band_depth.*` contract and `PainterReplayOrder::band_ord`. It validated a
+  declaration with no effect -- a check that can only ever print one answer, which is the shape this
+  project's own rules say to refuse. The `painterplan` extraction and the line-cap ratchet from that
+  commit are kept; they were independently good.
+
+What it buys is the real direction. The bins are 655/655 identical to retail and the depth cannot be
+the fault, so **the remaining suspect is the replay ORDER itself** -- `link_ordinal` (the twelve
+producer phases) and `chain_suborder`, not `ot_bin` and not depth. Retail put the gem at bin 171 and
+the object at bin 105; a pure painter replay draws the larger bin first, so the object should already
+cover the gem. It does not, so either those faces are not being interleaved in one range, or a phase
+ordinal places the gem producer after the producer that should cover it.
+
+Falsifier for the next attempt: with the port's own `painterplan` channel, the gem's face and the
+face that should occlude it must appear in ONE range, in retail's relative order. If they land in
+different ranges, no ordering rule inside a range can fix it and the domain composition is the fault.
+
+### Instrument note: a uniform scale is not a discriminator
+
+My first attempt scaled every band by `1e-6` and read the identical picture as proof. It proves
+nothing: a uniform scale preserves the ordering, so every depth test that passed still passes. Only
+breaking the order -- or pinning one producer to an extreme -- discriminates. Recorded because the
+mistake is easy to repeat and it looked like an answer.

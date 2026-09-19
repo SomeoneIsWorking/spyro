@@ -55,60 +55,56 @@ void submit(Core *core,
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
-    // Banded: this producer links into g_WorldOT, and the domain replays that table, so the depth
-    // buffer separates bins and never contradicts it (issue 0120).
-    PainterReplayOrder replay =
-        scene_painter_order::sparkle(line.otBin, line.recordIndex, line.chainOrdinal);
-    const float band = scene_painter_order::bandDepth(core->rsub.projParams, replay);
     for (std::size_t v = 0; v < line.vertices.size(); ++v) {
       const auto &vertex = line.vertices[v];
       xs[v] = vertex.sx + gpu.s_off_x;
       ys[v] = vertex.sy + gpu.s_off_y;
       screenX[v] = vertex.screenX + (float)gpu.s_off_x;
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
-      depth[v] = band;
+      depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
       // A monochrome line carries one colour word for the whole primitive, so both ends take it.
       red[v] = (unsigned char)(line.colour & 0xffu);
       green[v] = (unsigned char)((line.colour >> 8) & 0xffu);
       blue[v] = (unsigned char)((line.colour >> 16) & 0xffu);
     }
-    queue.emitOrQueue(core,
-                      1,
-                      RQ_WORLD,
-                      RQ_OM_DEPTH,
-                      kLineVertices,
-                      0,
-                      0,
-                      xs,
-                      ys,
-                      screenX,
-                      screenY,
-                      us,
-                      vs,
-                      red,
-                      green,
-                      blue,
-                      depth,
-                      kUntexturedMode,
-                      0,
-                      0,
-                      0,
-                      0,
-                      gpu.s_tw_mx,
-                      gpu.s_tw_my,
-                      gpu.s_tw_ox,
-                      gpu.s_tw_oy,
-                      gpu.s_da_x0,
-                      gpu.s_da_y0,
-                      drawRight,
-                      gpu.s_da_y1,
-                      kOpaque,
-                      nullptr,
-                      -1,
-                      0.0f,
-                      0,
-                      kNoDither,
-                      replay);
+    queue.emitOrQueue(
+        core,
+        1,
+        RQ_WORLD,
+        RQ_OM_DEPTH,
+        kLineVertices,
+        0,
+        0,
+        xs,
+        ys,
+        screenX,
+        screenY,
+        us,
+        vs,
+        red,
+        green,
+        blue,
+        depth,
+        kUntexturedMode,
+        0,
+        0,
+        0,
+        0,
+        gpu.s_tw_mx,
+        gpu.s_tw_my,
+        gpu.s_tw_ox,
+        gpu.s_tw_oy,
+        gpu.s_da_x0,
+        gpu.s_da_y0,
+        drawRight,
+        gpu.s_da_y1,
+        kOpaque,
+        nullptr,
+        -1,
+        0.0f,
+        0,
+        kNoDither,
+        scene_painter_order::sparkle(line.otBin, line.recordIndex, line.chainOrdinal));
   }
 }
 

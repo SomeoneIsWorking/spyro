@@ -43,3 +43,28 @@ today, so C143 can be neither confirmed nor falsified until an instrument is res
 about the guest-OT compositor's widen, which the native render path does not use; whether Spyro's
 2D content widens is now a render-queue 2D-space question (`RQ_2D_AUTHORED_4_3` vs
 `RQ_2D_WIDE_FINAL`), the same mechanism as Tomba! 2's issue 0010.
+
+## STILL DISTRUSTED 2026-09-19 after the call site WAS restored — the counters are on the wrong path
+
+`spyro::reportRuntimeRun` (`game/core/runtime_run.cpp`) now calls
+`render_depth_coverage_report(&core, "run-complete")`, so the instrument prints again. It prints:
+
+```
+[ndepth:warn] depth coverage (run-complete): NO PRIMITIVES WERE CLASSIFIED AT ALL this run
+              — not 0% 3D, but nothing measured.
+```
+
+on a run that had reached Artisans and presented 3,606 frames. That is the honest negative, and it
+settles the question the previous section left open: **restoring the call site is not enough, and no
+call site can fix this.** The counters this function reports are incremented inside the framework's
+guest-OT classifier in `gpu_native.cpp`, which a native-producer run never executes, so they are
+zero wherever the report is placed.
+
+The call site is kept anyway, because a report that states "nothing measured" in prose is strictly
+better than silence, and its own comment now says why. But do NOT read its output as a coverage
+figure for this port, and do not treat a future non-zero from it as native-path coverage without
+first checking which classifier incremented it.
+
+What would actually measure native-path depth coverage is a count taken where this port's producers
+set it — at `RqItem::depth` on submission — not in the compositor they bypass. Nothing does that
+today, so the number remains unavailable and C143's falsifier remains unmeasurable.

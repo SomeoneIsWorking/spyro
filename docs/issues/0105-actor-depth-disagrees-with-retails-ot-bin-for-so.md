@@ -5,7 +5,7 @@ status: open
 symptom: about 10% of ordered actor primitive pairs sort in the opposite order from retail, and for the worst pair the port places the FARTHER moby in front
 tags: render,field,actor,depth,oracle
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-19
 ---
 
 ## Symptom
@@ -75,3 +75,60 @@ Not yet the projection unit and not the scale byte. The next discriminators, in 
    `actor_transform_math::worldAffine` doubles the view translation with no per-record shift while
    `actor_prefix_builder::affineFrom` shifts it, so the two paths need not share a depth unit.
 3. Whether retail's bin for these instances comes from a path other than CR14.
+
+## 2026-09-19: a USER saw this, and a third hypothesis the list above does not have
+
+A user reported "Spyro looks like gems that should be behind terrain rendering on top" (issue 0120).
+Chasing that symptom produced a new measurement of THIS issue: the same instrument, the same shape
+of disagreement, and this time the worst pair is a GEM.
+
+Do not treat 0120 as a duplicate of this issue. `actor_oracle_diff.py` walks retail's moby list and
+cannot see terrain, so it can say nothing about an actor sorting against terrain -- which is what
+0120 reproduces at the framebuffer. The two may share a cause; nothing measured so far says they do.
+
+`tools/actor_oracle_diff.py` over `replays/gameplay/artisans-arrival.pad`, last of 220 oracle frames:
+
+```
+comparable ordered pairs : 174417
+disagreeing with retail  : 8850   (5.07%)
+bins 171 vs 105 (span 66) but native depth 0.012609 vs 0.009528
+     (8016F0C8 class 83 scale 0 dist 26333 / 8016FA10 class 10 scale 0 dist 17518)
+```
+
+Same signature as the recorded class-339/class-354 pair: both `scale 0`, the FARTHER instance
+(26333 vs 17518) given the LARGER `ord`, and `pzToOrd` being reversed-Z means larger is nearer. The
+geometry again agrees with retail.
+
+The producer table for that frame rules out an attribution problem, which was hypothesis 1 in "Where
+to look next": every producer that draws these matches retail's own walker on geometry with zero
+unmatched — `0x8001F798` 357/357, `0x80020F34` 75/75, `0x80022A2C` 41/39 (2 recoloured by one
+colour count), `0x80023AC4` 173/173. The instances are correctly attributed; only their depths sort
+wrongly.
+
+### The new hypothesis: the recipe computes retail's order and the submitter discards it
+
+`game/render/field_shaded_queue_recipe.cpp` derives the OT bin the way retail does, and it is NOT
+just the vertex depths:
+
+```cpp
+int64_t depth = projected[i0].sz + projected[i1].sz + projected[i2].sz + projected[i3].sz;
+depth -= (int64_t)std::max(record.affine.t[2] - 256, 0) * 4;   // actor-origin bias
+if (reverseFacing) { depth += 512; }
+const int64_t ot = depth >> 5;
+```
+
+`game/render/field_shaded_queue_submitter.cpp` then submits `depth[i] = pzToOrd(vertices[i].viewZ)`
+— raw per-vertex view-Z, with **neither the actor-origin bias nor the reverse-facing term**. The
+bias is proportional to `affine.t[2]`, the instance's own view-Z origin, so its omission grows with
+distance: exactly the observed signature of the FARTHER instance being placed nearer.
+
+This is distinct from hypothesis 2 above (a depth-unit mismatch between `worldAffine` and
+`affineFrom`). Here the two quantities are not even meant to be the same number: one is retail's
+ordering key including a per-instance bias, the other is a geometric depth. Check the other actor
+producers for the same shape before treating it as specific to the shaded queue.
+
+Do not fix this by tuning a constant until the pair agrees. Either the recovered bias is carried
+into the submitted depth in its correct scale, or the face carries its authored order through
+`RqItem::authored_depth` / `sort_key` — and that route first needs the painter-object path and the
+keyed-face path to compose (the frame's census shows 0 keyed faces of 1747 because every prim
+carries a painter object). The falsifier either way is this named pair plus the 5.07% rate.

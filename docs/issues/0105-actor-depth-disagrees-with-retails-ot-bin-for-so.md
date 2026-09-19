@@ -132,3 +132,53 @@ into the submitted depth in its correct scale, or the face carries its authored 
 `RqItem::authored_depth` / `sort_key` — and that route first needs the painter-object path and the
 keyed-face path to compose (the frame's census shows 0 keyed faces of 1747 because every prim
 carries a painter object). The falsifier either way is this named pair plus the 5.07% rate.
+
+## RETRACTED 2026-09-19, same day it was added: the "submitter discards the bias" hypothesis is wrong
+
+The hypothesis added above -- that `field_shaded_queue_recipe.cpp` computes retail's OT bin with the
+actor-origin bias and `field_shaded_queue_submitter.cpp` then throws it away -- is FALSE. Reading
+the whole submitter instead of its depth line shows the bin is passed on every single face:
+
+```cpp
+// field_shaded_queue_submitter.cpp, the last argument of every emitOrQueue call
+scene_painter_order::queuedWorld(face.otBin, face.paintGroup)
+```
+
+and `prepare()` in the same file REFUSES the whole plan if any face's order is not authored:
+
+```cpp
+if (... || !scene_painter_order::queuedWorld(face.otBin, face.paintGroup).authored()) {
+  plan.status = Status::InvalidOrder;
+```
+
+`face.otBin` is the recipe's `ot`, bias and reverse-facing term included. So the producer does not
+compute an answer and discard it. It submits geometric per-vertex depth for occlusion against
+terrain AND retail's authored position for ordering, which is a coherent design rather than a bug.
+`scene_painter_order.h` shows every actor producer doing the same -- `actor`, `secondaryActor`,
+`pairedActor`, `spyroShadow`, `mobyShadow`, `flame`, `glow`, `sparkle`, `particle` and both
+cyclorama entries all take an `otBin`.
+
+### How the mistake happened, because the instrument will mislead the next reader too
+
+The pixel probe prints `authored={}` from `RqItem::authored_depth`, and 15,592 of 15,592 probed
+lines read `authored=0`. That was read as "no face carries an authored order". It does not mean
+that. `authored_depth` is documented in `render_queue.h` as "1 = depth[] already encodes OT order;
+suppress the generic later-draw bias" -- a statement about the depth ARRAY, not about painter order.
+The field that carries retail's bin is `RqItem::painter_replay`, and the probe did not print it at
+all. A probe that omits the only field bearing on the question, while printing a similarly-named one
+that does not, cannot show the other answer.
+
+Fixed in psxport: the probe now prints `replay_domain`, `replay_ot`, `replay_link` and `replay_sub`,
+and the old `authored=` is renamed `authored_depth=` so the two cannot be confused again.
+
+### What is still open, unchanged
+
+The measured disagreement is real and this retraction does not touch it: 8,850 of 174,417 comparable
+ordered pairs (5.07%) sort against retail, and the worst pair puts the farther gem in front. What is
+now unknown again is WHY. The next measurement is the one the probe was just taught to make -- at a
+pixel where the native and retail disagree, read `replay_ot` for both primitives and compare it with
+retail's bin. If the replay positions are right, the ordering rule or the depth buffer is overriding
+them; if they are wrong, the recipe's bin is wrong. Those are different bugs and the probe can now
+tell them apart.
+
+Hypotheses 1 and 2 in "Where to look next" above are untouched by this retraction.

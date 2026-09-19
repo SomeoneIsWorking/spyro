@@ -555,3 +555,20 @@ issue 0103. The requested `--route`/`--play` never drove the comparison; the ora
 scripted checkpoints. The probe data above is still good — those frames really were rendered and
 really were probed — but this run produced no matched native/console pair at the coordinate, so it
 cannot close this issue.
+
+## 2026-09-19: the 800258F0 mechanism note in 0105 was retracted
+
+The hypothesis this issue contributed to 0105 -- that the shaded queue's submitter drops the
+actor-origin bias -- is false and is retracted there. The submitter passes `queuedWorld(face.otBin,
+face.paintGroup)` on every face and `prepare()` refuses the plan if any face's order is not authored.
+
+The reading that produced it came from this issue's own probe output: `authored=0` on all 15,592
+probed lines was taken to mean "no authored order", when `authored_depth` is a statement about the
+depth ARRAY. The field that carries retail's bin, `RqItem::painter_replay`, was not printed at all.
+The probe now prints `replay_domain/replay_ot/replay_link/replay_sub` and the misleading field is
+renamed `authored_depth=`.
+
+This is the second attribution mistake in this issue, after the `painter=` correction earlier. Both
+had the same shape: a probe field was read as answering a question it does not answer. Treat any
+remaining claim here that rests on a single probe field as unconfirmed until the field's own
+definition has been checked in `render_queue.h`.

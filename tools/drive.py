@@ -44,6 +44,14 @@ from spyro1_steering import moby_class_targets, portal_targets
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# The enhancement configuration every agent run of this port is gated under. It lives in the launch
+# environment rather than in one tool's argparse default because oracle_compare.py builds its product
+# environment from here too: left unset, the product falls back to its own discovery and picks up
+# whichever psxport_settings.ini happens to sit in the working directory -- an untracked, per-machine
+# file. Measured 2026-09-19: an oracle run that recorded product_env {} still had fps60 and widescreen
+# on, from the operator's personal file, and a fresh clone or CI would silently have run without them.
+SHIPPING_SETTINGS = ROOT / "tools" / "shipping_settings.ini"
+
 # Guest addresses. The shared ones come from the shipping owner, game/core/guest_globals.h, through
 # tools/guest_globals.py, so this driver and the product cannot read different memory. The two
 # level-transition words below are read here and nowhere else, so they stay with their only reader.
@@ -371,6 +379,7 @@ def environment(disc: str | None) -> dict[str, str]:
     )
     if disc:
         env["PSXPORT_SPYRO_DISC"] = disc
+    env["PSXPORT_SETTINGS"] = str(SHIPPING_SETTINGS)
     return env
 
 
@@ -405,7 +414,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--settings",
-        default="tools/shipping_settings.ini",
+        default=str(SHIPPING_SETTINGS),
         help="PSXPORT_SETTINGS for this run; the default turns on the two enhancements under test "
         "(widescreen and interpolated 60fps), because the previous default named a file that did "
         "not exist and silently gated the product with both of them off",

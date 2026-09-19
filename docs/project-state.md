@@ -80,7 +80,16 @@ cursor stayed at LBA 0 while Spyro had asked for LBA 113,448 and scanned until i
 audio. The stream now starts where the guest asked: skipped sectors 9 -> **0**, disc hunk fills
 8,461 -> **841**, time in `chd_read` 3,611.9 ms -> **403.2 ms**, worst single fill 21.2 ms -> **0.9
 ms**. A 1,300-frame `looks_right.py` run that previously died with `watchdog STUCK` now completes
-and passes all four checks, and oracle parity is unchanged with widescreen and fps60 both live. No released host is qualified by this: a
+and passes all four checks. Oracle parity is unchanged with widescreen and fps60 both live, and as
+of 2026-09-19 that is a two-sided measurement rather than an assertion: `tools/oracle_compare.py`
+run against `aspect=0 fps60=0` and against `aspect=3 fps60=1`, each configuration confirmed in the
+product's own log, produces **byte-identical guest state at all 14 checkpoints**, arrival frame
+counts included. The enhancements do not perturb the simulation. Until that day the comparison could
+not have shown otherwise: `PSXPORT_SETTINGS` went unset, so the product discovered whichever
+untracked `psxport_settings.ini` sat in the working directory, and the report recorded only CLI
+overrides. Both halves are fixed -- `drive.environment` now supplies the tracked
+`tools/shipping_settings.ini` to every consumer including the oracle, and psxport `5ace1a40` records
+the effective configuration in every report. No released host is qualified by this: a
 maintainer build on one desktop is not the AppImage, the APK or the browser package. Shadows, glow,
 sparkles, particles and tracers are NOT next:
 measured together they draw about 32 faces per game update, and what remains replayed verbatim is

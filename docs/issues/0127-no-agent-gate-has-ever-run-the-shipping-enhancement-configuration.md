@@ -82,3 +82,37 @@ own `psxport_settings.ini`. `--settings scratch/does-not-exist.ini` refuses by n
 This does not retroactively validate anything. Every result recorded before today still carries the
 configuration it was measured under, and the oracle and picture comparisons named in this issue still
 need re-running under the enhancements.
+
+## CORRECTION 2026-09-19 — the title of this issue was too broad, and the real defect was worse
+
+`tools/drive.py` did disable the enhancements, and for the reason recorded above. But
+`tools/oracle_compare.py` never set `PSXPORT_SETTINGS` at all, and an unset variable does not mean
+"defaults": the product then discovers its own settings file from the working directory and finds the
+operator's untracked `psxport_settings.ini`. So oracle runs launched from the repo root had in fact
+always been enhanced — by accident, from a per-machine file, while their reports recorded
+`product_env {}`.
+
+That is worse than the original finding rather than better. The same command would have compared an
+unenhanced product on a fresh clone, in CI, or on any machine without that file, and nothing in the
+report would have differed. It also cost a measurement here: the first "baseline versus enhanced"
+comparison run today had enhancements on in *both* arms, and its 14/14 identical result meant
+nothing. Only the product's own log caught it.
+
+Both halves are now fixed:
+
+- `drive.environment()` — the one launch-environment owner that `drive.py` and `oracle_compare.py`
+  share — sets `PSXPORT_SETTINGS` to the tracked `tools/shipping_settings.ini`. An explicit
+  `--settings` still overrides it, and the variable beats working-directory discovery, which is
+  exactly why the old missing-path default disabled everything.
+- psxport `5ace1a40` records `product_settings` in every oracle report: the effective path and its
+  values, with an explicit answer for "unset" and for "named a file that does not exist".
+
+### The measurement this unblocked
+
+With the arms genuinely distinguishable — `aspect=0 fps60=0` against `aspect=3 fps60=1`, each
+confirmed in the product's log — all 14 checkpoints are byte-identical, arrival frame counts
+included. Widescreen and interpolated 60fps do not perturb Spyro 1's guest simulation.
+
+Picture comparison under the enhancements remains open and is a different question: widescreen
+deliberately changes the image, so it cannot be compared against a 320-wide console reference without
+deciding what the comparison means.

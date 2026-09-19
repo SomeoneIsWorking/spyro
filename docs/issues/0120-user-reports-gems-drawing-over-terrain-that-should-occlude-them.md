@@ -1058,3 +1058,52 @@ My first attempt scaled every band by `1e-6` and read the identical picture as p
 nothing: a uniform scale preserves the ordering, so every depth test that passed still passes. Only
 breaking the order -- or pinning one producer to an extreme -- discriminates. Recorded because the
 mistake is easy to repeat and it looked like an answer.
+
+## 2026-09-19 (closing the loop): the ordering defect is closed, and the metric that said otherwise ranks nothing
+
+With depth eliminated, the falsifier's remaining branch was the replay ORDER. Both halves of it now
+answer, on a reproducible gem scene (`--seek-class 83 --seek-arrived 2000`):
+
+**The domain composes into one range.** `PSXPORT_DEBUG=painterplan`, 3109 frames, every one:
+
+```
+ranges=1  items=1364  objects=9  domains=1
+counts= 8004EBA8:362 800258F0:493 8004FEA0:3 8001F798:262 80022A2C:35 80059A48:16 80023AC4:169 800580F4:8 800573C8:16
+first=8004EBA8@2047/...  last=800573C8@3/...
+```
+
+`ranges=1` on 3109 of 3109 frames. Terrain (`8004EBA8`), the world scene (`800258F0`) and the gem
+producer (`80022A2C`) are in ONE range, and the range runs from bin 2047 down to bin 3 -- retail's
+own far-to-near walk. So the faces ARE interleaved and no domain-composition fault remains.
+
+**The bins in that range are retail's.** `actor_oracle_diff.py` on the same scene: 513 native against
+513 retail primitives, 512 matched, and `512 of 512 (100.00%) identical to retail`.
+
+Bins are 100% retail, the bins are what the replay draws by, and the replay order is the sole
+authority. **The drawn order therefore matches retail**, and the ordering defect this issue was
+opened for is closed by `987eaa1` -- the commit that recovered the shaded-moby world bin. Everything
+after that commit in this issue, including the eight-scale depth analysis and the banding, was
+chasing a quantity that cannot reach the picture.
+
+### The instrument that caused it, now fixed
+
+`actor_oracle_diff.py` leads with:
+
+```
+  disagreeing with retail  : 12422
+  disagreement rate        : 11.85%
+```
+
+computed from the submitted per-vertex depth. That number ranks nothing the player sees, and reading
+it as a remaining defect is what produced the "eight scales, one shared D32 buffer" section above and
+a day of work on a fix that moved no pixel. The tool now prints, immediately under the rate, that an
+authored painter domain's submitted depth does not reach the picture and that the authored-bin
+comparison is the one that decides -- and, when the bins are 100%, that the drawn order matches
+retail rather than the old "look at the ordering rule and the depth buffer instead".
+
+### What is still open
+
+A direct visual confirmation against the console at a scene where a gem is actually occluded. The
+evidence above is a construction proof (retail's bins, retail's order, order is the only authority),
+not a picture, and the recorded route that produced the user's frame can no longer reach it. The
+remaining step is a console-comparable checkpoint in a scene with an occluded gem.

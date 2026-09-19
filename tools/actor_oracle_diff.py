@@ -279,10 +279,22 @@ def report_depth(
 ) -> None:
     """Does the native depth agree with the OT bin retail sorted the same primitive into?
 
+    READ THE WARNING THIS PRINTS BEFORE ACTING ON THE RATE. For a primitive inside an authored
+    painter domain -- which is every world primitive Spyro submits -- the submitted depth DOES NOT
+    REACH THE PICTURE. `render_queue.cpp:emitItem` overrides the emission order with the painter
+    presentation rank and `GpuVkState::set_order` derives the drawn depth from that rank, so the
+    replay order is the whole answer. Measured 2026-09-19 (issue 0120): forcing one producer's depth
+    to 0.0 and then to 0.99 -- the widest spread available -- produced byte-identical frames, while
+    recolouring the same producer did change them.
+
+    So a non-zero rate here is NOT a visible defect on its own, and chasing one cost a day. What
+    decides the picture is `authored bin vs retail bin` below. This section is kept because the
+    depth still feeds the z-fight scanner and any future non-painter path, not because it ranks
+    what the player sees.
+
     Matching on pixels says two primitives cover the same area in the same colours; it says nothing
     about which one wins where they overlap. Retail's answer is the OT bin; the port's answer is the
-    normalized per-vertex depth. Every ordered pair whose retail bins differ is checked, so a
-    depth-only fault cannot hide behind a perfect geometry match.
+    normalized per-vertex depth. Every ordered pair whose retail bins differ is checked.
 
     The sign relating the two scales is MEASURED rather than assumed: whichever orientation the
     port's depth normalization uses, one of them must hold for nearly every pair, and asserting the
@@ -312,6 +324,9 @@ def report_depth(
           f"{'larger' if rising else 'smaller'} native depth")
     print(f"  disagreeing with retail  : {disagreeing}")
     print(f"  disagreement rate        : {100.0 * disagreeing / comparable:.2f}%")
+    print("  NOTE: for an authored painter domain the submitted depth does not reach the picture")
+    print("        (the painter presentation rank decides; issue 0120), so this rate ranks nothing")
+    print("        the player sees. The authored-bin comparison below is the one that does.")
     _report_authored_bins(pairs)
     worst = sorted(
         ((abs(r.ot_bin - r2.ot_bin), r, n, r2, n2)
@@ -372,7 +387,8 @@ def _report_authored_bins(pairs) -> None:
     off = [(n.ot_bin - r.ot_bin, r, n) for r, n in authored if n.ot_bin != r.ot_bin]
     if not off:
         print("    every authored bin matches retail, so the recipe is NOT the fault here;")
-        print("    look at the ordering rule and the depth buffer instead.")
+        print("    and the authored bin IS what the painter replay draws by, so the drawn order")
+        print("    matches retail here. Do not read the depth rate above as a remaining defect.")
         return
     deltas = Counter(d for d, _, _ in off)
     print(f"    differing           : {len(off)}   most common deltas (native - retail):")

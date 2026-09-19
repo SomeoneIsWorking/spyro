@@ -51,6 +51,11 @@ G_LEVEL_ID = guest_globals.kLevelId                       # the level now reside
 D_OCCLUSION_RESULT = 0x80075844   # read only here: the collision query's result for the camera group
 
 declared = (
+    # The BIOS kernel page. Informational because no title behaviour has been traced to it yet, and
+    # declared because it is NOT equal to the console: 10 of these 128 bytes differ at every
+    # checkpoint, native 00 against console 03 at +0 (issue 0125). Nothing was watching it until a
+    # card probe was found writing 128 bytes over it (psxport 63671d3c).
+    DeclaredRange("kernel_page0", 0x80000000, 0x80, False),
     DeclaredRange("gamestate", G_GAMESTATE, 4, True),
     DeclaredRange("title.mode_state", G_TITLESCREEN, 8, True),       # m_Mode, m_State
     DeclaredRange("title.ticks", G_TITLESCREEN + 8, 8, False),        # m_Tick, m_SubTick

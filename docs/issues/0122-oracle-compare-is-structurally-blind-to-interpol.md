@@ -1,6 +1,6 @@
 ---
 id: 122
-title: Oracle compare is structurally blind to interpolated frames, so it cannot verify 60fps
+title: Oracle compare cannot verify either enhancement's new output, because the reference lacks it
 status: open
 symptom: running the picture oracle with PSXPORT_FPS60=1 and without it produces byte-identical reports: same pixel counts at every checkpoint, same checkpoint frame counts, differing only in wall-clock seconds and the recorded product_env
 tags: render,fps60,oracle,instrument,interpolation
@@ -77,3 +77,53 @@ S020 in `docs/project-state.md` already says "the extra presents are never sampl
 comparator". This issue is the measurement behind that sentence and the reason it cannot be fixed by
 adding checkpoints. The 51.89% / 18.50% console differences in both runs are a separate matter and
 are confounded by the two cores reaching each checkpoint hundreds of game frames apart -- issue 0119.
+
+### Note (2026-09-19)
+2026-09-19: WIDESCREEN hits the same wall, so this is one finding about enhancements, not about fps60.
+
+Same tool, same route, `--product-env PSXPORT_SETTINGS=<aspect=1>`:
+
+    [picture] save_picker: REFUSED — the product presents 684x240 and the reference 512x240;
+              scaling one onto the other would invent the pixels this tool then measured.
+              Compare the product's 4:3 output here
+    [picture] playing:     REFUSED — (same)
+
+Widescreen was live, not silently refused: the product log carries
+`[wide] native picture: aspect=1 wide_engine=1 native_width=512 render_width=684`.
+
+The refusal is correct behaviour and the message is right. But note what it means: the reference has
+no widescreen picture, so the extra horizontal area has NOTHING to be compared against. The tool's
+advice -- compare the product's 4:3 output -- verifies that widescreen did not damage the original
+framing. It cannot verify the new pixels, because no reference contains them.
+
+## The general statement
+
+Both enhancements in the project goal fail oracle comparison for the same structural reason, and it
+is not a defect in either oracle:
+
+| enhancement | what the reference lacks | so the oracle cannot judge |
+|---|---|---|
+| interpolated 60fps | any frame between two logic frames | the reconstructed midpoint |
+| widescreen | any pixel outside 512 wide | the additional horizontal area |
+
+In both cases the oracle CAN establish non-invasiveness -- that the enhancement leaves the original
+output unchanged -- and that is worth having and is now measured for both. In neither case can it
+establish that the new output is correct, for any route, because correctness there is a claim about
+pixels and frames the retail console never produced.
+
+## What this means for "use oracle compare to be sure"
+
+The instruction is satisfiable for one half of each feature and unsatisfiable for the other. Stating
+it precisely so nobody later reads a green oracle run as full verification:
+
+  PROVABLE by oracle compare, and now proved for both:
+    the 4:3 logic-frame picture is unchanged when the enhancement is on.
+
+  NOT PROVABLE by oracle compare, for any route:
+    that the extra horizontal area is the right geometry;
+    that the reconstructed midpoint frame is the right picture.
+
+The second group needs verification of a different kind -- internal invariants with denominators,
+endpoint reproduction, geometry provenance, and a human looking at the pictures -- which is what the
+"What CAN be checked" list above is for. That list should be treated as the acceptance criteria for
+S019 and S020, in place of an oracle comparison that cannot exist.

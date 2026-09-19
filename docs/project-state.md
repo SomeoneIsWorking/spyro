@@ -40,8 +40,9 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
 of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 comparisons, zero divergences;
 issue 0110). The world, the player model, the regular actor layer and now the secondary actor layer
-are reconstructed in an in-between present. Next: the terrain producer `0x8004EBA8`, which owns 90%
-of every item still replayed verbatim, and then a frame-time budget on a released host. Shadows,
+are reconstructed in an in-between present. The terrain producer `0x8004EBA8`, which owns 90% of
+every item still replayed verbatim, has been split into owners so its corpus survives a game update;
+next is its temporal source, and then a frame-time budget on a released host. Shadows,
 glow, sparkles, particles and tracers are NOT next: measured together they draw about 32 faces per
 logic frame. Widening the route past Artisans is blocked on issue 0114, because the pacing residual steers
 a camera-relative walk. Boot/title, a visible player, and one matched route do not establish full
@@ -837,6 +838,40 @@ smooth.
 was: a standalone producer for this layer with no caller anywhere in the repository. The live owner
 is `fx_field_actor_composition`, because the secondary and world-shaded layers share one guest
 shadow-list transaction.
+
+The terrain producer (0x8004EBA8) was split into owners on 2026-09-19, ahead of giving it a temporal
+source. It draws 90% of every item still replayed verbatim in an in-between present, and no second
+picture of it could be built while the deriving code read guest memory as it went: at present time
+that memory already describes the next game update. `terrain_scene` now captures one game update's
+corpus — the object list the selector resolves, each visible object's decoded model vertices, its
+face table and its colour words — `terrain_recipe` derives faces from that corpus purely,
+`terrain_submitter` plans and publishes them, and `terrain_emit` is the one derive/preflight/publish
+route. `native_terrain.cpp` is the guest entry points and one log line, 76 lines against 424.
+
+Three duplicated implementations went with it. The producer carried its own copy of the framework's
+fixed-point affine transform and its 44-bit wrap, and reached the framework's projection only
+through an adapter that read the GTE control registers back out, so the transform it drew with was
+whatever was last written rather than a value it held. It no longer writes the GTE at all: it used
+to load two matrices into CR0 through CR7 and a widened screen centre into CR24, then restore all
+thirty-two data and control registers on the way out. The projection plane the render queue
+normalises stored depth against used to be a side effect of whichever vertex happened to be
+projected last; it is now installed explicitly for the length of the submission and restored after.
+
+The split is proved bit-identical rather than argued to be. Over the same 7,200-field Artisans
+replay the captured PNGs at present 3,000 are byte-for-byte equal to the pre-split build's in all
+three legs — 4:3, 16:9 and fps60 — and the fps60 leg reports the same 2,155,839 interpolated prims
+over the same 3,374 extra presents. Ten focused tests run 70 checks over the recipe; each was shown
+to fire by disconnecting the interval from the projection, moving the face-table refusal ahead of
+the clip test, dropping the flat-colour primitive tag and ignoring the primitive-pool budget, which
+failed two, one, one and one test respectively.
+
+One behaviour deliberately differs and is not a picture difference: the capture reads the face table
+of every object that clears the visibility test, where retail read it only for objects that also
+survived the whole-object clip test, which needs projection and so cannot run at capture time. The
+extra reads are of in-bounds memory and their results are carried, not acted on — the two conditions
+retail checks late, an out-of-RAM face table and an out-of-RAM colour word, travel as flags for the
+recipe to refuse on at the point it reaches them. The cost of those reads is unmeasured, as is the
+frame-time budget on any released host.
 
 Which producer to reconstruct next was measured rather than assumed, and the answer was not the one
 on the list. The fps60 presenter could say how much of a captured frame replayed verbatim and the

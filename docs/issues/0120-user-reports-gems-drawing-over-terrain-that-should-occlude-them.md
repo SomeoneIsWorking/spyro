@@ -956,17 +956,30 @@ contest happens at all. The route frames f200..f1600 have a non-zero but UNCHANG
 which says their violet disagreement has some other cause. The pair that does exhibit it,
 `8016F0C8` at bin 171 against `8016FA10` at bin 105, was measured at f2400.
 
-**f2400 is no longer reachable, and that is a separate regression.** The native run aborts first:
+**f2400 is no longer reachable, and it is issue 0114, not a new regression.** The native run aborts:
 
 ```
 [render:error] NATIVE RENDER NOT IMPLEMENTED — stage selector = 2 (no producer is registered for this stage)
 [render:error]   fatal boundary: guest pc=0xDEAD0000 stage=2/3/2 load_stage=4294967295
 ```
 
-The abort is the known missing `0x8001A40C` producer, but WHEN the route meets it has moved: the
-same route reached play-frame 4800 at 15:14, 2400 at 17:04, and now stops between 1600 and 2400.
-The title half is not the cause -- with it stashed, `--play 2400` fails identically. The only
-product change in that window is `987eaa1` (17:06), which recovered the shaded-moby world bin.
+The abort itself is the known missing `0x8001A40C` producer. WHEN the route meets it has moved --
+play-frame 4800 at 15:14, 2400 at 17:04, now between 1600 and 2400 -- and I first recorded `987eaa1`
+as the suspect. THAT WAS WRONG, and a reader should not chase it: `987eaa1` writes no guest memory
+and cannot move the simulation.
+
+`tools/oracle_compare.py` gives the real answer. Every gated field MATCHES at all 12 checkpoints,
+including `player.position` and `player.state`. But the informational `player` region first diverges
+at `gameplay[3]` -- the FIRST segment that holds a direction -- at +30, native 01 against console 03,
+and stays diverged for every checkpoint after. That is issue 0114 exactly: `g_LevelTicks` keeps a
+VSync-interrupt-phase offset the host clock cannot reproduce (issue 0110), the camera inherits it as
+about 1.3 degrees of yaw, and Spyro's d-pad is CAMERA-RELATIVE -- so a recorded pad route does not
+replay, and anything that shifts frame timing moves where the player ends up.
+
+The consequence for this issue is the part worth keeping: **a recorded-route frame tag is not a
+stable scene**, so `f2400` does not name the same view twice and no before/after at a route tag can
+be trusted past the first steered segment. `drive.py --seek-class 83` is not affected because it
+re-steers from the guest camera every step, which is why it reached class 83 at 208 on both builds.
 
 So the state of this issue is: the recipe is exonerated (655/655), the eight-scale depth
 disagreement is measured, the fix for it is built and mechanically enforced, and it is **unverified
@@ -975,9 +988,12 @@ against the defect** because no scene that exhibits the defect is currently reac
 Falsifier, unchanged and still open: the `ord x bin` table must collapse to one constant, the
 `8016F0C8` / `8016FA10` pair must invert, and the f2400 census (20 / 116 / 41) must fall.
 
-Next, in order: recover a reachable scene that shows a gem behind terrain -- either by restoring the
-route's reach past play-frame 1700, or by implementing the `0x8001A40C` stage-2 producer that ends
-the abort. Until one of those lands, no claim about this defect being fixed is supportable.
+Next: reach a gem that is BEHIND terrain, using a SELF-STEERING route rather than a recorded pad,
+since the recorded one no longer names a stable scene. `drive.py --seek-class 83` walks to a gem but
+stops in front of it, where nothing occludes and no depth contest happens -- that is why it produced
+an identical picture on both builds and is the wrong probe. What is needed is a driver that places
+the camera so a known gem is occluded, then shoots. Until such a scene exists, no claim about this
+defect being fixed is supportable.
 
 ### Instrument defect: a deliberate refusal arrives as signal 11
 

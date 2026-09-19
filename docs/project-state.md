@@ -834,8 +834,26 @@ This measurement exists because `looks_right.py`'s `widescreen` check asks only 
 DIFFER, which rescaling also satisfies. Earlier "widescreen PASS" lines in this document therefore
 do not by themselves establish that a scene gained coverage.
 
+Scene sample widened 2026-09-19 (issue 0124). Six distinct deterministic gameplay scenes, each
+captured at 4:3 and 16:9 and put through `widescreen_pair.py`'s translation-vs-stretch
+discriminator: **all six read WIDENED**, at separations of 4.4x to 10.3x over the stretch
+hypothesis, every one aligning at the predicted dx=+86. The probe is deterministic (the same
+invocation twice gives a byte-identical capture) and the discriminator's `--selftest` still reads a
+resampled picture as STRETCHED, so it can say both things.
+
+That sample also found two defects the earlier two-capture evidence could not have. **The claim
+above that widescreen "perturbs no guest state the oracle observes" was true only because no
+declared range covered it**: both field-particle producers computed a guest visibility byte from the
+WIDENED horizontal window and wrote it into the guest's particle record, so enabling widescreen
+changed guest memory. Fixed by `game/render/particle_screen_space.{h,cpp}`, which separates the
+guest's own 512-px window from the widened draw window; the 4:3 capture is byte-identical after the
+change and the widescreen particle count falls from 20 to 12. Second, and STILL OPEN: a solid
+(248,96,0) quad is drawn at 16:9 inside the shared field of view where the 4:3 frame draws grass
+(241 px). Every region of the frame aligns at dx=+86 with the background byte-identical, so it is
+wide-only geometry rather than a misalignment. See issue 0124 for the per-producer bisect.
+
 Gap: complete scene variants, horizontal culling owners, and same-state oracle visual comparison
-remain unqualified. Additional coverage in Artisans does not prove the whole game, and only the
+remain unqualified. S019 cannot go beyond `partial` while issue 0124's second defect is open. Additional coverage in Artisans does not prove the whole game, and only the
 courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
 the visual half of that gap is still open.
 

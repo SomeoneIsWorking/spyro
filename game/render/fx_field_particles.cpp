@@ -6,6 +6,7 @@
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "particle_screen_space.h"
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
@@ -31,17 +32,6 @@ bool preflight(Core *core, const spyro::field_particles_recipe::Recipe &recipe) 
   const uint32_t queued = queue.consumed ? 0u : (uint32_t)queue.n;
   return recipe.points.size() + recipe.lines.size() + recipe.texturedQuads.size() <=
          RQ_MAX - queued;
-}
-
-psxport::native_projection::ProjectionParams projection(Core *core, int clipRight) {
-  psxport::native_projection::ProjectionParams out{};
-  out.ofx = (int32_t)(core->rsub.projParams.geomOfx() * 65536.0f);
-  out.ofy = (int32_t)(core->rsub.projParams.geomOfy() * 65536.0f);
-  out.h = (uint16_t)core->rsub.projParams.geomH();
-  if (gpu_vk_wide_engine(core)) {
-    out.ofx = (clipRight / 2) << 16;
-  }
-  return out;
 }
 
 // Both scanned emit-list arms end in a LINE_G2: the type-0 arm draws one pixel as SXY2..SXY2+1 and
@@ -123,9 +113,9 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     return {};
   }
 
-  const int clipRight = gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
+  const int clipRight = spyro::particle_screen_space::drawClipRight(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = projection(core, clipRight);
+  const auto params = spyro::particle_screen_space::projection(core, clipRight);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
@@ -139,10 +129,15 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
         cameraY - point.y, cameraZ - point.z, point.x - cameraX);
     const auto projected = psxport::native_projection::project(camera, params, input);
     const int32_t otDepth = (int32_t)(projected.sz >> 5) - (int32_t)point.depthBias;
-    const bool visible = projected.sz != 0u && projected.sz < 0x2000u && otDepth > 2 &&
-                         projected.sx > 0 && projected.sx < clipRight && projected.sy > 0 &&
-                         projected.sy < 256;
-    core->mem_w8(point.address + 3u, visible ? 1u : 0u);
+    // The guest's own byte is decided by the GUEST's window; what this port draws is decided by the
+    // widened one. Writing the widened answer here made widescreen change guest memory.
+    const bool depthAndRowOk = projected.sz != 0u && projected.sz < 0x2000u && otDepth > 2 &&
+                               projected.sy > 0 && projected.sy < 256;
+    const bool guestVisible = depthAndRowOk && spyro::particle_screen_space::guestOnScreenX(
+                                                   core, clipRight, projected.sx);
+    core->mem_w8(point.address + 3u, guestVisible ? 1u : 0u);
+    const bool visible =
+        depthAndRowOk && spyro::particle_screen_space::drawnOnScreenX(clipRight, projected.sx);
     if (!visible) {
       continue;
     }

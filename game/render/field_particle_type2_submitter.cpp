@@ -5,6 +5,7 @@
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "particle_screen_space.h"
 #include "particle_sine_table.h"
 #include "producer_scope.h"
 #include "proj_params.h"
@@ -24,17 +25,6 @@ namespace {
 constexpr uint32_t kProducerKey = 0x800573c8u;
 using spyro::guest::kCamera;
 
-psxport::native_projection::ProjectionParams projection(Core *core, int clipRight) {
-  psxport::native_projection::ProjectionParams out{};
-  out.ofx = (int32_t)(core->rsub.projParams.geomOfx() * 65536.0f);
-  out.ofy = (int32_t)(core->rsub.projParams.geomOfy() * 65536.0f);
-  out.h = (uint16_t)core->rsub.projParams.geomH();
-  if (gpu_vk_wide_engine(core)) {
-    out.ofx = (clipRight / 2) << 16;
-  }
-  return out;
-}
-
 int16_t angleValue(uint16_t angle) {
   return spyro::particle_sine_table::values[(angle >> 1u) & 0xffu];
 }
@@ -44,9 +34,9 @@ int16_t angleValue(uint16_t angle) {
 bool spyro_field_particle_type2_submit(
     Core *core, const spyro::field_particles_recipe::TexturedQuad &particle) {
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
-  const int clipRight = gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
+  const int clipRight = spyro::particle_screen_space::drawClipRight(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = projection(core, clipRight);
+  const auto params = spyro::particle_screen_space::projection(core, clipRight);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
   const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
   const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
@@ -105,9 +95,15 @@ bool spyro_field_particle_type2_submit(
   const int tpage = (int)((particle.uvTpage >> 16) & 0xffffu);
   const int mode = (tpage >> 7) & 3;
   const int32_t otDepth = (int32_t)(center.sz >> 5) - (int32_t)particle.depthBias;
-  const bool visible = center.sz >= 0x80u && center.sz < 0x2000u && otDepth >= 0 && center.sx > 0 &&
-                       center.sx < clipRight && center.sy > 0 && center.sy < 256;
-  core->mem_w8(particle.address + 3u, visible ? 1u : 0u);
+  // See particle_screen_space.h: the guest's byte uses the guest's horizontal window, the draw uses
+  // the widened one. They were the same value, so widescreen wrote different guest memory.
+  const bool depthAndRowOk =
+      center.sz >= 0x80u && center.sz < 0x2000u && otDepth >= 0 && center.sy > 0 && center.sy < 256;
+  const bool guestVisible =
+      depthAndRowOk && spyro::particle_screen_space::guestOnScreenX(core, clipRight, center.sx);
+  core->mem_w8(particle.address + 3u, guestVisible ? 1u : 0u);
+  const bool visible =
+      depthAndRowOk && spyro::particle_screen_space::drawnOnScreenX(clipRight, center.sx);
   if (!visible) {
     return true;
   }

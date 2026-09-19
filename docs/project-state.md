@@ -1033,19 +1033,21 @@ That last number is the shape of the defect. A tile that takes the newer frame i
 unblendable state change looks like (an animation frame flip, a newly visible object), which is
 correct output; a clean 2-pixel translation is not that.
 
-It is now fully attributed. The first attempt credited only 57.5% of the moving tiles to a run,
-because the dump captures the VRAM display region while a run's extent is in the buffer the queue
-drew into — and Spyro double-buffers, alternating display origin 0,0 and 0,240 every present, so
-half the frames sat 240 rows from their own geometry. Correcting for the origin the runtime already
-logs takes the coverage to **100.0% of the moving tiles and 100.0% of the defects** (psxport
-0b638ad0). Across 82 owner rows:
+**It is NOT attributed, and the tables that said it was are withdrawn.** Tile attribution credits a
+moving tile to the smallest `fps60seq` run covering it, which requires run extents and captured
+pixels to describe the same place. They never did: a run's extent comes from `RqItem` screen
+vertices in the renderer's own space, and the capture is the VRAM display region. Spyro's widest run
+spans 2,048 px against a 684 px frame.
 
-| split | lerped | moved endpoint | share of the defect |
-|---|---|---|---|
-| verbatim | 35,141 | 3,789 | 67.3% |
-| TIER1 | 88,138 | 1,842 | 32.7% |
-| layer 1 (world) | 95,023 | 3,041 | 54.0% |
-| layer 0 (background) | 28,256 | 2,590 | 46.0% |
+The 57.5% -> 100.0% coverage improvement previously recorded here was not a fix. Coverage cannot
+fail, because every frame holds a screen-sized fill and a misaligned fill still covers every tile,
+so it takes whatever nothing else claims. The discriminator that does fail is whether being inside a
+run predicts motion at all, with fills excluded: on this route a tile inside a specific run is
+**1.12x** as likely to have moved as a tile inside none, over 3,222 fences. That is chance, and the
+display-origin and raw mappings score identically, so the origin correction only changed which
+misaligned run won. The ownership and layer splits that stood here are therefore withdrawn, as is
+the claim that 99.7% of reconstructed-run snaps had verbatim content over them. `fps60_check.py`
+now refuses to print that table (psxport 6a019811, psxport issue 0120).
 
 **The forward snap is explained, and it is not an interpolation defect.** Forcing the interpolation
 factor to its previous endpoint (`PSXPORT_FPS60_TFORCE=0`) over the same deterministic 478-frame
@@ -1056,10 +1058,10 @@ route separates the two populations completely:
 | t = 0.5 (product) | 14 | 5,617 |
 | t = 0.0 (forced) | 105,850 | 5,542 |
 
-105,836 tiles moved when `t` moved. The forward-snapping population did not, and it matches owner by
-owner to within a few tiles — `0x8016F1D0` verbatim 1,126 against 1,120, `0x8016EC50` verbatim 828
-against 822, the unattributed TIER1 world run 710 against 698. Content that does not respond to the
-interpolation factor is not being interpolated at all.
+105,836 tiles moved when `t` moved. The forward-snapping population did not: 5,617 against 5,542, a
+1.3% difference over two runs of the same deterministic route. Content that does not respond to the
+interpolation factor is not being interpolated at all. This comparison is between two captured image
+sets and consults no run, so the withdrawn attribution above does not reach it.
 
 The mechanism is `Fps60::presentPass`. Both presents of a fence run over the *same* captured queue
 and differ only in `t`; only the items the scene source `owns` are replaced by reconstructed ones,
@@ -1068,18 +1070,17 @@ item with no native producer is drawn in the in-between present at the position 
 will show it, a whole frame early. That is the 2-pixel translation: it is this route's per-update
 camera motion, delivered at the wrong time.
 
-The 32.7% TIER1 share was a tile-granularity artifact, not reconstructed content failing to lerp.
-Attribution credits the smallest run covering a tile, and a reconstructed run's screen area also
-holds verbatim pixels drawn by other items. Of the 1,838 forward-snapping tiles filed under a TIER1
-run, **1,832 (99.7%) also have verbatim content drawn over them**; only 6 tiles across 238 triples
-sit where nothing but reconstructed content is drawn (psxport 48717689). So essentially the whole
-defect is content no native producer reconstructs — the same root cause as Tomba! 2's layer-2
-result, and one that will not close by changing the lerp.
+Which content that is remains unanswered, because naming it needs the attribution that has just
+been withdrawn. What is known without it: the defect is content the in-between present does not
+reconstruct, the per-producer item census still reports 0.955 of captured items reconstructed on
+this route, and the remaining verbatim items are 82.4% the unattributed 2D and HUD layer. Whether
+those are the same items as the 5,617 snapping tiles cannot be stated until psxport issue 0120 makes
+run extents and captured pixels comparable.
 
 Gap: newly visible animated sectors need a faithful endpoint-state lifecycle; regular actors, shadows,
 particles and other unowned temporal sources lack complete matching-source interpolation. Closing the
-forward snap means reconstructing the producers still listed as verbatim above, not adjusting
-interpolation. The looks-right verdicts have been re-taken on gameplay. They were previously run through
+forward snap means reconstructing more of what the in-between present replays, not adjusting
+interpolation; which producer to start with needs psxport issue 0120 resolved first. The looks-right verdicts have been re-taken on gameplay. They were previously run through
 `replays/gameplay/artisans-arrival.pad`, which never leaves the save-file dialog (issue 0116);
 `external/psxport/tools/port/looks_right.py` now takes `--route`, a command template the title fills
 in, and Spyro's is `tools/drive.py gameplay --hold left --hold-frames 180`. On that route all three

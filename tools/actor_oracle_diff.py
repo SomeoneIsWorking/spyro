@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 
 NATIVE_REC = re.compile(
     r"native rec=(\d+) painter=0x([0-9A-F]+) nv=(\d+) semi=(\d+) tex=(\d+) ord=(-?[0-9.]+) "
+    r"bin=(-?\d+) "
     r"node=0x([0-9A-F]+) "
     r"v0=(-?\d+),(-?\d+),([0-9A-F]{6}) v1=(-?\d+),(-?\d+),([0-9A-F]{6}) "
     r"v2=(-?\d+),(-?\d+),([0-9A-F]{6}) v3=(-?\d+),(-?\d+),([0-9A-F]{6})"
@@ -106,10 +107,11 @@ def parse(path: str) -> list[Frame]:
                 Primitive(
                     nv,
                     int(g[3]),
-                    _vertices(list(g[7:]), nv),
+                    _vertices(list(g[8:]), nv),
                     textured=int(g[4]),
                     order=float(g[5]),
-                    node=g[6],
+                    ot_bin=int(g[6]),
+                    node=g[7],
                     painter=g[1],
                 )
             )
@@ -310,6 +312,7 @@ def report_depth(
           f"{'larger' if rising else 'smaller'} native depth")
     print(f"  disagreeing with retail  : {disagreeing}")
     print(f"  disagreement rate        : {100.0 * disagreeing / comparable:.2f}%")
+    _report_authored_bins(pairs)
     worst = sorted(
         ((abs(r.ot_bin - r2.ot_bin), r, n, r2, n2)
          for idx, (r, n) in enumerate(pairs)
@@ -340,6 +343,115 @@ def report_depth(
               f"({n.node} {first} / {n2.node} {second})")
 
 
+
+def _report_authored_bins(pairs) -> None:
+    """Whether the port's OWN authored bin agrees with retail's, independent of depth.
+
+    The disagreement rate above compares retail's OT bin against the port's submitted per-vertex
+    DEPTH, so it cannot say which of two very different bugs it is measuring. Every actor producer
+    also passes an authored replay position (`scene_painter_order::...(otBin, ...)`), and that bin is
+    directly comparable with retail's. Matching bins mean the recipe computed retail's answer and
+    something downstream -- the ordering rule, or the depth buffer -- overrode it. Differing bins
+    mean the recipe itself is wrong. Only one of those is worth chasing in the recipe.
+
+    The negative is designed first: a run whose producers author no replay position at all reports
+    that in those words and reports nothing else, because "0 disagreements" over 0 comparisons would
+    otherwise be indistinguishable from agreement.
+    """
+    authored = [(r, n) for r, n in pairs if n.ot_bin >= 0]
+    print("\n  authored bin vs retail bin (independent of depth):")
+    if not authored:
+        print(f"    NO authored replay position on any of the {len(pairs)} matched primitive(s) --")
+        print("    every one logged bin=-1, so this comparison made ZERO comparisons and says")
+        print("    nothing about agreement. Either the producers do not author a position or the")
+        print("    oracle is not reading it; check RqItem::painter_replay before reading on.")
+        return
+    equal = sum(1 for r, n in authored if n.ot_bin == r.ot_bin)
+    print(f"    compared {len(authored)} of {len(pairs)} matched primitive(s) that carry one")
+    print(f"    identical to retail : {equal}  ({100.0 * equal / len(authored):.2f}%)")
+    off = [(n.ot_bin - r.ot_bin, r, n) for r, n in authored if n.ot_bin != r.ot_bin]
+    if not off:
+        print("    every authored bin matches retail, so the recipe is NOT the fault here;")
+        print("    look at the ordering rule and the depth buffer instead.")
+        return
+    deltas = Counter(d for d, _, _ in off)
+    print(f"    differing           : {len(off)}   most common deltas (native - retail):")
+    for delta, count in deltas.most_common(6):
+        print(f"      {delta:+d}: {count}")
+    for delta, r, n in sorted(off, key=lambda e: -abs(e[0]))[:5]:
+        print(f"      worst {n.node} painter=0x{n.painter} native bin {n.ot_bin} "
+              f"vs retail {r.ot_bin} ({delta:+d})")
+
+
+
+def _selftest() -> int:
+    """Feed the authored-bin report one case that MUST be positive and one that MUST be negative.
+
+    A comparison that can only ever print "everything agrees" is worth nothing, and the negative
+    here is the one that would lie: a capture in which no producer authors a replay position makes
+    ZERO comparisons, which must not read as agreement. Both directions are asserted, against the
+    shipping code path rather than a copy of it.
+    """
+    import io
+    import contextlib
+
+    def log(bins: tuple[int, int]) -> list[str]:
+        def vtx(base: int) -> str:
+            return " ".join(f"v{i}={base + i * 10},{base + i * 5},0000{i}0" for i in range(4))
+        lines = []
+        for rec, (ordv, binv, node, base) in enumerate(
+                ((0.20, bins[0], "8016AAAA", 100), (0.10, bins[1], "8016BBBB", 300))):
+            lines.append(f"native rec={rec} painter=0x80022A2C nv=4 semi=0 tex=0 "
+                         f"ord={ordv:.6f} bin={binv} node=0x{node} {vtx(base)}")
+        lines.append("native side: 2 prims camera=(0,0,0)")
+        for rec, (binv, base) in enumerate(((40, 100), (10, 300))):
+            lines.append(f"retail rec={rec} bin={binv} code=2C nv=4 semi=0 {vtx(base)}")
+        lines.append("retail side: 2 prims")
+        return lines
+
+    def run(bins: tuple[int, int]) -> str:
+        frame = Frame()
+        for line in log(bins):
+            if match := NATIVE_REC.search(line):
+                g = match.groups()
+                nv = int(g[2])
+                frame.native.append(Primitive(nv, int(g[3]), _vertices(list(g[8:]), nv),
+                                              textured=int(g[4]), order=float(g[5]),
+                                              ot_bin=int(g[6]), node=g[7], painter=g[1]))
+            elif match := RETAIL_REC.search(line):
+                g = match.groups()
+                nv = int(g[3])
+                frame.retail.append(Primitive(nv, int(g[4]), _vertices(list(g[5:]), nv),
+                                              g[2], int(g[1])))
+        assert len(frame.native) == 2 and len(frame.retail) == 2, (
+            f"fixture did not parse: {len(frame.native)} native, {len(frame.retail)} retail")
+        pairs = list(zip(frame.retail, frame.native))
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            _report_authored_bins(pairs)
+        return buffer.getvalue()
+
+    positive = run((40, 12))
+    negative = run((-1, -1))
+    failures = []
+    if "identical to retail : 1" not in positive:
+        failures.append(f"positive case did not report one match:\n{positive}")
+    if "native bin 12 vs retail 10 (+2)" not in positive:
+        failures.append(f"positive case did not name the differing pair:\n{positive}")
+    if "ZERO comparisons" not in negative:
+        failures.append(f"negative case did not refuse to claim agreement:\n{negative}")
+    if "identical to retail" in negative:
+        failures.append(f"negative case reported an agreement rate over no data:\n{negative}")
+    for failure in failures:
+        print(f"SELFTEST FAILED: {failure}", file=sys.stderr)
+    if failures:
+        return 1
+    print("selftest: the authored-bin report fires on a positive case (1 of 2 bins matching, the "
+          "differing pair named) and refuses to claim agreement on a capture with no authored "
+          "positions.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log", help="a run log produced with PSXPORT_ACTOR_SCENE_ORACLE=1")
@@ -351,7 +463,12 @@ def main() -> int:
         help="horizontal shift applied to the native stream, or 'auto' to measure it",
     )
     parser.add_argument("--dx-span", type=int, default=200)
+    parser.add_argument("--selftest", action="store_true",
+                        help="prove the authored-bin report shows BOTH answers, then exit")
     args = parser.parse_args()
+
+    if args.selftest:
+        return _selftest()
 
     frames = [f for f in parse(args.log) if f.native or f.retail]
     if not frames:

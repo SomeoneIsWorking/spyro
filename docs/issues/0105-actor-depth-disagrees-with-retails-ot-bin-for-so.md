@@ -182,3 +182,73 @@ them; if they are wrong, the recipe's bin is wrong. Those are different bugs and
 tell them apart.
 
 Hypotheses 1 and 2 in "Where to look next" above are untouched by this retraction.
+
+## 2026-09-19, MEASURED: the recipe's own bin is wrong, and it is wrong on the gem
+
+With `RqItem::painter_replay` now logged by the actor oracle, the diff can compare the port's OWN
+authored bin against retail's, instead of comparing retail's bin against the port's submitted depth.
+That is the comparison this issue needed and never had. Same run, same route
+(`artisans-arrival.pad`), 220 oracle frames, reporting the last:
+
+```
+depth agreement over matched primitives:
+  comparable ordered pairs : 174417
+  disagreeing with retail  : 8850   (5.07%)
+
+authored bin vs retail bin (independent of depth):
+  compared 664 of 664 matched primitive(s) that carry one
+  identical to retail : 625  (94.13%)
+  differing           : 39   most common deltas (native - retail):
+    -62: 3   -143: 2   -68: 2   -69: 2   -46: 2   -130: 1
+    worst 8016F0C8 painter=0x80022A2C native bin 17 vs retail 171 (-154)
+    worst 8016F0C8 painter=0x80022A2C native bin 18 vs retail 171 (-153)
+    worst 8016F0C8 painter=0x80022A2C native bin 19 vs retail 171 (-152)
+    worst 8016F0C8 painter=0x80022A2C native bin 22 vs retail 171 (-149)
+    worst 8016F0C8 painter=0x80022A2C native bin 23 vs retail 171 (-148)
+```
+
+**Every producer authors a position** — 664 of 664, so the retraction above is confirmed from the
+other direction as well. **94.13% of authored bins are byte-identical to retail's**, which is the
+denominator that makes the remaining 39 worth reading: the recipe is right nearly everywhere, and
+wrong in a concentrated place.
+
+That place is `8016F0C8`, painter `0x80022A2C` — the shaded-moby/gem queue — and it is the SAME
+instance as this issue's worst ordered pair (`8016F0C8 class 83 scale 0 dist 26333`). The native
+authors bins 17-23 where retail authors 171. The recipe is not being overridden downstream; it is
+computing the wrong answer by roughly 150 bins.
+
+### The arithmetic points at the actor-origin bias
+
+`ot = depth >> 5`, so retail's bin 171 corresponds to a depth near 5,472 and the native's 17 to a
+depth near 544 — a shortfall of about 4,900. The recipe's only subtractive term is
+
+```cpp
+depth -= (int64_t)std::max(record.affine.t[2] - 256, 0) * 4;   // actor-origin bias
+```
+
+which reaches 4,900 at `t[2]` near 1,480. For a distant instance that term can consume most of the
+summed vertex depth and crush the bin toward the front of the OT, which is exactly the observed
+direction and exactly why the symptom is a FAR gem appearing in front.
+
+So the original suspicion about this bias was directionally right and wrong about where: it is not
+that the submitter discards the term, it is that the recipe applies it and the result does not match
+retail for these records. Whether retail applies it at all for this record type, applies it with a
+different shift, or reaches this face by a path that skips it, is the open question.
+
+### Do not fix by deleting the term
+
+It was recovered from the authenticated renderer and issue 0111 settled the surrounding depth unit.
+Removing it would move this instance and would very likely break the 625 that currently agree. The
+discriminator is cheap now: change nothing, and first measure whether the 39 differing records share
+a `t[2]` range, a class, or a `clipMode`/`nearCamera` branch that the 625 agreeing ones do not.
+
+### The falsifier for any fix
+
+`identical to retail` must rise from 625/664 and the `8016F0C8` bin must move from 17-23 toward 171,
+with the 5.07% pair-order disagreement falling. A change that moves the pair rate without raising
+the bin agreement has not fixed this and should be rejected.
+
+Run it with:
+
+    tools/actor_oracle_diff.py <log> --frame -1
+    tools/actor_oracle_diff.py --selftest x    # proves the report shows BOTH answers

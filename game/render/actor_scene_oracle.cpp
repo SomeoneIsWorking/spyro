@@ -61,41 +61,50 @@ void logNative(Core *core, std::span<const uint32_t> painterKeys) {
     // a retail packet stores its vertices before the GPU adds it. The item's own painter key is
     // logged per record so an unmatched primitive names the producer that submitted it; the
     // histogram below can only say how many items each producer contributed.
-    lucent::debug("actororacle",
-                  "native rec={} painter=0x{:08X} nv={} semi={} tex={} ord={:.6f} node=0x{:08X} "
-                  "v0={},{},{:06X} "
-                  "v1={},{},{:06X} v2={},{},{:06X} "
-                  "v3={},{},{:06X}",
-                  emitted,
-                  item.painter_object,
-                  item.nv,
-                  item.semi,
-                  // Colour mode 3 is this queue's untextured sentinel; retail says the same thing
-                  // with its 0x34/0x3C texture bit, so the two streams can be compared on whether a
-                  // primitive carries a texture at all.
-                  item.mode == 3 ? 0 : 1,
-                  // The normalized depth this item will be drawn at. Retail says the same thing
-                  // with the OT bin it linked the packet into, so a primitive that matches on
-                  // pixels but disagrees here is a depth fault and nothing else.
-                  item.depth[0],
-                  // The instance this face belongs to. Two faces of one moby may legitimately
-                  // disagree with retail's ordering, because retail leans on submission order
-                  // inside a bin; a disagreement BETWEEN instances is what shows as pop-through.
-                  item.dbg_node,
-                  item.xs[0] - offX,
-                  item.ys[0] - offY,
-                  ((uint32_t)item.bs[0] << 16) | ((uint32_t)item.gs[0] << 8) | item.rs[0],
-                  item.xs[1] - offX,
-                  item.ys[1] - offY,
-                  ((uint32_t)item.bs[1] << 16) | ((uint32_t)item.gs[1] << 8) | item.rs[1],
-                  item.xs[2] - offX,
-                  item.ys[2] - offY,
-                  ((uint32_t)item.bs[2] << 16) | ((uint32_t)item.gs[2] << 8) | item.rs[2],
-                  item.nv > 3 ? item.xs[3] - offX : 0,
-                  item.nv > 3 ? item.ys[3] - offY : 0,
-                  item.nv > 3
-                      ? (((uint32_t)item.bs[3] << 16) | ((uint32_t)item.gs[3] << 8) | item.rs[3])
-                      : 0u);
+    lucent::debug(
+        "actororacle",
+        "native rec={} painter=0x{:08X} nv={} semi={} tex={} ord={:.6f} bin={} node=0x{:08X} "
+        "v0={},{},{:06X} "
+        "v1={},{},{:06X} v2={},{},{:06X} "
+        "v3={},{},{:06X}",
+        emitted,
+        item.painter_object,
+        item.nv,
+        item.semi,
+        // Colour mode 3 is this queue's untextured sentinel; retail says the same thing
+        // with its 0x34/0x3C texture bit, so the two streams can be compared on whether a
+        // primitive carries a texture at all.
+        item.mode == 3 ? 0 : 1,
+        // The normalized depth this item will be drawn at. Retail says the same thing
+        // with the OT bin it linked the packet into, so a primitive that matches on
+        // pixels but disagrees here is a depth fault and nothing else.
+        item.depth[0],
+        // The OT bin THIS SIDE authored for the face. Retail's `bin=` is the bin its
+        // walker read; until now the native side logged only `ord=`, its submitted
+        // per-vertex depth, so the diff could compare retail's bin against the port's
+        // DEPTH and never against the port's own bin. Those answer different questions:
+        // a disagreement with matching bins means the ordering rule or the depth buffer
+        // overrode a correct authored position, while disagreeing bins mean the recipe
+        // computed the wrong one. -1 where the producer authored no replay position, so
+        // "no bin" stays distinguishable from "bin 0".
+        item.painter_replay.authored() ? (int)item.painter_replay.key.ot_bin : -1,
+        // The instance this face belongs to. Two faces of one moby may legitimately
+        // disagree with retail's ordering, because retail leans on submission order
+        // inside a bin; a disagreement BETWEEN instances is what shows as pop-through.
+        item.dbg_node,
+        item.xs[0] - offX,
+        item.ys[0] - offY,
+        ((uint32_t)item.bs[0] << 16) | ((uint32_t)item.gs[0] << 8) | item.rs[0],
+        item.xs[1] - offX,
+        item.ys[1] - offY,
+        ((uint32_t)item.bs[1] << 16) | ((uint32_t)item.gs[1] << 8) | item.rs[1],
+        item.xs[2] - offX,
+        item.ys[2] - offY,
+        ((uint32_t)item.bs[2] << 16) | ((uint32_t)item.gs[2] << 8) | item.rs[2],
+        item.nv > 3 ? item.xs[3] - offX : 0,
+        item.nv > 3 ? item.ys[3] - offY : 0,
+        item.nv > 3 ? (((uint32_t)item.bs[3] << 16) | ((uint32_t)item.gs[3] << 8) | item.rs[3])
+                    : 0u);
     ++emitted;
   }
   // The retail chain walker draws every moby chain, while the native side splits that work across

@@ -4,7 +4,7 @@
     uv run --frozen python tools/widescreen_check.py
 
 Drives the product to one settled gameplay state twice -- once at 4:3, once at 16:9 -- and hands the
-two captures to psxport's widescreen analyser, which owns the question because it is title-neutral.
+two captures to psxport's widescreen_pair, which owns the question because it is title-neutral.
 This tool owns only how Spyro reaches a comparable state.
 
 WHY THE STATE ORACLE DOES NOT ANSWER THIS. tools/oracle_compare.py reports 15/15 checkpoints
@@ -16,16 +16,15 @@ the extra area against. So the product is asked about itself.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
-sys.path.insert(0, str(ROOT / "external" / "psxport" / "tools" / "oracle"))
+sys.path.insert(0, str(ROOT / "external" / "psxport" / "tools" / "port"))
 
-import widescreen  # noqa: E402
+import widescreen_pair  # noqa: E402
 
 OUT_DIR = ROOT / "scratch" / "widescreen"
 # The same settled Artisans state tools/oracle_spyro1.py photographs at `settled_play`: past the
@@ -58,18 +57,11 @@ def capture(name: str, settings_body: str) -> Path:
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     captures = {name: capture(name, body) for name, body in ASPECTS.items()}
-    try:
-        result = widescreen.analyse(captures["narrow"], captures["wide"], OUT_DIR)
-    except widescreen.Unanswerable as refusal:
-        print(f"[widescreen] REFUSED: {refusal}", file=sys.stderr)
-        return 2
-    widescreen.announce(result)
-    report = OUT_DIR / "widescreen.json"
-    report.write_text(json.dumps(result.report(), indent=2))
-    print(f"[widescreen] report: {report}")
-    print(f"[widescreen] the centre crop and its magnitude map are beside it; NEITHER NUMBER SAYS "
-          f"THE EXTRA GEOMETRY IS CORRECT — no 16:9 reference exists to say that.")
-    return 0 if result.extends else 1
+    code = widescreen_pair.report(str(captures["narrow"]), str(captures["wide"]))
+    print("[widescreen] NO NUMBER ABOVE SAYS THE EXTRA GEOMETRY IS CORRECT — no 16:9 reference "
+          "exists to say that. They say the original picture survived unresampled, the new area "
+          "holds scene, and it joins the old one continuously.")
+    return code
 
 
 if __name__ == "__main__":

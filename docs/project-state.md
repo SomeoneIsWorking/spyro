@@ -870,13 +870,35 @@ roughly double the pre-fix figures. Oracle parity with widescreen ON after both 
 checkpoints / 6,305 decisive comparisons / 0 divergences / complete, with the seeded-byte selftest
 DETECTED in the same configuration.
 
+2026-09-20, the joins. `widescreen_pair.py` previously answered one question -- is the wide frame
+a translation of the narrow one, or a stretch -- which says the ORIGINAL picture survived and
+nothing about what replaced the empty margins. Two fakes live exactly there and both score a
+perfect translation, because both leave the centre untouched: a margin holding no scene, and a
+margin holding scene drawn by a projection of its own. The tool now asks all three, and Spyro 1
+answers all three at the settled Artisans state `tools/widescreen_check.py` drives:
+
+- 512 -> 684, **3.74 mean absolute error at dx=+86**, the predicted offset, against 15.79 at the
+  next best offset, 101.42 at the worst of 189 tried, and 76.09 for the stretch hypothesis: 20.3x.
+- both 86px margins 93.3% non-black, 582 and 579 distinct colours, 0 of 85 repeated columns.
+- the joins at x=85 and x=597 differ from the columns beside them by **1.01x and 0.71x**, against a
+  limit of 2.0x. The same frame with its margins drawn six rows off reads 7.84x and 7.27x, so the
+  discriminator was run against both classes on this picture and not only on fixtures.
+
+The join check is LOCAL by measurement rather than by preference: Tomba! 2's widest ordinary column
+pair is 42.33 -- its scene contains a hard vertical edge -- while a deliberately broken margin there
+reads 33.80, so a frame-wide percentile would have hidden the break behind the scene's own edge.
+Its known false positive is stated in the tool: a scene whose own hard edge falls exactly on a join
+reads as a break, and the answer is to re-measure at another state.
+
 Gap: complete scene variants and horizontal culling owners remain unqualified -- six Artisans
-gameplay scenes plus the courtyard and intro card do not prove the whole game, and no other level has
-been captured. A same-state oracle VISUAL comparison under widescreen is still not possible: the
-picture oracle correctly refuses to compare a 684-wide product against a 512-wide reference, so the
-widescreen visual evidence remains the port's own 4:3-vs-16:9 pair rather than a console comparison. Additional coverage in Artisans does not prove the whole game, and only the
-courtyard and the intro card are covered by captures. Oracle comparison now covers guest-state parity under widescreen;
-the visual half of that gap is still open.
+gameplay scenes plus the courtyard and intro card do not prove the whole game, and no other level
+has been captured. A same-state oracle VISUAL comparison under widescreen remains impossible: the
+picture oracle correctly refuses to compare a 684-wide product against a 512-wide console, so the
+widescreen visual evidence is the port's own 4:3-vs-16:9 pair rather than a console comparison.
+What that pair now establishes is that the picture is extended rather than resampled, that the
+extension contains world, and that the world does not break where the extension meets it. What it
+still does not establish is that the world shown there is the RIGHT world: no 16:9 reference exists
+for a PSX title, and no instrument in this project can settle it.
 
 2026-09-20: widescreen RENDER correctness is now measured, not only state parity.
 `tools/widescreen_check.py` drives one settled state at 4:3 and at 16:9 and compares the product

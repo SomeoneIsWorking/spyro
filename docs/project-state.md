@@ -1246,6 +1246,57 @@ route separates the two populations completely:
 interpolation factor is not being interpolated at all. This comparison is between two captured image
 sets and consults no run, so the withdrawn attribution above does not reach it.
 
+**2026-09-20: the forward snap is EXPLAINED, and it is correct output.** It needed no attribution
+machinery at all, which is why it survived psxport issue 0120 being open.
+
+Two measurements, both on `tools/drive.py gameplay --hold left --hold-frames 478` at 4:3 with
+fps60 on. First, the same captured images the withdrawn tables came from, classified per PIXEL
+instead of per tile, at a forced interpolation factor rather than by tile identity. For every pixel
+whose two real endpoints differ, force `t=0` and ask where it went:
+
+| where the pixel sits when forced to t=0 | samples | share |
+|---|---|---|
+| at the PREVIOUS endpoint — it responded to t, so it is interpolated | 5,117,903 | 99.9% |
+| at the NEXT endpoint — it did not respond to t at all | 1,781 | 0.03% |
+| neither (partial coverage, blending) | 2,170 | 0.04% |
+
+The control is that all 518 real frames are byte-identical between the two runs, so `t` reaches
+only the in-between present and the route did not drift. 81 triples, 512x240.
+
+The 0.03% is not spread over the screen: 83% of it falls in one row band and 70% in one column
+band, a single compact region. At the worst triple it is one on-screen actor and the object beside
+it, pixel-identical at `t=0.5` and `t=0` and identical to `real(N)`, while the terrain around them
+is midway at `t=0.5` and exactly at `real(N-1)` at `t=0`.
+
+Second, the pairing census says which rule rejected them — after being taught to distinguish two
+failures it had been merging. `instance_pairing::Census` counted one `unpaired` for both "the
+producer gave this draw no instance" and "the previous frame did not draw that instance", which
+have different owners and different fixes. Split, over the same route:
+
+| layer | emits | unattributed | instances ever absent | absent-run length |
+|---|---|---|---|---|
+| actor | 12,435 | **0** | 51 | 96 runs, all 1.0 logic frame |
+| terrain | 12,435 | **0** | 77 | 126 runs, all 1.0 logic frame |
+| field-shaded queue | 1,363 | **0** | 17 | 31 runs of 1.0, 2 partial intervals |
+| secondary actor | 742 | **0** | 0 | — |
+
+`unattributed = 0` everywhere: every draw is attributed to a Moby instance, so no producer is
+failing to identify what it drew. And **no instance is ever absent on two consecutive frames** —
+every absent-run is exactly one logic frame, the frame that instance first appears. An object the
+previous frame did not draw has no predecessor to interpolate from, so drawing it at its own
+endpoint is the only available output, and it pairs normally from its second frame onward.
+
+So the forward-snapping population is objects entering the scene, not content that failed to
+interpolate. The earlier reading — that it was unreconstructed content with no native producer —
+does not hold for this route: such content would not respond to `t` on EVERY frame it is visible,
+and nothing here is absent twice in a row. It remains the right description of a layer with no
+temporal source at all, which this census cannot see because such content never reaches it; what
+the pixel measurement adds is that on this route that content is at most 0.03% of changed pixels.
+
+Scope: one route, one area, 4:3, 81 triples of images and 2,489 intervals of census. A 5-frame
+absence in some other scene would read differently, and the check that would find it is the
+run-length above rather than another capture of the same walk.
+
 The mechanism is `Fps60::presentPass`. Both presents of a fence run over the *same* captured queue
 and differ only in `t`; only the items the scene source `owns` are replaced by reconstructed ones,
 and everything else keeps its exact captured values — which are the current game update's. So an

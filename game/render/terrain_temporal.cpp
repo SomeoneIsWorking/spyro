@@ -106,20 +106,24 @@ Status History::emit(Core &core, RenderQueue &target, double t, Census &census) 
   }
   terrain_emit::publish(core, target, prepared);
   const auto worst = census.worstMismatch();
-  lucent::debug("terraintemporal",
-                "emit t={} objects={} interpolated={} unpaired={} incompatible={} refused={} "
-                "sampled={} declined={} faces={} worst_mismatch={}x{}",
-                t,
-                census.actors,
-                census.interpolated,
-                census.unpaired,
-                census.incompatible,
-                census.refused,
-                prepared.recipe.sampled,
-                prepared.recipe.sampleDeclined,
-                prepared.recipe.faces.size(),
-                mismatchName(worst),
-                census.mismatches[(size_t)worst]);
+  lucent::debug(
+      "terraintemporal",
+      "emit t={} objects={} interpolated={} unattributed={} absent={} incompatible={} refused={} "
+      "sampled={} declined={} faces={} worst_mismatch={}x{} absent_instances={:#x},{:#x}",
+      t,
+      census.actors,
+      census.interpolated,
+      census.unattributed,
+      census.absent,
+      census.incompatible,
+      census.refused,
+      prepared.recipe.sampled,
+      prepared.recipe.sampleDeclined,
+      prepared.recipe.faces.size(),
+      mismatchName(worst),
+      census.mismatches[(size_t)worst],
+      census.absentInstances[0],
+      census.absentInstances[1]);
   return Status::Ready;
 }
 

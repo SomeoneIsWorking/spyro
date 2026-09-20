@@ -136,7 +136,7 @@ void test_endpoints_are_reproduced_exactly_and_the_midpoint_is_not() {
   require(atZero != atOne, "the fixture's endpoints are indistinguishable");
 
   sampled = sampleAt(previous, current, 0.5, census);
-  require(census.interpolated == 1 && census.unpaired == 0 && census.incompatible == 0 &&
+  require(census.interpolated == 1 && census.unpaired() == 0 && census.incompatible == 0 &&
               census.refused == 0,
           "the midpoint was not interpolated");
   const int32_t atHalf = sampled[0].expected.vertices[0].projected.sx;
@@ -163,10 +163,10 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
   Census census{};
   sampled = sampleAt(previous, current, 0.5, census);
   require(census.actors == 2, "the census lost a record");
-  require(census.interpolated == 1 && census.unpaired == 1 && census.incompatible == 0 &&
+  require(census.interpolated == 1 && census.unpaired() == 1 && census.incompatible == 0 &&
               census.refused == 0,
           "an actor with no predecessor was not counted as unpaired");
-  require(census.interpolated + census.unpaired + census.incompatible + census.refused ==
+  require(census.interpolated + census.unpaired() + census.incompatible + census.refused ==
               census.actors,
           "the census does not account for every actor");
   require(spyro::actor_prefix::compareOutputs(currentRecords[1].expected, sampled[1].expected)
@@ -177,7 +177,7 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
   auto anonymousRecords = std::vector<Record>{spyro::test_fixture::actorRecord(0, 1024)};
   const auto &anonymous = anonymousRecords;
   sampled = sampleAt(anonymous, anonymous, 0.5, census);
-  require(census.actors == 1 && census.unpaired == 1 && census.interpolated == 0,
+  require(census.actors == 1 && census.unpaired() == 1 && census.interpolated == 0,
           "a record with no instance identity was paired");
 
   // A predecessor that describes a different model is counted apart from having none at all, and
@@ -187,7 +187,7 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
   recycledRecords[0].expected = spyro::actor_prefix::build(recycledRecords[0].input);
   const auto &recycled = recycledRecords;
   sampled = sampleAt(previous, recycled, 0.5, census);
-  require(census.actors == 1 && census.incompatible == 1 && census.unpaired == 0 &&
+  require(census.actors == 1 && census.incompatible == 1 && census.unpaired() == 0 &&
               census.interpolated == 0,
           "a recycled instance was not counted apart from an absent one");
   require(census.worstMismatch() == Mismatch::CoordShift,
@@ -200,7 +200,7 @@ void test_unpaired_actors_are_shown_at_their_own_endpoint() {
   const auto doubled = Endpoint{spyro::test_fixture::actorRecord(0x80010000u, 0),
                                 spyro::test_fixture::actorRecord(0x80010000u, 2048)};
   sampled = sampleAt(previous, doubled, 0.5, census);
-  require(census.actors == 2 && census.interpolated == 1 && census.unpaired == 1,
+  require(census.actors == 2 && census.interpolated == 1 && census.unpaired() == 1,
           "a second draw of one instance reused the first draw's pose");
   sampled = sampleAt(doubled, doubled, 0.5, census);
   require(census.actors == 2 && census.interpolated == 2,

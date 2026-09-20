@@ -107,9 +107,9 @@ void test_unpaired_and_recycled_actors_are_counted_apart() {
 
   const auto sampled = sampleAt(previous, current, 0.5, census);
   require(census.actors == 2, "the census lost a record");
-  require(census.interpolated == 1 && census.unpaired == 1 && census.incompatible == 0,
+  require(census.interpolated == 1 && census.unpaired() == 1 && census.incompatible == 0,
           "an actor with no predecessor was not counted as unpaired");
-  require(census.interpolated + census.unpaired + census.incompatible + census.refused ==
+  require(census.interpolated + census.unpaired() + census.incompatible + census.refused ==
               census.actors,
           "the census does not account for every actor");
   require(spyro::actor_prefix::compareOutputs(current.records[1].actor.expected,
@@ -121,7 +121,7 @@ void test_unpaired_and_recycled_actors_are_counted_apart() {
   recycled.records[0].actor.input.header = 0x01000000u;
   recycled.records[0].actor.expected = spyro::actor_prefix::build(recycled.records[0].actor.input);
   sampleAt(previous, recycled, 0.5, census);
-  require(census.actors == 1 && census.incompatible == 1 && census.unpaired == 0 &&
+  require(census.actors == 1 && census.incompatible == 1 && census.unpaired() == 0 &&
               census.interpolated == 0,
           "a recycled instance was not counted apart from an absent one");
   require(census.worstMismatch() == Mismatch::CoordShift,

@@ -53,7 +53,7 @@ void test_pairing_is_by_object_in_occurrence_order(void) {
   CHECK_EQ((int)predecessors.size(), 3);
   CHECK_EQ((int)census.actors, 3);
   CHECK_EQ((int)census.interpolated, 3);
-  CHECK_EQ((int)census.unpaired, 0);
+  CHECK_EQ((int)census.unpaired(), 0);
   // The k-th draw of an object pairs with the k-th draw of that object before it, not with the
   // first one the previous update happened to contain.
   CHECK(predecessors[0] == &previous.objects[0]);
@@ -71,7 +71,7 @@ void test_an_object_the_previous_update_did_not_draw_is_unpaired(void) {
   CHECK(predecessors[0] != nullptr);
   CHECK(predecessors[1] == nullptr);
   CHECK_EQ((int)census.interpolated, 1);
-  CHECK_EQ((int)census.unpaired, 1);
+  CHECK_EQ((int)census.unpaired(), 1);
   CHECK_EQ((int)census.incompatible, 0);
 
   // A second draw of an object the previous update drew only once is unpaired for the same reason.
@@ -80,7 +80,7 @@ void test_an_object_the_previous_update_did_not_draw_is_unpaired(void) {
   const auto second = temporal::pair(previous, twice, again);
   CHECK(second[0] != nullptr);
   CHECK(second[1] == nullptr);
-  CHECK_EQ((int)again.unpaired, 1);
+  CHECK_EQ((int)again.unpaired(), 1);
 }
 
 void test_each_identity_rule_names_the_field_that_rejected_the_pair(void) {
@@ -118,11 +118,11 @@ void test_every_object_lands_in_exactly_one_census_bucket(void) {
 
   CHECK_EQ((int)predecessors.size(), 3);
   CHECK_EQ((int)census.actors, 3);
-  CHECK_EQ((int)(census.interpolated + census.unpaired + census.incompatible + census.refused),
+  CHECK_EQ((int)(census.interpolated + census.unpaired() + census.incompatible + census.refused),
            (int)census.actors);
   CHECK_EQ((int)census.interpolated, 1);
   CHECK_EQ((int)census.incompatible, 1);
-  CHECK_EQ((int)census.unpaired, 1);
+  CHECK_EQ((int)census.unpaired(), 1);
   CHECK(census.worstMismatch() == temporal::Mismatch::VertexCount);
 }
 

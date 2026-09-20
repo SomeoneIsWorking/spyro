@@ -91,7 +91,7 @@ void test_pairing_is_by_actor_in_occurrence_order() {
   CHECK_EQ(predecessors.size(), 3u);
   CHECK_EQ(census.actors, 3u);
   CHECK_EQ(census.interpolated, 3u);
-  CHECK_EQ(census.unpaired, 0u);
+  CHECK_EQ(census.unpaired(), 0u);
   CHECK(predecessors[0] == &previous.records[0]);
   CHECK(predecessors[1] == &previous.records[2]);
   CHECK(predecessors[2] == &previous.records[1]);
@@ -105,9 +105,19 @@ void test_an_unattributed_or_absent_draw_is_unpaired_and_keeps_its_own_transform
 
   CHECK_EQ(census.actors, 3u);
   CHECK_EQ(census.interpolated, 1u);
-  CHECK_EQ(census.unpaired, 2u);
+  // The two draws fail for DIFFERENT reasons and the census must say which is which: 0x80100040
+  // was attributed and the previous frame simply did not draw it, while the third draw carries no
+  // instance at all and could never pair with anything. One merged count cannot tell a real spawn
+  // from a producer that failed to attribute a draw, and they have different owners.
+  CHECK_EQ(census.absent, 1u);
+  CHECK_EQ(census.unattributed, 1u);
+  // And it must NAME the absent one. A count says an object was shown a whole frame early; only
+  // the identity distinguishes the same instance failing every frame from a different one each
+  // time, which is the difference between a defect and an object entering the scene.
+  CHECK_EQ(census.absentInstances[0], 0x80100040u);
+  CHECK_EQ(census.unpaired(), 2u);
   CHECK_EQ(census.incompatible, 0u);
-  CHECK_EQ(census.interpolated + census.unpaired + census.incompatible + census.refused,
+  CHECK_EQ(census.interpolated + census.unpaired() + census.incompatible + census.refused,
            census.actors);
   CHECK_EQ(sampled.sampled, 1u);
   CHECK_EQ(sampled.sampleDeclined, 0u);

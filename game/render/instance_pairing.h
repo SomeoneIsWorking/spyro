@@ -26,15 +26,41 @@
 namespace spyro::instance_pairing {
 
 // How one frame's records were accounted for. Every record falls in exactly one bucket, so
-// `interpolated + unpaired + incompatible + refused == actors` is an invariant a caller may assert.
-// A bare "not interpolated" count cannot be told from a rule that never ran, which is why the
-// refusals are split.
+// `interpolated + unpaired() + incompatible + refused == actors` is an invariant a caller may
+// assert. A bare "not interpolated" count cannot be told from a rule that never ran, which is why
+// the refusals are split.
+//
+// UNPAIRED IS TWO DIFFERENT FAILURES AND WAS ONE NUMBER. Measured 2026-09-20 on Spyro 1: an actor
+// stayed unpaired for 578 consecutive in-between presents, so it was drawn a whole frame early
+// every one of them, and the merged count could not say whether its producer failed to attribute
+// the draw to an instance at all or whether the previous frame genuinely did not draw it. Those
+// have different owners and different fixes -- the first is a capture defect, the second is either
+// a real spawn or an unstable instance key -- so they are counted apart.
 struct Census {
   uint32_t actors = 0;       // records in the current frame
   uint32_t interpolated = 0; // paired with a compatible predecessor, and the sampler accepted
-  uint32_t unpaired = 0;     // the frame before it drew this instance fewer times, or not at all
+  uint32_t unattributed = 0; // the producer gave this draw no instance, so it is unpairable
+  uint32_t absent = 0;       // attributed, but the frame before drew that instance fewer times
   uint32_t incompatible = 0; // a predecessor existed but the layer's identity rule rejected it
   uint32_t refused = 0;      // the sampler declined, so the record keeps its own endpoint
+
+  // The first few instances the previous frame did not draw. A COUNT says an actor was shown a
+  // whole frame early; only the IDENTITY says which, and whether the same instance fails every
+  // frame (a key that is not stable, or an endpoint that never sees it) or a different one each
+  // time (objects genuinely entering the scene, which has nothing to fix).
+  static constexpr size_t kNamedAbsent = 4;
+  std::array<uint32_t, kNamedAbsent> absentInstances{};
+
+  uint32_t unpaired() const {
+    return unattributed + absent;
+  }
+
+  void noteAbsent(uint32_t instance) {
+    if (absent < kNamedAbsent) {
+      absentInstances[absent] = instance;
+    }
+    ++absent;
+  }
 };
 
 // The shared accounting plus the one thing only a layer can say: WHICH field rejected a pair.
@@ -84,13 +110,13 @@ void walk(std::span<Previous *const> previous,
   for (auto *record : current) {
     const uint32_t instance = identity(*record);
     if (instance == 0) {
-      ++census.unpaired;
+      ++census.unattributed;
       continue;
     }
     const auto found = byInstance.find(instance);
     const size_t occurrence = consumed[instance]++;
     if (found == byInstance.end() || occurrence >= found->second.size()) {
-      ++census.unpaired;
+      census.noteAbsent(instance);
       continue;
     }
     const auto &endpoint = *found->second[occurrence];

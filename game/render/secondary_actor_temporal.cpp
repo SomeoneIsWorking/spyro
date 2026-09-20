@@ -43,18 +43,22 @@ History::emit(Core &core, RenderQueue &target, double t, actor_pairing::Census &
   }
   secondary_actor_emit::publish(core, target, prepared);
   const auto worst = census.worstMismatch();
-  lucent::debug("secondarytemporal",
-                "emit t={} actors={} interpolated={} unpaired={} incompatible={} refused={} "
-                "faces={} worst_mismatch={}x{}",
-                t,
-                census.actors,
-                census.interpolated,
-                census.unpaired,
-                census.incompatible,
-                census.refused,
-                prepared.recipe.faces.size(),
-                actor_pairing::mismatchName(worst),
-                census.mismatches[(size_t)worst]);
+  lucent::debug(
+      "secondarytemporal",
+      "emit t={} actors={} interpolated={} unattributed={} absent={} incompatible={} refused={} "
+      "faces={} worst_mismatch={}x{} absent_instances={:#x},{:#x}",
+      t,
+      census.actors,
+      census.interpolated,
+      census.unattributed,
+      census.absent,
+      census.incompatible,
+      census.refused,
+      prepared.recipe.faces.size(),
+      actor_pairing::mismatchName(worst),
+      census.mismatches[(size_t)worst],
+      census.absentInstances[0],
+      census.absentInstances[1]);
   return Status::Ready;
 }
 

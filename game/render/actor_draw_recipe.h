@@ -21,7 +21,14 @@ enum class Reason : uint8_t {
   ZeroArea,
   Depth,
   Ft4,
-  Malformed,
+  // The four ways a record's own stream is malformed. They were one `Malformed` value, and a
+  // refusal that printed `reason=7` could not say whether the primitive ran off the end of the
+  // record or pointed one vertex past its array — which is the entire difference between an
+  // unported arm and a decoder bug.
+  ShortPrimitive, // fewer words remain than this primitive's own header requires
+  VertexOffset,   // a vertex offset is unaligned or past the record's vertex array
+  ColorOffset,    // a colour offset is unaligned or past the record's colour array
+  NextWord,       // the evaluator's advance does not move forward, or leaves the stream
   BinRange,
   Prefix,
   FaceLight,
@@ -91,9 +98,21 @@ struct Recipe {
   uint32_t firstUnsupportedRecord = 0;
   uint32_t firstUnsupportedSourceWord = 0;
   std::array<uint32_t, 2> firstUnsupportedWords{};
+  // For a vertex- or colour-offset refusal: which of the primitive's slots, the byte offset the
+  // stream asked for, and the size of the array it ran off. Without these, `reason=color-offset`
+  // names the kind of defect but not the one number that decides whether the decoder is wrong or
+  // the record is.
+  uint32_t firstUnsupportedSlot = 0;
+  uint32_t firstUnsupportedOffset = 0;
+  uint32_t firstUnsupportedLimit = 0;
   std::vector<Candidate> candidateOrder;
   std::vector<Face> faces;
 };
+
+// Names for the two values a refusal reports, so the abort reads as words rather than as the
+// integers an enum happens to be numbered with.
+const char *statusName(Status status);
+const char *reasonName(Reason reason);
 
 // One authoritative reached primitive evaluator. Inputs are immutable semantic
 // values, never guest addresses or scratch pointers.

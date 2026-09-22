@@ -125,11 +125,40 @@ xy1 = xy3 - (0, hh)            xy0 = xy1 - (hw, 0)
 
 so the vertex order is TL, TR, BL, BR, which is what makes the shared UV mapping correct unchanged.
 
+## What the run hits next, and what it took to read it
+
+With type 3 ported the demo route advances from frame ~2,475 to **frame 5,382**, where the regular
+actor layer refuses. That refusal named an address and nothing else, because `spyro_actor_submit`
+returned a bare `bool` and its reason lived on the `actordirect` debug channel — the exact shape
+issue [0113](0113-secondary-actor-per-face-color-program.md) cost four days to. It now returns a
+`ProducerRefusal` like every other layer, and three rounds of reading it moved the answer:
+
+| what the abort said | what it actually was |
+|---|---|
+| `refused its atomic recipe` | no reason at all; the producer returned `false` |
+| `recipe=3 reason=7` | `Unsupported` / `Malformed` — one value for five different defects |
+| `reason=color-offset slot=1 offset=424 limit=1` | a colour array the failing arm never indexes |
+| `reason=ft4 words=80000004,0001A83F` | **the unported billboard quad program at `0x8002256C`** |
+
+Three causes behind that, all fixed:
+
+- `Reason::Malformed` was one value covering a short primitive, a bad vertex offset, a bad colour
+  offset, and a non-advancing evaluator. It is now four named reasons, and the refusal carries the
+  slot, the byte offset asked for, and the size of the array it ran off.
+- One of those five branches — the source cursor past the end of the stream — was unreachable: the
+  compose loop's own `while (source < size)` guarantees it. Removed rather than named.
+- `populate()` decoded material colour offsets for a quad with bit 2 set, which is the separate
+  billboard program whose colours do not come from there. It refused as `color-offset` on an array
+  the arm never touches, hiding the real gap. `evaluate()` owns that refusal and names it `Ft4`.
+
+`0x8002256C` is the camera-facing textured billboard issue 0113 already describes: one projected
+vertex, a depth-cued half-size. Record 5 of that scene is one, and it is the next arm to port.
+
 ## Next
 
-1. Implement the type-3 arm against the recipe/submitter that already owns types 0/1/2.
-2. Types 4, 5 and the default arm are still unported and will refuse the same way. Reaching one is
-   now a legible refusal rather than a segfault, but they are the same defect class.
+1. Port the billboard quad arm `0x8002256C` (`Reason::Ft4`), which is what frame 5,382 refuses on.
+2. Particle types 4, 5 and the default arm are still unported and will refuse the same way.
+   Reaching one is now a legible refusal rather than a segfault, but they are the same defect class.
 
 ### The superseded plan
 

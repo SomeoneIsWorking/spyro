@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 
 namespace {
 using namespace spyro::actor_draw_recipe;
@@ -116,9 +117,23 @@ void testAtomicComposition() {
   auto malformed = visible;
   malformed.primitiveWords[0] = 0x7fc00000u;
   const Recipe bad = compose(std::span(&malformed, 1));
-  require(bad.status == Status::Unsupported && bad.firstReason == Reason::Malformed &&
+  require(bad.status == Status::Unsupported && bad.firstReason == Reason::VertexOffset &&
               bad.faces.empty(),
           "malformed vertex offset was not atomically refused");
+
+  // Each way a record's stream can be malformed reports itself, because `reason=7` could not tell
+  // an empty record from an out-of-range vertex, and those are different defects.
+  actor_prefix::Output shortened = visible;
+  shortened.primitiveWords.resize(1);
+  require(compose(std::span(&shortened, 1)).firstReason == Reason::ShortPrimitive,
+          "a primitive shorter than its own header did not report itself");
+  actor_prefix::Output noColors = visible;
+  noColors.colors.clear();
+  require(compose(std::span(&noColors, 1)).firstReason == Reason::ColorOffset,
+          "an out-of-range colour offset did not report itself");
+  require(std::string_view(reasonName(Reason::VertexOffset)) == "vertex-offset" &&
+              std::string_view(statusName(Status::Unsupported)) == "unsupported",
+          "the refusal names do not match the values they print");
 
   actor_prefix::Output rejected{};
   rejected.status = actor_prefix::Status::VisibilityRejected;

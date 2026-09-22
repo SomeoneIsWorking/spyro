@@ -17,23 +17,23 @@
 #include <utility>
 #include <vector>
 
-bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
+spyro::ProducerRefusal spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
   spyro::actor_scene::Frame sceneFrame{};
   const auto sceneStatus = spyro::actor_scene::build_frame(c, sceneFrame, source);
   auto &records = sceneFrame.records;
   const auto &census = sceneFrame.census;
   if (sceneStatus != spyro::actor_scene::Status::Ready) {
-    lucent::debug(
-        "actordirect",
-        "REFUSED scene={} scanned={} queued={} culled={} coarse={} view={} invalid_model={}",
-        spyro::actor_scene::status_name(sceneStatus),
-        census.scanned,
-        census.queued,
-        census.culled,
-        census.coarseCulled,
-        census.viewCulled,
-        census.invalidModel);
-    return false;
+    return spyro::refuse("actordirect",
+                         spyro::actor_draw::kProducerKey,
+                         "no scene: scene={} scanned={} queued={} "
+                         "culled={} coarse={} view={} invalid_model={}",
+                         spyro::actor_scene::status_name(sceneStatus),
+                         census.scanned,
+                         census.queued,
+                         census.culled,
+                         census.coarseCulled,
+                         census.viewCulled,
+                         census.invalidModel);
   }
   for (uint32_t index = 0; index < records.size(); ++index) {
     const auto &input = records[index].input;
@@ -68,28 +68,34 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
       prepared.status != spyro::actor_emit::Status::ValidEmpty) {
     const uint32_t firstPrefixStatus =
         prepared.outputs.empty() ? UINT32_MAX : (uint32_t)prepared.outputs.front().status;
-    lucent::debug("actordirect",
-                  "REFUSED stage={} recipe={} reason={} prefix_status={} submission={} record={} "
-                  "source_word={} words={:08X},{:08X} records={} candidates={} source_scanned={} "
-                  "source_queued={} source_culled={} coarse={} view={} invalid_model={}",
-                  spyro::actor_stage::name(prepared.status),
-                  (uint32_t)recipe.status,
-                  (uint32_t)recipe.firstReason,
-                  firstPrefixStatus,
-                  spyro::actor_face_submitter::statusName(prepared.plan.submitter.status),
-                  recipe.firstUnsupportedRecord,
-                  recipe.firstUnsupportedSourceWord,
-                  recipe.firstUnsupportedWords[0],
-                  recipe.firstUnsupportedWords[1],
-                  records.size(),
-                  recipe.candidates,
-                  census.scanned,
-                  census.queued,
-                  census.culled,
-                  census.coarseCulled,
-                  census.viewCulled,
-                  census.invalidModel);
-    return false;
+    return spyro::refuse(
+        "actordirect",
+        spyro::actor_draw::kProducerKey,
+        "stage={} recipe={} reason={} "
+        "prefix_status={} submission={} record={} source_word={} words={:08X},{:08X} slot={} "
+        "offset={} limit={} records={} "
+        "candidates={} source_scanned={} source_queued={} source_culled={} coarse={} view={} "
+        "invalid_model={}",
+        spyro::actor_stage::name(prepared.status),
+        spyro::actor_draw_recipe::statusName(recipe.status),
+        spyro::actor_draw_recipe::reasonName(recipe.firstReason),
+        firstPrefixStatus,
+        spyro::actor_face_submitter::statusName(prepared.plan.submitter.status),
+        recipe.firstUnsupportedRecord,
+        recipe.firstUnsupportedSourceWord,
+        recipe.firstUnsupportedWords[0],
+        recipe.firstUnsupportedWords[1],
+        recipe.firstUnsupportedSlot,
+        recipe.firstUnsupportedOffset,
+        recipe.firstUnsupportedLimit,
+        records.size(),
+        recipe.candidates,
+        census.scanned,
+        census.queued,
+        census.culled,
+        census.coarseCulled,
+        census.viewCulled,
+        census.invalidModel);
   }
   // Preparation owns the shadow-list lifecycle even when every face is culled, and an empty picture
   // is still an endpoint: the next frame can interpolate against a scene that drew nothing.
@@ -110,5 +116,5 @@ bool spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
                 census.queued,
                 census.culled);
   spyro_context(*c).actorTemporal.retain(std::move(records));
-  return true;
+  return {};
 }

@@ -272,8 +272,8 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
       abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
     }
   }
-  if (!spyro_actor_submit(mC)) {
-    abortUnimplemented(sc, "actor producer 0x8001F798 refused its atomic recipe");
+  if (const auto refusal = spyro_actor_submit(mC)) {
+    abortUnimplemented(sc, refusalMessage("actor 0x8001F798", refusal).c_str());
   }
   int32_t worldSelection = -1;
   if (sc.stage == kStageFrontEnd) {

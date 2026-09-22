@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run Spyro's build, C++ quality checks, complete CTest suite, and framework pin gate."""
+"""Run Spyro's build, C++ quality checks, test registration, complete CTest suite, and pin gate."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +35,29 @@ def verify_cpp_quality(build: Path) -> None:
     print(f"[verify] C++ quality: {len(sources)} translation units, {len(files)} source/header files")
 
 
+def verify_every_test_is_registered() -> None:
+    """Refuse a test source that no CMake target compiles.
+
+    Measured 2026-09-22: 28 of 71 `tests/test_*.cpp` were compiled by nothing at all. They were not
+    failing — they were not running, which is worse, because a suite that silently shrinks reports
+    the same green as one that covers everything. One of them had asserted a refusal that had been
+    removed from the product months earlier and would not even compile. A test that is not in a
+    target is not a test, so the gate now says so by name.
+    """
+    cmake = (run.ROOT / "CMakeLists.txt").read_text()
+    built = set(re.findall(r"add_executable\(\s*test_(\w+)\s", cmake))
+    for items in re.findall(r"foreach\(test_name IN ITEMS ([^)]*)\)", cmake):
+        built |= set(items.split())
+    sources = {path.stem[len("test_") :] for path in (run.ROOT / "tests").glob("test_*.cpp")}
+    orphans = sorted(sources - built)
+    if orphans:
+        raise run.Refusal(
+            f"{len(orphans)} of {len(sources)} test sources are compiled by no target: "
+            + ", ".join(f"tests/test_{name}.cpp" for name in orphans)
+        )
+    print(f"[verify] test registration: all {len(sources)} test sources are built by a target")
+
+
 def verify_source_policy() -> None:
     """Run the asset-free source-policy gate used by hosted CI.
 
@@ -59,6 +83,7 @@ def verify(jobs: int) -> None:
     )
     run.command(["cmake", "--build", run.MAINTAINER_BUILD, "-j", str(jobs)])
     verify_cpp_quality(run.MAINTAINER_BUILD)
+    verify_every_test_is_registered()
     run.command(
         ["ctest", "--test-dir", run.MAINTAINER_BUILD, "--output-on-failure"]
     )
@@ -84,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.source_policy:
         print("[verify] PASS: asset-free source policy")
     else:
-        print("[verify] PASS: build, C++ quality, complete CTest, and psxport pin")
+        print("[verify] PASS: build, C++ quality, test registration, complete CTest, and psxport pin")
     return 0
 
 

@@ -98,9 +98,12 @@ void testPositiveBlendAndRefusals() {
   require(build(input).status == Status::Expansion,
           "out-of-range primitive expansion was silently accepted");
   input.primitivePatches.clear();
+  // Header bit 0 once selected an unported transform-blend arm and was refused. `blendPose` owns
+  // the blend now, and it is selected by the vertex scale in bits 8..15, not by this bit — so bit 0
+  // is ordinary input and the build accepts it. This test asserted the removed refusal and was
+  // compiled by nothing, so nobody found out.
   input.header |= 1;
-  require(build(input).status == Status::TransformBlend,
-          "uncovered transform blend was silently accepted");
+  require(build(input).status == Status::Ok, "header bit 0 is no longer an unported arm");
   input.header &= ~1u;
   input.header |= 0x80000000u;
   const Output statusVisible = build(input);

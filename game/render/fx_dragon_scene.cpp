@@ -132,11 +132,15 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
     case Producer::ClearDrawList:
       spyro::dragon_scene::clearDrawList(core);
       break;
-    case Producer::Regular:
-      ok = spyro_actor_submit(core, source);
-      break;
-    // These two carry their own reason, so they return it rather than collapsing into `ok` and
+    // These carry their own reason, so they return it rather than collapsing into `ok` and
     // losing it: the composed pass is the one layer that can say what it refused on.
+    case Producer::Regular:
+      if (const auto refusal = spyro_actor_submit(core, source)) {
+        census.add(" REFUSED at regular: {}", refusal.detail);
+        census.flush_debug(kChannel);
+        return refusal;
+      }
+      break;
     case Producer::Secondary:
       if (const auto refusal =
               spyro_field_actor_composition_submit(core, {.secondary = true, .shaded = false})) {

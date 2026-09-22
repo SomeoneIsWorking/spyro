@@ -720,10 +720,17 @@ own report, so the operator saw a segfault instead of the named refusal, its ARM
 RAM snapshot — the same class as resolved issue 0090. Type 3 is a POLY_FT4 sprite like type 2 but
 axis-aligned with independent half-extents scaled by the RTPS depth cue, so the two arms now share
 one submitter. With denominators: 435 frames decode type-3 records, up to 52 in one frame, 42
-sprites submitted. The demo route now advances from frame ~2,475 to frame 5,382, where a different
-producer refuses — `actor producer 0x8001F798 refused its atomic recipe`, whose message carries no
-sub-reason. Particle types 4, 5 and the default arm remain unported and will refuse the same way,
-now legibly. Issue
+sprites submitted. The demo route now advances from frame ~2,475 to frame 5,382, where the regular
+actor layer refuses. That refusal named an address and nothing else; it now carries its reason like
+every other layer, and reading it moved the answer three times before it was true: `Reason::Malformed`
+was one value for four distinct defects plus one unreachable branch, and `populate()` decoded colour
+offsets for a quad arm that never indexes them, reporting `color-offset` where the real gap is the
+unported billboard quad program `0x8002256C` (`reason=ft4`, record 5, words `80000004,0001A83F`) that
+issue 0113 already describes. Particle types 4, 5 and the default arm remain unported and will refuse
+the same way, now legibly. Separately, 28 of 71 `tests/test_*.cpp` were compiled by no target at all —
+one had asserted a refusal removed from the product and no longer built. All 28 are registered and
+pass (47 CTest entries to 76; the C++ quality gate went from 192 to 221 translation units), and
+`verify.py` now refuses an unregistered test source by name. Issue
 [0128](issues/0128-user-reported-crash-after-the-adventure-begins-card-not-yet-reproduced.md) holds
 the measurement.
 

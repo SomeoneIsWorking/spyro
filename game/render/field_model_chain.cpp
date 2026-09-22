@@ -24,7 +24,8 @@ spyro::ProducerRefusal layer(bool composed, uint32_t producer) {
 } // namespace
 
 spyro::ProducerRefusal spyro_field_model_chain_submit(Core *core) {
-  if (const auto refusal = layer(spyro_actor_submit(core), 0x8001F798u)) {
+  // This one names its own reason, so it is returned intact rather than flattened through `layer`.
+  if (const auto refusal = spyro_actor_submit(core)) {
     return refusal;
   }
   if (const auto refusal = spyro_field_actor_composition_submit(core)) {

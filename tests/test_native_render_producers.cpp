@@ -33,7 +33,7 @@ void test_empty_actor_submission_commits_shadow_reset() {
   core.mem_w32(kShadowCursor, kPreviousCursor);
   core.mem_w32(kShadowStart, 0x80012000u);
 
-  CHECK(spyro_actor_submit(&core));
+  CHECK_EQ(spyro_actor_submit(&core).producer, 0u);
   CHECK_EQ(core.mem_r32(kShadowCursor), kShadowStart);
   CHECK_EQ(game->rq.n, 0);
   // The cursor ends the list; clearing unrelated backing bytes is not part of this transition.
@@ -47,7 +47,11 @@ void test_refused_actor_submission_preserves_shadow_state() {
   core.mem_w32(kShadowCursor, kPreviousCursor);
   core.mem_w32(kShadowStart, 0x80012000u);
 
-  CHECK(!spyro_actor_submit(&core));
+  const auto refusal = spyro_actor_submit(&core);
+  CHECK_EQ(refusal.producer, 0x8001F798u);
+  // A refusal that only a debug channel can explain is what issue 0113 cost four days to; the
+  // reason must travel with it to the abort.
+  CHECK(!refusal.detail.empty());
   CHECK_EQ(core.mem_r32(kShadowCursor), kPreviousCursor);
   CHECK_EQ(core.mem_r32(kShadowStart), 0x80012000u);
   CHECK_EQ(game->rq.n, 0);

@@ -46,15 +46,21 @@ face_light::ViewVertex view_vertex(const psxport::native_projection::NativeProje
           (int16_t)(uint16_t)(uint32_t)(int32_t)(v.raw_view_fixed[2] >> 12)};
 }
 
+// Why a primitive could not be populated, in enough detail to act on.
+struct Malformation {
+  Reason reason = Reason::None;
+  uint32_t slot = 0;   // the vertex or colour index within the primitive
+  uint32_t offset = 0; // the byte offset its stream asked for
+  uint32_t limit = 0;  // the size of the array that offset ran off
+};
+
 bool populate(const actor_prefix::Output &record,
               uint32_t sourceWord,
               const face_light::Environment &lighting,
               PrimitiveInput &out,
-              Reason &reason) {
-  if (sourceWord >= record.primitiveWords.size()) {
-    reason = Reason::Malformed;
-    return false;
-  }
+              Malformation &why) {
+  // The caller's own `while (source < record.primitiveWords.size())` is what makes this subtraction
+  // safe; a guard here could never fire, so there is none to mistake for a reachable refusal.
   const size_t available = record.primitiveWords.size() - sourceWord;
   for (size_t i = 0; i < std::min(available, out.words.size()); ++i) {
     out.words[i] = record.primitiveWords[sourceWord + i];
@@ -64,7 +70,7 @@ bool populate(const actor_prefix::Output &record,
   const unsigned requiredWords =
       quad ? ((out.words[0] & 2u) ? 6u : 3u) : ((out.words[0] & 2u) ? 5u : 2u);
   if (available < requiredWords) {
-    reason = Reason::Malformed;
+    why = {Reason::ShortPrimitive, 0, requiredWords, (uint32_t)available};
     return false;
   }
   out.depthOrigin = record.depthOrigin;
@@ -73,7 +79,7 @@ bool populate(const actor_prefix::Output &record,
   for (unsigned i = 0; i < count; ++i) {
     const uint32_t offset = i == 3 ? out.words[2] & 0x7fcu : vertexOffset(out.words[0], i);
     if ((offset & 3u) || offset / 4u >= record.vertices.size()) {
-      reason = Reason::Malformed;
+      why = {Reason::VertexOffset, i, offset, (uint32_t)record.vertices.size()};
       return false;
     }
     const auto &vertex = record.vertices[offset / 4u];
@@ -85,19 +91,27 @@ bool populate(const actor_prefix::Output &record,
     out.viewZ[i] = vertex.projected.pz;
     out.view[i] = view_vertex(vertex.projected);
   }
-  const uint32_t material = out.words[1];
-  const uint32_t offsets[] = {(material >> 17) & 0x7fcu,
-                              (material >> 8) & 0x7fcu,
-                              (material << 1) & 0x7fcu,
-                              (out.words[2] >> 9) & 0x7fcu};
-  for (unsigned i = 0; i < count; ++i) {
-    if ((offsets[i] & 3u) || offsets[i] / 4u >= record.colors.size()) {
-      reason = Reason::Malformed;
-      return false;
+  // A quad with bit 2 is the separate billboard program at 0x8002256C, and its colours do not come
+  // from these material offsets. Decoding them anyway is how an unported arm reported itself as a
+  // malformed colour offset: record 5 of the attract demo's first crowded scene refused with
+  // `color-offset slot=1 offset=424 limit=1`, which describes a colour array the billboard never
+  // indexes. `evaluate()` owns this refusal and names it Ft4.
+  const bool billboard = quad && (out.words[0] & 4u) != 0u;
+  if (!billboard) {
+    const uint32_t material = out.words[1];
+    const uint32_t offsets[] = {(material >> 17) & 0x7fcu,
+                                (material >> 8) & 0x7fcu,
+                                (material << 1) & 0x7fcu,
+                                (out.words[2] >> 9) & 0x7fcu};
+    for (unsigned i = 0; i < count; ++i) {
+      if ((offsets[i] & 3u) || offsets[i] / 4u >= record.colors.size()) {
+        why = {Reason::ColorOffset, i, offsets[i], (uint32_t)record.colors.size()};
+        return false;
+      }
+      out.color[i] = record.colors[offsets[i] / 4u];
     }
-    out.color[i] = record.colors[offsets[i] / 4u];
+    out.color[0] &= 0x00ffffffu;
   }
-  out.color[0] &= 0x00ffffffu;
   out.lightingControl = record.lightingControl;
   // Bit 2 on a triangle replaces all three material colours with one computed term. On a quad the
   // same bit means the separate billboard program at 0x8002256C, which evaluate() refuses as Ft4.
@@ -176,6 +190,54 @@ std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool secon
 }
 
 } // namespace
+
+const char *statusName(Status status) {
+  switch (status) {
+  case Status::NoCorpus:
+    return "no-corpus";
+  case Status::Ready:
+    return "ready";
+  case Status::ValidEmpty:
+    return "valid-empty";
+  case Status::Unsupported:
+    return "unsupported";
+  }
+  return "unknown";
+}
+
+const char *reasonName(Reason reason) {
+  switch (reason) {
+  case Reason::None:
+    return "none";
+  case Reason::Outcode:
+    return "outcode";
+  case Reason::Skip:
+    return "skip";
+  case Reason::Nclip:
+    return "nclip";
+  case Reason::ZeroArea:
+    return "zero-area";
+  case Reason::Depth:
+    return "depth";
+  case Reason::Ft4:
+    return "ft4";
+  case Reason::ShortPrimitive:
+    return "short-primitive";
+  case Reason::VertexOffset:
+    return "vertex-offset";
+  case Reason::ColorOffset:
+    return "color-offset";
+  case Reason::NextWord:
+    return "next-word";
+  case Reason::BinRange:
+    return "bin-range";
+  case Reason::Prefix:
+    return "prefix";
+  case Reason::FaceLight:
+    return "face-light";
+  }
+  return "unknown";
+}
 
 Evaluation evaluate(const PrimitiveInput &s) {
   Evaluation out{};
@@ -286,12 +348,18 @@ Recipe compose(std::span<const actor_prefix::Output> records,
     uint32_t source = 0, ordinal = 0;
     while (source < record.primitiveWords.size()) {
       PrimitiveInput input{};
-      Reason malformed = Reason::None;
+      Malformation malformed{};
       if (!populate(record, source, lighting, input, malformed)) {
         recipe.status = Status::Unsupported;
-        recipe.firstReason = malformed;
+        recipe.firstReason = malformed.reason;
         recipe.firstUnsupportedRecord = recordIndex;
         recipe.firstUnsupportedSourceWord = source;
+        // `populate` fills the words it read before it refuses, so the refusal carries the stream
+        // it was looking at rather than the zeroes an unset field would print.
+        recipe.firstUnsupportedWords = {input.words[0], input.words[1]};
+        recipe.firstUnsupportedSlot = malformed.slot;
+        recipe.firstUnsupportedOffset = malformed.offset;
+        recipe.firstUnsupportedLimit = malformed.limit;
         recipe.faces.clear();
         return recipe;
       }
@@ -304,7 +372,7 @@ Recipe compose(std::span<const actor_prefix::Output> records,
         recipe.status = Status::Unsupported;
         recipe.firstReason = !result.supported                           ? result.reason
                              : result.emitted && result.localBin >= 288u ? Reason::BinRange
-                                                                         : Reason::Malformed;
+                                                                         : Reason::NextWord;
         recipe.firstUnsupportedRecord = recordIndex;
         recipe.firstUnsupportedSourceWord = source;
         recipe.firstUnsupportedWords = {input.words[0], input.words[1]};

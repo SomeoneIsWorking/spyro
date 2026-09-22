@@ -83,7 +83,9 @@ measured identities and boot facts, but do not extend their retired generated br
   windowed, audible, real-time product for a human, so an agent run takes over the desktop. Never use
   it to diagnose, measure, verify, or smoke-test your own work. Drive the product with the maintained
   tools instead — `tools/drive.py` (reads guest state through the product's REPL and issues real pad
-  edges), `tools/shot.py`, `tools/depth_cov.py` — or launch the product binary directly through
+  edges), `tools/demo_run.py` (no input at all: the attract demo plays itself, which is the only
+  route that reaches issue 0128's crash), `tools/shot.py`, `tools/depth_cov.py` — or launch the
+  product binary directly through
   `external/psxport/tools/port/launch_environment.py::agent_environment`, which is offscreen, silent,
   and unpaced. Take audio evidence from the headless `PSXPORT_WAV` sink, never from a device, and keep
   build probes under `build/` (`build/` maintainer, `build/player` player, `build/player-tools`

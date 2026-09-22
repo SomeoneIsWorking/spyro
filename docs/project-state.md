@@ -710,6 +710,23 @@ comparison discriminator, not full scene parity; the remaining actor/depth diffe
 phase-sensitive shadow-arm comparison, the residual `g_LevelTicks` offset, and the unmeasured
 per-host frame-time budget keep S011 missing.
 
+The user-reported crash after THE ADVENTURE BEGINS is reproduced and its first cause is closed.
+Nine earlier agent observations missed it because they all drove with `tools/drive.py`, which takes
+its own route into `GS_Playing` and stops; launching the product through the player environment with
+no pad input at all lets the attract demo play itself into a scene holding particle type 3, which
+the field-particle producer refused. Two defects, both fixed: the producer had no type-3 arm, and
+`abortUnimplemented` dereferenced a null `Core::cfg` and killed the fatal path two lines into its
+own report, so the operator saw a segfault instead of the named refusal, its ARMED backlog, or the
+RAM snapshot — the same class as resolved issue 0090. Type 3 is a POLY_FT4 sprite like type 2 but
+axis-aligned with independent half-extents scaled by the RTPS depth cue, so the two arms now share
+one submitter. With denominators: 435 frames decode type-3 records, up to 52 in one frame, 42
+sprites submitted. The demo route now advances from frame ~2,475 to frame 5,382, where a different
+producer refuses — `actor producer 0x8001F798 refused its atomic recipe`, whose message carries no
+sub-reason. Particle types 4, 5 and the default arm remain unported and will refuse the same way,
+now legibly. Issue
+[0128](issues/0128-user-reported-crash-after-the-adventure-begins-card-not-yet-reproduced.md) holds
+the measurement.
+
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,
 independent-oracle timing/memory/interrupt/device comparison, and the declared correctness/frame-time

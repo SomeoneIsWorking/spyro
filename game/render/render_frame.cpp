@@ -315,15 +315,26 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
                 mC->mem_r32(kStageSubSubstate),
                 mC->mem_r32(kLoadStage),
                 mC->mem_r32(kStateSwitch));
-  for (const auto &slot : mC->cfg->overlaySlots) {
-    if (slot.base == 0u) {
-      continue;
-    }
-    const auto identity = mC->currentImageIdentity(slot.base);
+  // A title need not declare a legacy GameConfig, and Spyro does not: `Core::cfg` is null for the
+  // whole run. Dereferencing it here killed this function with SIGSEGV two lines into the report,
+  // so every refusal since has looked to the operator like a crash rather than a diagnosis, and
+  // the arm, the field backlog, the projection state and the RAM snapshot below were never
+  // written. That is the worst possible place for a null check to be missing: the one path whose
+  // entire job is to explain itself. Say which case this is instead of skipping quietly.
+  if (mC->cfg == nullptr) {
     lucent::error("render",
-                  "  resident overlay slot 0x{:08X}: id={}",
-                  slot.base,
-                  identity ? identity->id : 0);
+                  "  resident overlay slots: none to report — this title declares no GameConfig");
+  } else {
+    for (const auto &slot : mC->cfg->overlaySlots) {
+      if (slot.base == 0u) {
+        continue;
+      }
+      const auto identity = mC->currentImageIdentity(slot.base);
+      lucent::error("render",
+                    "  resident overlay slot 0x{:08X}: id={}",
+                    slot.base,
+                    identity ? identity->id : 0);
+    }
   }
   reportBacklog(sc);
   // The frame-MISS path already dumps 2 MB of guest RAM because that image is what every

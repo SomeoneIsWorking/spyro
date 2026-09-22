@@ -1,29 +1,15 @@
 #include "field_particle_type2_submitter.h"
-#include "guest_globals.h"
 
 #include "core.h"
+#include "field_particle_quad_submitter.h"
 #include "field_particles_recipe.h"
-#include "game.h"
-#include "gpu_vk.h"
 #include "particle_sine_table.h"
-#include "producer_scope.h"
-#include "proj_params.h"
-#include "render_queue.h"
-#include "scene_painter_order.h"
 #include "wide_screen_space.h"
-#include "world_chunk_codec.h"
-#include "world_projection_math.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <lucent/log.h>
-#include <span>
 
 namespace {
-
-constexpr uint32_t kProducerKey = 0x800573c8u;
-using spyro::guest::kCamera;
 
 int16_t angleValue(uint16_t angle) {
   return spyro::particle_sine_table::values[(angle >> 1u) & 0xffu];
@@ -33,16 +19,7 @@ int16_t angleValue(uint16_t angle) {
 
 bool spyro_field_particle_type2_submit(
     Core *core, const spyro::field_particles_recipe::TexturedQuad &particle) {
-  const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
-  const int clipRight = spyro::wide_screen_space::drawClipRight(core);
-  const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
-  const auto params = spyro::wide_screen_space::projection(core);
-  const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
-  const int32_t cameraY = (int32_t)core->mem_r32(kCamera + 0x2cu) >> 2;
-  const int32_t cameraZ = (int32_t)core->mem_r32(kCamera + 0x30u) >> 2;
-  const auto centerInput = spyro::world_projection_math::packProjectionInput(
-      cameraY - particle.y, cameraZ - particle.z, particle.x - cameraX);
-  const auto center = psxport::native_projection::project(camera, params, centerInput);
+  const auto center = spyro::field_particles::centre(core, particle.x, particle.y, particle.z);
   const int16_t sine = angleValue(particle.angle);
   const int16_t cosine = angleValue((uint16_t)(particle.angle + 0x80u));
   const int halfWidth = ((int32_t)particle.size * sine) >> 10;
@@ -56,6 +33,7 @@ bool spyro_field_particle_type2_submit(
   for (size_t i = 0; i < billboard.t.size(); ++i) {
     billboard.t[i] = (int32_t)(center.raw_view_fixed[i] >> 12) * 4;
   }
+  const auto params = spyro::wide_screen_space::projection(core);
   const int offsets[4][2] = {{-halfWidth, -halfHeight},
                              {halfHeight, -halfWidth},
                              {-halfHeight, halfWidth},
@@ -67,94 +45,12 @@ bool spyro_field_particle_type2_submit(
     xs[i] = vertex.sx;
     ys[i] = vertex.sy;
   }
-  const int us[4] = {(int)(particle.uvClut & 0xffu),
-                     (int)(particle.uvTpage & 0xffu),
-                     (int)(particle.uvClut & 0xffu),
-                     (int)(particle.uvTpage & 0xffu)};
-  const int vs[4] = {(int)((particle.uvClut >> 8) & 0xffu),
-                     (int)((particle.uvClut >> 8) & 0xffu),
-                     (int)((particle.uvTpage >> 8) & 0xffu),
-                     (int)((particle.uvTpage >> 8) & 0xffu)};
-  const unsigned char rs[4] = {(unsigned char)(particle.colorCommand & 0xffu),
-                               (unsigned char)(particle.colorCommand & 0xffu),
-                               (unsigned char)(particle.colorCommand & 0xffu),
-                               (unsigned char)(particle.colorCommand & 0xffu)};
-  const unsigned char gs[4] = {(unsigned char)((particle.colorCommand >> 8) & 0xffu),
-                               (unsigned char)((particle.colorCommand >> 8) & 0xffu),
-                               (unsigned char)((particle.colorCommand >> 8) & 0xffu),
-                               (unsigned char)((particle.colorCommand >> 8) & 0xffu)};
-  const unsigned char bs[4] = {(unsigned char)((particle.colorCommand >> 16) & 0xffu),
-                               (unsigned char)((particle.colorCommand >> 16) & 0xffu),
-                               (unsigned char)((particle.colorCommand >> 16) & 0xffu),
-                               (unsigned char)((particle.colorCommand >> 16) & 0xffu)};
-  const float depth[4] = {core->rsub.projParams.pzToOrd(center.pz),
-                          core->rsub.projParams.pzToOrd(center.pz),
-                          core->rsub.projParams.pzToOrd(center.pz),
-                          core->rsub.projParams.pzToOrd(center.pz)};
-  const int clut = (int)((particle.uvClut >> 16) & 0xffffu);
-  const int tpage = (int)((particle.uvTpage >> 16) & 0xffffu);
-  const int mode = (tpage >> 7) & 3;
-  const int32_t otDepth = (int32_t)(center.sz >> 5) - (int32_t)particle.depthBias;
-  // See wide_screen_space.h: the guest's byte uses the guest's horizontal window, the draw uses
-  // the widened one. They were the same value, so widescreen wrote different guest memory.
-  const bool depthAndRowOk =
-      center.sz >= 0x80u && center.sz < 0x2000u && otDepth >= 0 && center.sy > 0 && center.sy < 256;
-  const bool guestVisible =
-      depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, center.sx);
-  core->mem_w8(particle.address + 3u, guestVisible ? 1u : 0u);
-  const bool visible =
-      depthAndRowOk && spyro::wide_screen_space::drawnOnScreenX(clipRight, center.sx);
-  if (!visible) {
-    return true;
-  }
-
-  ProducerScope producer(&core->rsub.producerScope, kProducerKey, "particles:type2");
-  core->game->gpu.s_seen3d = 1;
-  core->game->rq.emitOrQueue(
-      core,
-      1,
-      RQ_WORLD,
-      RQ_OM_DEPTH,
-      4,
-      ((particle.colorCommand >> 24) & 0x20u) != 0,
-      0,
-      xs,
-      ys,
-      nullptr,
-      nullptr,
-      us,
-      vs,
-      rs,
-      gs,
-      bs,
-      depth,
-      mode,
-      (tpage & 0xf) * 64,
-      ((tpage >> 4) & 1) * 256,
-      (clut & 0x3f) * 16,
-      (clut >> 6) & 0x1ff,
-      core->game->gpu.s_tw_mx,
-      core->game->gpu.s_tw_my,
-      core->game->gpu.s_tw_ox,
-      core->game->gpu.s_tw_oy,
-      core->game->gpu.s_da_x0,
-      core->game->gpu.s_da_y0,
-      core->game->gpu.s_da_x1,
-      core->game->gpu.s_da_y1,
-      (tpage >> 5) & 3,
-      nullptr,
-      -1,
-      core->rsub.projParams.pzToOrd(center.pz),
-      0,
-      0,
-      spyro::scene_painter_order::particle(
-          (uint16_t)std::clamp<int32_t>(otDepth, 0, 2047), particle.scanOrdinal, 0u),
-      0,
-      (uint32_t)otDepth);
-  lucent::debug("particles",
-                "type2 ordinal={} address=0x{:08x} depth={}",
-                particle.scanOrdinal,
-                particle.address,
-                otDepth);
-  return true;
+  const spyro::field_particles::Quad quad{particle.address,
+                                          particle.scanOrdinal,
+                                          particle.colorCommand,
+                                          particle.uvClut,
+                                          particle.uvTpage,
+                                          particle.depthBias,
+                                          "particles:type2"};
+  return spyro::field_particles::submit(core, quad, center, xs, ys);
 }

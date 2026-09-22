@@ -1,11 +1,12 @@
 ---
 id: 128
-title: "User-reported crash after THE ADVENTURE BEGINS card: not reproduced by any agent run yet"
+title: "The crash after THE ADVENTURE BEGINS is the particle producer refusing type 3 — and the refusal path killed itself before saying so"
 status: open
-symptom: the operator reports the product rendering the "THE ADVENTURE BEGINS..." flyby card and then crashing before gameplay. Seven agent runs across build, window, pacing, settings and a 900-frame overrun all reach GS_Playing cleanly. The crash text has not been captured
+symptom: the product renders the "THE ADVENTURE BEGINS..." flyby card and then dies. REPRODUCED 2026-09-22 on the player launch path: the field particles producer refuses particle type 3, and abortUnimplemented then segfaults on a null Core::cfg two lines into its own report
 state_items: S011
 tags: crash,render,producer,transition,repro
 created: 2026-09-19
+updated: 2026-09-22
 ---
 
 ## The observation outranks the runs
@@ -63,6 +64,74 @@ unlikely; a producer REFUSING a recipe is the candidate. Issue 0103 is the same 
 
 **That line names the stage and the refusing producer.** It is the whole diagnosis, and one line of
 it is worth more than another day of negative runs.
+
+## REPRODUCED 2026-09-22, and why nine runs had missed it
+
+Not by driving harder. By running the product the way the PLAYER launches it — `player_environment`,
+no pad input at all — and letting the attract demo play itself into gameplay. Every previous run
+drove to `GS_Playing` through `tools/drive.py`, which takes its own route and then stops; the demo
+keeps going and reaches a scene with type-3 particles in it. The dimension that mattered was not
+audio, window, GPU or pacing. It was *not steering*.
+
+```
+[render:error] NATIVE RENDER NOT IMPLEMENTED — stage selector = 0 (particles — particles producer
+  0x800573C8 refused its atomic type-0/type-2 recipe: status=unsupported_type why=particle_type
+  type=3 slot=801C3C38 records=5 points=0 lines=0 type2=0)
+[render:error]   fatal boundary: guest pc=0xDEAD0000 ra=0xDEAD0000 sp=0x801FFFF8 stage=0/3/2
+```
+
+Deterministic: same refusal, same slot, on every run of the route.
+
+### Why the diagnosis never reached anyone
+
+`abortUnimplemented` printed those two lines and then **segfaulted**, in the one function whose
+whole job is to explain itself. `mC->cfg->overlaySlots`: a title need not declare a legacy
+`GameConfig` and Spyro never does, so `Core::cfg` is null for the entire run. The arm, the ARMED
+field backlog, the projection state and the 2 MB RAM snapshot below it were never written, and the
+operator saw a segfault rather than a named refusal. Same class as issue 0090.
+
+Fixed here: the null case is reported as the defined answer it is ("this title declares no
+GameConfig"), not skipped. The full report now prints, ending at the intended `abort()`.
+
+### The run log is no longer thrown away
+
+A player's run wrote its diagnostics to a terminal and nowhere else, which is the only reason this
+took a month: the abort text existed on the operator's screen every time and was never capturable.
+`player_environment` now defaults `PSXPORT_LOG_FILE` to the host's user-state location
+(`$XDG_STATE_HOME/psxport/<title>/last-run.log`, `~/Library/Logs/...` on macOS,
+`%LOCALAPPDATA%\Logs\...` on Windows), creating the directory and clearing the previous run's file.
+It is a default: a caller that sets its own path keeps it. Gated by
+`external/psxport/tools/port/test_launch_environment.py`.
+
+## What type 3 is
+
+From `external/spyro-1/asm/renderers/r_particles.s` (the renderer is still hand-written assembly,
+not decompiled). `func_800573C8` dispatches on the record's type byte at +1: 0 points, 1 lines,
+2 rotated textured quads, **3**, 4, 5, and a sixth default arm — the port implements 0, 1 and 2 and
+refuses the rest.
+
+Type 3 (`.L80057A74`) emits the same 0x28-byte `POLY_FT4` as type 2, from the same texture table
+(`0x80076278[byte0] -> +8*(halfword@+0x10 & 0xff)`), the same colour word at +0x0C, the same
+semi-transparency bit, the same UV mapping and the same OT depth and clip tests. It differs in
+exactly one thing: the corners. Type 2 rotates a single `size` through the sine table and
+re-projects four model-space offsets; type 3 is **axis-aligned in screen space** with two
+independent half-extents, `sizeX = (word@+8 >> 16) & 0xff` and `sizeY = (word@+8 >> 24) & 0xff`,
+scaled by the RTPS depth factor (`IR0 = MAC0 >> 12`, then `GPF 0` and `>> 12`), placed as
+
+```
+xy3 = center + (hw/2, hh/2)    xy2 = xy3 - (hw, 0)
+xy1 = xy3 - (0, hh)            xy0 = xy1 - (hw, 0)
+```
+
+so the vertex order is TL, TR, BL, BR, which is what makes the shared UV mapping correct unchanged.
+
+## Next
+
+1. Implement the type-3 arm against the recipe/submitter that already owns types 0/1/2.
+2. Types 4, 5 and the default arm are still unported and will refuse the same way. Reaching one is
+   now a legible refusal rather than a segfault, but they are the same defect class.
+
+### The superseded plan
 
 ## Next
 

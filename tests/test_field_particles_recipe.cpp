@@ -75,7 +75,10 @@ void testUnsupportedTypeRefusal() {
   std::array<uint8_t, 0x200000> bytes{};
   put32(bytes, 0x80075824u, kBase);
   put32(bytes, 0x80075738u, kBase + 0x20u);
-  bytes[kBase - 0x80000000u + 1u] = 3u;
+  // Type 4. This case named type 3 until 2026-09-22, when type 3 turned out to be the arm the
+  // attract demo reaches and the product aborted on (issue 0128). The guest dispatches types 0..5
+  // plus a default arm; 4, 5 and the default are still unported and refuse here.
+  bytes[kBase - 0x80000000u + 1u] = 4u;
 
   const auto recipe = spyro::field_particles_recipe::derive(
       spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
@@ -153,6 +156,80 @@ void testTypeTwoRejectsMissingTexture() {
   require(recipe.texturedQuads.empty(), "type two atomic missing texture refusal");
 }
 
+void testTypeThreeDecode() {
+  std::array<uint8_t, 0x200000> bytes{};
+  put32(bytes, 0x80075824u, kBase);
+  put32(bytes, 0x80076278u + 14u * 4u, kBase + 0x100u);
+  put32(bytes, kBase + 0x100u + 4u, 0x4321abcdu);
+  put32(bytes, kBase + 0x100u + 8u, 0x12345678u);
+  bytes[kBase - 0x80000000u] = 0x0eu;
+  bytes[kBase - 0x80000000u + 1u] = 3u;
+  put32(bytes, kBase + 4u, 0x4f117bf3u);
+  // Same word as type 2 spends on one size plus an angle; type 3 reads two independent extents out
+  // of its two top bytes, so 0xa2 and 0x44 must come back as sizeY and sizeX and NOT as an angle.
+  put32(bytes, kBase + 8u, 0xa24406cdu);
+  put32(bytes, kBase + 0xcu, 0x2e7e7e7eu);
+  put32(bytes, kBase + 0x10u, 0xffff0400u);
+  put32(bytes, kBase + 0x20u, 0xffffffffu);
+
+  const auto recipe = spyro::field_particles_recipe::derive(
+      spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
+  require(recipe.status == spyro::field_particles_recipe::Status::Ready, "type three status");
+  require(recipe.records == 1u, "type three record count");
+  require(recipe.spriteQuads.size() == 1u, "type three count");
+  require(recipe.texturedQuads.empty(), "type three is not a type-2 quad");
+  const auto &sprite = recipe.spriteQuads[0];
+  require(sprite.textureClass == 0x0eu, "type three class");
+  require(sprite.x == 0x7bf3 && sprite.y == 0x4f11 && sprite.z == 0x06cd, "type three position");
+  require(sprite.sizeX == 0x44u, "type three width");
+  require(sprite.sizeY == 0xa2u, "type three height");
+  require(sprite.depthBias == 4u, "type three depth bias");
+  require(sprite.colorCommand == 0x2e7e7e7eu, "type three color command");
+  require(sprite.uvClut == 0x4321abcdu && sprite.uvTpage == 0x12345678u,
+          "type three texture words");
+}
+
+void testTypeThreeRejectsMissingTexture() {
+  std::array<uint8_t, 0x200000> bytes{};
+  put32(bytes, 0x80075824u, kBase);
+  put32(bytes, 0x80076278u + 14u * 4u, 0x801ffffcu);
+  bytes[kBase - 0x80000000u] = 0x0eu;
+  bytes[kBase - 0x80000000u + 1u] = 3u;
+  put32(bytes, kBase + 0x20u, 0xffffffffu);
+
+  const auto recipe = spyro::field_particles_recipe::derive(
+      spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
+  require(recipe.status == spyro::field_particles_recipe::Status::InvalidPointers,
+          "type three missing texture refusal");
+  require(recipe.spriteQuads.empty(), "type three atomic missing texture refusal");
+}
+
+void testTypesTwoAndThreeShareOneScan() {
+  std::array<uint8_t, 0x200000> bytes{};
+  put32(bytes, 0x80075824u, kBase);
+  put32(bytes, 0x80076278u + 14u * 4u, kBase + 0x100u);
+  put32(bytes, kBase + 0x100u + 4u, 0x4321abcdu);
+  put32(bytes, kBase + 0x100u + 8u, 0x12345678u);
+  for (uint32_t slot = 0; slot < 2u; ++slot) {
+    const uint32_t at = kBase + slot * 0x20u;
+    bytes[at - 0x80000000u] = 0x0eu;
+    bytes[at - 0x80000000u + 1u] = (uint8_t)(slot == 0 ? 3u : 2u);
+    put32(bytes, at + 8u, 0xa24406cdu);
+    put32(bytes, at + 0x10u, 0xffff0400u);
+  }
+  put32(bytes, kBase + 0x40u, 0xffffffffu);
+
+  const auto recipe = spyro::field_particles_recipe::derive(
+      spyro::world_chunk_codec::RamView(std::span<const uint8_t>(bytes)));
+  require(recipe.status == spyro::field_particles_recipe::Status::Ready, "mixed status");
+  // The two arms live in separate lists but share ONE scan, and the ordering table is built from
+  // that scan: a type-3 sprite emitted before a type-2 quad must keep the smaller ordinal or the
+  // two draw in list order instead of guest order.
+  require(recipe.spriteQuads.size() == 1u && recipe.texturedQuads.size() == 1u, "mixed counts");
+  require(recipe.spriteQuads[0].scanOrdinal == 0u, "type three scan ordinal");
+  require(recipe.texturedQuads[0].scanOrdinal == 1u, "type two scan ordinal");
+}
+
 } // namespace
 
 int main() {
@@ -162,6 +239,10 @@ int main() {
   testTypeOneDecode();
   testTypeTwoDecode();
   testTypeTwoRejectsMissingTexture();
-  std::cout << "field_particles_recipe: PASS (type-0/type-1/type-2 decode + atomic refusal)\n";
+  testTypeThreeDecode();
+  testTypeThreeRejectsMissingTexture();
+  testTypesTwoAndThreeShareOneScan();
+  std::cout << "field_particles_recipe: PASS (type-0/type-1/type-2/type-3 decode, shared scan "
+               "order, and atomic refusal)\n";
   return 0;
 }

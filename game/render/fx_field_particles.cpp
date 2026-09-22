@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "field_particle_type2_submitter.h"
+#include "field_particle_type3_submitter.h"
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
@@ -98,8 +99,8 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     return spyro::refuse(
         "particles",
         0x800573C8u,
-        "particles producer 0x800573C8 refused its atomic type-0/type-2 recipe: "
-        "status={} why={} type={} slot={:08X} records={} points={} lines={} type2={}",
+        "particles producer 0x800573C8 refused its atomic type-0..type-3 recipe: "
+        "status={} why={} type={} slot={:08X} records={} points={} lines={} type2={} type3={}",
         spyro::field_particles_recipe::statusName(recipe.status),
         recipe.refusal,
         recipe.refusedType,
@@ -107,7 +108,8 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
         recipe.records,
         recipe.points.size(),
         recipe.lines.size(),
-        recipe.texturedQuads.size());
+        recipe.texturedQuads.size(),
+        recipe.spriteQuads.size());
   }
   if (recipe.status == spyro::field_particles_recipe::Status::ValidEmpty) {
     return {};
@@ -197,18 +199,33 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
       return spyro::refuse("particles",
                            0x800573C8u,
                            "particles producer 0x800573C8 could not submit a type-2 textured quad "
-                           "(records={} points={} lines={} type2={})",
+                           "(records={} points={} lines={} type2={} type3={})",
                            recipe.records,
                            recipe.points.size(),
                            recipe.lines.size(),
-                           recipe.texturedQuads.size());
+                           recipe.texturedQuads.size(),
+                           recipe.spriteQuads.size());
+    }
+  }
+  for (const auto &sprite : recipe.spriteQuads) {
+    if (!spyro_field_particle_type3_submit(core, sprite)) {
+      return spyro::refuse("particles",
+                           0x800573C8u,
+                           "particles producer 0x800573C8 could not submit a type-3 sprite quad "
+                           "(records={} points={} lines={} type2={} type3={})",
+                           recipe.records,
+                           recipe.points.size(),
+                           recipe.lines.size(),
+                           recipe.texturedQuads.size(),
+                           recipe.spriteQuads.size());
     }
   }
   lucent::debug("particles",
-                "PASS records={} points={} lines={} type2={}",
+                "PASS records={} points={} lines={} type2={} type3={}",
                 recipe.records,
                 recipe.points.size(),
                 recipe.lines.size(),
-                recipe.texturedQuads.size());
+                recipe.texturedQuads.size(),
+                recipe.spriteQuads.size());
   return {};
 }

@@ -102,7 +102,9 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/field_environment_recipe.cpp
   game/render/field_environment_scene.cpp
   game/render/field_moby_lists.cpp
+  game/render/field_particle_quad_submitter.cpp
   game/render/field_particle_type2_submitter.cpp
+  game/render/field_particle_type3_submitter.cpp
   game/render/field_particles_recipe.cpp
   game/render/wide_screen_space.cpp
   game/render/actor_scene_oracle.cpp

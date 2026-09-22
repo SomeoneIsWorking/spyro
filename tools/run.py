@@ -434,7 +434,7 @@ def configure_and_build(psxport, compiler_options, spec=provision_title.SPECS["s
 
 def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
     policy = runpy.run_path(str(Path(psxport) / "tools/port/launch_environment.py"))
-    env = policy["player_environment"](os.environ)
+    env = policy["player_environment"](os.environ, product=spec.slug)
     env.setdefault("PSXPORT_ASSET_DIR", str(psxport))
     env.setdefault("PSXPORT_DEBUG_SERVER", "1")
     env["PSXPORT_DISC"] = str(disc)

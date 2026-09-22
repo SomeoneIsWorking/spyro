@@ -65,6 +65,24 @@ struct TexturedQuad {
   uint32_t uvTpage = 0;
 };
 
+// The type-3 arm draws the same POLY_FT4 from the same texture table as type 2, and differs only
+// in where the corners go: axis-aligned in screen space from two independent half-extents, with no
+// rotation and no second projection. See field_particle_quad_submitter.h.
+struct SpriteQuad {
+  uint32_t address = 0;
+  uint32_t scanOrdinal = 0;
+  uint8_t textureClass = 0;
+  int16_t x = 0;
+  int16_t y = 0;
+  int16_t z = 0;
+  uint8_t sizeX = 0;
+  uint8_t sizeY = 0;
+  uint8_t depthBias = 0;
+  uint32_t colorCommand = 0;
+  uint32_t uvClut = 0;
+  uint32_t uvTpage = 0;
+};
+
 struct Recipe {
   Status status = Status::ValidEmpty;
   const char *refusal = "none";
@@ -77,10 +95,11 @@ struct Recipe {
   std::vector<Point> points;
   std::vector<Line> lines;
   std::vector<TexturedQuad> texturedQuads;
+  std::vector<SpriteQuad> spriteQuads;
 };
 
-// Decode the reached type-0/type-1/type-2 emit-list arms. The guest renderer scans the 256-slot
-// array from its base to the first type -1 terminator; g_ParticleAllocPtr is a recyclable
+// Decode the reached type-0/type-1/type-2/type-3 emit-list arms. The guest renderer scans the
+// 256-slot array from its base to the first type -1 terminator; g_ParticleAllocPtr is a recyclable
 // allocation cursor, not the list end. Type -2 slots are free holes. Other particle types refuse as
 // one atomic scene layer until their retained ASM has been ported.
 Recipe derive(const world_chunk_codec::RamView &ram);

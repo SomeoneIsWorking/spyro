@@ -177,11 +177,15 @@ With it the demo route reaches **frame 9,346**, where the secondary actor produc
 `0x80021FE0`. Issue [0113](0113-secondary-actor-per-face-color-program.md) describes it and records
 that nothing had ever been observed reaching it. Something has now.
 
+The additive per-face colour program `0x80021FE0` that frame 9,346 refused on is ported as well;
+issue [0113](0113-secondary-actor-per-face-color-program.md) holds it. The route now reaches
+**frame 15,210**, refusing on particle type 6 — the default arm of `0x800573C8`, the same producer
+whose type 3 started this.
+
 ## Next
 
-1. Port the additive per-face colour program `0x80021FE0`, which is what frame 9,346 refuses on.
-2. Particle types 4, 5 and the default arm are still unported and will refuse the same way.
-   Reaching one is now a legible refusal rather than a segfault, but they are the same defect class.
+1. Port particle types 4, 5, 6 and the default arm of `0x800573C8`. Type 6 is what frame 15,210
+   refuses on.
 
 ### The superseded plan
 

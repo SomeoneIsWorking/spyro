@@ -112,11 +112,25 @@ flags; it also proves the comparison can fail.
 
 ## What is still refused
 
-The other program at `0x80021FE0`, which a non-zero top byte selects. It adds a constant to each
-vertex colour's red byte with saturation, subtracts it from green and blue, and forces the packet's
-command byte to `0x34`, so it changes the emitted primitive rather than only its colours and does
-not belong in the colour path. `face_light::Status::Additive` names it, and a face that asks for it
-still refuses the whole call. Nothing has yet been observed reaching it.
+Nothing. The other program at `0x80021FE0` is ported too, and the description above was right about
+what it does and wrong about where it belongs. It reads one constant from the control word's bits
+16..23, adds it to each vertex's red with saturation at `0xFF` and subtracts it from green and blue
+with a floor of zero — each channel stored with `sb`, so each stays a byte. A zero constant is the
+identity, which is exactly what the arm's own zero-constant branch writes, so the two branches are
+one expression in the port.
+
+Its command byte is `0x34`, which is what a textured triangle's packet already carries, so it does
+not change the primitive. What it does change is that the byte is stored as exactly `0x34`, with no
+semi-transparency bit — so a face that took this program is opaque even when its material word asks
+for semi-transparency. That is the one thing it alters beyond the colours, and `Result::
+opaqueCommand` carries it to the payload and the face submitter.
+
+So both programs belong in `face_light`, which now returns three colours rather than one: the
+directional arm gives all three the same value, and this one gives each vertex its own.
+`Status::Additive` is gone.
+
+It was first observed being reached on 2026-09-22, at frame 9,346 of the attract-demo route
+(`tools/demo_run.py`). Until that route existed, nothing had ever reached it.
 
 The quad billboard at `0x8002256C` is likewise still refused, as `Reason::Ft4`.
 

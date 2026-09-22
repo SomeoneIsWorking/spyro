@@ -10,6 +10,9 @@
 
 namespace {
 
+// The directional program never reads the material colours; naming them says so at each call.
+constexpr std::array<std::uint32_t, 3> kUnread{};
+
 using spyro::face_light::Environment;
 using spyro::face_light::LightColor;
 using spyro::face_light::Status;
@@ -133,9 +136,9 @@ void test_matches_the_real_gte_over_a_spread_of_faces() {
             (std::int16_t)(spin * 29), (std::int16_t)(spin * 11), (std::int16_t)(600 - spin)},
         ViewVertex{(std::int16_t)(-spin * 17), (std::int16_t)(spin * 23), (std::int16_t)(600)}};
     const std::uint32_t control = 0x0000A5A5u + (std::uint32_t)spin * 0x00040000u;
-    const auto lit = spyro::face_light::face_color(view, control, environment);
+    const auto lit = spyro::face_light::face_color(view, kUnread, control, environment);
     CHECK(lit.status == Status::Ready);
-    CHECK_EQ(lit.color, reference_color(gte, view, control, environment.light, table.entries));
+    CHECK_EQ(lit.color[0], reference_color(gte, view, control, environment.light, table.entries));
     ++checked;
   }
   CHECK_EQ(checked, 23u);
@@ -150,26 +153,40 @@ void test_the_check_can_fail() {
       ViewVertex{0, 0, 600}, ViewVertex{400, 40, 590}, ViewVertex{-200, 500, 610}};
   std::array<ViewVertex, 3> moved = base;
   moved[2].z = 300;
-  const auto first = spyro::face_light::face_color(base, 0x0014A5A5u, environment);
-  const auto second = spyro::face_light::face_color(moved, 0x0014A5A5u, environment);
+  const auto first = spyro::face_light::face_color(base, kUnread, 0x0014A5A5u, environment);
+  const auto second = spyro::face_light::face_color(moved, kUnread, 0x0014A5A5u, environment);
   CHECK(first.status == Status::Ready && second.status == Status::Ready);
-  CHECK(first.color != second.color);
+  CHECK(first.color[0] != second.color[0]);
 }
 
-void test_the_additive_arm_is_reported_not_computed() {
-  const Table table;
-  const Environment environment{.light = {0x1000, 0x0800, 0x0400}, .magnitude = table.entries};
+void test_the_tint_arm_moves_each_channel_its_own_way() {
   const std::array<ViewVertex, 3> view = {
       ViewVertex{0, 0, 600}, ViewVertex{400, 40, 590}, ViewVertex{-200, 500, 610}};
-  const auto lit = spyro::face_light::face_color(view, 0x02000000u, environment);
-  CHECK(lit.status == Status::Additive);
-  CHECK_EQ(lit.color, 0u);
+  // Top byte non-zero selects 0x80021FE0; bits 16..23 carry the step. It reads no view geometry and
+  // no magnitude table, so an empty environment must not stop it.
+  const std::array<std::uint32_t, 3> material = {0x00204060u, 0x00FFFFFFu, 0x00000000u};
+  const auto lit = spyro::face_light::face_color(view, material, 0x01100000u, Environment{});
+  CHECK(lit.status == Status::Ready);
+  CHECK(lit.opaqueCommand);
+  // step = 0x10: red rises, green and blue fall, and each channel stays a byte.
+  CHECK_EQ(lit.color[0], 0x00103070u);
+  // Saturation at the top and a floor of zero at the bottom, both reached.
+  CHECK_EQ(lit.color[1], 0x00EFEFFFu);
+  CHECK_EQ(lit.color[2], 0x00000010u);
+  // A zero step is the identity, which is what the arm's own zero-constant branch writes.
+  const auto unchanged = spyro::face_light::face_color(view, material, 0x01000000u, Environment{});
+  CHECK(unchanged.status == Status::Ready && unchanged.opaqueCommand);
+  CHECK_EQ(unchanged.color[0], material[0]);
+  CHECK_EQ(unchanged.color[1], material[1]);
+  CHECK_EQ(unchanged.color[2], material[2]);
+  // Each vertex keeps its own colour; the directional arm is the one that flattens all three.
+  CHECK(lit.color[0] != lit.color[1] && lit.color[1] != lit.color[2]);
 }
 
 void test_a_missing_table_refuses_rather_than_guessing() {
   const std::array<ViewVertex, 3> view = {
       ViewVertex{0, 0, 600}, ViewVertex{400, 40, 590}, ViewVertex{-200, 500, 610}};
-  const auto lit = spyro::face_light::face_color(view, 0x0014A5A5u, Environment{});
+  const auto lit = spyro::face_light::face_color(view, kUnread, 0x0014A5A5u, Environment{});
   CHECK(lit.status == Status::NoEnvironment);
 }
 
@@ -178,7 +195,7 @@ void test_a_collinear_face_has_no_normal_to_light() {
   const Environment environment{.light = {0x1000, 0x0800, 0x0400}, .magnitude = table.entries};
   const std::array<ViewVertex, 3> view = {
       ViewVertex{0, 0, 0}, ViewVertex{100, 100, 100}, ViewVertex{200, 200, 200}};
-  const auto lit = spyro::face_light::face_color(view, 0x0014A5A5u, environment);
+  const auto lit = spyro::face_light::face_color(view, kUnread, 0x0014A5A5u, environment);
   CHECK(lit.status == Status::Degenerate);
 }
 
@@ -187,7 +204,7 @@ void test_a_collinear_face_has_no_normal_to_light() {
 int main() {
   RUN(matches_the_real_gte_over_a_spread_of_faces);
   RUN(the_check_can_fail);
-  RUN(the_additive_arm_is_reported_not_computed);
+  RUN(the_tint_arm_moves_each_channel_its_own_way);
   RUN(a_missing_table_refuses_rather_than_guessing);
   RUN(a_collinear_face_has_no_normal_to_light);
   return pt_summary();

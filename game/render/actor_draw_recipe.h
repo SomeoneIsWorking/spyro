@@ -56,6 +56,9 @@ struct PrimitiveInput {
   std::array<face_light::ViewVertex, 4> view{};
   uint32_t lightingControl = 0;
   face_light::Status lighting = face_light::Status::Ready;
+  // Set by the tint colour program, which stores the packet's command byte itself. It is the one
+  // thing that can make a face opaque against its own material word.
+  bool opaqueCommand = false;
 };
 
 struct Evaluation {

@@ -138,23 +138,29 @@ bool populate(const actor_prefix::Output &record,
     out.color[0] &= 0x00ffffffu;
   }
   out.lightingControl = record.lightingControl;
-  // Bit 2 on a triangle replaces all three material colours with one computed term. On a quad the
-  // same bit means the separate billboard program at 0x8002256C, which evaluate() refuses as Ft4.
+  // Bit 2 on a triangle hands the three material colours to one of the two per-face colour
+  // programs; the control word's top byte chooses which. The billboard arm above is what the same
+  // bit means on a quad.
   if (!quad && (out.words[0] & 4u) != 0u) {
-    const auto lit = face_light::face_color(
-        {out.view[0], out.view[1], out.view[2]}, out.lightingControl, lighting);
+    const auto lit = face_light::face_color({out.view[0], out.view[1], out.view[2]},
+                                            {out.color[0], out.color[1], out.color[2]},
+                                            out.lightingControl,
+                                            lighting);
     out.lighting = lit.status;
     if (lit.status == face_light::Status::Ready) {
-      out.color[0] = lit.color;
-      out.color[1] = lit.color;
-      out.color[2] = lit.color;
+      out.color[0] = lit.color[0];
+      out.color[1] = lit.color[1];
+      out.color[2] = lit.color[2];
+      out.opaqueCommand = lit.opaqueCommand;
     }
   }
   return true;
 }
 
 std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool second) {
-  const uint32_t semiCommandBit = (s.words[1] & 1u) << 25;
+  // The tint program stores the command byte as exactly 0x34, so a face that took it never carries
+  // the semi-transparency bit its material word asks for.
+  const uint32_t semiCommandBit = s.opaqueCommand ? 0u : (s.words[1] & 1u) << 25;
   switch (family) {
   case Family::G4:
     return {0x08000000u,

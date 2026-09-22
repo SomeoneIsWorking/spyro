@@ -104,14 +104,18 @@ void test_face_light_triangle_gives_every_vertex_one_computed_colour() {
   CHECK_EQ(recipe.faceLightFaces, 1u);
 }
 
-void test_additive_program_is_still_refused_by_name() {
+void test_tint_program_draws_and_makes_the_face_opaque() {
   const MagnitudeStandIn table;
   auto frame = frame_with(one_triangle(4u));
   frame.records[0].lightingControl = 0x01123456u; // a non-zero top byte selects 0x80021FE0
   const auto recipe = spyro::secondary_actor_recipe::derive(frame, table.environment());
-  CHECK(recipe.status == spyro::secondary_actor_recipe::Status::UnsupportedTopology);
-  CHECK(recipe.firstLightingStatus == spyro::face_light::Status::Additive);
-  CHECK_EQ(recipe.faces.size(), 0u);
+  CHECK(recipe.status == spyro::secondary_actor_recipe::Status::Ready);
+  CHECK_EQ(recipe.faces.size(), 1u);
+  const auto &input = recipe.faces[0].input;
+  // The tint arm keeps three separate colours, unlike the directional arm above which flattens
+  // them, and it stores the command byte itself so the face is opaque.
+  CHECK(input.opaqueCommand);
+  CHECK(input.color[0] != 0x00112233u);
 }
 
 void test_culled_face_light_candidate_needs_no_colour_program() {
@@ -129,7 +133,7 @@ int main() {
   RUN(ordinary_colour_triangle_keeps_native_topology);
   RUN(face_light_triangle_without_a_table_refuses_the_whole_call);
   RUN(face_light_triangle_gives_every_vertex_one_computed_colour);
-  RUN(additive_program_is_still_refused_by_name);
+  RUN(tint_program_draws_and_makes_the_face_opaque);
   RUN(culled_face_light_candidate_needs_no_colour_program);
   return pt_summary();
 }

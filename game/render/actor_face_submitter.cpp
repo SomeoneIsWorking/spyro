@@ -31,7 +31,7 @@ Material material_for(const actor_draw_recipe::Face &face) {
   Material material{};
   material.textured =
       face.family == Family::GT3 || face.family == Family::GT4 || face.family == Family::Billboard;
-  material.semiTransparent = (face.input.words[1] & 1u) != 0u;
+  material.semiTransparent = !face.input.opaqueCommand && (face.input.words[1] & 1u) != 0u;
   if (!material.textured) {
     return material;
   }

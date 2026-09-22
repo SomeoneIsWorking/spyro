@@ -728,10 +728,14 @@ offsets for a quad arm that never indexes them, reporting `color-offset` where t
 unported billboard quad program — `0x800205C4` in this renderer, the sibling of `0x8002256C` that
 issue 0113 describes. That arm is now ported: one projected vertex, a forced-DQA depth divide, two
 half-extents packed in the material word, and a ten-word POLY_FT4 with command `0x2C`, owned by
-`spyro::actor_billboard::extents` and carried through as `Family::Billboard`. The route now reaches
-**frame 9,346**, where the secondary actor producer refuses on `reason=face-light
-lighting=0x01000000/Additive` — the second per-face colour program `0x80021FE0`, which issue 0113
-records as never yet observed being reached. Particle types 4, 5 and the default arm remain unported and will refuse
+`spyro::actor_billboard::extents` and carried through as `Family::Billboard`. That reached
+**frame 9,346**, where the secondary actor producer refused on the second per-face colour program
+`0x80021FE0` — which issue 0113 recorded as never yet observed being reached. It is ported too: one
+constant added to each vertex's red with saturation and subtracted from green and blue with a floor
+of zero, and a command byte stored as exactly `0x34`, which makes such a face opaque against its own
+material word. `face_light` now returns three colours rather than one, and `Status::Additive` is
+gone. The route then reaches **frame 15,210**, refusing on particle type 6 — the unported default
+arm of the same producer whose type 3 started this. Particle types 4, 5 and the default arm remain unported and will refuse
 the same way, now legibly. Separately, 28 of 71 `tests/test_*.cpp` were compiled by no target at all —
 one had asserted a refusal removed from the product and no longer built. All 28 are registered and
 pass (47 CTest entries to 76; the C++ quality gate went from 192 to 221 translation units), and

@@ -6,11 +6,14 @@
 
 namespace spyro::face_light {
 
-// Retail's per-face colour program for secondary actors, `func_80020F34` arm `.L80021DB4`
+// Retail's two per-face colour programs, `func_80020F34` arms `.L80021DB4` and `.L80021FE0`
 // (external/spyro-1 asm/renderers/r_moby.s). A triangle whose first prefix word has bit 2 set takes
-// one colour for all three of its vertices instead of the three material-table colours the ordinary
-// path reads, and the arm rejoins that path with nothing else changed. Quads never reach it: bit 2
-// on a quad selects the separate billboard program at 0x8002256C.
+// one of them instead of the three material-table colours the ordinary path reads; the control
+// word's TOP byte chooses which. Quads never reach either: bit 2 on a quad selects the separate
+// billboard program (`actor_billboard_face.h`).
+//
+//   top byte zero     `.L80021DB4`  one directional colour for all three vertices
+//   top byte non-zero `.L80021FE0`  a per-vertex tint, and it writes the command byte itself
 //
 // The colour is a directional term: the cross product of two view-space edges, normalised by its
 // own length, scaled by an intensity packed into the control word, and added to a material colour
@@ -46,20 +49,27 @@ struct Environment {
 };
 
 enum class Status : std::uint8_t {
-  Ready,         // `color` is the 24-bit value retail gives all three vertices
-  NoEnvironment, // no magnitude table was supplied, so the program cannot run
-  Additive,      // the control word's top byte selects 0x80021FE0, a different program
+  Ready,         // `color` holds the 24-bit value retail gives each vertex
+  NoEnvironment, // no magnitude table was supplied, so the directional program cannot run
   Degenerate,    // the face normal is zero, or its magnitude left the table's range
 };
 
 struct Result {
   Status status = Status::NoEnvironment;
-  std::uint32_t color = 0;
+  // Per vertex. The directional program gives all three the same value; the tint program gives
+  // each its own, which is why this is three entries rather than one.
+  std::array<std::uint32_t, 3> color{};
+  // The tint program stores the packet's command byte as exactly 0x34, so a face that took it is
+  // opaque even when its material word asks for semi-transparency. The directional program leaves
+  // the command alone.
+  bool opaqueCommand = false;
 };
 
 // `control` is the Moby's word at +0x4C, which both record builders copy to the draw record's
-// +0x30 and the renderer parks in HI for the whole model.
+// +0x30 and the renderer parks in HI for the whole model. `material` is the three colours the
+// ordinary path would have used; only the tint program reads them.
 Result face_color(const std::array<ViewVertex, 3> &view,
+                  const std::array<std::uint32_t, 3> &material,
                   std::uint32_t control,
                   const Environment &environment);
 

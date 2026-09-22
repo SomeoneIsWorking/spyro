@@ -58,6 +58,27 @@ std::uint32_t color_channel(std::int32_t background, const LightColor &light, co
   return (std::uint32_t)std::clamp((0xff * saturated) >> 12, 0, 0xff);
 }
 
+// `.L80021FE0`: one constant out of the control word's bits 16..23 is added to every vertex's red
+// with saturation at 0xFF and subtracted from its green and blue with a floor of zero. A zero
+// constant is the identity, which is exactly what the arm's own zero-constant branch writes, so the
+// two branches are one expression here. Each channel is stored with `sb`, so each stays a byte.
+Result tint(const std::array<std::uint32_t, 3> &material, std::uint32_t control) {
+  const std::uint32_t step = (control >> 16) & 0xffu;
+  Result out{Status::Ready, {}, true};
+  for (std::size_t i = 0; i < out.color.size(); ++i) {
+    const std::uint32_t red = material[i] & 0xffu;
+    const std::uint32_t green = (material[i] >> 8) & 0xffu;
+    const std::uint32_t blue = (material[i] >> 16) & 0xffu;
+    out.color[i] = std::min(red + step, 0xffu) | ((green > step ? green - step : 0u) << 8) |
+                   ((blue > step ? blue - step : 0u) << 16);
+  }
+  return out;
+}
+
+Result uniform(Status status, std::uint32_t color) {
+  return {status, {color, color, color}, false};
+}
+
 } // namespace
 
 const char *status_name(Status status) {
@@ -66,8 +87,6 @@ const char *status_name(Status status) {
     return "Ready";
   case Status::NoEnvironment:
     return "NoEnvironment";
-  case Status::Additive:
-    return "Additive";
   case Status::Degenerate:
     return "Degenerate";
   }
@@ -75,13 +94,14 @@ const char *status_name(Status status) {
 }
 
 Result face_color(const std::array<ViewVertex, 3> &view,
+                  const std::array<std::uint32_t, 3> &material,
                   std::uint32_t control,
                   const Environment &environment) {
   if (((std::int32_t)control >> 24) != 0) {
-    return {Status::Additive, 0};
+    return tint(material, control);
   }
   if (environment.magnitude.size() != kMagnitudeEntries) {
-    return {Status::NoEnvironment, 0};
+    return uniform(Status::NoEnvironment, 0);
   }
 
   const Vector normal = cross(edge(view[0], view[1]), edge(view[0], view[2]));
@@ -94,13 +114,13 @@ Result face_color(const std::array<ViewVertex, 3> &view,
                             (std::uint32_t)mac((std::int64_t)term[1] * term[1]) +
                             (std::uint32_t)mac((std::int64_t)term[2] * term[2]);
   if (sum == 0u) {
-    return {Status::Degenerate, 0};
+    return uniform(Status::Degenerate, 0);
   }
 
   const auto step = guest_magnitude::normalize(sum, guest_magnitude::lzcr(sum));
   if (step.tableByteOffset >= kMagnitudeEntries * sizeof(std::int16_t) ||
       (step.tableByteOffset & 1u) != 0u) {
-    return {Status::Degenerate, 0};
+    return uniform(Status::Degenerate, 0);
   }
   const std::int32_t length =
       (std::int32_t)(guest_magnitude::scaled(environment.magnitude[step.tableByteOffset / 2u],
@@ -121,7 +141,7 @@ Result face_color(const std::array<ViewVertex, 3> &view,
   const std::uint32_t color = color_channel(red, environment.light, weighted) |
                               (color_channel(green, environment.light, weighted) << 8) |
                               (color_channel(blue, environment.light, weighted) << 16);
-  return {Status::Ready, color};
+  return uniform(Status::Ready, color);
 }
 
 } // namespace spyro::face_light

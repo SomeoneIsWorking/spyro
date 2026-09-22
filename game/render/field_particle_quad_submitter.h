@@ -2,19 +2,22 @@
 
 #include "native_projection.h"
 
+#include <array>
 #include <cstdint>
 
 struct Core;
 
 namespace spyro::field_particles {
 
-// EVERYTHING THE TYPE-2 AND TYPE-3 EMIT-LIST ARMS SHARE, which is everything except where the four
-// corners land. Both read the same texture table, carry the same colour/command word at record
-// +0x0C, map their UVs the same way, take the same screen and depth-range clip tests, write the
-// same guest-visible byte at record +3, and emit the same POLY_FT4 into the same painter slot.
-// Type 2 rotates one `size` through the sine table and re-projects four model-space offsets; type 3
-// places an axis-aligned rectangle from two independent half-extents. That difference is the only
-// thing the two arms own separately, so it is the only thing they implement separately.
+// EVERYTHING THE TEXTURED EMIT-LIST ARMS SHARE. All three read the same texture table, carry the
+// same colour/command word at record +0x0C, map their UVs the same way onto the same four corners,
+// write the same guest-visible byte at record +3, and emit the same POLY_FT4 into the same painter
+// slot. What they own separately is where the corners land and what decides the quad is on screen:
+// type 2 rotates one `size` through the sine table and re-projects four model-space offsets about a
+// projected centre; type 3 places an axis-aligned rectangle from two independent half-extents about
+// the same centre; the default arm rotates a square in the WORLD and projects all four corners, so
+// it has no centre to test and sorts on the sum of four depths instead. `submit` below is the
+// centre policy the first two share; `emit` is the packet all three share.
 struct Quad {
   uint32_t address = 0;
   uint32_t scanOrdinal = 0;
@@ -31,10 +34,25 @@ struct Quad {
 psxport::native_projection::NativeProjectedVertex
 centre(Core *core, int16_t x, int16_t y, int16_t z);
 
-// Clip, publish the guest-visible byte, and emit — given corners the caller has already placed.
-// `xs`/`ys` are four screen-space positions in the guest's own order: top-left, top-right,
-// bottom-left, bottom-right. Returns false only when the layer cannot be drawn at all; a particle
-// that is merely off-screen is a true, drawn-nothing result.
+// The four placed corners, in the guest's own order: top-left, top-right, bottom-left,
+// bottom-right. `ord` is the host depth each corner draws at. The two centre-placed arms give all
+// four the same value because their quad faces the camera; the world-oriented arm does not, because
+// its does not.
+struct Corners {
+  std::array<int, 4> x{};
+  std::array<int, 4> y{};
+  std::array<float, 4> ord{};
+};
+
+// Emit one POLY_FT4 into the producer's painter scope. The caller has already decided that the quad
+// is drawn and which ordering-table bucket it belongs in; everything below that decision — the
+// texture-page and CLUT decode, the corner UV mapping, the flat colour and the queue call — is the
+// same for every textured arm and lives here once.
+void emit(Core *core, const Quad &quad, const Corners &corners, int32_t otDepth);
+
+// Clip against the centre, publish the guest-visible byte, and emit — given corners the caller has
+// already placed. Returns false only when the layer cannot be drawn at all; a particle that is
+// merely off-screen is a true, drawn-nothing result.
 bool submit(Core *core,
             const Quad &quad,
             const psxport::native_projection::NativeProjectedVertex &centre,

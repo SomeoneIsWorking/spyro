@@ -44,9 +44,13 @@ psxport::native_projection::ProjectionParams projection(Core *core) {
   return out;
 }
 
+int32_t guestX(Core *core, int32_t drawnX) {
+  return drawnX - horizontalOffsetDelta(core);
+}
+
 bool guestOnScreenX(Core *core, int32_t drawnX) {
-  const int32_t guestX = drawnX - horizontalOffsetDelta(core);
-  return guestX > 0 && guestX < kGuestClipRight;
+  const int32_t x = guestX(core, drawnX);
+  return x > 0 && x < kGuestClipRight;
 }
 
 bool drawnOnScreenX(int drawRight, int32_t drawnX) {

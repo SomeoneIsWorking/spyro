@@ -11,11 +11,11 @@ constexpr uint32_t kParticleTextures = 0x80076278u;
 constexpr uint32_t kRecordSize = 0x20u;
 constexpr uint32_t kRecordCapacity = 256u;
 
-// The texture entry both textured arms resolve, identically: a class byte at record +0 selects a
-// table out of 0x80076278, and the low byte of the halfword at +0x10 indexes an 8-byte entry in it
-// whose second and third words are the packed uv/clut and uv/tpage. Its high byte is the depth
-// bias. One decode, because one disagreement between the two arms would be a texture drawn from
-// the wrong table on one particle type only — a defect nothing in a still frame would reveal.
+// The texture entry all three textured arms resolve, identically: a class byte at record +0 selects
+// a table out of 0x80076278, and the low byte of the halfword at +0x10 indexes an 8-byte entry in
+// it whose second and third words are the packed uv/clut and uv/tpage. Its high byte is the depth
+// bias. One decode, because one disagreement between the arms would be a texture drawn from the
+// wrong table on one particle type only — a defect nothing in a still frame would reveal.
 struct TextureEntry {
   bool ok = false;
   const char *refusal = "";
@@ -54,6 +54,7 @@ Recipe refuse(Recipe out, Status status, const char *why, int32_t type = -1, uin
   out.lines.clear();
   out.texturedQuads.clear();
   out.spriteQuads.clear();
+  out.orientedQuads.clear();
   return out;
 }
 
@@ -67,8 +68,8 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
   const uint32_t base = ram.r32(kParticlePointer);
   // The guest renderer does not use g_ParticleAllocPtr as a list end. The allocator moves that
   // cursor through reusable slots and may wrap it; func_800573C8 instead scans from g_Particles
-  // until the first type -1 terminator (skipping type -2 free slots). The extra four bytes cover
-  // the sentinel written at g_Particles[256] during level initialization.
+  // until the first type -1 terminator, stepping over every other negative type. The four extra
+  // bytes cover the sentinel written at g_Particles[256] during level initialization.
   if (!ram.contains(base, kRecordCapacity * kRecordSize + 4u)) {
     return refuse(std::move(out), Status::InvalidPointers, "list_bounds");
   }
@@ -83,7 +84,9 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
       return refuse(std::move(out), Status::InvalidPointers, "missing_terminator");
     }
     ++out.records;
-    if (type == -2) {
+    // Only -1 ends the scan. The dispatch's `bltz` sends EVERY negative type to the same handler,
+    // which returns to the scan unless the type is exactly -1, so -3 is as much a free hole as -2.
+    if (type < 0) {
       continue;
     }
     if (type == 1) {
@@ -149,6 +152,28 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
                                            texture.uvTpage});
       continue;
     }
+    if (type >= 6) {
+      const TextureEntry texture = textureEntry(ram, address);
+      if (!texture.ok) {
+        return refuse(std::move(out), Status::InvalidPointers, texture.refusal);
+      }
+      const uint32_t xy = ram.r32(address + 4u);
+      // The default arm spends word 8 as z, size and angle in three separate bytes, where type 2
+      // reads an angle out of the top NINE bits and type 3 a second extent out of the top eight.
+      const uint32_t zSizeAngle = ram.r32(address + 8u);
+      out.orientedQuads.push_back(OrientedQuad{address,
+                                               i,
+                                               (int16_t)xy,
+                                               (int16_t)(xy >> 16),
+                                               (int16_t)zSizeAngle,
+                                               (uint8_t)(zSizeAngle >> 16),
+                                               (uint8_t)(zSizeAngle >> 24),
+                                               texture.depthBias,
+                                               ram.r32(address + 0xcu),
+                                               texture.uvClut,
+                                               texture.uvTpage});
+      continue;
+    }
     if (type != 0) {
       return refuse(std::move(out), Status::UnsupportedType, "particle_type", type, address);
     }
@@ -166,7 +191,7 @@ Recipe derive(const world_chunk_codec::RamView &ram) {
                                (uint8_t)(color >> 16)});
   }
   out.status = (out.points.empty() && out.lines.empty() && out.texturedQuads.empty() &&
-                out.spriteQuads.empty())
+                out.spriteQuads.empty() && out.orientedQuads.empty())
                    ? Status::ValidEmpty
                    : Status::Ready;
   return out;

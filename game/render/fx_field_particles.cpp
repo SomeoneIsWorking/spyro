@@ -2,6 +2,7 @@
 #include "guest_globals.h"
 
 #include "core.h"
+#include "field_particle_oriented_submitter.h"
 #include "field_particle_type2_submitter.h"
 #include "field_particle_type3_submitter.h"
 #include "field_particles_recipe.h"
@@ -31,7 +32,11 @@ bool preflight(Core *core, const spyro::field_particles_recipe::Recipe &recipe) 
   }
   const RenderQueue &queue = core->game->rq;
   const uint32_t queued = queue.consumed ? 0u : (uint32_t)queue.n;
-  return recipe.points.size() + recipe.lines.size() + recipe.texturedQuads.size() <=
+  // Every decoded arm emits one primitive, so every decoded list counts. The type-3 list was left
+  // out of this sum when it was added, which does not overflow the queue -- emitOrQueue is the
+  // thing that would -- but does let the producer promise room it has not checked for.
+  return recipe.points.size() + recipe.lines.size() + recipe.texturedQuads.size() +
+             recipe.spriteQuads.size() + recipe.orientedQuads.size() <=
          RQ_MAX - queued;
 }
 
@@ -99,8 +104,9 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     return spyro::refuse(
         "particles",
         0x800573C8u,
-        "particles producer 0x800573C8 refused its atomic type-0..type-3 recipe: "
-        "status={} why={} type={} slot={:08X} records={} points={} lines={} type2={} type3={}",
+        "particles producer 0x800573C8 refused its atomic emit-list recipe: "
+        "status={} why={} type={} slot={:08X} records={} points={} lines={} type2={} type3={} "
+        "oriented={}",
         spyro::field_particles_recipe::statusName(recipe.status),
         recipe.refusal,
         recipe.refusedType,
@@ -109,7 +115,8 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
         recipe.points.size(),
         recipe.lines.size(),
         recipe.texturedQuads.size(),
-        recipe.spriteQuads.size());
+        recipe.spriteQuads.size(),
+        recipe.orientedQuads.size());
   }
   if (recipe.status == spyro::field_particles_recipe::Status::ValidEmpty) {
     return {};
@@ -199,12 +206,13 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
       return spyro::refuse("particles",
                            0x800573C8u,
                            "particles producer 0x800573C8 could not submit a type-2 textured quad "
-                           "(records={} points={} lines={} type2={} type3={})",
+                           "(records={} points={} lines={} type2={} type3={} oriented={})",
                            recipe.records,
                            recipe.points.size(),
                            recipe.lines.size(),
                            recipe.texturedQuads.size(),
-                           recipe.spriteQuads.size());
+                           recipe.spriteQuads.size(),
+                           recipe.orientedQuads.size());
     }
   }
   for (const auto &sprite : recipe.spriteQuads) {
@@ -212,20 +220,36 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
       return spyro::refuse("particles",
                            0x800573C8u,
                            "particles producer 0x800573C8 could not submit a type-3 sprite quad "
-                           "(records={} points={} lines={} type2={} type3={})",
+                           "(records={} points={} lines={} type2={} type3={} oriented={})",
                            recipe.records,
                            recipe.points.size(),
                            recipe.lines.size(),
                            recipe.texturedQuads.size(),
-                           recipe.spriteQuads.size());
+                           recipe.spriteQuads.size(),
+                           recipe.orientedQuads.size());
+    }
+  }
+  for (const auto &oriented : recipe.orientedQuads) {
+    if (!spyro_field_particle_oriented_submit(core, oriented)) {
+      return spyro::refuse("particles",
+                           0x800573C8u,
+                           "particles producer 0x800573C8 could not submit a world-oriented quad "
+                           "(records={} points={} lines={} type2={} type3={} oriented={})",
+                           recipe.records,
+                           recipe.points.size(),
+                           recipe.lines.size(),
+                           recipe.texturedQuads.size(),
+                           recipe.spriteQuads.size(),
+                           recipe.orientedQuads.size());
     }
   }
   lucent::debug("particles",
-                "PASS records={} points={} lines={} type2={} type3={}",
+                "PASS records={} points={} lines={} type2={} type3={} oriented={}",
                 recipe.records,
                 recipe.points.size(),
                 recipe.lines.size(),
                 recipe.texturedQuads.size(),
-                recipe.spriteQuads.size());
+                recipe.spriteQuads.size(),
+                recipe.orientedQuads.size());
   return {};
 }

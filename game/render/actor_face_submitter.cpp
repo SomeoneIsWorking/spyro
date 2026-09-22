@@ -14,7 +14,7 @@ namespace {
 
 uint32_t vertex_count(actor_draw_recipe::Family family) {
   using Family = actor_draw_recipe::Family;
-  return family == Family::G4 || family == Family::GT4 ? 4u : 3u;
+  return family == Family::G4 || family == Family::GT4 || family == Family::Billboard ? 4u : 3u;
 }
 
 std::array<uint32_t, 4> vertex_order(const actor_draw_recipe::Face &face) {
@@ -29,14 +29,19 @@ Material material_for(const actor_draw_recipe::Face &face) {
   using Family = actor_draw_recipe::Family;
   using Origin = actor_draw_recipe::Origin;
   Material material{};
-  material.textured = face.family == Family::GT3 || face.family == Family::GT4;
+  material.textured =
+      face.family == Family::GT3 || face.family == Family::GT4 || face.family == Family::Billboard;
   material.semiTransparent = (face.input.words[1] & 1u) != 0u;
   if (!material.textured) {
     return material;
   }
   const auto &input = face.input;
   const bool sourceQuad = (int32_t)input.words[0] < 0;
-  if (face.family == Family::GT4) {
+  if (face.family == Family::Billboard) {
+    // Its three UV words follow the material directly, and the last one serves two corners. No fog
+    // term: the arm writes the stream word through untouched.
+    material.attributes = {input.words[2], input.words[3], input.words[4], input.words[4] >> 16};
+  } else if (face.family == Family::GT4) {
     material.attributes = {
         input.words[3] + input.fog, input.words[4], input.words[5], input.words[5] >> 16};
   } else if (!sourceQuad) {

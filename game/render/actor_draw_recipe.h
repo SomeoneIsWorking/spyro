@@ -10,7 +10,10 @@
 
 namespace spyro::actor_draw_recipe {
 
-enum class Family : uint8_t { G4, GT4, G3, GT3 };
+// The four face topologies retail emits from a prefix stream, plus the camera-facing sprite that
+// bit 2 of a QUAD selects. `Billboard` is a flat textured quad (command 0x2C) whose four corners
+// are computed from one projected vertex rather than read from four — see `actor_billboard_face.h`.
+enum class Family : uint8_t { G4, GT4, G3, GT3, Billboard };
 enum class Origin : uint8_t { Direct, QuadFirst, QuadSecond, FullQuad };
 enum class QuadDecision : uint8_t { Reject, First, Second, Full };
 enum class Reason : uint8_t {

@@ -78,6 +78,11 @@ struct Output {
   uint32_t depthOrigin = 0;
   uint32_t otShift = 0;
   uint32_t fog = 0;
+  // The projection this record's vertices were projected with. The billboard face arm re-runs the
+  // GTE's depth divide per face to size a screen-space sprite, so it needs H and the DQ terms the
+  // vertex projection already used; reading them from anywhere else is how two projections in one
+  // frame disagree.
+  psxport::native_projection::ProjectionParams projection;
 };
 
 enum class CallStatus : uint8_t { NoCorpus, Owned, Unsupported };

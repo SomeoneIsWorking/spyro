@@ -171,6 +171,7 @@ Output sample(const Input &previous, const Input &current, double t) {
   out.controls[13] = (coordShift & 31u) + ((uint32_t)input.transformShift << 8);
   out.controls[14] = (uint32_t)cr14;
   out.controls[15] = (uint32_t)wrapSub(sampledDepth, 512u << (coordShift & 31u));
+  out.projection = input.projection;
   out.depthOrigin = out.controls[15] << 2;
   out.otShift = (out.controls[13] & 255u) + 4u + (clipMode ? 0x80000000u : 0u);
 

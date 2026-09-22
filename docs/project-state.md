@@ -725,8 +725,13 @@ actor layer refuses. That refusal named an address and nothing else; it now carr
 every other layer, and reading it moved the answer three times before it was true: `Reason::Malformed`
 was one value for four distinct defects plus one unreachable branch, and `populate()` decoded colour
 offsets for a quad arm that never indexes them, reporting `color-offset` where the real gap is the
-unported billboard quad program `0x8002256C` (`reason=ft4`, record 5, words `80000004,0001A83F`) that
-issue 0113 already describes. Particle types 4, 5 and the default arm remain unported and will refuse
+unported billboard quad program — `0x800205C4` in this renderer, the sibling of `0x8002256C` that
+issue 0113 describes. That arm is now ported: one projected vertex, a forced-DQA depth divide, two
+half-extents packed in the material word, and a ten-word POLY_FT4 with command `0x2C`, owned by
+`spyro::actor_billboard::extents` and carried through as `Family::Billboard`. The route now reaches
+**frame 9,346**, where the secondary actor producer refuses on `reason=face-light
+lighting=0x01000000/Additive` — the second per-face colour program `0x80021FE0`, which issue 0113
+records as never yet observed being reached. Particle types 4, 5 and the default arm remain unported and will refuse
 the same way, now legibly. Separately, 28 of 71 `tests/test_*.cpp` were compiled by no target at all —
 one had asserted a refusal removed from the product and no longer built. All 28 are registered and
 pass (47 CTest entries to 76; the C++ quality gate went from 192 to 221 translation units), and

@@ -1,5 +1,6 @@
 #include "fx_field_actor_composition.h"
 
+#include "actor_draw_recipe.h"
 #include "actor_face_submitter.h"
 #include "actor_recipe_capture.h"
 #include "core.h"
@@ -55,7 +56,7 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
           "control=0x{:08X} lighting=0x{:08X}/{} submission={}",
           spyro::actor_stage::name(secondary.status),
           spyro::secondary_actor_recipe::status_name(recipe.status),
-          (uint32_t)recipe.firstReason,
+          spyro::actor_draw_recipe::reasonName(recipe.firstReason),
           recipe.firstUnsupportedRecord,
           recipe.firstUnsupportedSourceWord,
           recipe.firstUnsupportedControl,

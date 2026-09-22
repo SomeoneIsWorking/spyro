@@ -1,5 +1,7 @@
 #include "actor_draw_recipe.h"
 
+#include "actor_billboard_face.h"
+
 #include <algorithm>
 
 namespace spyro::actor_draw_recipe {
@@ -66,9 +68,12 @@ bool populate(const actor_prefix::Output &record,
     out.words[i] = record.primitiveWords[sourceWord + i];
   }
   const bool quad = (int32_t)out.words[0] < 0;
-  const unsigned count = quad ? 4u : 3u;
+  // A quad with bit 2 is the billboard arm: five words, and ONE real vertex. Reading four would
+  // decode three offsets the arm never uses, which can refuse a face retail draws.
+  const bool billboard = quad && (out.words[0] & 4u) != 0u;
+  const unsigned count = billboard ? 1u : (quad ? 4u : 3u);
   const unsigned requiredWords =
-      quad ? ((out.words[0] & 2u) ? 6u : 3u) : ((out.words[0] & 2u) ? 5u : 2u);
+      billboard ? 5u : (quad ? ((out.words[0] & 2u) ? 6u : 3u) : ((out.words[0] & 2u) ? 5u : 2u));
   if (available < requiredWords) {
     why = {Reason::ShortPrimitive, 0, requiredWords, (uint32_t)available};
     return false;
@@ -91,13 +96,33 @@ bool populate(const actor_prefix::Output &record,
     out.viewZ[i] = vertex.projected.pz;
     out.view[i] = view_vertex(vertex.projected);
   }
-  // A quad with bit 2 is the separate billboard program at 0x8002256C, and its colours do not come
-  // from these material offsets. Decoding them anyway is how an unported arm reported itself as a
-  // malformed colour offset: record 5 of the attract demo's first crowded scene refused with
-  // `color-offset slot=1 offset=424 limit=1`, which describes a colour array the billboard never
-  // indexes. `evaluate()` owns this refusal and names it Ft4.
-  const bool billboard = quad && (out.words[0] & 4u) != 0u;
-  if (!billboard) {
+  // The billboard reads ONE colour, at the same offset the other arms use for their first vertex.
+  // Decoding the other three refused a face retail draws: record 5 of the attract demo's first
+  // crowded scene reported `color-offset slot=1 offset=424 limit=1`, describing a colour array this
+  // arm never indexes — the other three offsets are where its half-extents live.
+  if (billboard) {
+    const uint32_t offset = (out.words[1] >> 17) & 0x7fcu;
+    if ((offset & 3u) || offset / 4u >= record.colors.size()) {
+      why = {Reason::ColorOffset, 0, offset, (uint32_t)record.colors.size()};
+      return false;
+    }
+    const auto &centre = record.vertices[vertexOffset(out.words[0], 0) / 4u];
+    const auto box = actor_billboard::extents(record.projection, centre.projected, out.words[1]);
+    const int32_t xs[4] = {box.left, box.right, box.left, box.right};
+    const int32_t ys[4] = {box.top, box.top, box.bottom, box.bottom};
+    const uint32_t rgb = record.colors[offset / 4u] & 0x00ffffffu;
+    for (unsigned i = 0; i < 4; ++i) {
+      out.xy[i] = (uint32_t)(uint16_t)(int16_t)xs[i] | ((uint32_t)(uint16_t)(int16_t)ys[i] << 16);
+      out.screenX[i] = (float)xs[i];
+      out.screenY[i] = (float)ys[i];
+      // One sprite stands at one distance, so every corner shares the centre's view depth.
+      out.viewZ[i] = centre.projected.pz;
+      out.color[i] = rgb;
+    }
+    out.lightingControl = record.lightingControl;
+    return true;
+  }
+  {
     const uint32_t material = out.words[1];
     const uint32_t offsets[] = {(material >> 17) & 0x7fcu,
                                 (material >> 8) & 0x7fcu,
@@ -141,6 +166,19 @@ std::vector<uint32_t> payload(const PrimitiveInput &s, Family family, bool secon
             s.xy[2],
             s.color[3],
             s.xy[3]};
+  case Family::Billboard:
+    // Ten words, tag length 9: a POLY_FT4 whose one colour is the material's single table entry and
+    // whose three UV words follow the material in the stream, the last of them reused twice.
+    return {0x09000000u,
+            s.color[0] + 0x2c000000u + semiCommandBit,
+            s.xy[0],
+            s.words[2],
+            s.xy[1],
+            s.words[3],
+            s.xy[2],
+            s.words[4],
+            s.xy[3],
+            s.words[4] >> 16};
   case Family::GT4:
     return {0x0c000000u,
             s.color[0] + 0x3c000000u + semiCommandBit,
@@ -246,8 +284,29 @@ Evaluation evaluate(const PrimitiveInput &s) {
   out.nextWord = quad ? (textured ? 6u : 3u) : (textured ? 5u : 2u);
   if (quad && (control & 4u)) {
     out.nextWord = 5u;
-    out.supported = false;
-    out.reason = Reason::Ft4;
+    // The arm tests only its own vertex, and it tests it before anything else — there is no skip
+    // bit, no NCLIP and no material depth bias on this path.
+    if ((int32_t)s.shift < 0 && (s.status[0] & 31u) != 0u) {
+      out.reason = Reason::Outcode;
+      return out;
+    }
+    // One vertex where the other arms sum four, so the depth is scaled to the same range before
+    // the shared origin is removed. Retail drops the sprite when that lands at or behind zero.
+    const uint32_t depth = ((uint32_t)s.depth[0] << 2) + 4u - s.depthOrigin;
+    if ((int32_t)depth <= 0) {
+      out.reason = Reason::Depth;
+      return out;
+    }
+    const uint32_t bin = (uint32_t)sar(depth, s.shift);
+    if ((int32_t)bin < 0) {
+      out.reason = Reason::Depth;
+      return out;
+    }
+    out.family = Family::Billboard;
+    out.origin = Origin::FullQuad;
+    out.localBin = bin;
+    out.payload = payload(s, Family::Billboard, false);
+    out.emitted = true;
     return out;
   }
   const unsigned count = quad ? 4u : 3u;

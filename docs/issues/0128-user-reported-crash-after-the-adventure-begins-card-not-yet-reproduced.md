@@ -154,9 +154,32 @@ Three causes behind that, all fixed:
 `0x8002256C` is the camera-facing textured billboard issue 0113 already describes: one projected
 vertex, a depth-cued half-size. Record 5 of that scene is one, and it is the next arm to port.
 
+## The billboard arm, ported
+
+The regular renderer's own copy is at `0x800205C4` (`.L8002256C` is the secondary renderer's). It is
+not a four-vertex face at all: it projects ONE model vertex, re-runs the GTE divide with DQA forced
+to `0x100` and the rotation zeroed so SZ3 is that vertex's stored depth, takes IR0 from MAC0 through
+a 16-bit register write, and scales two half-extents packed in the material word — `(material >> 10)
+& 0x1FF` horizontal, `(material >> 1) & 0x1FF` vertical. The far edge is the centre plus half the
+extent and the near edge is that minus the whole extent, so the box is deliberately asymmetric on an
+odd extent. Its depth is `(depth << 2) + 4 - origin`: one vertex scaled into the range the other
+arms reach by summing four, with no material depth bias and no NCLIP. The packet is a ten-word
+POLY_FT4, command `0x2C`, one colour from the material's single table offset, and the three stream
+words after the material as UVs with the last serving two corners.
+
+`spyro::actor_billboard::extents` owns the geometry, `Family::Billboard` carries it through the
+recipe and the face submitter, and the arm's tests move one half-extent at a time and check the
+sprite shrinks with distance, because a test that restated the shifts would agree with a transposed
+implementation.
+
+With it the demo route reaches **frame 9,346**, where the secondary actor producer refuses on
+`reason=face-light lighting=0x01000000/Additive` — the second per-face colour program at
+`0x80021FE0`. Issue [0113](0113-secondary-actor-per-face-color-program.md) describes it and records
+that nothing had ever been observed reaching it. Something has now.
+
 ## Next
 
-1. Port the billboard quad arm `0x8002256C` (`Reason::Ft4`), which is what frame 5,382 refuses on.
+1. Port the additive per-face colour program `0x80021FE0`, which is what frame 9,346 refuses on.
 2. Particle types 4, 5 and the default arm are still unported and will refuse the same way.
    Reaching one is now a legible refusal rather than a segfault, but they are the same defect class.
 

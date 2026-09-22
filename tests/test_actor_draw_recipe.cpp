@@ -71,6 +71,42 @@ void testEvaluatorFamiliesAndNegatives() {
   auto corrupt = g3;
   corrupt.payload[2] ^= 1u;
   require(corrupt.payload != g3.payload, "payload corruption discriminator failed");
+
+  // Bit 2 on a QUAD is the billboard arm. It used to refuse as Ft4 and abort the whole call.
+  PrimitiveInput sprite = triangle(0x80000004u);
+  sprite.words[2] = 0x00110022u;
+  sprite.words[3] = 0x00330044u;
+  sprite.words[4] = 0x00550066u;
+  sprite.xy = {0x00000000u, 0x0000000au, 0x000a0000u, 0x000a000au};
+  const auto billboard = evaluate(sprite);
+  require(billboard.supported && billboard.emitted && billboard.family == Family::Billboard,
+          "the billboard arm did not emit");
+  require(billboard.nextWord == 5u, "the billboard arm did not consume its five words");
+  require(billboard.payload.size() == 10 && billboard.payload[0] == 0x09000000u,
+          "the billboard packet is not a ten-word POLY_FT4");
+  require((billboard.payload[1] >> 24) == 0x2cu,
+          "the billboard packet does not carry the flat textured-quad command");
+  require(billboard.payload[3] == sprite.words[2] && billboard.payload[5] == sprite.words[3] &&
+              billboard.payload[7] == sprite.words[4] &&
+              billboard.payload[9] == (sprite.words[4] >> 16),
+          "the billboard UV words are not the three stream words after the material");
+  // Its depth comes from ONE vertex scaled to the four-vertex range, not from summing the corners.
+  PrimitiveInput deeper = sprite;
+  deeper.depth[0] = sprite.depth[0] * 2;
+  require(evaluate(deeper).localBin > billboard.localBin,
+          "the billboard's OT bin does not follow its own vertex depth");
+  PrimitiveInput others = sprite;
+  others.depth[1] = others.depth[2] = others.depth[3] = 0;
+  require(evaluate(others).localBin == billboard.localBin,
+          "the billboard's OT bin was affected by corners it does not read");
+  // Its origin is subtracted from the scaled depth, so "behind" is the origin overtaking it — not
+  // a zero depth, which retail still draws because of the arm's own +4.
+  PrimitiveInput behind = sprite;
+  behind.depth[0] = 0;
+  behind.depthOrigin = 100;
+  const auto dropped = evaluate(behind);
+  require(!dropped.emitted && dropped.reason == Reason::Depth && dropped.supported,
+          "a billboard at or behind the origin was not dropped as a depth rejection");
 }
 
 actor_prefix::Output record(uint32_t control) {

@@ -1293,9 +1293,27 @@ and nothing here is absent twice in a row. It remains the right description of a
 temporal source at all, which this census cannot see because such content never reaches it; what
 the pixel measurement adds is that on this route that content is at most 0.03% of changed pixels.
 
-Scope: one route, one area, 4:3, 81 triples of images and 2,489 intervals of census. A 5-frame
-absence in some other scene would read differently, and the check that would find it is the
-run-length above rather than another capture of the same walk.
+**Re-measured at 16:9 through the shipping tool (2026-09-22).** The pixel measurement above was an
+ad-hoc script; it now lives in `external/psxport/tools/port/fps60_check.py --forced`, its one home,
+with 41 selftest checks and every branch failing under mutation. Re-driven at `aspect=1` on the same
+route, 81 triples, 684x240, all 518 real frames byte-identical between the two runs:
+
+| where the pixel sits when forced to t=0 | samples | share |
+|---|---|---|
+| at the PREVIOUS endpoint — interpolated | 6,735,009 | 99.94% |
+| at the NEXT endpoint — did not respond to t | 1,824 | 0.03% |
+| neither | 2,186 | 0.03% |
+
+So widening the picture does not widen the defect: the extra 172 columns interpolate like the rest.
+Per triple, **all 81 are at or under 1% unresponsive**, the median is 0.00%, and the worst is 0.72%
+at fence 447 — there is no wholly unresponsive triple anywhere on this route. The residue stays
+compact: 81.4% of it in one row band, 86.6% in one column band.
+
+Scope: one route, one area, 81 triples of images at each of 4:3 and 16:9, and 2,489 intervals of
+census at 4:3. A 5-frame absence in some other scene would read differently, and the check that
+would find it is the run-length above rather than another capture of the same walk. The same tool on
+Tomba! 2 reads 96.35% on gameplay and finds a wholly unresponsive opening cutscene (that repo's
+issue 0021), so this result is Spyro's, not the framework's.
 
 The mechanism is `Fps60::presentPass`. Both presents of a fence run over the *same* captured queue
 and differ only in `t`; only the items the scene source `owns` are replaced by reconstructed ones,

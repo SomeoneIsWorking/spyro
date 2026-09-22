@@ -5,6 +5,7 @@
 // Artisans frame that blocked issue 0089 has two straight-copy channels and no blended one. So the
 // interpolated forms are covered here instead, and the fixtures state that split rather than
 // letting a green run imply coverage it does not have.
+#include "gte_color_ops.h"
 #include "world_animation.h"
 
 #include <algorithm>
@@ -13,8 +14,8 @@
 #include <string_view>
 #include <vector>
 
+using spyro::gte_color::Vector3;
 using spyro::world_animation::Plan;
-using spyro::world_animation::Vector3;
 using spyro::world_chunk_codec::RamView;
 
 namespace {
@@ -237,14 +238,14 @@ void test_blended_colour_matches_the_gte_depth_cue() {
   std::printf("test blended_colour_matches_the_gte_depth_cue\n");
   // DPCS with sf=1: each channel moves from the source colour toward the far colour by IR0/4096.
   // Both operands live in the GTE's 12.4 colour space, so a byte 0x40 is written as 0x400.
-  const uint32_t half = spyro::world_animation::dpcs(0x00204060u, {0x400, 0x400, 0x400}, 0x800);
+  const uint32_t half = spyro::gte_color::dpcs(0x00204060u, {0x400, 0x400, 0x400}, 0x800);
   check((half & 0xffu) == (0x60u + 0x40u) / 2u, "red halfway to the far colour");
   check(((half >> 8) & 0xffu) == (0x40u + 0x40u) / 2u, "green already at the far colour");
   check(((half >> 16) & 0xffu) == (0x20u + 0x40u) / 2u, "blue halfway to the far colour");
-  check((spyro::world_animation::dpcs(0xab000000u, {0, 0, 0}, 0) >> 24) == 0xabu,
+  check((spyro::gte_color::dpcs(0xab000000u, {0, 0, 0}, 0) >> 24) == 0xabu,
         "the colour code byte rides through");
   // Saturation is the hardware's, not C++'s: a far colour far above the source clamps at 255.
-  const uint32_t clamped = spyro::world_animation::dpcs(0x00ffffffu, {0xff0, 0xff0, 0xff0}, 0x1000);
+  const uint32_t clamped = spyro::gte_color::dpcs(0x00ffffffu, {0xff0, 0xff0, 0xff0}, 0x1000);
   check((clamped & 0xffu) == 0xffu, "clamps at the byte ceiling");
 }
 

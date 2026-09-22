@@ -734,12 +734,34 @@ half-extents packed in the material word, and a ten-word POLY_FT4 with command `
 constant added to each vertex's red with saturation and subtracted from green and blue with a floor
 of zero, and a command byte stored as exactly `0x34`, which makes such a face opaque against its own
 material word. `face_light` now returns three colours rather than one, and `Status::Additive` is
-gone. The route then reaches **frame 15,210**, refusing on particle type 6 — the unported default
-arm of the same producer whose type 3 started this. Particle types 4, 5 and the default arm remain unported and will refuse
-the same way, now legibly. Separately, 28 of 71 `tests/test_*.cpp` were compiled by no target at all —
-one had asserted a refusal removed from the product and no longer built. All 28 are registered and
-pass (47 CTest entries to 76; the C++ quality gate went from 192 to 221 translation units), and
-`verify.py` now refuses an unregistered test source by name. Issue
+gone. The route then reaches **frame 15,210**, refusing on particle type 6 — which is not a type at all
+but the fallthrough of the producer's dispatch chain, owning every type from 6 up. It is the only
+emit-list arm that orients its quad in the world: a size byte and a sine-table index rotate a square
+about the particle's own position and all four corners are projected, so it sorts on the sum of four
+depths and clips by bounding-box overlap tested side by side rather than on one centre. Ported, with
+`field_particles::emit` split out so all three textured arms share one packet. Two nearby defects
+fixed with it: the scan skipped only type `-2` where the guest steps over every negative type but
+`-1`, and the queue-budget preflight omitted the type-3 list.
+
+That reached **frame 21,034**, where the paired actor `0x80023AC4` refused with
+`alternate/status-plane parser is active` — a name that made it read as a large unported arm. It is
+not a parser: at `0x80024B60` the renderer runs every entry of the model's colour table through one
+GTE `INTPL` toward a far colour packed in `g_Spyro + 0x28`, writes the results to scratch, and
+points the ORDINARY parser at that copy. Same stream, same offsets, same commands, different
+colours. The arithmetic is `DPCS`, already present for the world's interpolated animation channels,
+so `intpl`/`dpcs` moved into a shared `gte_color_ops` owner rather than being written twice;
+`paired_actor_color_fade` applies the transform where the guest does, `MaterialTables` no longer
+carries a mode, and `SpyroPairedFrame::override_control` is gone because two control words that
+differ already differ in `materials`. That producer's refusal now also carries its reason to the
+fatal boundary instead of leaving it on a debug channel. With those four causes fixed the route no
+longer ends: OBSERVED 2026-09-22, the product ran the full 900-second clock and 101,970 drawn fields
+with zero native-render refusals, where every earlier run died and the last died at frame 21,034.
+That is an observation, not a gate and not this issue's close — the user's report comes from
+`./run.sh` with real input on a real GPU, which is a different route. Particle types 4 and 5 remain
+unported and will refuse the same way, now legibly. Separately, 28 of 71 `tests/test_*.cpp` were compiled by no
+target at all — one had asserted a refusal removed from the product and no longer built. All 28 are
+registered and pass (47 CTest entries to 79; the C++ quality gate went from 192 to 228 translation
+units), and `verify.py` now refuses an unregistered test source by name. Issue
 [0128](issues/0128-user-reported-crash-after-the-adventure-begins-card-not-yet-reproduced.md) holds
 the measurement.
 

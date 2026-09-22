@@ -152,7 +152,6 @@ void checkSourceUnchanged(const SpyroPairedFrame &before, const SpyroPairedFrame
   CHECK(before.layer_counts == after.layer_counts);
   CHECK(before.pose == after.pose);
   CHECK(before.materials == after.materials);
-  CHECK_EQ(before.override_control, after.override_control);
   CHECK(before.transform.layer_cr == after.transform.layer_cr);
   CHECK(before.transform.base_mac == after.transform.base_mac);
   CHECK_EQ(before.transform.depth_origin, after.transform.depth_origin);

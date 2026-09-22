@@ -53,8 +53,10 @@ struct DecodeResult {
 DecodeResult decode_normal_stream(std::span<const uint32_t> words);
 
 struct MaterialTables {
+  // Already the colours the faces draw with. When the renderer's colour-fade arm is active the
+  // caller has run the table through it, exactly as the guest hands its parser a faded copy, so the
+  // resolver has no mode to branch on. See paired_actor_color_fade.h.
   std::span<const uint32_t> base;
-  uint32_t override_control = 0; // nonzero high byte selects the separate alternate parser
 };
 
 struct ResolvedMaterial {

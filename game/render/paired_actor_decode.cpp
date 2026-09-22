@@ -231,10 +231,6 @@ bool resolve_material(const Primitive &primitive,
                       const MaterialTables &tables,
                       ResolvedMaterial &out,
                       std::string &error) {
-  if ((tables.override_control >> 24) != 0) {
-    error = "normal material resolver called while alternate override parser is active";
-    return false;
-  }
   const std::span<const uint32_t> selected = tables.base;
   if (selected.empty()) {
     error = "base material color table is missing";

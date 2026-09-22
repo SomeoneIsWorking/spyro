@@ -1,5 +1,7 @@
 #include "world_animation.h"
 
+#include "gte_color_ops.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -132,17 +134,17 @@ bool readChannel(const RamView &ram,
           retainResource(ram, header.sourceB, header.size, plan, "animation_payload", why));
 }
 
-Vector3 unpackVertex(uint32_t word) {
+gte_color::Vector3 unpackVertex(uint32_t word) {
   return {(int32_t)(word >> 21), (int32_t)((word >> 10) & 0x7ffu), (int32_t)(word & 0x3ffu)};
 }
 
-uint32_t packVertex(const Vector3 &v) {
+uint32_t packVertex(const gte_color::Vector3 &v) {
   return ((uint32_t)v.x << 21) + ((uint32_t)v.y << 10) + (uint32_t)v.z;
 }
 
 // The colour channels feed the far-colour registers from a source word's three bytes, each scaled
 // into the GTE's 12.4 colour space exactly as the guest's shift/mask pairs do.
-Vector3 unpackFarColor(uint32_t word) {
+gte_color::Vector3 unpackFarColor(uint32_t word) {
   return {(int32_t)((word << 4) & 0xff0u),
           (int32_t)((word >> 4) & 0xff0u),
           (int32_t)((word >> 12) & 0xff0u)};
@@ -153,67 +155,6 @@ void emit(Plan &plan, uint32_t address, uint32_t value) {
 }
 
 } // namespace
-
-// i32_to_i16_saturate with lm=0, and the i44 truncation applied to the intermediate, implemented
-// from the same GTE reference this port already vendors (beetle-psx mednafen/psx/gte.c).
-namespace {
-
-int64_t truncate44(int64_t value) {
-  return (int64_t)((uint64_t)value << (64 - 44)) >> (64 - 44);
-}
-
-int32_t saturate16(int32_t value) {
-  if (value < -32768) {
-    return -32768;
-  }
-  if (value > 32767) {
-    return 32767;
-  }
-  return value;
-}
-
-uint32_t clampByte(int32_t value) {
-  if (value < 0) {
-    return 0u;
-  }
-  if (value > 255) {
-    return 255u;
-  }
-  return (uint32_t)value;
-}
-
-} // namespace
-
-Vector3 intpl(Vector3 ir, Vector3 farColor, int32_t ir0) {
-  const int32_t irv[3] = {ir.x, ir.y, ir.z};
-  const int32_t fc[3] = {farColor.x, farColor.y, farColor.z};
-  int32_t mac[3] = {0, 0, 0};
-  for (int i = 0; i < 3; ++i) {
-    mac[i] = (int32_t)(truncate44(((int64_t)fc[i] << 12) - ((int64_t)irv[i] << 12)) >> 12);
-    mac[i] =
-        (int32_t)(truncate44(((int64_t)irv[i] << 12) + (int64_t)ir0 * saturate16(mac[i])) >> 12);
-  }
-  return {mac[0], mac[1], mac[2]};
-}
-
-uint32_t dpcs(uint32_t rgb, Vector3 farColor, int32_t ir0) {
-  const int32_t channel[3] = {(int32_t)((rgb >> 0) & 0xffu) << 4,
-                              (int32_t)((rgb >> 8) & 0xffu) << 4,
-                              (int32_t)((rgb >> 16) & 0xffu) << 4};
-  const int32_t fc[3] = {farColor.x, farColor.y, farColor.z};
-  int32_t mac[3] = {0, 0, 0};
-  for (int i = 0; i < 3; ++i) {
-    mac[i] = (int32_t)(truncate44(((int64_t)fc[i] << 12) - ((int64_t)channel[i] << 12)) >> 12);
-    mac[i] =
-        (int32_t)(truncate44(((int64_t)channel[i] << 12) + (int64_t)ir0 * saturate16(mac[i])) >>
-                  12);
-  }
-  // MAC_to_RGB_FIFO: each accumulator drops its four fractional bits and clamps to a byte; the
-  // source word's code byte rides through untouched, which is why channel 3's second stream feeds
-  // its word unmasked.
-  return clampByte(mac[0] >> 4) | (clampByte(mac[1] >> 4) << 8) | (clampByte(mac[2] >> 4) << 16) |
-         (rgb & 0xff000000u);
-}
 
 namespace {
 
@@ -229,9 +170,9 @@ void appendVertices(const RamView &ram, const Header &header, uint32_t destinati
   }
   const int32_t ir0 = header.factor << 4;
   for (uint32_t i = 0; i < count; ++i) {
-    const Vector3 from = unpackVertex(ram.r32(header.sourceA + i * 4u));
-    const Vector3 to = unpackVertex(ram.r32(header.sourceB + i * 4u));
-    emit(plan, destination + i * 4u, packVertex(intpl(from, to, ir0)));
+    const gte_color::Vector3 from = unpackVertex(ram.r32(header.sourceA + i * 4u));
+    const gte_color::Vector3 to = unpackVertex(ram.r32(header.sourceB + i * 4u));
+    emit(plan, destination + i * 4u, packVertex(gte_color::intpl(from, to, ir0)));
   }
   plan.blended++;
 }
@@ -251,7 +192,7 @@ void appendColors(const RamView &ram, const Header &header, uint32_t destination
     }
     emit(plan,
          cursor,
-         dpcs(word & kColorMask, unpackFarColor(ram.r32(header.sourceB + i * 4u)), ir0));
+         gte_color::dpcs(word & kColorMask, unpackFarColor(ram.r32(header.sourceB + i * 4u)), ir0));
   }
   (header.factor == 0 ? plan.direct : plan.blended)++;
 }
@@ -276,10 +217,10 @@ void appendPairedColors(
       emit(plan, cursorB, wordB);
       continue;
     }
-    const Vector3 farA = unpackFarColor(ram.r32(header.sourceB + i * 8u));
-    const Vector3 farB = unpackFarColor(ram.r32(header.sourceB + i * 8u + 4u));
-    emit(plan, cursorA, dpcs(wordA & kColorMask, farA, ir0));
-    emit(plan, cursorB, dpcs(wordB, farB, ir0));
+    const gte_color::Vector3 farA = unpackFarColor(ram.r32(header.sourceB + i * 8u));
+    const gte_color::Vector3 farB = unpackFarColor(ram.r32(header.sourceB + i * 8u + 4u));
+    emit(plan, cursorA, gte_color::dpcs(wordA & kColorMask, farA, ir0));
+    emit(plan, cursorB, gte_color::dpcs(wordB, farB, ir0));
   }
   (header.factor == 0 ? plan.direct : plan.blended)++;
 }

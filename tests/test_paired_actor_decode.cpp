@@ -1,3 +1,4 @@
+#include "paired_actor_color_fade.h"
 #include "paired_actor_decode.h"
 
 #include <array>
@@ -73,11 +74,19 @@ int main() {
   base[0xC0 / 4] = 0xCC070809u;
   ResolvedMaterial material{};
   std::string error;
-  require(resolve_material(tri, {base, 0}, material, error), "base material resolution failed");
+  require(resolve_material(tri, {base}, material, error), "base material resolution failed");
   require(material.command == 0x36 && material.rgb[0] == 0x010203,
           "base material/opcode resolution is wrong");
-  require(!resolve_material(tri, {base, 0x01000000u}, material, error),
-          "normal resolver silently treated the alternate override parser as a color-table swap");
+  // The resolver reads the table it is given and nothing else. The colour-fade arm is applied to
+  // the table before it gets here (see paired_actor_color_fade.h), so a faded table resolves the
+  // same way an unfaded one does -- with the faded colours.
+  std::array<uint32_t, 128> faded = base;
+  spyro::paired_actor_color_fade::apply(0x20FFFFFFu, faded);
+  ResolvedMaterial fadedMaterial{};
+  require(resolve_material(tri, {faded}, fadedMaterial, error), "faded material resolution failed");
+  require(fadedMaterial.command == material.command,
+          "the colour fade changed the primitive command");
+  require(fadedMaterial.rgb[0] != material.rgb[0], "the colour fade left the colour alone");
 
   Primitive depth_prim = tri;
   depth_prim.ot_adjust = -1;
@@ -124,8 +133,7 @@ int main() {
     p.raw_view_z = (float)p.depth;
     p.view_z = (float)p.depth;
   }
-  const ResolveResult faces =
-      resolve_normal_faces(decoded.primitives, projected, {base, 0}, 4u, 1u);
+  const ResolveResult faces = resolve_normal_faces(decoded.primitives, projected, {base}, 4u, 1u);
   require(faces && faces.candidates == 2 && faces.triangles == 1 && faces.quads == 1,
           "resolved face census lost a primitive variant");
   require(faces.faces.size() == 2 && faces.faces[0].source_ordinal == 0 &&
@@ -140,14 +148,14 @@ int main() {
   culled_projected[0x240 / 4] = {10, 20, 80};
   culled_projected[0x360 / 4] = {20, 10, 60};
   const std::array<Primitive, 1> tri_only{tri};
-  const ResolveResult culled = resolve_normal_faces(tri_only, culled_projected, {base, 0}, 4u, 1u);
+  const ResolveResult culled = resolve_normal_faces(tri_only, culled_projected, {base}, 4u, 1u);
   require(culled && culled.candidates == 1 && culled.faces.empty(),
           "normal NCLIP<=0 triangle retained by the old accept-all behavior");
   Primitive two_sided_tri = tri;
   two_sided_tri.two_sided = true;
   const std::array<Primitive, 1> two_sided_only{two_sided_tri};
   const ResolveResult two_sided_faces =
-      resolve_normal_faces(two_sided_only, culled_projected, {base, 0}, 4u, 1u);
+      resolve_normal_faces(two_sided_only, culled_projected, {base}, 4u, 1u);
   require(two_sided_faces && two_sided_faces.faces.size() == 1,
           "word-0 two-sided bit did not bypass the NCLIP gate");
 
@@ -171,9 +179,9 @@ int main() {
   subpixel_projected[0x360 / 4].screen_x = 0.10f;
   subpixel_projected[0x360 / 4].screen_y = 0.90f;
   const auto quantized_subpixel =
-      resolve_normal_faces(tri_only, subpixel_projected, {base, 0}, 4u, 1u);
+      resolve_normal_faces(tri_only, subpixel_projected, {base}, 4u, 1u);
   const auto continuous_subpixel =
-      resolve_normal_faces_continuous(tri_only, subpixel_projected, {base, 0}, 4u, 1u);
+      resolve_normal_faces_continuous(tri_only, subpixel_projected, {base}, 4u, 1u);
   require(quantized_subpixel && quantized_subpixel.faces.empty() && continuous_subpixel &&
               continuous_subpixel.faces.size() == 1,
           "continuous normal resolver did not discriminate subpixel area from quantized NCLIP");
@@ -194,13 +202,13 @@ int main() {
     }
   }
   const std::array<Primitive, 1> quad_only{quad};
-  const ResolveResult split = resolve_normal_faces(quad_only, split_projected, {base, 0}, 0u, 1u);
+  const ResolveResult split = resolve_normal_faces(quad_only, split_projected, {base}, 0u, 1u);
   for (auto &p : split_projected) {
     p.screen_x = (float)p.x;
     p.screen_y = (float)p.y;
   }
   const ResolveResult continuous_split =
-      resolve_normal_faces_continuous(quad_only, split_projected, {base, 0}, 0u, 1u);
+      resolve_normal_faces_continuous(quad_only, split_projected, {base}, 0u, 1u);
   require(split && split.faces.size() == 1 && split.faces[0].vertex[0].x == -10 &&
               !split.faces[0].quad && split.triangles == 1 && split.quads == 0 &&
               split.faces[0].material.command == 0x34 &&
@@ -223,13 +231,13 @@ int main() {
     }
   }
   const ResolveResult first_split =
-      resolve_normal_faces(quad_only, first_split_projected, {base, 0}, 0u, 1u);
+      resolve_normal_faces(quad_only, first_split_projected, {base}, 0u, 1u);
   for (auto &p : first_split_projected) {
     p.screen_x = (float)p.x;
     p.screen_y = (float)p.y;
   }
   const auto continuous_first_split =
-      resolve_normal_faces_continuous(quad_only, first_split_projected, {base, 0}, 0u, 1u);
+      resolve_normal_faces_continuous(quad_only, first_split_projected, {base}, 0u, 1u);
   require(first_split && first_split.faces.size() == 1 && !first_split.faces[0].quad &&
               first_split.faces[0].vertex[0].x == 0 &&
               first_split.faces[0].material.command == 0x34,
@@ -241,13 +249,13 @@ int main() {
   auto rejected_quad_projected = split_projected;
   rejected_quad_projected[0x1A0 / 4] = {20, 20, 40};
   const ResolveResult rejected_quad =
-      resolve_normal_faces(quad_only, rejected_quad_projected, {base, 0}, 0u, 1u);
+      resolve_normal_faces(quad_only, rejected_quad_projected, {base}, 0u, 1u);
   for (auto &p : rejected_quad_projected) {
     p.screen_x = (float)p.x;
     p.screen_y = (float)p.y;
   }
   const auto continuous_rejected =
-      resolve_normal_faces_continuous(quad_only, rejected_quad_projected, {base, 0}, 0u, 1u);
+      resolve_normal_faces_continuous(quad_only, rejected_quad_projected, {base}, 0u, 1u);
   require(rejected_quad && rejected_quad.faces.empty(),
           "quad nonnegative/nonpositive NCLIP sign pair was not rejected");
   require(continuous_rejected && continuous_rejected.faces.empty(),
@@ -255,8 +263,8 @@ int main() {
   Primitive two_sided_quad = quad;
   two_sided_quad.two_sided = true;
   const std::array<Primitive, 1> two_sided_quad_only{two_sided_quad};
-  const auto continuous_two_sided = resolve_normal_faces_continuous(
-      two_sided_quad_only, rejected_quad_projected, {base, 0}, 0u, 1u);
+  const auto continuous_two_sided =
+      resolve_normal_faces_continuous(two_sided_quad_only, rejected_quad_projected, {base}, 0u, 1u);
   require(continuous_two_sided && continuous_two_sided.faces.size() == 1 &&
               continuous_two_sided.faces[0].quad,
           "continuous two-sided quad did not bypass both sign gates");
@@ -297,7 +305,7 @@ int main() {
   Primitive outside = tri;
   outside.projected_offset[0] = 0x7FC;
   const std::array<Primitive, 1> outside_list{outside};
-  const ResolveResult rejected = resolve_normal_faces(outside_list, projected, {base, 0}, 0, 1);
+  const ResolveResult rejected = resolve_normal_faces(outside_list, projected, {base}, 0, 1);
   require(!rejected && rejected.faces.empty(),
           "out-of-range projected offset returned a plausible partial face list");
 

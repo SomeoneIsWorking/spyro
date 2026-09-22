@@ -182,10 +182,82 @@ issue [0113](0113-secondary-actor-per-face-color-program.md) holds it. The route
 **frame 15,210**, refusing on particle type 6 — the default arm of `0x800573C8`, the same producer
 whose type 3 started this.
 
+## The particle default arm, ported
+
+`0x800574F8` is not "type 6": it is the fallthrough of the dispatch chain at `.L800574C0`, so it
+owns EVERY type from 6 up. It is also the only emit-list arm that orients its quad in the world.
+One size byte and one sine-table index rotate a square about the particle's own position —
+`across = size*sin >> 12`, `along = size*cos >> 12`, each corner taking one on the first projection
+axis and the other on the third — and all four corners go through RTPT plus one RTPS, where types 2
+and 3 project one centre and place their corners in screen space around it.
+
+Having no centre, it sorts and clips differently, and both differences are the arm's own:
+
+- the ordering-table key is the SUM of all four SZ values, rejected below `0x200` and at `0x8000`
+  and above, then `>> 7` minus the texture's depth bias;
+- the screen test is a bounding-box overlap, each side tested independently — some corner below the
+  top edge, some corner above the bottom, and so on. A quad larger than the screen passes it with no
+  corner on screen at all, which a per-corner test drops. Two of the four sides are comparisons on
+  the whole packed SXY word, so the top edge depends on the column: row 1 at column 0 is above it
+  and the same row one pixel right is below it.
+
+Everything else — the texture table, the colour/command word, the corner UV mapping and the packet
+— is what the other textured arms already do, so `field_particles::emit` was split out of
+`field_particles::submit` and all three now share it; `submit` is the centre-placed clip policy the
+other two share. The new arm passes real per-vertex host depths rather than one, because its quad
+genuinely stands at four distances.
+
+Two things were wrong nearby and are fixed with it. The scan skipped only type `-2` as a free hole,
+where the guest's `bltz` sends every negative type to one handler that returns to the scan unless
+the type is exactly `-1`. And `preflight` counted points, lines and type-2 quads against the queue
+budget but not type-3 ones, so the producer promised room it had not checked for.
+
+With it the route reaches **frame 21,034**, refusing on the paired actor `0x80023AC4`.
+
+## The paired actor's "alternate parser" was a colour fade
+
+`0x80023AC4` refused with `alternate/status-plane parser is active` whenever the high byte of
+`g_Spyro + 0x28` was set, and the name is why it read like a large unported arm. It is not a parser.
+At `.L80024B60` the renderer runs EVERY entry of the model's colour table through one GTE `INTPL`
+toward a far colour packed in the same control word, writes the results to a scratch table at
+`D_8006FCF4 + 0x1D00`, and points the ORDINARY parser at that copy by changing the `HI` register it
+reads its colours through. Same stream, same offsets, same commands, different colours.
+
+The control word is one packed colour plus its strength: far colour in bits 0..23, a byte per
+channel, and the interpolation factor in bits 24..31, every field shifted left four on the way into
+the GTE. The strongest fade a word can encode is `0xFF0` of 4096, so it approaches the far colour
+without reaching it.
+
+The arithmetic is `DPCS`, which this port already derives for the world's interpolated animation
+channels. Rather than write a second copy, `intpl` and `dpcs` moved out of `world_animation` into
+`gte_color_ops`, which both consumers now share; `paired_actor_color_fade` applies the transform to
+the material table where the guest does, before the parser sees a primitive. `MaterialTables` no
+longer carries a mode at all, and `SpyroPairedFrame::override_control` is gone — two frames with
+different control words already differ in `materials`, which frame compatibility compares.
+
+## Where the route ends now
+
+It does not. OBSERVED 2026-09-22: the product ran the tool's whole 900-second clock and was still
+going when it was killed — 101,970 drawn fields, zero native-render refusals, zero snapshots, no
+`[render:error]` line of any kind. Every earlier run on this route died, the last of them at frame
+21,034.
+
+This is an observation and not a gate, and it is not this issue's close. The user's report is from
+`./run.sh`: real SDL input, real audio, a real GPU, and a route a person takes rather than the one
+the attract demo takes. Four causes on this route are fixed at their causes; whether the crash the
+user saw was one of them is not established by an agent run that no longer reproduces it. See C228.
+
+`tools/demo_run.py` printed that survival as `[demo] REFUSED: ... timed out after 900 seconds` and
+nothing else, which is a diagnostic lying in the other direction — the outcome the route exists to
+produce, reported as a tool failure. It now reports both endings with the same census.
+
 ## Next
 
-1. Port particle types 4, 5, 6 and the default arm of `0x800573C8`. Type 6 is what frame 15,210
-   refuses on.
+1. Particle types 4 (`.L80057954`) and 5 (`.L80057750`) are still unported and will refuse the same
+   way when a record reaches them.
+2. The paired actor's fatal boundary still prints `refused its atomic recipe` with no reason; the
+   reason is on the `pairedactor` channel. `SpyroPairedActorFrameState` already carries it, so the
+   abort should say it, the way `0x8001F798`'s now does.
 
 ### The superseded plan
 

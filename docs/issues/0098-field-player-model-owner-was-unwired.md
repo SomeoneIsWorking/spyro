@@ -38,5 +38,7 @@ eligible on all 223 eligible intervals, with 446/446 callback emissions.
 ## Remaining scope
 
 This resolves only the player model arm. Secondary/shaded actor composition is now owned by issue
-0099, but Moby and Spyro shadows, flame/trail effects, glows/sparkles, alternate/status-plane and
-semi-transparent variants, and independent visual/oracle parity remain separate work.
+0099, but Moby and Spyro shadows, flame/trail effects, glows/sparkles, semi-transparent variants,
+and independent visual/oracle parity remain separate work. What was listed here as the
+"alternate/status-plane" variant turned out to be `0x80024B60`, a GTE colour fade over the model's
+material table rather than a second parser; it is ported and described in issue 0128.

@@ -36,8 +36,8 @@ spyro::ProducerRefusal spyro_field_model_chain_submit(Core *core) {
   if (const auto refusal = layer(spyro_moby_shadow_submit(core), 0x80059F8Cu)) {
     return refusal;
   }
-  if (const auto refusal =
-          layer(spyro_field_player_submit(core, spyro_paired_actor_state(core)), 0x80023AC4u)) {
+  // Another that names its own reason, so it too is returned intact rather than flattened.
+  if (const auto refusal = spyro_field_player_submit(core, spyro_paired_actor_state(core))) {
     return refusal;
   }
   if (const auto refusal = layer(spyro_field_shadow_submit(core), 0x80059A48u)) {

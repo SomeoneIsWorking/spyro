@@ -15,7 +15,7 @@ void spyro_paired_actor_log_frame_compatibility(const SpyroPairedFrame &a,
   const bool identity = a.valid && b.valid && !a.culled && !b.culled && a.epoch == b.epoch;
   const bool topology = a.topology == b.topology && a.layer_counts == b.layer_counts &&
                         a.primitives.size() == b.primitives.size();
-  const bool materials = a.materials == b.materials && a.override_control == b.override_control;
+  const bool materials = a.materials == b.materials;
   const bool projection = a.transform.ofx == b.transform.ofx &&
                           a.transform.ofy == b.transform.ofy && a.transform.h == b.transform.h;
   const bool ordering = a.transform.ot_control == b.transform.ot_control &&

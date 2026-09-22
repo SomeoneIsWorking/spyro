@@ -41,7 +41,6 @@ struct SpyroPairedFrame {
   std::vector<std::array<int32_t, 3>> pose;
   std::vector<spyro::paired_actor::Primitive> primitives;
   std::vector<uint32_t> materials;
-  uint32_t override_control = 0;
   SpyroPairedGpuSnapshot gpu{};
 };
 
@@ -62,7 +61,7 @@ struct SpyroPairedActorFrameState {
   SpyroPairedTemporalEvidence temporal{};
   uint64_t parser_scanned = 0;
   uint64_t parser_normal = 0;
-  uint64_t parser_alternate = 0;
+  uint64_t parser_faded = 0;
 };
 
 bool spyro_paired_actor_build_transform(Core *c, SpyroPairedActorTransform &out);

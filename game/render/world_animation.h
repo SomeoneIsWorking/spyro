@@ -23,8 +23,8 @@
 //   1  LQ colours   delta-indexed, dest sector+28 + vertexCount*4
 //   2  HQ vertices  packed 11/11/10, dest sector+28 + [sector+23]*4
 //   3  HQ colours   delta-indexed, two interleaved streams from the [sector+20] layout word
-// The interpolated forms run the GTE — INTPL for vertices, DPCS for colours — so this file carries
-// exact transcriptions of those two operations rather than an approximation of them.
+// The interpolated forms run the GTE — INTPL for vertices, DPCS for colours. Both operations are
+// derived once in gte_color_ops.h, which the paired actor's colour-fade arm shares.
 namespace spyro::world_animation {
 
 struct Write {
@@ -59,15 +59,5 @@ bool collectSectorResources(const world_chunk_codec::RamView &ram,
                             uint32_t active,
                             Plan &plan,
                             const char *&why);
-
-// The two GTE operations the interpolated channels use, derived from the hardware reference so
-// the blended forms are exact rather than close. sf=1, lm=0, which is what the guest encodes.
-struct Vector3 {
-  int32_t x = 0;
-  int32_t y = 0;
-  int32_t z = 0;
-};
-Vector3 intpl(Vector3 ir, Vector3 farColor, int32_t ir0);
-uint32_t dpcs(uint32_t rgb, Vector3 farColor, int32_t ir0);
 
 } // namespace spyro::world_animation

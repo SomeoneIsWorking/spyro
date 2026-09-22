@@ -1,6 +1,9 @@
-// Owns renderer 0x80023AC4's normal arm; its alternate/status-plane arm remains a loud refusal.
+// Owns renderer 0x80023AC4: its ordinary opaque/textured arm, and the colour-fade arm that runs the
+// model's material table through one GTE pass before that same parser reads it.
 #include "fx_paired_actor.h"
+
 #include "actor_ot_coalescer.h"
+#include "paired_actor_color_fade.h"
 #include "paired_actor_depth.h"
 
 #include "core.h"
@@ -31,6 +34,10 @@
 #include <vector>
 
 namespace {
+
+// g_Spyro + 0x28: the packed far colour and strength the renderer's colour-fade arm reads. A zero
+// high byte is the ordinary path. See paired_actor_color_fade.h.
+constexpr uint32_t kColorFadeControl = 0x80078A80u;
 
 using namespace spyro::paired_actor;
 
@@ -163,9 +170,9 @@ bool frames_compatible(const SpyroPairedFrame &a, const SpyroPairedFrame &b) {
   return a.valid && b.valid && !a.culled && !b.culled && a.topology == b.topology &&
          a.epoch == b.epoch && a.layer_counts == b.layer_counts &&
          a.authored_replay == b.authored_replay && a.primitives.size() == b.primitives.size() &&
-         a.materials == b.materials && a.override_control == b.override_control &&
-         a.transform.ofx == b.transform.ofx && a.transform.ofy == b.transform.ofy &&
-         a.transform.h == b.transform.h && a.transform.ot_control == b.transform.ot_control &&
+         a.materials == b.materials && a.transform.ofx == b.transform.ofx &&
+         a.transform.ofy == b.transform.ofy && a.transform.h == b.transform.h &&
+         a.transform.ot_control == b.transform.ot_control &&
          a.transform.depth_bias == b.transform.depth_bias &&
          a.transform.ot_shift == b.transform.ot_shift &&
          a.gpu.da_x0 - a.gpu.off_x == b.gpu.da_x0 - b.gpu.off_x &&
@@ -351,12 +358,11 @@ SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
   if (!project_captured(frame, projected)) {
     return SpyroPairedRebuildResult::Refused;
   }
-  auto resolved =
-      spyro::paired_actor::resolve_normal_faces(frame.primitives,
-                                                projected,
-                                                {frame.materials, frame.override_control},
-                                                frame.transform.depth_origin,
-                                                frame.transform.ot_shift);
+  auto resolved = spyro::paired_actor::resolve_normal_faces(frame.primitives,
+                                                            projected,
+                                                            {frame.materials},
+                                                            frame.transform.depth_origin,
+                                                            frame.transform.ot_shift);
   if (!resolved) {
     return SpyroPairedRebuildResult::Refused;
   }
@@ -472,7 +478,7 @@ SpyroPairedRebuildResult emit_interpolated(
     return SpyroPairedRebuildResult::Refused;
   }
   auto resolved = spyro::paired_actor::resolve_normal_faces_continuous(
-      cur.primitives, pm, {cur.materials, cur.override_control}, depth->origin, depth->shift);
+      cur.primitives, pm, {cur.materials}, depth->origin, depth->shift);
   if (!resolved) {
     return SpyroPairedRebuildResult::Refused;
   }
@@ -489,18 +495,16 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   if (++state.invocations != 1) {
     return refuse_shipping(state, "second invocation in one drawn frame");
   }
-  const uint32_t parserControl = c->mem_r32(0x80078A80u);
+  const uint32_t fadeControl = c->mem_r32(kColorFadeControl);
   ++state.parser_scanned;
-  ((parserControl >> 24) != 0 ? state.parser_alternate : state.parser_normal)++;
+  (spyro::paired_actor_color_fade::active(fadeControl) ? state.parser_faded
+                                                       : state.parser_normal)++;
   lucent::debug("pairedactor",
-                "parser reachability: scanned={} normal={} alternate={} control=0x{:08X}",
+                "colour-fade reachability: scanned={} plain={} faded={} control=0x{:08X}",
                 state.parser_scanned,
                 state.parser_normal,
-                state.parser_alternate,
-                parserControl);
-  if ((parserControl >> 24) != 0) {
-    return refuse_shipping(state, "alternate/status-plane parser is active");
-  }
+                state.parser_faded,
+                fadeControl);
 
   std::array<LayerDesc, kLayers> desc{};
   PairedPose pose;
@@ -623,11 +627,12 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   for (uint32_t i = 0; i < base.size(); ++i) {
     base[i] = c->mem_r32(colors + i * 4u);
   }
-  auto faces = spyro::paired_actor::resolve_normal_faces(primitives.primitives,
-                                                         projected,
-                                                         {base, c->mem_r32(0x80078A80u)},
-                                                         transform.depth_origin,
-                                                         transform.ot_shift);
+  // Where the guest builds its faded copy: before the parser sees a single primitive, and over the
+  // whole table rather than per face. Only the entries this model's offsets reach are built here,
+  // and the fade is per entry, so the two tables agree everywhere either is read.
+  spyro::paired_actor_color_fade::apply(fadeControl, base);
+  auto faces = spyro::paired_actor::resolve_normal_faces(
+      primitives.primitives, projected, {base}, transform.depth_origin, transform.ot_shift);
   state.candidates = faces.candidates;
   state.faces = (uint32_t)faces.faces.size();
   if (!faces || faces.candidates != primitives.primitives.size()) {
@@ -666,7 +671,6 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   captured.transform = transform;
   captured.primitives = primitives.primitives;
   captured.materials = base;
-  captured.override_control = c->mem_r32(0x80078A80u);
   captured.gpu = {offX, offY, daX0, daY0, daX1, daY1, twMx, twMy, twOx, twOy};
   captured.pose.reserve(vertexCount);
   for (const auto &layer : pose.layers) {
@@ -900,11 +904,7 @@ bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state) {
     return false;
   }
   auto rm = spyro::paired_actor::resolve_normal_faces_continuous(
-      state.current.primitives,
-      mid,
-      {state.current.materials, state.current.override_control},
-      depth->origin,
-      depth->shift);
+      state.current.primitives, mid, {state.current.materials}, depth->origin, depth->shift);
   if (rm) {
     ++resolved;
   }

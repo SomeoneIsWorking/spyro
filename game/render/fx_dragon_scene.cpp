@@ -17,6 +17,8 @@
 #include "fx_screen_border.h"
 #include "fx_screen_fade.h"
 #include "guest_call.h"
+#include "game.h"
+#include "screen_border_recipe.h"
 #include "screen_fade_recipe.h"
 
 #include <lucent/log.h>
@@ -187,11 +189,18 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
     case Producer::ScreenFade:
       ok = spyro_screen_fade_submit(
           core,
+          core->game->rq,
           spyro::screen_fade_recipe::dragon(
               (uint32_t)state.fade, drawOffsetX, drawOffsetY, renderWidth));
       break;
     case Producer::ScreenBorder:
-      ok = spyro_screen_border_submit(core, drawOffsetX, drawOffsetY, renderWidth);
+      // The dragon arm gates on the same pre-step state the FIELD arm does
+      // (`if (g_ScreenBorderEnabled || D_800756C0)` in 0x8001CFDC), then steps and draws.
+      ok = true;
+      if (spyro_screen_border_armed(core)) {
+        const auto border = spyro_screen_border_stage(core);
+        ok = spyro_screen_border_submit(core, core->game->rq, border);
+      }
       break;
     case Producer::FieldChain:
       if (const auto refusal = spyro_field_model_chain_submit(core)) {

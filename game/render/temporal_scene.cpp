@@ -2,9 +2,12 @@
 
 #include "terrain_emit.h"
 
+#include "field_2d_overlay_recipe.h"
+
 #include "actor_stage.h"
 #include "actor_temporal.h"
 #include "core.h"
+#include "field_2d_overlay.h"
 #include "field_shaded_queue_emit.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_actor_draw.h"
@@ -50,6 +53,29 @@ void reconstructLayer(Core &core, const History &history, float t, const char *c
   }
 }
 
+// The 2D overlay publishes RQ_HUD items through the producers' own submitters rather than a painter
+// plan, so it takes the target queue as an argument instead of the redirect. Same rule as
+// reconstructLayer: an admitted source that then refuses presentation is a contradiction, because
+// admission replayed this exact call, so it terminates rather than presenting a frame missing a
+// layer.
+void reconstructOverlay(Core &core, const spyro::field_2d_overlay::History &history, float t) {
+  if (!history.eligible()) {
+    return;
+  }
+  spyro::field_2d_overlay::Census census{};
+  const auto status =
+      core.game && core.game->rqRedirect
+          ? history.emit(core, *core.game->rqRedirect, static_cast<double>(t), census)
+          : spyro::actor_stage::Temporal::NoEndpoints;
+  if (!spyro::actor_stage::completed(status)) {
+    lucent::error("field2dtemporal",
+                  "FATAL: admitted 2D overlay refused presentation t={} status={}",
+                  t,
+                  spyro::actor_stage::name(status));
+    std::abort();
+  }
+}
+
 // The same replay, into the admission sink instead of the destination, where a refusal is the
 // answer being looked for rather than a contradiction.
 template <class History>
@@ -82,7 +108,23 @@ public:
     const auto &context = spyro_context(core);
     return context.pairedActor.temporal_eligible || context.worldTemporal.eligible() ||
            context.actorTemporal.eligible() || context.secondaryActorTemporal.eligible() ||
-           context.shadedQueueTemporal.eligible() || context.terrainTemporal.eligible();
+           context.shadedQueueTemporal.eligible() || context.terrainTemporal.eligible() ||
+           context.overlayTemporal.eligible();
+  }
+
+  // THE 2D OVERLAY IS CLAIMED BY LAYER, NOT BY PAINTER OBJECT, AND THE REASON IS THE FRAMEWORK'S.
+  // Every other predicate here asks for a `painter_object`, because a native producer publishes one
+  // and the item carries its producer. A 2D item cannot: the painter planner validates every item
+  // that has a painter object and refuses any that is not RQ_WORLD with RQ_OM_DEPTH
+  // (external/psxport/runtime/psx/painter_object_layer.cpp:12-14, `validateFace`), and
+  // `RenderQueue::emitItemStream` aborts the frame on a refused plan
+  // (external/psxport/runtime/psx/render_queue.cpp:522-537). A 2D item is RQ_HUD by definition, so
+  // giving it a painter object would abort the product. It is therefore identified by its layer,
+  // and that is only sound because the source is admissible in a FIELD arm alone — the front-end
+  // title menu, the level-transition tally and the dragon burst also emit RQ_HUD, and none of them
+  // is ever on a frame whose overlay interval was admitted.
+  static bool overlayItem(const RqItem &item) {
+    return item.layer == RQ_HUD;
   }
 
   bool owns(const RqItem &item) const override {
@@ -97,7 +139,8 @@ public:
            (context.shadedQueueTemporal.eligible() &&
             producerItem(item, spyro::field_shaded_queue_emit::kProducerKey)) ||
            (context.terrainTemporal.eligible() &&
-            producerItem(item, spyro::terrain_emit::kProducerKey));
+            producerItem(item, spyro::terrain_emit::kProducerKey)) ||
+           (context.overlayTemporal.eligible() && overlayItem(item));
   }
 
   void reconstruct(Core &core, float t) override {
@@ -115,6 +158,7 @@ public:
     reconstructLayer(core, context.secondaryActorTemporal, t, "secondarytemporal");
     reconstructLayer(core, context.shadedQueueTemporal, t, "shadedtemporal");
     reconstructLayer(core, context.terrainTemporal, t, "terraintemporal");
+    reconstructOverlay(core, context.overlayTemporal, t);
   }
 
   void rotate(Core &core) override {
@@ -124,6 +168,7 @@ public:
     spyro_context(core).secondaryActorTemporal.rotate();
     spyro_context(core).shadedQueueTemporal.rotate();
     spyro_context(core).terrainTemporal.rotate();
+    spyro_context(core).overlayTemporal.rotate();
   }
 
 private:
@@ -228,6 +273,44 @@ bool SpyroTemporalSceneAdmission::terrain(Core &core) {
       core, "terrain-temporal-preflight", layerSampler(core, history, "terraintemporal"));
 }
 
+// THE 2D OVERLAY IS PREFLIGHTED WITHOUT THE PAINTER PLANNER, AND THAT IS NOT A SHORTCUT. The
+// planner exists to group world faces into painter objects: it refuses a stream with no grouped
+// face at all
+// (`PainterObjectRefusal::Empty`), and it refuses any item carrying a painter object that is not
+// RQ_WORLD with RQ_OM_DEPTH. This layer's items are RQ_HUD by definition, so the planner has
+// nothing to say about them and would refuse the interval for a reason that says nothing about the
+// overlay. What it DID protect — a midpoint that cannot be queued, and a midpoint presenting a
+// degenerate bar or quad — the producers' own submitters check, and this runs them at all three
+// samples.
+bool SpyroTemporalSceneAdmission::overlay(Core &core) {
+  const auto &history = spyro_context(core).overlayTemporal;
+  if (!history.paired()) {
+    return false;
+  }
+  if (!sink_) {
+    sink_ = std::make_unique<RenderQueue>(RenderQueue::Observation::Admission);
+  }
+  auto &sink = *sink_;
+  sink.game = core.game;
+  DisplayPassGuard readonly(core.rsub.mode);
+  for (float t : {0.0f, 0.5f, 1.0f}) {
+    sink.reset();
+    spyro::field_2d_overlay_recipe::Census census{};
+    if (!spyro::actor_stage::completed(history.emit(core, sink, static_cast<double>(t), census))) {
+      lucent::debug("field2dtemporal", "preflight refused t={}", t);
+      return false;
+    }
+    lucent::debug("field2dtemporal",
+                  "preflight t={} draws={} interpolated={} incompatible={} absent={}",
+                  t,
+                  census.actors,
+                  census.interpolated,
+                  census.incompatible,
+                  census.absent);
+  }
+  return true;
+}
+
 void spyro_temporal_scene_begin(
     Core &core, uint64_t scene, bool pairedScene, bool reference, bool active) {
   auto &context = spyro_context(core);
@@ -236,6 +319,7 @@ void spyro_temporal_scene_begin(
   context.secondaryActorTemporal.begin(scene, reference, active);
   context.shadedQueueTemporal.begin(scene, reference, active);
   context.terrainTemporal.begin(scene, reference, active);
+  context.overlayTemporal.begin(scene, reference, active);
   spyro_paired_actor_frame_begin(context.pairedActor, pairedScene, reference, active);
 }
 
@@ -266,6 +350,14 @@ void spyro_temporal_scene_prepare(Core &core) {
                 "terrain interval frame={} admitted={}",
                 context.terrainTemporal.frameSerial(),
                 context.terrainTemporal.eligible());
+  // The overlay is admitted LAST and independently: it is the only layer whose queue items carry no
+  // painter object, so nothing above can vouch for it, and a refusal here must cost this layer's
+  // in-between quads and nothing else.
+  context.overlayTemporal.admit(context.temporalAdmission.overlay(core));
+  lucent::debug("field2dtemporal",
+                "2D overlay interval frame={} admitted={}",
+                context.overlayTemporal.frameSerial(),
+                context.overlayTemporal.eligible());
   if (paired.was_fps60_active && paired.endpoints_compatible) {
     // Preserve paired-only admission when the world lacks a complete matching source.
     paired.temporal_eligible = spyro_paired_actor_fps60_eligible(paired);

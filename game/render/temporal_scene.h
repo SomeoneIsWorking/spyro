@@ -23,6 +23,11 @@ public:
   bool secondaryActors(Core &core);
   bool shadedQueue(Core &core);
   bool terrain(Core &core);
+  // The screen-space 2D overlay. Its own preflight because its queue items are RQ_HUD and the
+  // painter planner deliberately does not group them (painter_object_layer.cpp validateFace refuses
+  // anything that is not RQ_WORLD with RQ_OM_DEPTH), so a midpoint that overflows the queue or
+  // presents a degenerate bar has to be discovered here rather than during presentation.
+  bool overlay(Core &core);
 
 private:
   // Replays one source across the interval's endpoints and its midpoint into the isolated sink,

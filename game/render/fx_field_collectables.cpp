@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "field_collectables_recipe.h"
+#include "fx_field_collectables.h"
 #include "game.h"
 #include "hud_text_builder.h"
 #include "producer_scope.h"
@@ -118,7 +119,9 @@ void appendCompletedGemText(Core *core, uint32_t &queueEnd) {
   }
 }
 
-void emitSprite(Core *core, const spyro::field_collectables_recipe::Sprite &sprite) {
+void emitSprite(Core *core,
+                RenderQueue &queue,
+                const spyro::field_collectables_recipe::Sprite &sprite) {
   const GpuState &gpu = core->game->gpu;
   const int x0 = sprite.rect.x + gpu.s_off_x;
   const int y0 = sprite.rect.y + gpu.s_off_y;
@@ -161,8 +164,15 @@ void emitSprite(Core *core, const spyro::field_collectables_recipe::Sprite &spri
 
 } // namespace
 
-bool spyro_field_collectables_submit(Core *core) {
-  const Recipe recipe = spyro::field_collectables_recipe::derive(readState(core));
+spyro::field_collectables_recipe::State spyro_field_collectables_read(Core *core) {
+  return readState(core);
+}
+
+// The guest-state half. The queue append is guarded here and not in the caller because the guest
+// appends into the slot after whatever the world-shaded queue already holds, and reading that queue
+// back is what finds the insertion point. It commits NOTHING until `commit` accepts the recipe, so
+// a caller that has already derived the recipe does not pay for a second derivation.
+bool spyro_field_collectables_commit(Core *core, const Recipe &recipe) {
   uint32_t queueEnd = 0;
   if (!preflight(core, recipe, queueEnd)) {
     lucent::debug("fieldhud",
@@ -180,9 +190,23 @@ bool spyro_field_collectables_submit(Core *core) {
     appendCompletedGemText(core, queueEnd);
   }
   core->mem_w32(kShadedMobyQueue + queueEnd * 4u, 0u);
+  return true;
+}
+
+bool spyro_field_collectables_stage(Core *core, Recipe &recipe) {
+  recipe = spyro::field_collectables_recipe::derive(spyro_field_collectables_read(core));
+  return spyro_field_collectables_commit(core, recipe);
+}
+
+bool spyro_field_collectables_submit(Core *core,
+                                     RenderQueue &queue,
+                                     const spyro::field_collectables_recipe::Recipe &recipe) {
+  if (recipe.status != Status::Ready && recipe.status != Status::CompletedGemText) {
+    return false;
+  }
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "fieldhud:collectables");
   for (uint32_t i = 0; i < recipe.spriteCount; ++i) {
-    emitSprite(core, recipe.sprites[i]);
+    emitSprite(core, queue, recipe.sprites[i]);
   }
   return true;
 }

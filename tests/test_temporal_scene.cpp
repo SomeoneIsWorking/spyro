@@ -10,6 +10,7 @@
 #include "spyro_context.h"
 #include "temporal_scene.h"
 #include "temporal_scene_source.h"
+#include "terrain_emit.h"
 #include "testutil.h"
 #include "title_runtime_registry.h"
 #include "world_scene_builder.h"
@@ -56,6 +57,58 @@ void test_exact_producer_membership() {
   const auto otherSource = spyro_temporal_scene_source(*other);
   CHECK(!otherSource->owns(item));
   CHECK(!source->eligible(other->core));
+}
+
+// THE 2D OVERLAY IS THE ONE LAYER CLAIMED WITHOUT A PAINTER OBJECT, so its membership rule is the
+// one that has to be pinned exactly rather than inferred. Every other predicate here asks for a
+// `painter_object`; this one asks for `layer == RQ_HUD`, because a 2D item cannot carry a painter
+// object in this framework at all (painter_object_layer.cpp `validateFace` refuses anything that is
+// not RQ_WORLD with RQ_OM_DEPTH, and render_queue.cpp `emitItemStream` aborts on a refused plan).
+// That makes the rule sound only while the overlay's history is admissible, so the negatives below
+// are the load-bearing half: an inadmissible overlay claims nothing, and a different Core's
+// admissible overlay claims nothing of this one's items.
+void test_overlay_membership_is_layer_scoped_and_ineligible_claims_nothing() {
+  auto game = std::make_unique<Game>();
+  SpyroContext context;
+  game->core.gameCtx = &context;
+  const auto source = spyro_temporal_scene_source(*game);
+  RqItem item{};
+  item.layer = RQ_HUD;
+  item.painter_object = 0; // a 2D item's producer field is structurally zero
+  CHECK(!source->owns(item));
+  CHECK(!source->eligible(game->core));
+
+  context.overlayTemporal.admit(true);
+  CHECK(source->eligible(game->core));
+  CHECK(source->owns(item));
+  // The same history must not make the source eligible for a Core it does not own.
+  auto other = std::make_unique<Game>();
+  SpyroContext otherContext;
+  other->core.gameCtx = &otherContext;
+  const auto otherSource = spyro_temporal_scene_source(*other);
+  CHECK(!otherSource->owns(item));
+  CHECK(!otherSource->eligible(other->core));
+
+  // …and the layer is the whole claim: a world or backdrop item is never the overlay's, even while
+  // the overlay is admissible, because the terrain, actor and world-shaded sources own those and a
+  // double-claim would drop the captured item from the in-between present.
+  RqItem world{};
+  world.layer = RQ_WORLD;
+  world.has_xyf = true;
+  world.painter_object = spyro::terrain_emit::kProducerKey;
+  CHECK(!source->owns(world));
+  RqItem backdrop{};
+  backdrop.layer = RQ_BACKGROUND;
+  CHECK(!source->owns(backdrop));
+  RqItem overlayLayer{};
+  overlayLayer.layer = RQ_OVERLAY;
+  CHECK(!source->owns(overlayLayer));
+
+  // …and an item of the overlay's own layer that arrives while the overlay is INADMISSIBLE stays in
+  // the captured frame, which is what keeps the front-end title menu (also RQ_HUD, and never a
+  // FIELD arm) from being replaced by a FIELD overlay reconstruction.
+  context.overlayTemporal.admit(false);
+  CHECK(!source->owns(item));
 }
 
 void test_runtime_factory_rotates_own_endpoints() {
@@ -818,6 +871,7 @@ void test_paired_camera_capture_precedes_actor_rotation() {
 
 int main() {
   RUN(exact_producer_membership);
+  RUN(overlay_membership_is_layer_scoped_and_ineligible_claims_nothing);
   RUN(joint_world_camera_admission_preserves_live_state);
   RUN(paired_camera_capture_precedes_actor_rotation);
   RUN(runtime_factory_rotates_own_endpoints);

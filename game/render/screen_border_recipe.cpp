@@ -6,8 +6,11 @@ namespace {
 
 // The guest's stepping rule, recovered from func_80018F30's prologue. int32 arithmetic
 // throughout: enabled ramps the bars up to the authored 22-pixel hold, disabled ramps them
-// back down to zero, one g_DeltaTime step per logic frame in both directions.
-int32_t stepped(int32_t height, uint32_t enabled, int32_t deltaTime) {
+// back down to zero, one g_DeltaTime step per logic frame in both directions. The bytes: `slti
+// $v0,$v1,0x16` (0x80018F60) and `slti $v0,$v0,0x17` (0x80018F90) for the two clamps, `addu
+// $v0,$v1,$v0` against g_DeltaTime (0x800756CC) at 0x80018F78, and `subu $v0,$v1,$v0` for the down
+// ramp at 0x80018FD0.
+int32_t steppedHeight(int32_t height, uint32_t enabled, int32_t deltaTime) {
   if (enabled != 0u) {
     if (height <= 21) {
       height += deltaTime;
@@ -28,15 +31,20 @@ int32_t stepped(int32_t height, uint32_t enabled, int32_t deltaTime) {
 
 } // namespace
 
+Recipe stepped(uint32_t enabled, int32_t barHeight, int32_t deltaTime) {
+  Recipe recipe;
+  recipe.barHeight = steppedHeight(barHeight, enabled, deltaTime);
+  return recipe;
+}
+
 Recipe field(uint32_t enabled,
              int32_t barHeight,
              int32_t deltaTime,
              int32_t drawOffsetX,
              int32_t drawOffsetY,
              int32_t renderWidth) {
-  const int32_t height = stepped(barHeight, enabled, deltaTime);
-  Recipe recipe;
-  recipe.barHeight = height;
+  Recipe recipe = stepped(enabled, barHeight, deltaTime);
+  const int32_t height = recipe.barHeight;
   if (height <= 0 || renderWidth <= 0) {
     return recipe;
   }

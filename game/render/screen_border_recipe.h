@@ -15,6 +15,13 @@ struct Recipe {
   int32_t x1 = 0;
 };
 
+// The guest's own state step and NOTHING else: the bar height after 0x80018F30's ramp, with no
+// geometry. Separate from `field` because the guest performs the step and the write-back
+// (`sw $v0,0x56c0($at)`, 0x80018F80 / 0x80018FA4 / 0x80018FF4) as a separate act from composing the
+// two bars, and because the composition's gate reads the PRE-step value — so a caller that needs
+// the committed height must be able to ask for it without also asking for a frame's geometry.
+Recipe stepped(uint32_t enabled, int32_t barHeight, int32_t deltaTime);
+
 // GS_Playing calls guest border producer 0x80018F30 when
 // (g_ScreenBorderEnabled [0x8007570C] != 0 || D_800756C0 [0x800756C0] != 0). The producer first
 // STEPS the bar height — enabled: h += g_DeltaTime when h <= 21, then clamp >= 23 back to 22;

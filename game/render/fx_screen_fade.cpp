@@ -11,14 +11,15 @@ constexpr uint32_t kProducerKey = 0x800190D4u;
 
 } // namespace
 
-bool spyro_screen_fade_submit(Core *core, const spyro::screen_fade_recipe::Recipe &recipe) {
+bool spyro_screen_fade_submit(Core *core,
+                              RenderQueue &queue,
+                              const spyro::screen_fade_recipe::Recipe &recipe) {
   if (!recipe.visible) {
     return true;
   }
   if (recipe.x0 >= recipe.x1 || recipe.y0 >= recipe.y1 || recipe.blendMode > 3u) {
     return false;
   }
-  RenderQueue &queue = core->game->rq;
   const GpuState gpu = core->game->gpu;
   const int xs[4] = {recipe.x0, recipe.x1, recipe.x0, recipe.x1};
   const int ys[4] = {recipe.y0, recipe.y0, recipe.y1, recipe.y1};

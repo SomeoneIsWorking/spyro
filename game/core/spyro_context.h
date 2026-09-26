@@ -2,6 +2,7 @@
 
 #include "actor_temporal.h"
 #include "archive_transfer.h"
+#include "field_2d_overlay.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
 #include "presentation_owner.h"
@@ -24,6 +25,12 @@ struct SpyroContext {
   spyro::secondary_actor_temporal::History secondaryActorTemporal{};
   spyro::field_shaded_queue_temporal::History shadedQueueTemporal{};
   spyro::terrain_temporal::History terrainTemporal{};
+  // The FIELD arm's screen-space 2D layer: the logic frame's capture, and the two-endpoint history
+  // that reconstructs it in an in-between present. One pair of members because they are one concept
+  // — an endpoint and the interval over it — and splitting them would leave the frame's capture in
+  // one owner and the interval that consumes it in another.
+  spyro::field_2d_overlay::Frame overlayFrame{};
+  spyro::field_2d_overlay::History overlayTemporal{};
   SpyroTemporalSceneAdmission temporalAdmission{};
   SpyroPresentationOwner presentationOwner{};
 };

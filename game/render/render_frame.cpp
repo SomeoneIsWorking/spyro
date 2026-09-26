@@ -5,6 +5,7 @@
 // presentation route.
 #include "core.h"
 #include "cutscene_scene_recipe.h"
+#include "field_2d_overlay.h"
 #include "field_moby_lists.h"
 #include "field_model_chain.h"
 #include "fps60.h"     // checked access to Spyro 1's title-owned temporal presentation product
@@ -32,6 +33,7 @@
 #include "screen_fade_recipe.h"
 #include "snapshot.h" // snapshot_now — a refusal fatal must leave the corpus its fix needs
 #include "spyro1_field_scheduler.h"
+#include "spyro_context.h"
 #include "spyro_game.h"
 #include "stage13_scene_recipe.h"
 #include "temporal_scene.h"
@@ -183,20 +185,26 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
   if (isFieldStage(sc.stage)) {
     if ((sc.stage == kStageRespawn || sc.stage == kStageGameOver) &&
         mC->mem_r32(kGameplayDrawFrame) != 0u) {
+      // The respawn/game-over arms keep the pre-existing two-call composition: they draw a fade and
+      // a border over a frozen gameplay frame, they are not a FIELD arm, and this change does not
+      // make them one. They go through the same submitters with an explicit queue, which is the
+      // only thing that changed about those two functions.
       const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
       const auto fade =
           spyro::screen_fade_recipe::field(mC->mem_r32(0x80075918u), ofsX, ofsY, renderWidth);
-      if (!spyro_screen_fade_submit(mC, fade)) {
+      if (!spyro_screen_fade_submit(mC, mC->game->rq, fade)) {
         abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
       }
-      if (!spyro_screen_border_submit(mC, ofsX, ofsY, renderWidth)) {
-        abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+      if (spyro_screen_border_armed(mC)) {
+        const auto border = spyro_screen_border_stage(mC);
+        if (!spyro_screen_border_submit(mC, mC->game->rq, border)) {
+          abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+        }
       }
       return;
     }
     const auto background = spyro::cutscene_scene_recipe::read(mC);
     spyro::cutscene_scene_recipe::prepareFrame(mC, background);
-    constexpr uint32_t kIsFlightLevel = 0x80075690u;
     // Retail clears g_SonyImage.m_ShadedMobys immediately before func_80019300. The native actor
     // producer does not consume that guest pointer list, so reproduce the lifecycle boundary here
     // instead of letting a prior screen's stale entries consume the field HUD capacity.
@@ -206,8 +214,22 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     // negative-state list produced here; omitting this state-only arm leaves its source pointers
     // uninitialized at the first FIELD frame.
     spyro_field_build_moby_lists(mC);
-    if (mC->mem_r32(kIsFlightLevel) == 0u) {
-      if (!spyro_field_collectables_submit(mC)) {
+    // THE 2D OVERLAY'S ENDPOINT, captured ONCE for the whole frame. The three producers below read
+    // the same guest words at the same instant, and a reconstruction needs them as one consistent
+    // pair of endpoints rather than three separate reads that could straddle a guest write. The
+    // capture commits nothing: the guest's own writes happen at its own positions below.
+    const int32_t fieldRenderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+    auto &overlay = spyro_context(*mC).overlayFrame;
+    const auto overlayStatus = overlay.capture(*mC, ofsX, ofsY, fieldRenderWidth);
+    if (overlayStatus == spyro::field_2d_overlay::Status::InvalidCount) {
+      abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
+    }
+    if (overlay.armed(spyro::field_2d_overlay::Part::Sprite)) {
+      if (!overlay.commit(*mC, spyro::field_2d_overlay::Part::Sprite)) {
+        abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
+      }
+      if (!spyro::field_2d_overlay::publish(
+              *mC, mC->game->rq, spyro::field_2d_overlay::Part::Sprite, overlay.overlay())) {
         abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
       }
     }
@@ -223,15 +245,27 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     if (const auto refusal = spyro_field_particles_submit(mC)) {
       abortUnimplemented(sc, refusalMessage("particles", refusal).c_str());
     }
-    const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
-    const auto fade =
-        spyro::screen_fade_recipe::field(mC->mem_r32(0x80075918u), ofsX, ofsY, renderWidth);
-    if (!spyro_screen_fade_submit(mC, fade)) {
-      abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
+    // The fade and the border, at the guest's own two later positions, from the SAME endpoint the
+    // sprites were published from. The border's stepped height is committed here rather than at the
+    // capture, because the composition's gate above reads the pre-step value.
+    if (overlay.armed(spyro::field_2d_overlay::Part::Fade)) {
+      if (!overlay.commit(*mC, spyro::field_2d_overlay::Part::Fade) ||
+          !spyro::field_2d_overlay::publish(
+              *mC, mC->game->rq, spyro::field_2d_overlay::Part::Fade, overlay.overlay())) {
+        abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
+      }
     }
-    if (!spyro_screen_border_submit(mC, ofsX, ofsY, renderWidth)) {
-      abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+    if (overlay.armed(spyro::field_2d_overlay::Part::Border)) {
+      if (!overlay.commit(*mC, spyro::field_2d_overlay::Part::Border) ||
+          !spyro::field_2d_overlay::publish(
+              *mC, mC->game->rq, spyro::field_2d_overlay::Part::Border, overlay.overlay())) {
+        abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+      }
     }
+    // The endpoint is retained here, once, after the whole layer is committed: a frame's overlay is
+    // one fact, and retaining it before the border's height was written would retain a frame whose
+    // guest state had not finished being produced.
+    spyro_context(*mC).overlayTemporal.retain(overlay.endpoint());
     if (!spyro_field_tracers_submit(mC)) {
       abortUnimplemented(sc, "tracers producer 0x800189F0 refused its atomic recipe");
     }
@@ -295,7 +329,7 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     const auto state = spyro::cutscene_scene_recipe::read(mC);
     const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
     const auto fade = spyro::screen_fade_recipe::cutscene(state.fade, ofsX, ofsY, renderWidth);
-    if (!spyro_screen_fade_submit(mC, fade)) {
+    if (!spyro_screen_fade_submit(mC, mC->game->rq, fade)) {
       abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
     }
   }

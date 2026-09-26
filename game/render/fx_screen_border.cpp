@@ -1,11 +1,12 @@
 #include "fx_screen_border.h"
+
 #include "guest_globals.h"
+#include "screen_border_recipe.h"
 
 #include "core.h"
 #include "game.h"
 #include "producer_scope.h"
 #include "render_queue.h"
-#include "screen_border_recipe.h"
 
 #include <lucent/log.h>
 
@@ -18,19 +19,29 @@ using spyro::guest::kDeltaTime;
 
 } // namespace
 
-bool spyro_screen_border_submit(Core *core,
-                                int32_t drawOffsetX,
-                                int32_t drawOffsetY,
-                                int32_t renderWidth) {
+bool spyro_screen_border_armed(Core *core) {
+  // The gate is the PRE-step state: the guest's `if (g_ScreenBorderEnabled || D_800756C0)` runs
+  // before func_80018F30 has stepped anything, and reading the stepped value here would keep the
+  // producer alive for one frame after the guest's would have released it.
+  return core->mem_r32(kEnabled) != 0u || core->mem_r32(kBarHeight) != 0u;
+}
+
+spyro::screen_border_recipe::Recipe spyro_screen_border_stage(Core *core) {
   const uint32_t enabled = core->mem_r32(kEnabled);
   const int32_t height = static_cast<int32_t>(core->mem_r32(kBarHeight));
-  if (enabled == 0u && height == 0) {
-    return true; // the guest's own gate: the producer is not even called
-  }
   const int32_t deltaTime = static_cast<int32_t>(core->mem_r32(kDeltaTime));
-  const auto recipe = spyro::screen_border_recipe::field(
-      enabled, height, deltaTime, drawOffsetX, drawOffsetY, renderWidth);
+  auto recipe = spyro::screen_border_recipe::stepped(enabled, height, deltaTime);
+  // The guest writes the stepped height back unconditionally, including the clearing store at
+  // 0x80018FF4 and the clamped store of 22 at 0x80018FA4. A stage that only committed a visible bar
+  // would leave the global one frame stale, and the border would then animate one frame late
+  // forever.
   core->mem_w32(kBarHeight, static_cast<uint32_t>(recipe.barHeight));
+  return recipe;
+}
+
+bool spyro_screen_border_submit(Core *core,
+                                RenderQueue &queue,
+                                const spyro::screen_border_recipe::Recipe &recipe) {
   if (!recipe.visible) {
     return true;
   }
@@ -38,7 +49,6 @@ bool spyro_screen_border_submit(Core *core,
       recipe.bottomY0 >= recipe.bottomY1) {
     return false;
   }
-  RenderQueue &queue = core->game->rq;
   const GpuState gpu = core->game->gpu;
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "screen:border");
   RenderQueue::Space2dScope wide(queue, RQ_2D_WIDE_FINAL);

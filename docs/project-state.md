@@ -1063,12 +1063,17 @@ Measured, and deliberately not rounded up: oracle parity on the artisans route i
 2D layer now produces TIER1 runs where it produced none by construction — `owns` used to reduce
 to `producerItem()`, requiring `layer == RQ_WORLD`, so every RQ_HUD item failed it. On a
 field-weighted drive (102 gameplay samples of 662; `drive.py` spends 220 on the title screen
-and 295 on a cutscene) layer 3 reached 28 TIER1 against 766 verbatim, 515 intervals were
-admitted, and the overlay's own emits were 70 draws / 70 interpolated / 0 unattributed /
-0 absent. Two facts stop this from being a new share: 515 admitted intervals yielded only 35
-emitting a draw, and the remaining layer-3 verbatim items belong to the title menu, the
-level-transition tally and the dragon burst, which this owner deliberately does not claim.
-Quoting a share from that run would be inventing a number.
+and 295 on a cutscene) layer 3 reached 28 TIER1 against 766 verbatim, and 515 intervals were
+admitted. Across those the overlay made 2,575 emit calls, of which **70 emitted a draw and
+all 70 were interpolated — 0 unattributed, 0 absent, 0 incompatible, 0 refused.**
+
+So the quality is total and the yield is not: 70 draws from 2,575 emit calls is 2.7%, and
+until that is explained this is not a share. The remaining layer-3 verbatim items also belong
+to the title menu, the level-transition tally and the dragon burst, which this owner
+deliberately does not claim. Quoting a reconstructed share from this run would be inventing a
+number. (Corrected 2026-09-27: an earlier draft of this entry said "515 admitted intervals
+yielded only 35 emitting a draw". The denominator was wrong — 2,575 emit calls, 70 with a
+draw. The 70/70 interpolated result was right.)
 
 **Framework cap, unchanged and not title-fixable:** a 2D item can never carry a
 `painter_object`. `validateFace` refuses anything that is not `RQ_WORLD` with `RQ_OM_DEPTH`

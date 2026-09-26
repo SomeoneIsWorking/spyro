@@ -1049,31 +1049,46 @@ MAC-Z rather than requiring a stationary depth origin. Actual presenter tests ex
 ordering, empty endpoints with visible midpoints, immutable sources, and moving depth. The S011
 run records nonzero paired midpoint/endpoint emission through the shipping JIT product.
 
-**The 2D/HUD layer is now an owned temporal source, and the reconstructed share is NOT yet
-re-measured.** 2026-09-27. The previous 0.955 share with 281,828 of 341,856 verbatim items
-(82.4%) attributed to "layer 3 with no producer attribution" was read as a missing owner. The
-structural cause is recovered and the layer is not a render pass at all: it is a second ordering
-table, front-list and depth (0x8007581C / 0x80075820), cleared per frame by 0x80016784(n).
-1,451 instruction words over 13 producer bodies decode to zero COP2 traffic, so the fade, border,
-orb/egg sprites and shaded line/box are pure functions of pre-GTE state. Tracers are excluded
-because they are only derivable WITH a projection and `fx_field_tracers` already owns that.
+**The 2D/HUD layer is now an owned temporal source, and on FIELD frames it is effectively
+complete. The 0.955 share's "82.4% of verbatim items" was measuring the TITLE MENU.** 2026-09-27.
+The structural cause is recovered and the layer is not a render pass at all: it is a second
+ordering table, front-list and depth (0x8007581C / 0x80075820), cleared per frame by
+0x80016784(n). 1,451 instruction words over 13 producer bodies decode to zero COP2 traffic, so
+the fade, border, orb/egg sprites and shaded line/box are pure functions of pre-GTE state.
+Tracers are excluded because they are only derivable WITH a projection and `fx_field_tracers`
+already owns that.
 
-Measured, and deliberately not rounded up: oracle parity on the artisans route is UNCHANGED at
-486 checkpoints / 6,318 decisive range comparisons / 0 divergences, which is the real gate. The
-2D layer now produces TIER1 runs where it produced none by construction — `owns` used to reduce
-to `producerItem()`, requiring `layer == RQ_WORLD`, so every RQ_HUD item failed it. On a
-field-weighted drive (102 gameplay samples of 662; `drive.py` spends 220 on the title screen
-and 295 on a cutscene) layer 3 reached 28 TIER1 against 766 verbatim, and 515 intervals were
-admitted. Across those the overlay made 2,575 emit calls, of which **70 emitted a draw and
-all 70 were interpolated — 0 unattributed, 0 absent, 0 incompatible, 0 refused.**
+**The denominator correction, which is the important part.** The old figure counted all 341,856
+verbatim items in a whole run. Split by gamestate, layer 3 is:
 
-So the quality is total and the yield is not: 70 draws from 2,575 emit calls is 2.7%, and
-until that is explained this is not a share. The remaining layer-3 verbatim items also belong
-to the title menu, the level-transition tally and the dragon burst, which this owner
-deliberately does not claim. Quoting a reconstructed share from this run would be inventing a
-number. (Corrected 2026-09-27: an earlier draft of this entry said "515 admitted intervals
-yielded only 35 emitting a draw". The denominator was wrong — 2,575 emit calls, 70 with a
-draw. The 70/70 interpolated result was right.)
+| gamestate | verbatim groups | TIER1 groups |
+|---|---|---|
+| GS_TitleScreen | 738 (145,313 items) | 0 |
+| GS_Cutscene | 27 | 0 |
+| **GS_Playing** | **1** | **28** |
+
+So on field frames the 2D/HUD layer holds **29 items in the entire run** and this owner
+reconstructs **28 of them** — against **none** before, when `owns` reduced to `producerItem()`
+and so required `layer == RQ_WORLD` and failed every RQ_HUD item. The 738 groups the old
+number was made of are the front-end title menu, which this owner deliberately does not claim.
+Any claim of the form "82.4% of verbatim items sit in the 2D/HUD layer" needs the field-frame
+denominator or it is measuring the title menu.
+
+**Why the emit yield is 2.7% and that is correct.** 515 intervals were admitted and every one
+is a consecutive GS_Playing frame (serials 2578-3092, zero gaps), producing 2,575 emit calls
+(3 preflight samples + 2 presentation in-betweens per interval = 1,545 + 1,030) of which 70 drew.
+The recovered gates close: `g_Fade` (0x80075918) = 0, `g_ScreenBorderEnabled` (0x8007570C) = 0 and
+`D_800756C0` = 0 in **all five** captured 2 MB GS_Playing snapshots, shutting the fade and border
+call sites at `external/spyro-1/src/gamestates/draw.c:2739-2741` and `:2743-2745`; and
+`g_Hud.m_LifeOrbCount` (0x80077FE0) = 0 with `m_EggCount` (0x80077FD4) = 0 in all five, so
+`0x80019300` IS called at draw.c:2725 and both sprite loops run zero times. `snap_9346` has all
+four HUD display states at `HDS_Open` and both counts still 0. **The retail layer genuinely
+draws nothing on a field frame**, so 501 of 515 intervals are correctly
+`endpoint=0/0/0 gates=0/0/1` and the 14 that drew are `endpoint=1/0/0 gates=1/0/1` — the
+level-entry fade.
+
+Oracle parity is UNCHANGED at 486 checkpoints / 6,318 decisive range comparisons / 0
+divergences, `complete: true`, which is the real gate for all of the above.
 
 **Framework cap, unchanged and not title-fixable:** a 2D item can never carry a
 `painter_object`. `validateFace` refuses anything that is not `RQ_WORLD` with `RQ_OM_DEPTH`

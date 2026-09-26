@@ -123,6 +123,18 @@ public:
   // and that is only sound because the source is admissible in a FIELD arm alone — the front-end
   // title menu, the level-transition tally and the dragon burst also emit RQ_HUD, and none of them
   // is ever on a frame whose overlay interval was admitted.
+  //
+  // MEASURED, and this is what makes "only sound" a fact rather than a hope. Over the
+  // field-weighted route this layer-3 census saw 794 RQ_HUD groups, and they split by gamestate as
+  // 738 on GS_TitleScreen, 27 on GS_Cutscene and 29 on GS_Playing. Every one of the 29 field-frame
+  // items is a single full-width 225-tall quad at y=8 — this owner's own fade, `setXYWH(f4, 0, 8,
+  // 512, 240-16)` widened to the live render width — and 28 of them are TIER1, which is this
+  // source's own reconstruction. So on a field frame NOTHING ELSE reaches RQ_HUD, and the
+  // layer-scoped claim competes with nobody. The other four first-party RQ_HUD publishers are all
+  // off the field arm by construction: `fx_title_menu.cpp:246` and the stage-13 renderer's
+  // screen-class sprite path (`fx_sprite_queue.cpp:426`, reached only from `stage13Mode3Render` at
+  // fx_sprite_queue.cpp:695 under `kStageFrontEnd`), plus the level-transition tally and the dragon
+  // burst.
   static bool overlayItem(const RqItem &item) {
     return item.layer == RQ_HUD;
   }
@@ -354,10 +366,27 @@ void spyro_temporal_scene_prepare(Core &core) {
   // painter object, so nothing above can vouch for it, and a refusal here must cost this layer's
   // in-between quads and nothing else.
   context.overlayTemporal.admit(context.temporalAdmission.overlay(core));
+  // The endpoint's own part census rides on the admission line because this is the ONE line per
+  // logic frame, and it is what gives the per-emit census its denominator. Measured over the
+  // field-weighted route: 515 admitted intervals, 2,575 emit calls (three preflight samples plus
+  // the presenter's two in-betweens per interval — 1,545 + 1,030, exact), and 501 of the 515
+  // endpoints empty. `endpoint=0/0/0 gates=0/0/1` on an empty one says WHY: the guest's three call
+  // sites decided that, and the derivation reproduced the decision. Without it the 501 reads as a
+  // failure rate; with it, it reads as what it is.
+  const auto *endpoint = context.overlayTemporal.current();
+  using PartCounts = spyro::field_2d_overlay_recipe::PartCounts;
+  const auto parts =
+      endpoint ? spyro::field_2d_overlay_recipe::countParts(*endpoint) : PartCounts{};
   lucent::debug("field2dtemporal",
-                "2D overlay interval frame={} admitted={}",
+                "2D overlay interval frame={} admitted={} endpoint={}/{}/{} gates={}{}{}",
                 context.overlayTemporal.frameSerial(),
-                context.overlayTemporal.eligible());
+                context.overlayTemporal.eligible(),
+                parts.fade,
+                parts.border,
+                parts.sprites,
+                endpoint && endpoint->gates.fade ? 1 : 0,
+                endpoint && endpoint->gates.border ? 1 : 0,
+                endpoint && endpoint->gates.sprites ? 1 : 0);
   if (paired.was_fps60_active && paired.endpoints_compatible) {
     // Preserve paired-only admission when the world lacks a complete matching source.
     paired.temporal_eligible = spyro_paired_actor_fps60_eligible(paired);

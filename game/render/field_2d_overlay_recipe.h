@@ -106,6 +106,37 @@ struct Draw {
   uint16_t tpage = 0;
 };
 
+// The guest's three CALL-SITE GATES, and they are not the producers' own conditions. The GS_Playing
+// arm decides whether to CALL each producer; only then does the producer decide what to draw:
+//
+//   0x80019300  draw.c:2725  `if (!g_IsFlightLevel) { func_80019300(); }`
+//   0x800190D4  draw.c:2739  `if (g_Fade) { func_800190D4(2, g_Fade * 8, ...); }`
+//   0x80018F30  draw.c:2743  `if (g_ScreenBorderEnabled || D_800756C0) { …; }`
+//
+// These three conditions were written TWICE: once here, to decide what the derivation may emit, and
+// once in `Frame::armed`, to decide what the logic frame publishes. A gate written twice is a gate
+// that gets applied on one path and not the other, and this layer had exactly that. `derive`
+// ignored the flight-level gate, so a flight frame's endpoint could carry orb/egg sprites the guest
+// never reaches — 0x80019300 is not called there at all, so its sprite loops at draw.c:583/597
+// never run, whatever the HUD block says — while the logic frame correctly published none. `derive`
+// applies the gate now and `Frame::armed` asks these three functions, so there is one
+// implementation of each and the endpoint cannot disagree with the logic frame about whether a
+// producer ran.
+struct Gates {
+  bool fade = false;    // draw.c:2739 — 0x800190D4 was called
+  bool border = false;  // draw.c:2743 — 0x80018F30 was called
+  bool sprites = false; // draw.c:2725 — 0x80019300 was called
+};
+
+// The per-part draw counts, in the order the field2dtemporal channel prints them (fade, border,
+// sprites). COMPUTED rather than stored beside `draws`: a stored count is a second thing that can
+// disagree with the vector it counts.
+struct PartCounts {
+  uint32_t fade = 0;
+  uint32_t border = 0;
+  uint32_t sprites = 0;
+};
+
 // One logic frame's whole 2D overlay, in the order the guest emits it. A flat vector rather than
 // three named groups because the interval has to pair the three fixed slots and the N sprites with
 // ONE occurrence-ordered walk (spyro::instance_pairing), and because a group per part would make
@@ -118,6 +149,13 @@ struct Overlay {
   // move — the failure is invisible, because the picture would still be a correct bar of the wrong
   // height.
   int32_t barHeight = 0;
+  // Which of the guest's three call sites ran on THIS frame. Retained with the endpoint rather than
+  // recomputed where it is printed, because "this frame drew no 2D layer" is only worth retaining
+  // if it arrives with the reason: `draws=0` on its own is equally the shape of the correct null
+  // (the guest called nothing) and of a silent failure of the derivation, and the field2dtemporal
+  // census has to tell those apart rather than leave a reader to guess which one 2,505 of them
+  // were.
+  Gates gates{};
 };
 
 inline constexpr uint32_t kFadeSlot = 0u;
@@ -155,6 +193,27 @@ struct State {
   field_collectables_recipe::State collectables{};
 };
 
+// The guest's three call-site conditions, each a function of the pre-GTE state and nothing else.
+// These are the ONLY implementations; `derive` applies them and `Frame::armed` asks them.
+inline bool armedFade(const State &state) {
+  return state.fade != 0u; // draw.c:2739 `if (g_Fade)`
+}
+
+inline bool armedBorder(const State &state) {
+  // draw.c:2743 `if (g_ScreenBorderEnabled || D_800756C0)`, on the PRE-step height: the guest's
+  // `if` runs before 0x80018F30 has stepped anything, and a gate that read the stepped value would
+  // keep the producer alive for one frame after the guest's would have released it.
+  return state.borderEnabled != 0u || state.barHeight != 0;
+}
+
+inline bool armedSprites(const State &state) {
+  // draw.c:2725 `if (!g_IsFlightLevel) { func_80019300(); }`. The sprite loops INSIDE 0x80019300
+  // (draw.c:583 and 597) are not themselves gated on the flight level, so a model of the producer's
+  // body alone draws them in a flight level; it is the CALL SITE that keeps them out, and a flight
+  // level has its own UI instead (`HudTick` is skipped there too, update.c:1127).
+  return !state.collectables.flightLevel;
+}
+
 // The bar height after the guest's own step. It is NOT reimplemented here: `derive` takes it from
 // screen_border_recipe, which owns the rule, so there is one implementation of the step and not two
 // that can agree today. The caller needs it to write D_800756C0 back even when the overlay
@@ -182,10 +241,12 @@ inline const char *statusName(Status status) {
 
 inline Status derive(const State &state, Overlay &overlay) {
   overlay.draws.clear();
+  overlay.gates = {
+      .fade = armedFade(state), .border = armedBorder(state), .sprites = armedSprites(state)};
 
   const auto fade = screen_fade_recipe::field(
       state.fade, state.drawOffsetX, state.drawOffsetY, state.renderWidth);
-  if (fade.visible) {
+  if (overlay.gates.fade && fade.visible) {
     overlay.draws.push_back({.part = Part::Fade,
                              .instance = instanceOf(Part::Fade, 0),
                              .slot = static_cast<uint8_t>(kFadeSlot),
@@ -204,9 +265,12 @@ inline Status derive(const State &state, Overlay &overlay) {
                                                   state.drawOffsetY,
                                                   state.renderWidth);
   // The guest commits the stepped height whether or not the bar ended up with one, so the owner
-  // reads it from the recipe unconditionally.
+  // reads it from the recipe unconditionally. Stepping while the call site is shut is a provable
+  // no-op rather than an extra state change: the gate at draw.c:2743 is false only when
+  // g_ScreenBorderEnabled == 0 AND D_800756C0 == 0, and the down ramp of a zero height by a
+  // positive g_DeltaTime is zero, so the committed word is the word that was already there.
   overlay.barHeight = border.barHeight;
-  if (border.visible) {
+  if (overlay.gates.border && border.visible) {
     const int32_t width = border.x1 - border.x0;
     overlay.draws.push_back(
         {.part = Part::Border,
@@ -228,7 +292,12 @@ inline Status derive(const State &state, Overlay &overlay) {
   // The sprite positions are the guest's own RECTs; the port adds the frame's draw offset exactly
   // where fx_field_collectables did (`sprite.rect.x + gpu.s_off_x`), so the same number reaches the
   // queue on both the logic frame and a reconstruction.
-  for (uint32_t i = 0; i < sprites.spriteCount; ++i) {
+  //
+  // The call-site gate is applied HERE, not inside field_collectables_recipe::derive, because the
+  // recipe models 0x80019300's BODY and the body really does compute the sprites on a flight
+  // level — what a flight level does not do is call the body (draw.c:2725). The split is the
+  // guest's own: the arm decides whether to call, the producer decides what to draw.
+  for (uint32_t i = 0; overlay.gates.sprites && i < sprites.spriteCount; ++i) {
     const auto &sprite = sprites.sprites[i];
     overlay.draws.push_back({.part = Part::Sprite,
                              .instance = instanceOf(Part::Sprite, static_cast<uint8_t>(i)),
@@ -248,6 +317,24 @@ inline Status derive(const State &state, Overlay &overlay) {
                              .tpage = sprite.tile.tpage});
   }
   return overlay.draws.empty() ? Status::ValidEmpty : Status::Ready;
+}
+
+inline PartCounts countParts(const Overlay &overlay) {
+  PartCounts counts;
+  for (const auto &draw : overlay.draws) {
+    switch (draw.part) {
+    case Part::Fade:
+      ++counts.fade;
+      break;
+    case Part::Border:
+      ++counts.border;
+      break;
+    case Part::Sprite:
+      ++counts.sprites;
+      break;
+    }
+  }
+  return counts;
 }
 
 // ── Why a record could not be sampled against the frame before it

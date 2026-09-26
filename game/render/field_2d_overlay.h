@@ -32,6 +32,21 @@
 // arm, and a frame's non-overlay 2D items are never claimed, because `owns` is consulted only on a
 // frame whose overlay interval was admitted.
 //
+// WHAT THE LAYER IS WORTH ON A FIELD FRAME, MEASURED, because the answer is small and the number
+// that gets quoted is not. Over the field-weighted route (`tools/drive.py gameplay
+// --skip-transitions --hold right --hold-frames 900 --settle 120 --debug
+// fps60,fps60seq,field2dtemporal`) this owner admitted 515 intervals, which is every consecutive
+// GS_Playing frame of the run, and 14 of those endpoints carried any geometry at all — the 14-frame
+// level-entry fade, which is the ONLY thing the guest's three producers draw on that route. The
+// other 501 were empty because the guest called nothing that draws, and the census now says so per
+// line (`endpoint=0/0/0 gates=0/0/1`): g_Fade is 0, `g_ScreenBorderEnabled` and `D_800756C0` are
+// both 0, and 0x80019300's two POLY_FT4 loop bounds (`g_Hud.m_LifeOrbCount`, `g_Hud.m_EggCount`)
+// are 0. Two and a half percent of the reconstruction calls producing a quad is the CORRECT yield
+// for this layer on this route, not a 97% failure rate — the two are the same counter until the
+// guest's own call sites are reported beside it. Two 2 MB RAM snapshots of GS_Playing frames
+// (scratch/raw/snap_*.bin) read g_Fade=0, borderEnabled=0, barHeight=0 and both counts 0, and a
+// third read all four HUD display states at HDS_Open with both counts still 0.
+//
 // WHAT THE OWNER DOES NOT DO. It does not execute guest code, it does not read the GTE, and it does
 // not consume GTE output. The three producers' recipes are pure functions of pre-GTE game state
 // (see field_2d_overlay_recipe.h for the measured zero-COP2 result that establishes it), and the
@@ -183,16 +198,19 @@ public:
     return field_2d_overlay_recipe::derive(state_, overlay_);
   }
 
-  // The guest's own gate for a part, on the PRE-step state. False means the guest would not have
-  // called that producer at all, so neither its commit nor its emission runs.
+  // The guest's own gate for a part, on the PRE-step state, and the SAME gate `derive` applied to
+  // the endpoint: false means the guest would not have called that producer at all, so neither its
+  // commit nor its emission runs. Asking the recipe rather than restating the three conditions is
+  // what keeps the logic frame and a reconstruction from disagreeing — they used to be written
+  // twice, and the derivation's copy was missing the flight-level one.
   bool armed(Part part) const {
     switch (part) {
     case Part::Fade:
-      return state_.fade != 0u;
+      return overlay_.gates.fade;
     case Part::Border:
-      return state_.borderEnabled != 0u || state_.barHeight != 0;
+      return overlay_.gates.border;
     case Part::Sprite:
-      return !state_.collectables.flightLevel;
+      return overlay_.gates.sprites;
     }
     return false;
   }
@@ -329,11 +347,26 @@ History::emit(Core &core, RenderQueue &target, double t, Census &census) const {
     }
   }
   const auto worst = census.worstMismatch();
+  // `parts` and `gates` are both in the order fade/border/sprites, and they are what make this
+  // line a census rather than a counter. Measured on the field-weighted route: 515 admitted
+  // intervals, and 501 of them logged `draws=0` — which on its own is indistinguishable from a
+  // derivation that silently stopped drawing. `parts=0/0/0 gates=0/0/1` is the CORRECT null
+  // (g_Fade, the border gate and the orb/egg loop bounds are all shut, so the guest called only
+  // 0x80019300 and it drew nothing); `parts=0/0/0 gates=1/1/1` would be the same counter with the
+  // opposite meaning, a layer that dropped its geometry while the guest was still calling it.
+  // One field, two readings, no guessing.
+  const auto parts = field_2d_overlay_recipe::countParts(sampled);
   lucent::debug("field2dtemporal",
-                "emit t={} draws={} interpolated={} unattributed={} absent={} incompatible={} "
-                "refused={} worst_mismatch={}x{}",
+                "emit t={} draws={} parts={}/{}/{} gates={}{}{} interpolated={} unattributed={} "
+                "absent={} incompatible={} refused={} worst_mismatch={}x{}",
                 t,
                 census.actors,
+                parts.fade,
+                parts.border,
+                parts.sprites,
+                sampled.gates.fade ? 1 : 0,
+                sampled.gates.border ? 1 : 0,
+                sampled.gates.sprites ? 1 : 0,
                 census.interpolated,
                 census.unattributed,
                 census.absent,

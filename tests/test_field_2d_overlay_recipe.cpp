@@ -39,8 +39,7 @@ uint32_t countPart(const Overlay &overlay, Part part) {
   return n;
 }
 
-// A FIELD frame with a fade, a border and two life orbs: the three producers armed at once, which
-// is the configuration the Artisans route is in for most of a level.
+// A FIELD frame with a fade, a border and two life orbs: the three producers armed at once.
 State fieldState() {
   State state;
   state.fade = 8;          // g_Fade, so the fade is (8<<3)=64 grey
@@ -59,6 +58,128 @@ State fieldState() {
   state.collectables.rects[13] = {310, 40, 8, 8};
   state.collectables.tiles[0] = {1, 2, 0x2420, 0x0080};
   return state;
+}
+
+// A GS_Playing frame with every call site shut: no fade, no border, and no orb/egg loop bound. This
+// is the shape MEASURED on the field-weighted route — 501 of 515 admitted intervals were exactly
+// this — and the reason it is named here rather than only in a comment is that it is also the shape
+// a silently broken derivation would produce. Only the gates tell the two apart, so every case
+// below asserts them.
+State closedFieldState() {
+  State state = fieldState();
+  state.fade = 0;          // g_Fade == 0
+  state.borderEnabled = 0; // g_ScreenBorderEnabled == 0
+  state.barHeight = 0;     // D_800756C0 == 0
+  state.collectables.lifeDisplay = 0;
+  state.collectables.lifeOrbCount = 0;
+  state.collectables.eggDisplay = 0;
+  state.collectables.eggCount = 0;
+  return state;
+}
+
+// THE THREE CALL SITES DECIDE WHAT THE DERIVATION MAY DRAW, AND THE DERIVATION IS THE ONLY PLACE
+// THEY ARE APPLIED ON THE RECONSTRUCTION PATH. Every case here is a mutation of the closed field
+// state above: open one gate, and exactly that part's draws and exactly that gate's bit change. A
+// gate that is written down but not applied produces an overlay that is empty for the wrong reason,
+// which the emit census reports as `parts=0/0/0` exactly like the correct null — so the assertions
+// are on the GATES as well as on the draws, and the negative case below disconnects the one gate
+// that a flight level exercises.
+void test_the_three_call_sites_decide_what_the_overlay_derives() {
+  using spyro::field_2d_overlay_recipe::armedBorder;
+  using spyro::field_2d_overlay_recipe::armedFade;
+  using spyro::field_2d_overlay_recipe::armedSprites;
+  using spyro::field_2d_overlay_recipe::countParts;
+
+  // The closed field frame. Only 0x80019300 is called, and it draws nothing because both of its
+  // POLY_FT4 loop bounds are zero. This is the measured field frame.
+  const State closed = closedFieldState();
+  Overlay overlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(closed, overlay), Status::ValidEmpty);
+  CHECK_EQ(overlay.draws.size(), 0u);
+  CHECK(overlay.gates.fade == false);
+  CHECK(overlay.gates.border == false);
+  CHECK(overlay.gates.sprites == true);
+  const auto closedParts = countParts(overlay);
+  CHECK_EQ(closedParts.fade, 0u);
+  CHECK_EQ(closedParts.border, 0u);
+  CHECK_EQ(closedParts.sprites, 0u);
+
+  // Gate 1: g_Fade. draw.c:2739 `if (g_Fade) { func_800190D4(2, g_Fade * 8, ...); }`.
+  State fadeUp = closed;
+  fadeUp.fade = 8;
+  Overlay fadeOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(fadeUp, fadeOverlay), Status::Ready);
+  CHECK(fadeOverlay.gates.fade);
+  CHECK_EQ(countParts(fadeOverlay).fade, 1u);
+  CHECK_EQ(countParts(fadeOverlay).border, 0u);
+  CHECK_EQ(countParts(fadeOverlay).sprites, 0u);
+
+  // Gate 2: draw.c:2743 `if (g_ScreenBorderEnabled || D_800756C0)`. BOTH disjuncts are exercised,
+  // because a gate written as the other one alone would pass a single case and be wrong.
+  State borderUp = closed;
+  borderUp.borderEnabled = 1;
+  Overlay borderOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(borderUp, borderOverlay), Status::Ready);
+  CHECK(borderOverlay.gates.border);
+  CHECK_EQ(countParts(borderOverlay).border, 2u);
+  CHECK_EQ(countParts(borderOverlay).fade, 0u);
+  CHECK(armedBorder(borderUp));
+
+  State heightUp = closed;
+  heightUp.borderEnabled = 0;
+  heightUp.barHeight = 4;
+  Overlay heightOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(heightUp, heightOverlay), Status::Ready);
+  CHECK(heightOverlay.gates.border);
+  CHECK_EQ(countParts(heightOverlay).border, 2u);
+  CHECK(armedBorder(heightUp));
+
+  // The gate reads the PRE-step height and the bars are the POST-step one, so the frame the guest
+  // still calls 0x80018F30 for is the frame whose bars come out zero tall: armed, and nothing to
+  // draw. Both halves are asserted, because a gate that read the stepped value would report this
+  // frame shut and the producer would be released one frame before the guest's.
+  State lastStep = closed;
+  lastStep.borderEnabled = 0;
+  lastStep.barHeight = 2;
+  lastStep.deltaTime = 2; // 2 - 2 = 0, so the drawn bars would be zero tall
+  Overlay lastStepOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(lastStep, lastStepOverlay), Status::ValidEmpty);
+  CHECK(lastStepOverlay.gates.border);
+  CHECK_EQ(lastStepOverlay.draws.size(), 0u);
+  CHECK_EQ(lastStepOverlay.barHeight, 0);
+  CHECK(armedBorder(lastStep));
+  CHECK(armedFade(closed) == false);
+  CHECK(armedFade(fadeUp));
+
+  // Gate 3: draw.c:2725 `if (!g_IsFlightLevel) { func_80019300(); }`. A flight level has its own UI
+  // and the guest does not call the collectables producer at all, so its orb/egg sprite loops never
+  // run — whatever the HUD block still holds from level entry. The recipe models the producer's
+  // BODY, and the body computes those sprites on a flight level; the CALL SITE is what keeps them
+  // out, so this is the case that fails if the gate is written down and not applied.
+  State sprites = closed;
+  sprites.collectables.lifeDisplay = 1;
+  sprites.collectables.lifeOrbCount = 2;
+  sprites.collectables.specularTime = 16;
+  sprites.collectables.cosine[16] = 0x1000;
+  sprites.collectables.rects[12] = {300, 40, 8, 8};
+  sprites.collectables.rects[13] = {310, 40, 8, 8};
+  Overlay spriteOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(sprites, spriteOverlay), Status::Ready);
+  CHECK(spriteOverlay.gates.sprites);
+  CHECK_EQ(countParts(spriteOverlay).sprites, 2u);
+  CHECK(armedSprites(sprites));
+
+  State flight = sprites;
+  flight.collectables.flightLevel = true;
+  Overlay flightOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(flight, flightOverlay), Status::ValidEmpty);
+  CHECK(flightOverlay.gates.sprites == false);
+  CHECK_EQ(flightOverlay.draws.size(), 0u);
+  CHECK(armedSprites(flight) == false);
+  // The guest-state half is a different owner and is not gated by the overlay: 0x80019300's shaded
+  // Moby append belongs to the world-shaded queue's own source, and the flight level suppresses the
+  // Mobys at draw.c:534 while the sprite loops sit outside that block. Only the ORDERS TABLE draws
+  // are the call site's to decide.
 }
 
 void test_fade_quad_is_the_guests_own_extent_and_colour() {
@@ -129,10 +250,12 @@ void test_disarmed_border_commits_its_step_but_draws_no_bar() {
   state.deltaTime = 2;
   Overlay overlay;
   CHECK_EQ(spyro::field_2d_overlay_recipe::derive(state, overlay), Status::Ready);
-  // The guest's down ramp is 3 - 2 = 1, which is still a bar; the gate that decides whether the
-  // producer runs at all is the composition's, and it is tested through the armed() predicate.
+  // The guest's down ramp is 3 - 2 = 1, which is still a bar, and the call site at draw.c:2743 is
+  // OPEN on a nonzero pre-step height even though g_ScreenBorderEnabled is zero — the recipe's own
+  // gate, not a separate composition predicate, is what lets this frame draw.
   CHECK_EQ(overlay.barHeight, 1);
   CHECK_EQ(countPart(overlay, Part::Border), 2u);
+  CHECK(overlay.gates.border);
 
   State empty = fieldState();
   empty.fade = 0;
@@ -517,15 +640,30 @@ void test_an_impossible_collectable_count_refuses_the_whole_overlay() {
   // The whole overlay, not just the sprites: publishing the fade and the border without the sprites
   // they were drawn over is a picture that differs from the guest's for a reason nobody chose.
   CHECK_EQ(overlay.draws.size(), 0u);
-  // A flight level is a DIFFERENT thing and is not this refusal. Recovered from the guest's own
-  // `if` placement in func_80019300: `if (g_IsFlightLevel == 0) { …the HUD Mobys… }` closes BEFORE
-  // the orb/egg loops, so a flight level suppresses the Mobys and still draws the sprites. The
-  // recipe reproduces that, and this asserts it so a later "tidy-up" cannot move the brace.
+  // A flight level is a DIFFERENT thing and is not this refusal. It is also not a way to reach the
+  // sprite loops: `if (!g_IsFlightLevel) { func_80019300(); }` at draw.c:2725 is the CALL SITE, and
+  // it is the call site — not the `if (g_IsFlightLevel == 0) { …the HUD Mobys… }` block inside
+  // 0x80019300 at draw.c:534 — that decides whether the POLY_FT4 loops at draw.c:583/597 run at
+  // all. A derivation that reasons from the inner brace alone draws orb/egg sprites in a flight
+  // level that the guest never draws, which is what `armedSprites` and the call-site test above now
+  // prevent; a flight level with an impossible count must still refuse for the reason above, and
+  // this asserts that the refusal is the count's and not the level's.
   State flight = fieldState();
   flight.collectables.flightLevel = true;
   Overlay flightOverlay;
   CHECK_EQ(spyro::field_2d_overlay_recipe::derive(flight, flightOverlay), Status::Ready);
-  CHECK_EQ(countPart(flightOverlay, Part::Sprite), 2u);
+  CHECK_EQ(countPart(flightOverlay, Part::Fade), 1u);
+  CHECK_EQ(countPart(flightOverlay, Part::Border), 2u);
+  CHECK_EQ(countPart(flightOverlay, Part::Sprite), 0u);
+  CHECK(flightOverlay.gates.sprites == false);
+
+  // …and the impossible count is still caught with the sprites suppressed, so the refusal is not
+  // masked by the call-site gate on a flight frame.
+  State flightBadCount = flight;
+  flightBadCount.collectables.lifeOrbCount = 21;
+  Overlay refused;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(flightBadCount, refused), Status::InvalidCount);
+  CHECK_EQ(refused.draws.size(), 0u);
 }
 
 void test_every_instance_key_is_distinct_and_nonzero() {
@@ -586,9 +724,55 @@ void test_lerp_is_exact_at_both_ends_and_rounds_half_up_in_between() {
   }
 }
 
+// What the census fields have to tell apart. `parts` and `gates` exist so that a `draws=0` line
+// carries its own reason, and this is the pair of readings they separate. Both are the SAME counter
+// value and the same empty vector; only the gates differ, so a census that reported `draws` alone
+// would make the correct null and a dropped layer indistinguishable — which is exactly the
+// ambiguity that made 501 empty intervals on the measured route look like a 97% failure rate.
+void test_an_empty_overlay_says_whether_the_guest_called_anything() {
+  using spyro::field_2d_overlay_recipe::countParts;
+
+  // Reading 1, the correct null: the guest's call sites decided the layer was empty, and the
+  // derivation reproduced the decision. MEASURED on 501 of 515 admitted intervals.
+  const State nullFrame = closedFieldState();
+  Overlay nullOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(nullFrame, nullOverlay), Status::ValidEmpty);
+  CHECK_EQ(nullOverlay.draws.size(), 0u);
+  CHECK_EQ(countParts(nullOverlay).fade + countParts(nullOverlay).border +
+               countParts(nullOverlay).sprites,
+           0u);
+  CHECK(nullOverlay.gates.fade == false);
+  CHECK(nullOverlay.gates.border == false);
+  CHECK(nullOverlay.gates.sprites == true); // 0x80019300 ran; its two loop bounds were zero
+
+  // Reading 2, the failure this makes visible: every call site open, and still nothing drawn. No
+  // measured route produces this, and it is the shape a derivation that lost its geometry would.
+  State brokenFrame = nullFrame;
+  brokenFrame.fade = 8;
+  brokenFrame.borderEnabled = 1;
+  brokenFrame.barHeight = 20;
+  brokenFrame.collectables.lifeDisplay = 1;
+  brokenFrame.collectables.lifeOrbCount = 2;
+  Overlay brokenOverlay;
+  CHECK_EQ(spyro::field_2d_overlay_recipe::derive(brokenFrame, brokenOverlay), Status::Ready);
+  CHECK(brokenOverlay.gates.fade);
+  CHECK(brokenOverlay.gates.border);
+  CHECK(brokenOverlay.gates.sprites);
+  const auto brokenParts = countParts(brokenOverlay);
+  CHECK_EQ(brokenParts.fade, 1u);
+  CHECK_EQ(brokenParts.border, 2u);
+  CHECK_EQ(brokenParts.sprites, 2u);
+  // …so the two readings differ in `gates`, in the direction a reader needs: the null reports at
+  // least one gate shut, the failure reports all three open with a nonzero part count.
+  CHECK(!(nullOverlay.gates.fade && nullOverlay.gates.border && nullOverlay.gates.sprites));
+  CHECK(brokenOverlay.gates.fade && brokenOverlay.gates.border && brokenOverlay.gates.sprites);
+}
+
 } // namespace
 
 int main() {
+  RUN(the_three_call_sites_decide_what_the_overlay_derives);
+  RUN(an_empty_overlay_says_whether_the_guest_called_anything);
   RUN(fade_quad_is_the_guests_own_extent_and_colour);
   RUN(border_bars_are_the_guests_own_two_polys_and_stepped_height);
   RUN(disarmed_border_commits_its_step_but_draws_no_bar);

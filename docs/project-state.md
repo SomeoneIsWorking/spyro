@@ -765,6 +765,63 @@ units), and `verify.py` now refuses an unregistered test source by name. Issue
 [0128](issues/0128-user-reported-crash-after-the-adventure-begins-card-not-yet-reproduced.md) holds
 the measurement.
 
+The attract demo is now a comparison route, and it is the first one that crosses a LEVEL ENTRY.
+`tools/oracle_compare.py --policy demo` (tools/oracle_spyro1_demo.py) drives BOTH cores with no pad
+input at all, so the title screen times out into `TSM_Demo`/`TSD_DemoLevel` and loads
+`g_DemoLevelIds[0]` -- level 11, exactly the level the failed portal walk was trying to enter
+(docs/issues/0114). Because the demo then replays a RECORDED input stream from the level's own data,
+no steering is needed and the two cores cannot drift apart the way a camera-relative route does.
+
+The route's own measurement unit is one FIELD, with a `g_GameTick` barrier inside demo playback. That
+is not cosmetic: the framework's game-frame barrier cannot resolve inside a demo at all, because
+`PadDemoUpdate` assigns `g_UnprocessedFrames` and the main loop zeroes it in the same iteration while
+`PadVSync` returns before incrementing it (gamepad.c:214, 236-238), so "the counter decreased" never
+fires and one "game frame" spans the whole phase. Parking on the guest's own tick instead puts both
+cores at the same statement of the same update, and `g_GameTick` is itself a decisive declared range,
+so a wrong park cannot hide.
+
+Measured 2026-09-26: the level entry MATCHES on every decisive range, and 553 consecutive per-iteration
+comparisons match to `g_GameTick` 555. So the overlay hand-off, the WAD load, the discard and reload of
+guest code at the reused load address, and the invalidation that follows are crossed on both cores
+with the state after them equal. Issue 0114's blocker -- no reproducible route out of a level -- is
+gone.
+
+It then finds a REAL divergence, which is the point of running it: at tick 556 `player.position` reads
+(+9, +51, -2) against the console, growing to (+59, +405, 0) by tick 702, with the camera differing at
+the same tick downstream of Spyro. Input delivery, the level entry, and a phase artefact are each ruled
+out with evidence in [0133](issues/0133-the-attract-demo-s-recorded-input-diverges-from.md). The route
+exits 1 and is not tuned to pass.
+
+Two further measurements came out of it. The product spends **2.00 fields per attract-flyby iteration
+where the reference spends 1.00** (768 against 385, with both cores running the same 383 iterations of
+the guest's own flyby clock), so the attract flyby is presented at half speed; that is
+[0132](issues/0132-the-product-spends-two-fields-per-attract-flyby-iteration.md), and it is invisible in
+gameplay because there the guest's draw waits two fields and the two cadences coincide. And
+`load_stage` differs by one stage at the load checkpoint because it is a CD-paced progress counter, not
+a state: the two cores agree on 0 of 900 lockstep fields inside the load and both reach the same
+terminal.
+
+Live play is now a first-class verification path rather than a REPL-only one. The framework's loopback
+debug endpoint could not be started at all until 2026-09-26: `PSXPORT_DEBUG_SERVER` was declared
+nowhere, so the configuration owner named it UNKNOWN and it did nothing, and Spyro 1 additionally owns
+its own frame driver rather than entering the framework's boot loop where the endpoint was started
+(psxport `92a0ddcc`, `0a0e454b`). `DbgServer::attach()` is now the one call a title-owned spine makes
+before its loop, answering both "start the endpoint" and "what frame cap may I run under", because a
+client-driven run must not be capped by the smoke-run quota. `tools/live_play.py` then plays the RUNNING
+product over that endpoint -- real pad edges across presented frames, guest state sampled while the
+picture keeps updating, a screenshot of what is on screen.
+
+Measured 2026-09-26, shipping configuration (`aspect=1 fps60=1`), boot to the save picker to a new game
+to `GS_Playing` in 840 frames and 5 menu answers, a 492,495-byte screenshot of the gameplay picture,
+then 5.3 s of held Left producing 644 presented frames and 640 game ticks with the player moving from
+`(84863, 47202, 9553)` to `(83427, 50652, 9223)`, zero native-render refusals, and -- asked of the
+product over the channel, not read out of a log line -- 25,799,425 executed guest blocks, 190,142,632
+executed instructions, 3,754 translated, 25,795,671 cache hits against 3,754 misses, 17,699,447
+invalidations, **0 faults and 0 interpreter fallback calls**. The enhancements are live in the same
+configuration: `aspect=1 wide_engine=1 native_width=512 render_width=684` and `fps60 TRUE per-object
+interpolated 60fps ON`. That is the shape a gameplay claim has to take: a game the dynarec actually
+executed, played with real input, with both enhancements on.
+
 Missing capability: a bounded interactive Spyro 1 route must reach at least the current gameplay
 frontier with native and scoped-original dispatch, positive and controlled-negative WAD invalidation,
 independent-oracle timing/memory/interrupt/device comparison, and the declared correctness/frame-time

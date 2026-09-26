@@ -62,14 +62,25 @@ G_LEVEL_ID = guest_globals.kLevelId
 G_LEVEL_TRANS_TICKS = 0x800756AC
 G_LEVEL_TRANS_HUD = 0x800756B0
 
-GS_PLAYING = 0
-GS_LEVEL_TRANSITION = 1
-GS_ENTRANCE_ANIMATION = 9
-GS_TITLE_SCREEN = 13
-GS_CUTSCENE = 14
-GS_CREDITS = 15
+# The gamestate / overlay vocabulary is title_states' (one home, because tools/title_prompts.py needs it
+# too and a second copy is how two drivers come to disagree about which screen they are on). Re-exported
+# here because this module is where every other tool has always imported them from.
+from title_states import (  # noqa: F401  (re-exported on purpose — see above)
+    GS_CUTSCENE,
+    GS_CREDITS,
+    GS_ENTRANCE_ANIMATION,
+    GS_LEVEL_TRANSITION,
+    GS_PLAYING,
+    GS_TITLE_SCREEN,
+    TSS_ACTIVE,
+    TSM_DEMO,
+    TSM_INIT,
+    TSM_LOADING,
+    TSM_MENU,
+    TitleState,
+)
 
-TSM_INIT, TSM_MENU, TSM_LOADING, TSM_DEMO = 0, 1, 2, 3
+import title_prompts  # the menu sequence, shared with tools/live_play.py's driver
 
 # Named so a census line reads as game states rather than as integers. These are the states a Spyro 1
 # route can enter; the census reports the ones it did not reach as well as the ones it did.
@@ -82,21 +93,9 @@ GAMESTATE_NAMES = {
     GS_CUTSCENE: "cutscene",
     GS_CREDITS: "credits",
 }
-TSS_ACTIVE = 2  # the flyby animation itself, as against its setup and loading phases
-
 # One refusal type for every named refusal a driver can make, so a steering refusal is reported the
 # same way as a navigation one instead of escaping as a traceback.
 Refusal = SteeringRefusal
-
-
-@dataclass(frozen=True)
-class TitleState:
-    mode: int
-    state: int
-    tick: int
-    sub_tick: int
-    sub_state: int
-    option: int
 
 
 class Port:
@@ -337,26 +336,34 @@ class Navigator:
         self._start_new_game()
         self._wait_for_playing()
 
-    # Stage 13 / TSM_Init sub-state 3 is the interactive "PRESS START" platform. Anything else in
-    # TSM_Init is the fly-in, a fade, or the demo hand-off; Start is only meaningful at sub-state 3.
+    def _screen(self) -> "title_prompts.Screen":
+        return title_prompts.Screen(gamestate=self._port.gamestate(), title=self._port.title(),
+                                    level_trans_hud=self._port.word(G_LEVEL_TRANS_HUD))
+
+    def _answer(self, prompt: "title_prompts.Prompt") -> None:
+        if prompt.refuse:
+            raise Refusal(prompt.refuse)
+        for button in prompt.buttons:
+            self._port.tap(button)
+
+    # WHICH button each screen wants is title_prompts' decision, not this driver's: tools/live_play.py
+    # plays the same route over the live debug server, and a second copy of the menu sequence would be
+    # free to answer a different prompt than this one. What stays here is the stepping and the refusal
+    # wording, which is about this driver's budget.
     #
-    # TSM_Menu is the memory-card front end. Only its non-destructive prompts are answered here:
-    # 15 selects which card to use, 4 accepts playing without a save, and 10 confirms creating this
-    # game's save file. The FORMAT prompts (5/6/7) are deliberately absent — a driver that answered
-    # them would erase the operator's card to reach a screenshot.
+    # The prompts themselves: TSM_Init sub-state 3 is the interactive "PRESS START" platform and every
+    # other TSM_Init sub-state is the fly-in, a fade, or the demo hand-off, where Start is meaningless.
+    # TSM_Menu is the memory-card front end, and only its non-destructive prompts are answered (15 picks
+    # the card, 4 accepts playing without a save, 10 confirms creating this game's save); the FORMAT
+    # prompts 5/6/7 are deliberately absent, because a driver that answered them would erase the
+    # operator's card to reach a screenshot.
     def _reach_title_menu(self) -> None:
-        answerable = {4, 10, 15}
         spent = 0
         while spent < self._budget:
-            state = self._port.gamestate()
-            title = self._port.title()
-            if state == GS_TITLE_SCREEN and title.mode == TSM_LOADING:
+            prompt = title_prompts.title_menu_prompt(self._screen())
+            if prompt.reached:
                 return
-            if state == GS_TITLE_SCREEN and title.mode == TSM_INIT and title.sub_state == 3:
-                self._port.tap("start")
-            elif state == GS_TITLE_SCREEN and title.mode == TSM_MENU:
-                if title.sub_state in answerable:
-                    self._port.tap("cross")
+            self._answer(prompt)
             spent += self.STEP
             self._port.run(self.STEP)
         raise Refusal(
@@ -372,13 +379,10 @@ class Navigator:
     def _start_new_game(self) -> None:
         spent = 0
         while spent < self._budget:
-            title = self._port.title()
-            if self._port.gamestate() != GS_TITLE_SCREEN:
+            prompt = title_prompts.new_game_prompt(self._screen())
+            if prompt.reached:
                 return
-            if title.mode == TSM_LOADING and title.state == 4:
-                self._port.tap("left" if title.option != 0 else "cross")
-            elif title.mode == TSM_LOADING and title.state == 1:
-                self._port.tap("cross")
+            self._answer(prompt)
             spent += self.STEP
             self._port.run(self.STEP)
         raise Refusal(
@@ -389,37 +393,10 @@ class Navigator:
     def _wait_for_playing(self) -> None:
         spent = 0
         while spent < self._budget:
-            state = self._port.gamestate()
-            title = self._port.title()
-            if state == GS_PLAYING:
+            prompt = title_prompts.load_route_prompt(self._screen(), self._skip_transitions)
+            if prompt.reached:
                 return
-            # Exercises the port's own Start cancellation of the level-transition tally. The press is
-            # only meaningful while that screen's HUD flag is still set, which is also the condition
-            # the port itself checks, so a run with this off and one with it on differ by nothing but
-            # the press.
-            if (
-                self._skip_transitions
-                and state == GS_LEVEL_TRANSITION
-                and self._port.word(G_LEVEL_TRANS_HUD) != 0
-            ):
-                self._port.tap("start")
-            # The same press on the "THE ADVENTURE BEGINS..." flyby. Pressed on sight, including
-            # while the level is still streaming: the port holds an early press until its load gate
-            # opens, so pressing early is the case worth exercising rather than one to avoid.
-            if (
-                self._skip_transitions
-                and state == GS_TITLE_SCREEN
-                and title.mode == TSM_DEMO
-                and title.state == TSS_ACTIVE
-            ):
-                self._port.tap("start")
-            if state not in (
-                GS_TITLE_SCREEN,
-                GS_LEVEL_TRANSITION,
-                GS_ENTRANCE_ANIMATION,
-                GS_CUTSCENE,
-            ):
-                raise Refusal(f"left the load route into unexpected gamestate {state}")
+            self._answer(prompt)
             spent += self.STEP
             self._port.run(self.STEP)
         raise Refusal(

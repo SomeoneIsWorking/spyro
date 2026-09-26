@@ -1,5 +1,6 @@
 #include "cfg.h"
 #include "core.h"
+#include "dbg_server.h" // debug_server_live — a client-driven run is uncapped
 #include "frame_loop_shell.h"
 #include "game.h"
 #include "host_turn.h"
@@ -65,13 +66,27 @@ int main(int argc, char **argv) {
   game->spu_audio.init();
   game->gpu.gpu_native_init();
 
-  spyro::runtimeRun(core) = spyro::RuntimeRun(cfg_int("PSXPORT_NATIVE_FRAMES", 0));
+  // The live debug endpoint (PSXPORT_DEBUG_SERVER) is a framework service whose LIFETIME is not the
+  // framework's boot spine's: this port owns its own frame driver and never enters native_boot's
+  // loop, so the endpoint has to be attached here or it does not exist for this game at all.
+  // Measured 2026-09-26: with the knob set, the product ran to the title screen and bound no port,
+  // and the config audit named the knob UNKNOWN while reporting nothing else wrong.
+  //
+  // `attach` is the framework's one answer to both questions this spine has — start the endpoint,
+  // and say what frame cap to run under, because a client-driven run must not be capped (the cap
+  // exists to bound an unattended smoke run) while a cap of 0 means "run until told to stop". Then
+  // `honourPause` before each frame and `service` after it, both the framework's. A title that
+  // reimplements any of this is the second copy the factoring exists to prevent.
+  const int frameCap = game->dbg_server.attach(&core, cfg_int("PSXPORT_NATIVE_FRAMES", 0));
+  spyro::runtimeRun(core) = spyro::RuntimeRun(frameCap);
 
   dc_boot_init(&core);
 
   std::uint32_t completedSteps = 0;
   while (!spyro::runtimeRun(core).shouldEnd()) {
+    game->dbg_server.honourPause(&core);
     dc_step_frame(&core, ++completedSteps);
+    game->dbg_server.service(&core);
   }
   psx::cpu::shutdownHostTurn();
   spyro::reportRuntimeRun(core, completedSteps);

@@ -252,9 +252,27 @@ def do_check(args):
     built = read_resolved()
     if not built:
         print(f"[psxport] check: no build/psxport_resolved.txt — this tree has not been configured, so "
-              f"there is nothing to compare the pin against. Asserting nothing (pin {pin[:8]}).")
-        return 0
+              f"there is nothing to compare the pin against. REFUSING rather than passing on no {pin[:8]}) — a check with no evidence is not a passing check.")
+        return 2
     bdir, bsha = built
+    # THE STALENESS GUARD, and it is the whole point of this check. `bsha` is what CMake recorded at
+    # CONFIGURE time, so a plain `cmake --build` never refreshes it. Without comparing it against the
+    # framework's CURRENT head, a tree rebuilt against newer framework code still reports the OLD commit,
+    # matches its pin, and passes -- so a fresh clone would build a different framework than the one just
+    # tested, which is the single failure the pin exists to prevent.
+    #
+    # MEASURED 2026-09-27: this guard was present in only 3 of the 10 copies of this file, and the
+    # difference is observable. With `psxport_resolved.txt` naming a repo's own recorded pin while the
+    # shared framework sat eight commits later, a guarded copy refuses --
+    #   "check FAILED -- framework .../psxport is dirty or changed since configure (configured 436c3762,
+    #    current ba48b103)" -- and an unguarded one on the same input answers "check OK -- built against
+    # e0485d33, which is the recorded pin." Same input, opposite answers, and the wrong one is a pass.
+    current = head_of(bdir)
+    if current != bsha or dirty(bdir):
+        print(f"[psxport] check FAILED — framework {bdir} is dirty or changed since configure "
+              f"(configured {bsha}, current {current}). Rebuild from a reconfigure before trusting this "
+              f"tree's pin, or bump the pin to what you actually built and tested.")
+        return 1
     if bsha == pin:
         print(f"[psxport] check OK — built against {bsha[:8]}, which is the recorded pin.")
         return 0

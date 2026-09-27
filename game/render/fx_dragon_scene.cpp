@@ -16,8 +16,8 @@
 #include "fx_paired_actor.h"
 #include "fx_screen_border.h"
 #include "fx_screen_fade.h"
-#include "guest_call.h"
 #include "game.h"
+#include "guest_call.h"
 #include "screen_border_recipe.h"
 #include "screen_fade_recipe.h"
 

@@ -298,6 +298,13 @@ if(BUILD_TESTING)
   #                       positive displacement, or have no `lui` base at all.
   #   probe_tick_divergence  `dist2d`/`OctDistance` against 5 listing-derived values, including both
   #                       asymmetric arms that a swapped transcription gets wrong.
+  #   probe_level_update_dispatch  the per-level update dispatch is DERIVED from the image (the switch's
+  #                       jump table, the `lui`/`addiu` pair feeding each store, the `jalr` on each
+  #                       reader) and cross-checked against external/spyro-1. Its selftest requires both
+  #                       answers -- a level id with a case body and one that shares the tail -- plus the
+  #                       derived values that must agree with the decompilation, so a derivation that
+  #                       silently stopped matching cannot pass. This is the instrument issue 0133's
+  #                       "the level update is never entered" conclusion needed and did not have.
   #   probe_blended_anim  the census of the environment animation BLEND FACTOR, the one byte the image
   #                       reads at 0x80025BF4 to choose INTPL/DPCS over a straight copy. Its zero is the
   #                       load-bearing claim -- "no reachable nonzero blend factor in the levels these
@@ -307,13 +314,6 @@ if(BUILD_TESTING)
   #                       rather than zero, and an unauthored count of 0 that must scan nothing at all
   #                       (the fixed 128-index scan that preceded it read 6 fabricated "entries" out of
   #                       a table Artisans never authored, three carrying a nonzero factor byte).
-  #   probe_level_update_dispatch  the per-level update dispatch is DERIVED from the image (the switch's
-  #                       jump table, the `lui`/`addiu` pair feeding each store, the `jalr` on each
-  #                       reader) and cross-checked against external/spyro-1. Its selftest requires both
-  #                       answers -- a level id with a case body and one that shares the tail -- plus the
-  #                       derived values that must agree with the decompilation, so a derivation that
-  #                       silently stopped matching cannot pass. This is the instrument issue 0133's
-  #                       "the level update is never entered" conclusion needed and did not have.
   foreach(probe
       probe_guest_disasm
       probe_emitter_predicate
@@ -335,3 +335,14 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/oracle_compare.py --selftest)
   set_tests_properties(oracle_compare_selftest PROPERTIES LABELS slow TIMEOUT 900)
 endif()
+
+# THE PIN TOOL AND ITS BEHAVIOUR TEST. Unguarded, because this repository calls enable_testing()
+# directly: an if(BUILD_TESTING) add_test here is silently inert, which is the failure this gate exists to
+# prevent. Verified live: perturbing psxport.pin turns the first one red.
+add_test(
+  NAME spyro_psxport_pin_live
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/psxport_sync.py"
+          --check --build "${CMAKE_BINARY_DIR}")
+add_test(
+  NAME spyro_psxport_pin_selftest
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_psxport_sync.py")

@@ -335,7 +335,13 @@ if(BUILD_TESTING)
       probe_level_update_dispatch
       probe_blended_anim
       probe_load_stage
-      probe_load_step)
+      probe_load_step
+      # The HUD GLYPH reader. Its selftest is hermetic and covers the three ways the read can lie
+      # about what it was asked for -- the 64-word transport cap, a short answer, and an answer that
+      # echoes a DIFFERENT address, which is the one that bit this probe in a real run: taking the
+      # first word-list on the wire reads one request late, still returns plausible words, and put
+      # a record's fields in disagreement with a hex dump of the very same words.
+      probe_hud_glyph)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

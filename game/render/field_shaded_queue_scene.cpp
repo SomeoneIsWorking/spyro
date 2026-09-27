@@ -152,9 +152,22 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
     if (!actor_recipe_capture::physical_span(actor, 0x58u)) {
       return reset(frame, Status::InvalidActor);
     }
+    // THE 0x50 BIT-7 SKIP IS GONE, and it was never justified. It was added in a bulk commit with
+    // no comment and no cited evidence, and it contradicts the guest's own struct: byte 0x50 is
+    // `m_RenderRadius` -- "Radius of the Moby for clipping purposes (>> 2)", a `u_char`
+    // (external/spyro-1/include/moby.h:133) -- with `m_WasDrawn` at 0x51. Bit 7 of a clipping
+    // radius is simply a large radius, not a flag.
+    //
+    // It was not cosmetic. `hud_text_builder.cpp` writes 0xFF at 0x50 for every glyph, because a
+    // glyph wants the largest radius, so EVERY HUD glyph moby was dropped here -- which is why the
+    // pause menu drew a panel and a border and NO CAPTIONS, and why the level-transition tally's
+    // captions are missing too (same route). Any moby whose render radius is >= 128 was dropped as
+    // well.
+    //
+    // The counter is kept, renamed to what it can honestly mean, because a diagnostic that silently
+    // stops reporting a population is worse than one that reports it under a truthful name.
     if ((core->mem_r8(actor + 0x50u) & 0x80u) != 0u) {
-      ++frame.screenRecords;
-      continue;
+      ++frame.largeRadiusActors;
     }
     frame.visitedWorldActors.push_back(actor);
     const uint32_t meshAddress =

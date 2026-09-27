@@ -4,6 +4,8 @@
 #include "game.h"
 #include "testutil.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
@@ -25,6 +27,48 @@ std::unique_ptr<Game> emptyGame() {
   core.mem_w32(kShadowCursor, 0x80072500u);
   game->mods.aspect = ASPECT_4_3;
   return game;
+}
+
+// A moby whose RENDER RADIUS has bit 7 set must be WALKED, not dropped.
+//
+// This is the regression test for the removed `mem_r8(actor + 0x50) & 0x80` skip. Byte 0x50 is the
+// guest's `m_RenderRadius` -- a `u_char` clipping radius (external/spyro-1/include/moby.h:133) --
+// and `hud_text_builder.cpp` writes 0xFF there for every glyph, because a glyph wants the largest
+// radius. Under the old test every HUD glyph was therefore dropped, which is why the pause menu
+// drew a panel and a border and NO CAPTIONS, and why the level-transition tally's captions were
+// missing too.
+//
+// The case is built so it FAILS if the skip comes back, and so it also pins the counter's new
+// honest name: a large-radius actor is now CENSUSED rather than filtered, so `largeRadiusActors`
+// must be 1 AND the actor must appear in `visitedWorldActors`.
+void test_a_large_render_radius_is_censused_not_dropped() {
+  auto game = emptyGame();
+  Core &core = game->core;
+  constexpr uint32_t kActor = 0x80073000u;
+  core.mem_w32(kQueue, kActor);
+  // A physically valid actor span, and a mesh index that resolves, so the walk reaches the radius
+  // test rather than refusing earlier for an unrelated reason.
+  core.mem_w32(kActor + 0x58u, 0x80074000u);
+  core.mem_w16(kActor + 0x36u, 0u);
+  core.mem_w32(kQueue + 4u, 0u);
+  // The whole point: bit 7 of the radius byte SET.
+  core.mem_w8(kActor + 0x50u, 0xFFu);
+  core.mem_w8(kActor + 0x51u, 0x00u);
+  core.mem_w32(kActor + 0x00u, 0u);
+  core.mem_w32(kActor + 0x04u, 0u);
+  core.mem_w32(kActor + 0x08u, 0u);
+
+  spyro::field_shaded_queue_scene::Frame frame{};
+  const auto status = spyro::field_shaded_queue_scene::prepare(&core, 512, frame);
+  // Whether the walk READY depends on mesh-table state this fixture does not build; what must not
+  // happen is the actor being silently dropped for its radius.
+  CHECK(frame.queueRecords >= 1u);
+  CHECK_EQ(frame.largeRadiusActors, 1u);
+  const bool visited =
+      std::find(frame.visitedWorldActors.begin(), frame.visitedWorldActors.end(), kActor) !=
+      frame.visitedWorldActors.end();
+  // CHECK, not CHECK_MSG: this house has no CHECK_MSG, and the label above states the property.
+  CHECK(visited);
 }
 
 void test_empty_queue_is_atomic_valid_input() {
@@ -70,12 +114,12 @@ void inspectSnapshotIfRequested() {
   const std::set<uint16_t> meshes(frame.sourceMeshIndices.begin(), frame.sourceMeshIndices.end());
   const std::set<int32_t> lightingOffsets(frame.sourceLightingOffsets.begin(),
                                           frame.sourceLightingOffsets.end());
-  std::printf("field shaded snapshot: scene=%s queue=%u screen=%u valid_mesh=%u null=%u "
+  std::printf("field shaded snapshot: scene=%s queue=%u large_radius=%u valid_mesh=%u null=%u "
               "source_candidates=%u visible=%zu culled=%u visible_candidates=%u recipe=%u "
               "recipe_candidates=%u rejected=%u faces=%zu meshes=%zu lighting=%zu shadows=%zu\n",
               spyro::field_shaded_queue_scene::statusName(scene),
               frame.queueRecords,
-              frame.screenRecords,
+              frame.largeRadiusActors,
               frame.validMeshRecords,
               frame.nullMeshes,
               frame.validMeshPrimitiveCandidates,
@@ -109,6 +153,7 @@ void inspectSnapshotIfRequested() {
 } // namespace
 
 int main() {
+  RUN(a_large_render_radius_is_censused_not_dropped);
   RUN(empty_queue_is_atomic_valid_input);
   RUN(invalid_actor_refuses_without_guest_side_effects);
   inspectSnapshotIfRequested();

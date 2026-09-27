@@ -193,6 +193,104 @@ That single fact accounts for the whole chain, and each link was previously meas
 byte — the image dispatches on the halfword at `0x36` (`lh $v1, 0x36($s3)` at `0x8007DB30`), so
 `external/spyro-1/include/moby.h`'s `m_Class` at `0x42` is a header offset error, not evidence.
 
+## ROOT CAUSE, MEASURED END TO END 2026-09-27: the product never runs the code that FILLS the list
+
+The previous section found the list empty and named the missing scan. The scan is no longer the next
+step: the writer has been found, read out of the listing, and then **shown not to execute on the
+product at all**.
+
+### 1. The list's shape, from the image
+
+`func_800522C0` reads it as one pointer per word, stride 4, NULL-terminated:
+
+```asm
+addi $t9, $a0, 0x0
+L800522E0: lw $t5, 0x0($t9) ; addi $t9, $t9, 0x4 ; beqz $t5, .L80052448
+```
+
+(An earlier version of `tools/probe_moby_list.py` assumed a two-word node and would have counted the
+reference's `[801A92E8, 801A92E8]` as one node instead of two. The stride is pinned by a selftest case
+whose expected count a stride-8 reader cannot produce.)
+
+### 2. The list is not the only consumer, and BOTH consumers bail on the first word
+
+`func_level_11_8007DA78` is the level's own update, and at `0x8007DAE8` it does the same thing:
+
+```asm
+lui    $t1, %hi(D_8006FCF4 + 0x400) ; addiu $t1, $t1, %lo(...)
+lw     $s3, 0x0($t1) ; addiu $t1, $t1, 0x4 ; beqz $s3, .Llevel_11_800876F8
+```
+
+**So on the product no moby is ever updated, in any of these paths.** That is the whole defect in one
+instruction, and it retro-explains every word the earlier passes found diverging, because all of them
+are written inside the loop that `beqz` skips: `Moby+0x42` (`lbu $v0, 0x42($s3)` at `0x8007DB24`),
+`D_80075794` (`0x8007DB3C`), `D_800756C4` (`0x8007DB48`), `D_800757F4` (`0x8007DB1C`) — and
+`D_80075794` is the word the earlier widening pass independently found diverging at tick 49.
+
+### 3. The writer, and its gates
+
+`func_80051FEC` (`asm/moby_lists.s`) is the only writer. It walks `g_LevelMobys` and appends:
+
+```asm
+lw   $at, 0x0($at)                       ; 0x80052010  $at = *g_LevelMobys
+lui  $t6, %hi(D_8006FCF4) ; addiu ...     ; 0x80052030  $t6 = D_8006FCF4
+addi $t6, $t6, 0x400                     ; 0x80052038  $t6 = 0x800700F4  THE LIST
+addi $at, $at, -0x58                     ; 0x8005203C  one Moby before...
+addi $at, $at, 0x58                      ; 0x80052040  ...so the first step lands on it. Stride 0x58.
+lb   $v0, 0x48($at) ; bltz $v0, .L8005212C ; 0x80052044  terminator is +0x48 == -1
+lb   $v1, 0x51($at) ; beqz $v1, .L8005207C ; 0x80052048  +0x51 == 0 selects the NEAR path
+sw   $at, 0x0($t6)                       ; 0x8005205C  APPEND (near)
+sw   $at, 0x0($t6)                       ; 0x8005210C  APPEND (far, after a GTE SQR/MAC test)
+```
+
+### 4. The input is identical, so the difference is the code not running
+
+Two-core read at `g_GameTick` 41, `g_LevelMobys = 0x80173658` **on both cores**, and the gate bytes of
+three consecutive mobies byte-identical:
+
+```
+RANGE 0x80173698..0x801736B0   +0x48 = 0x0E (positive)   +0x51 = 0x00
+       native == console, every word, three mobies
+```
+
+`+0x51 == 0` takes `beqz` at `0x80052054` straight into the near-path append at `0x8005205C`. **On
+identical input both cores should append, and the reference does** (its list holds `801A92E8`,
+`801A9130` at tick 41). So the moby data is not the defect and the gate logic is not the defect.
+
+### 5. The product never executes that store — with a denominator, and the instrument validated
+
+`PSXPORT_STORE_OBSERVE=800700F4,800700F8,800700FC` over a real live-play run to `GS_Playing`:
+
+```
+[store-observe] report: armed=yes targets=3 jit_instructions=116056872 fallback_instructions=0 callback_lines=0
+[store-observe]   [0] 0x800700F4 stores before=0 after=0 — MATCHED NONE of the 116056872 executed JIT instruction(s)
+```
+
+**116,056,872 executed JIT instructions, and not one translated store to the list base.** The observer
+is not trusted on this alone: `test_handoff_store_observer` shows it reporting the other answer
+(`before=1 after=1 last_guest_pc=0x80013698` and three more), so the negative is a measured absence
+rather than an instrument that cannot see.
+
+This also holds in the LIVE route, not only the attract demo. `tools/probe_moby_list.py` drives to
+`GS_Playing` and reads the list there: **0 nodes**, with its controls passing (`g_Gamestate = 0`,
+`kLevelMobys = 0x8016D3E8`, a RAM pointer whose array holds 15 non-zero words). So the level loads
+its mobies and the step that walks them into the update list does not happen — in the game a player
+plays, not only in the demo the oracle replays.
+
+**The consequence for the player is the whole point:** the level's static geometry and Spyro render
+(see `tools/live_play.py`, a real 25-second run), but nothing in the moby list animates, updates or
+behaves, because every consumer tests the first word and finds zero.
+
+### 6. What is still unknown, stated rather than guessed
+
+**Which** guest path fails to reach `0x8005205C` is not yet established. The honest possibilities, none
+yet chosen between: the level-11 overlay's caller at `0x8007DAA0` does not run on the product; or
+`func_80051FEC` runs and leaves before the append; or the append happens and something zeroes the list
+afterwards. The store observer rules out only the last of those for these three addresses. Naming which
+of the first two it is needs the same instrument pointed at a store the filler is known to make — the
+clear loop at `0x80051FF8` (`sw $zero, 0($at)`, over `D_80077868`, stride 8) is the right next target
+because it is unconditional, so a zero there means the function never started.
+
 ### The next step, and it is not a guess
 
 `--find-instruction 0x800700F4` over all 2,097,152 bytes of both cores' main RAM finds **0 `jal` and 0

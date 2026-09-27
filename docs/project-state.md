@@ -662,6 +662,16 @@ once per segment: 485 comparisons, **zero divergences**, exit 0, 153 s. A segmen
 cannot tell a state that never diverged from one that diverged and came back, and this one shows it
 never diverged.
 
+**RE-VERIFIED 2026-09-27 against the framework as it stands now, at the SHIPPING configuration
+(`aspect=1, fps60=1`, so widescreen AND temporal interpolation both live): `--policy artisans` exits 0 with
+15 checkpoints and 13 decisive ranges each -- `save_picker`, `playing`, `settled_play` and twelve gameplay
+input legs -- for **195 decisive range comparisons and 0 unequal**, in 108.9 s.** That is the deliverable's
+own requirement measured on the active title: with both enhancements enabled, the oracle finds the guest
+state unperturbed, over the boot, the save picker, level arrival and twelve input legs. The comparator's
+own selftest (`oracle_compare_selftest`, gated) is what makes a zero mean something, and the comparator
+exits 1 on a decisive divergence, which is how the demo route below is known to be red rather than assumed
+to be.
+
 Two attempts to widen the route past the homeworld both failed, and neither failure is the product
 being wrong about a level. A `level` checkpoint that walked each core out of Artisans through a
 portal, steering from that core's own camera, let the two cores steer apart: they agreed for two
@@ -796,11 +806,64 @@ fires and one "game frame" spans the whole phase. Parking on the guest's own tic
 cores at the same statement of the same update, and `g_GameTick` is itself a decisive declared range,
 so a wrong park cannot hide.
 
-Measured 2026-09-26: the level entry MATCHES on every decisive range, and 553 consecutive per-iteration
-comparisons match to `g_GameTick` 555. So the overlay hand-off, the WAD load, the discard and reload of
+Measured 2026-09-26: the level entry MATCHED on every decisive range, and 553 consecutive per-iteration
+comparisons matched to `g_GameTick` 555. So the overlay hand-off, the WAD load, the discard and reload of
 guest code at the reused load address, and the invalidation that follows are crossed on both cores
 with the state after them equal. Issue 0114's blocker -- no reproducible route out of a level -- is
 gone.
+
+**RE-MEASURED 2026-09-27, and the first sentence no longer holds. The route now exits 1 on TWO decisive
+ranges, not one.** `git log -S` puts this claim and the `load_stage`-decisive route in the SAME commit
+(`9ed5ce2`), so the two were written together and something changed between them. What is measured now,
+with `--policy demo` at `aspect=1, fps60=1`:
+
+| checkpoint | range | native | console |
+|---|---|---|---|
+| `demo_level_load` | `load_stage` @ `0x80075864` | `01000000` | `02000000` |
+| `gameplay[1]`, tick 702 | `player.position` @ `0x80078A58` | `b3d70200fd4a02004d520000` | `eed70200924c02004d520000` |
+
+**`demo_playing` still MATCHES on all 13 decisive ranges including `level_id`**, so the level ENTRY
+itself -- the overlay hand-off, the WAD load, the reload at the reused address, the invalidation -- still
+compares clean. What no longer compares clean is the load state machine's step index at the mid-load
+barrier, which is a different thing and was previously not reported.
+
+`player.position` is unchanged: (+59, +405, 0) against the console, byte for byte what this file already
+recorded. The camera differs at the same tick, downstream of Spyro.
+
+**`g_LoadStage` is a LOAD STATE MACHINE'S STEP INDEX, so its exact value at a threshold barrier compares
+iteration counts, not state identity.** From the guest image, not the `nonmatchings` listing:
+`external/spyro-1/include/loaders.h:9` declares `extern int g_LoadStage; // Load stage`, `loaders.c:824-844`
+steps it `0 -> 1 -> 2`, `initialization.c:358-363` sets 3 and loops `while (g_LoadStage < 10)`,
+`camera.c:491` tests `>= 0xA`, and `camera.c:405` tests `< 0`. `tools/probe_load_stage.py` samples it every
+frame of the route to gameplay: 6,760 frames, the index climbing `0 -> 7 -> 10` during a load, holding 10
+for 4,560 frames, and **falling back to 0 for a second load before climbing again** -- so an apparent
+"backwards walk" is a load restarting. The word is also **reused after loading**: a live run reaches 9 and
+13, outside the load path's bound of 10, so its value outside a load is not a load step and is not
+explained.
+
+**Three explanations were tested and two are REFUTED by measurement, not by argument:**
+
+- *Non-determinism* -- the same configuration run twice gives byte-identical divergences
+  (`load_stage 01000000/02000000` and `player.position 0adc0200e94c0200ff500000` in both). REFUTED.
+- *The fps60 cadence* -- `aspect=0, fps60=0` gives the **same** `load_stage 1-vs-2`. REFUTED.
+- *The interpolation mode writing into the guest* -- `PSXPORT_FPS60_TFORCE=0` (endpoint) and `=2`
+  (midpoint) give the **identical** guest word `b3d70200fd4a02004d520000`. REFUTED, so the port is not
+  writing reconstructed motion into `g_Spyro`.
+
+**`aspect` was isolated, and it moves the guest word -- but widescreen is NEARER the reference, not
+further.** At the same tick 702: `aspect=0` gives `0adc0200e94c0200ff500000` (X off by 1,052, Z off by 590)
+and `aspect=1` gives `b3d70200fd4a02004d520000` (X off by **59**, Z **matching**). The route already
+diverged at 4:3; widening moves it closer to the console. So this is not evidence that widescreen perturbs
+the guest -- it is evidence that the level-11 demo's camera-relative playback diverges either way, by
+different amounts.
+
+**The open question, named rather than guessed:** whether `load_stage` 1-vs-2 is a REGRESSION from a
+framework change since 2026-09-26. The only commits touching load-relevant runtime code are `492adace`
+("DMA ignored BCR's sync mode, so a chained transfer ran a block count and then announced completion") and
+`436c3762`. `492adace` is the prime suspect on mechanism -- it changed what a chained DMA writes **and**
+what MADR reads back as, and a guest load loop that continues from MADR would then run a different number
+of iterations, which is exactly a step count. **That is a suspect, not a conclusion**, and the experiment
+that settles it is running against a framework worktree at `492adace^`.
 
 It then finds a REAL divergence, which is the point of running it: at tick 556 `player.position` reads
 (+9, +51, -2) against the console, growing to (+59, +405, 0) by tick 702, with the camera differing at

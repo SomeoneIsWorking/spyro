@@ -320,7 +320,8 @@ if(BUILD_TESTING)
       probe_store_sites
       probe_tick_divergence
       probe_level_update_dispatch
-      probe_blended_anim)
+      probe_blended_anim
+      probe_load_stage)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

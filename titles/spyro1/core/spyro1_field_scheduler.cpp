@@ -31,6 +31,30 @@ constexpr std::uint32_t kHandlerStackBytes = 8192u;
 constexpr std::uint32_t kHandlerStackFloor = kHandlerStackTop - kHandlerStackBytes;
 constexpr std::uint32_t kStackPoison = 0xCDCDCDCDu;
 
+// g_TitlescreenState's own offsets (external/spyro-1/include/titlescreen.h, four-byte fields in
+// declaration order). m_Mode is at the struct BASE, which is what `mem_r32(kTitlescreenState)`
+// returns; m_State is +0x04; m_SubState is +0x10.
+constexpr std::uint32_t kTitleState = spyro::guest::kTitlescreenState + 0x04u;
+constexpr std::uint32_t kTitleSubState = spyro::guest::kTitlescreenState + 0x10u;
+
+// g_CutsceneLayout (loaders.c:955, the one writer of this word in the whole image), and
+// CutsceneLayout.m_CurrentTick, its first int (external/spyro-1/include/cutscene.h:20-27).
+//
+// RECOVERED FROM SCUS_942.28, not taken on trust. tools/probe_title_card.py --static prints the
+// words: 0x80075680 has exactly ONE `lui $rX,0x8007` + `sw 0x5680($rX)` writer in all 103,936
+// instruction words of the main image, at 0x80014A38, and SEVENTEEN `lui`+`lw` reads of it as a
+// pointer base, three of them within 0x200 bytes of the writer (0x80014A84, 0x80014AE8, 0x80014B0C)
+// -- the PATCH_POINTER of m_CameraData and the Moby-pointer loop that read it straight back. The
+// same report establishes the module map those words live in: main image 0x80010000..0x80075800,
+// guest bss 0x80075640..0x8007AA38, module arena 0x8007AA38, and the title overlay's own update
+// entry at arena+0x174 = 0x8007ABAC, which is the `jal` in the gamestate-13 arm.
+//
+// A null layout reads as "not resident" rather than being dereferenced, so a card whose cutscene
+// was never published reports itself instead of taking the port down.
+constexpr std::uint32_t kCutsceneLayout = 0x80075680u;
+constexpr std::uint32_t kCutsceneCurrentTick = 0u;
+constexpr std::uint32_t kNoCardLayout = 0xFFFFFFFFu;
+
 double monotonicMilliseconds() {
   using Clock = std::chrono::steady_clock;
   static const auto start = Clock::now();
@@ -49,6 +73,21 @@ std::uint32_t handlerStackLowWater(Core &core) {
 } // namespace
 
 FieldScheduler::FieldScheduler(Game &game) : game_(game) {}
+
+SkipMapSample readSkipMapSample(Core &core) {
+  SkipMapSample sample{.gamestate = core.mem_r32(spyro::guest::kGamestate),
+                       .loadStage = core.mem_r32(spyro::guest::kLoadStage),
+                       .title = {.mode = core.mem_r32(spyro::guest::kTitlescreenState),
+                                 .state = core.mem_r32(kTitleState),
+                                 .subState = core.mem_r32(kTitleSubState)}};
+  const std::uint32_t layout = core.mem_r32(kCutsceneLayout);
+  sample.cardLayoutResident = layout != 0u;
+  if (sample.cardLayoutResident) {
+    sample.cardTick = core.mem_r32(layout + kCutsceneCurrentTick);
+    sample.cardSkippable = sample.cardTick >= kCardSkipTick;
+  }
+  return sample;
+}
 
 void FieldScheduler::beginLogicFrame() {
   cadence_.beginLogicFrame();
@@ -178,11 +217,8 @@ bool FieldScheduler::dispatchCallbacks() {
 }
 
 void FieldScheduler::serviceSkipMap(bool startEdge) {
-  using spyro::guest::kGamestate;
-  using spyro::guest::kTitlescreenState;
-  constexpr std::uint32_t kSubSubstate = 0x80078D7Cu;
-  using spyro::guest::kLoadStage;
   Core &core = game_.core;
+  const SkipMapSample sample = readSkipMapSample(core);
 
   ++skipMapFields_;
   const bool bootActive = bootSequenceActive_;
@@ -190,23 +226,24 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
   if (startEdge) {
     ++skipMapStartEdges_;
   }
-  const std::uint32_t stage = core.mem_r32(kGamestate);
-  const std::uint32_t substate = core.mem_r32(kTitlescreenState);
-  const std::uint32_t subSubstate = core.mem_r32(kSubSubstate);
-  const std::uint32_t bootPhase = core.mem_r32(kLoadStage);
-  const bool changed = stage != previousStage_ || substate != previousSubstate_ ||
-                       subSubstate != previousSubSubstate_ || bootPhase != previousBootPhase_ ||
-                       bootActive != previousBootActive_;
+  const bool changed =
+      sample.gamestate != previousGamestate_ || sample.loadStage != previousLoadStage_ ||
+      sample.title.mode != previousTitleMode_ || sample.title.state != previousTitleState_ ||
+      sample.title.subState != previousTitleSubState_ || bootActive != previousBootActive_;
   if (startEdge || changed) {
     lucent::debug("skipmap",
-                  "field={} start_edge={} region={} boot_phase={} stage={}/{}/{} edges={}",
+                  "field={} start_edge={} region={} load_stage={} gamestate={} "
+                  "title[mode={} state={} substate={}] card_tick={} card_skippable={} edges={}",
                   skipMapFields_,
                   startEdge ? 1 : 0,
                   bootActive ? "boot" : "stage",
-                  bootPhase,
-                  stage,
-                  substate,
-                  subSubstate,
+                  sample.loadStage,
+                  sample.gamestate,
+                  sample.title.mode,
+                  sample.title.state,
+                  sample.title.subState,
+                  sample.cardLayoutResident ? sample.cardTick : kNoCardLayout,
+                  sample.cardSkippable ? 1 : 0,
                   skipMapStartEdges_);
   }
   if (skipMapFields_ % 600u == 0) {
@@ -218,10 +255,11 @@ void FieldScheduler::serviceSkipMap(bool startEdge) {
                   skipMapStageFields_,
                   bootActive ? "boot" : "stage");
   }
-  previousStage_ = stage;
-  previousSubstate_ = substate;
-  previousSubSubstate_ = subSubstate;
-  previousBootPhase_ = bootPhase;
+  previousGamestate_ = sample.gamestate;
+  previousTitleMode_ = sample.title.mode;
+  previousTitleState_ = sample.title.state;
+  previousTitleSubState_ = sample.title.subState;
+  previousLoadStage_ = sample.loadStage;
   previousBootActive_ = bootActive;
 }
 

@@ -5,6 +5,7 @@
 #include "frame_pacer.h"
 #include "game.h"
 #include "guest_call.h"
+#include "guest_globals.h"
 #include "lightrec_executor.h"
 #include "native_dispatch.h"
 #include "spyro1_field_scheduler.h"
@@ -18,6 +19,11 @@
 namespace {
 
 constexpr uint32_t kCounter = 0x800749E0u;
+// g_CutsceneLayout, the one writer of which is 0x80014A38 in the main image, and a card layout
+// published somewhere readable. The values are arbitrary: these cases are about the offsets the
+// lens reads through, not about the loader.
+constexpr uint32_t kCutsceneLayout = 0x80075680u;
+constexpr uint32_t kCardLayout = 0x800F0000u;
 constexpr uint32_t kRootSlot = 0x80073928u;
 constexpr uint32_t kCallbackTable = 0x800749C0u;
 constexpr uint32_t kIStat = 0x1F801070u;
@@ -372,6 +378,64 @@ void test_bootstrap_without_root_keeps_host_counter_ownership() {
   CHECK_EQ(fixture.game->timing.emulatedCpuTicks(), fieldTicks);
 }
 
+// ── the skip map's lens over the title screen ───────────────────────────────────────────────────
+//
+// The map this covers read g_TitlescreenState as if the struct were one flat word per "substate":
+// it read the struct BASE and called it a substate, read m_State and called it a sub-substate, and
+// never read m_SubState at all. So the card -- the one screen the map exists to see -- was
+// structurally invisible to it. These cases put a DIFFERENT value in each of the three fields, so a
+// reader that confuses any two of them fails, and the card's own clock is read through the pointer
+// the guest's loader publishes.
+
+void test_skip_map_reads_the_three_title_fields_apart() {
+  FieldFixture fixture;
+  CHECK(fixture.install());
+  Core &core = fixture.game->core;
+  // Three distinct values, so no two fields can be confused for one another.
+  core.mem_w32(spyro::guest::kTitlescreenState + 0x00u, 0u); // m_Mode    = TSM_Init
+  core.mem_w32(spyro::guest::kTitlescreenState + 0x04u, 7u); // m_State   = a picker stage
+  core.mem_w32(spyro::guest::kTitlescreenState + 0x10u, 2u); // m_SubState = the card
+  const auto sample = spyro1::readSkipMapSample(core);
+  CHECK_EQ(sample.title.mode, 0u);
+  CHECK_EQ(sample.title.state, 7u);
+  CHECK_EQ(sample.title.subState, 2u);
+}
+
+void test_skip_map_reports_an_unpublished_cutscene_layout_as_not_resident() {
+  FieldFixture fixture;
+  CHECK(fixture.install());
+  Core &core = fixture.game->core;
+  core.mem_w32(kCutsceneLayout, 0u);
+  // Guest address 0 is readable, so a reader that dereferenced a null layout without asking would
+  // report a tick of 0 and read it as "the card is at its first frame".
+  const auto sample = spyro1::readSkipMapSample(core);
+  CHECK(!sample.cardLayoutResident);
+  CHECK_EQ(sample.cardTick, 0u);
+  CHECK(!sample.cardSkippable);
+}
+
+void test_skip_map_carries_the_cards_own_gate() {
+  FieldFixture fixture;
+  CHECK(fixture.install());
+  Core &core = fixture.game->core;
+  core.mem_w32(kCutsceneLayout, kCardLayout);
+  core.mem_w32(kCardLayout, spyro1::kCardSkipTick - 1u);
+  auto sample = spyro1::readSkipMapSample(core);
+  CHECK(sample.cardLayoutResident);
+  CHECK_EQ(sample.cardTick, spyro1::kCardSkipTick - 1u);
+  CHECK(!sample.cardSkippable);
+
+  // One tick later retail's own gate (titlescreen.c:105) opens, and the map must say so -- this is
+  // the line that makes "Start does nothing on the card" answerable from the log.
+  core.mem_w32(kCardLayout, spyro1::kCardSkipTick);
+  sample = spyro1::readSkipMapSample(core);
+  CHECK(sample.cardSkippable);
+  core.mem_w32(kCardLayout, 1170u); // the value retail's fast-forward itself stores
+  sample = spyro1::readSkipMapSample(core);
+  CHECK(sample.cardSkippable);
+  CHECK_EQ(sample.cardTick, 1170u);
+}
+
 } // namespace
 
 int main() {
@@ -387,5 +451,8 @@ int main() {
   RUN(masked_hook_edge_dispatches_once_when_unmasked);
   RUN(critical_section_defers_hook_root_until_irq_service_resumes);
   RUN(bootstrap_without_root_keeps_host_counter_ownership);
+  RUN(skip_map_reads_the_three_title_fields_apart);
+  RUN(skip_map_reports_an_unpublished_cutscene_layout_as_not_resident);
+  RUN(skip_map_carries_the_cards_own_gate);
   return pt_summary();
 }

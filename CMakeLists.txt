@@ -341,7 +341,14 @@ if(BUILD_TESTING)
       # echoes a DIFFERENT address, which is the one that bit this probe in a real run: taking the
       # first word-list on the wire reads one request late, still returns plausible words, and put
       # a record's fields in disagreement with a hex dump of the very same words.
-      probe_hud_glyph)
+      probe_hud_glyph
+      # The TITLE CARD reader. Its selftest covers the two ways this class of report lies: a
+      # precondition reported as satisfied when it is not (five negative cases against one positive,
+      # including the exact 0xFFFF0800 m_Held word a real run produces, which a sibling probe once
+      # misread as "no button held"), and a `lui` immediate read as a low displacement -- the bug
+      # that made this file's first module map print an arena of 0x80082A40 and still agree with
+      # itself, because both of its cross-checks went through the same wrong decoder.
+      probe_title_card)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

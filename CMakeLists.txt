@@ -283,4 +283,27 @@ if(BUILD_TESTING)
   # that is quietly wrong still reaches destinations, by detouring; only a fixture catches it.
   add_test(NAME spyro1_steering_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/spyro1_steering.py --selftest)
+  # The four instruments the tick-41 divergence rests on. Each one's answer is only worth reading if
+  # the instrument can be shown to produce the OTHER answer, which is what these selftests are for —
+  # and three of the four exist because the instrument was caught being wrong first:
+  #   probe_guest_disasm  the file-offset formula is verified against 62,183 decoded instructions, and
+  #                       its selftest carries a byte-order discriminator that must separate the two
+  #                       modes, since a big-endian slip would decode plausible nonsense.
+  #   probe_emitter_predicate  re-derives the six call-site rows and all ten listing claims the moby
+  #                       census rests on FROM THE LISTING TEXT, so the census cannot quietly disagree
+  #                       with the disassembly it claims to measure.
+  #   probe_store_sites   the call-site resolver's sign extension is load-bearing: the one REAL listing
+  #                       line the console recorded has a NEGATIVE displacement, and the suite fails if
+  #                       the resolver stops sign-extending. Three decoys sit one word away, carry a
+  #                       positive displacement, or have no `lui` base at all.
+  #   probe_tick_divergence  `dist2d`/`OctDistance` against 5 listing-derived values, including both
+  #                       asymmetric arms that a swapped transcription gets wrong.
+  foreach(probe
+      probe_guest_disasm
+      probe_emitter_predicate
+      probe_store_sites
+      probe_tick_divergence)
+    add_test(NAME ${probe}_selftest
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
+  endforeach()
 endif()

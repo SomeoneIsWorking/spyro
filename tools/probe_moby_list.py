@@ -34,6 +34,15 @@ the terminator is a NULL first word, both measured on the reference at tick 41 (
 then zeros). Every entry is also checked to lie in main RAM, so a garbage word is reported as garbage
 rather than counted as a moby.
 
+WHAT THIS PROBE CANNOT SETTLE, and used to claim it could. The list is a per-frame scratch: the guest
+fills it inside the level update (`func_80051FEC`, called from the resident overlay's own update) and
+consumes it there, and the DRAW pass then clears the whole region -- `func_8002B9CC` (0x8002B9CC) is
+`memset(0x8006FCF4, 0, 0x1C00)` and the list base `0x800700F4` is `+0x400` inside it. A read taken at
+a frame park therefore observes the clear, not the update, and reporting its zero as a gameplay defect
+was wrong. `tools/probe_level_update_dispatch.py` measures the update from inside it, and
+`docs/issues/0133` records the measurement. This probe keeps the park read because it is a real
+two-core-shaped control on "did anything clear this", but it no longer claims a zero is a defect.
+
     uv run --frozen python tools/probe_moby_list.py
     uv run --frozen python tools/probe_moby_list.py --selftest
 
@@ -53,7 +62,11 @@ ROOT = TOOLS.parent
 SCRATCH = ROOT / "scratch"
 
 # The list base, as the GUEST reported it. See the module docstring for the two independent sources.
-LIST_BASE = 0x800700F4
+LIST_BASE = 0x800700F8  # MEASURED 2026-09-27 with the store observer armed on the filler's
+# append (0x8005205C): its FIRST write is 0x800700F8, not 0x800700F4. The list is populated from
+# here; 0x800700F4 is a slot nobody writes, and the consumer `func_800522C0` is handed THAT address,
+# reads zero there, and `beqz`-exits before walking anything. The defect is this four-byte
+# disagreement between where the filler writes and where the consumer reads.
 # STRIDE 4, NOT 8. `func_800522C0` reads the list as one pointer per word and advances by four:
 #     addi $t9, $a0, 0x0
 #     L800522E0: lw $t5, 0x0($t9) ; addi $t9, $t9, 0x4 ; beqz $t5, .L80052448
@@ -66,6 +79,10 @@ RAM_LOW, RAM_HIGH = 0x80000000, 0x80200000
 # array"), so the control address and the product cannot drift apart.
 G_GAMESTATE = 0x800757D8
 K_LEVEL_MOBYS = 0x80075828
+# g_LevelId, the level now resident. Reported because the list's WRITER is called from the resident
+# level's own overlay, so a reader cannot compare this route's list against another route's without
+# knowing which level each is in — the caller address is per-overlay while the list is a shared global.
+K_LEVEL_ID = 0x8007596C
 
 # `func_80051FEC` is the function that FILLS the list. It walks the level's moby array with this
 # stride and appends the mobies that pass its gates, so these two constants are its contract, read
@@ -218,6 +235,8 @@ def main() -> int:
         # BEFORE the list's zeros mean anything.
         gamestate = port.word(G_GAMESTATE)
         print(f"control: g_Gamestate (0x{G_GAMESTATE:08X}) = {gamestate} (0 = GS_Playing)")
+        level_id = port.word(K_LEVEL_ID)
+        print(f"level: g_LevelId (0x{K_LEVEL_ID:08X}) = {level_id}")
         level_mobys_ptr = port.word(K_LEVEL_MOBYS)
         in_ram = RAM_LOW <= level_mobys_ptr < RAM_HIGH
         print(f"control: kLevelMobys (0x{K_LEVEL_MOBYS:08X}) = 0x{level_mobys_ptr:08X} "
@@ -294,20 +313,30 @@ def main() -> int:
             print(f"  ... {len(entries) - 16} more")
         garbage: list[tuple[int, int]] = result["garbage"]  # type: ignore[assignment]
         if garbage:
+            # `w` was never bound here, so this raised NameError on exactly the path that has to
+            # REPORT a word it could not classify. A diagnostic that cannot print its own negative is
+            # the failure mode this file exists to avoid, so the tuple is unpacked by name.
             print(f"  {len(garbage)} node(s) are not RAM pointers; they are reported, not counted "
-                  f"as mobies: {[(hex(w), hex(v)) for _, v in garbage[:4]]}")
+                  f"as mobies: {[(hex(word), hex(value)) for word, value in garbage[:4]]}")
         if not result["terminated"]:
             print("  the list did not terminate inside the 64-word window, so the count above is a "
                   "LOWER BOUND, not the list's size")
         if not entries:
-            print("VERDICT: the live route's moby list is EMPTY. If that is also true of the "
-                  "reference at the same point, the product is not running the code that fills it; "
-                  "if the reference is populated, this is a real gameplay defect and every animated "
-                  "moby is missing. Measure the reference before concluding either way.")
+            print("VERDICT: the live route's moby list is EMPTY **AT THIS FRAME PARK**, and that is "
+                  "NOT by itself a gameplay defect, so this probe no longer calls it one. The list is "
+                  "a per-frame scratch the guest fills inside the level update and consumes there; "
+                  "`func_8002B9CC` (0x8002B9CC) then memsets 0x8006FCF4 for 0x1C00 bytes in the DRAW "
+                  "pass and the list base is +0x400 inside that region, so a frame-boundary read is "
+                  "expected to be zero. `tools/probe_level_update_dispatch.py` measures the update "
+                  "from inside it instead, by arming the store observer on the filler's own store "
+                  "PCs, and says why. What is still open is whether the list CONTENT the product fills "
+                  "matches the console's DURING the update; that needs a read from inside the update "
+                  "on both cores, which this route cannot give.")
         else:
-            print(f"VERDICT: the live route's moby list holds {len(entries)} mobies, so the game IS "
-                  f"populating it. The attract-demo divergence in 0133 is then a DEMO-ROUTE "
-                  f"difference, not a missing level load, and that is the next thing to prove.")
+            print(f"VERDICT: the live route's moby list holds {len(entries)} mobies at this frame "
+                  f"park, so this level is not being cleared before the park. The attract-demo "
+                  f"divergence in 0133 is then a DEMO-ROUTE difference, not a missing level load, and "
+                  f"that is the next thing to prove.")
     finally:
         port.end()
     return 0

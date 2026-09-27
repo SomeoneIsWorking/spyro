@@ -8,6 +8,144 @@ created: 2026-09-26
 updated: 2026-09-27
 ---
 
+## 2026-09-27: "the level overlay's update is never entered" is REFUTED — the store observer was armed on DATA addresses
+
+### The premise, and why it looked solid
+
+The sections below conclude that the level overlay's own update function is never entered, that
+`func_80051FEC` never runs, and that the moby list at `0x800700F4` is therefore never filled. The
+evidence offered was a validated store-observer report:
+
+```
+[store-observe] report: armed=yes targets=3 jit_instructions=116056872 ...
+[store-observe]   [0] 0x800700F4 stores before=0 after=0 — MATCHED NONE of the 116056872 executed JIT instruction(s)
+[store-observe]   [1] 0x80077868 ... [2] 0x80077870 ...
+```
+
+**Those are DATA addresses, and `PSXPORT_STORE_OBSERVE` matches the guest PC of a translated STORE
+INSTRUCTION.** `LightrecExecutor::Impl::observeStore` compares `target.guestPc != guestPc`, so an
+armed value is compared against the address the store instruction EXECUTES AT. A data address can
+never equal a store instruction's PC, so the line above would print the same for a word that changes
+every frame. It is a tautology, and it is the whole basis of the "never entered" claim. The framework
+now says so in the knob's own help text (`config.cpp`: "these are the PCs OF store instructions, NOT
+the guest words they write"), and its report row was changed to say `store PC` and to print
+`EXECUTED: N store(s)` instead of echoing the armed value in a column that read like an address. The
+earlier `test_handoff_store_observer` "other answer" is not a defence of this use: that test arms real
+store PCs, so it shows the instrument works, not that a data address is a valid target.
+
+### The dispatch, named with evidence
+
+It is a plain function pointer, not a computed call and not a table of offsets.
+`tools/probe_level_update_dispatch.py` derives all of it from `SCUS_942.28` and cross-checks it.
+
+* **The global.** `g_UpdateMoby` = **`0x80075734`** (`external/spyro-1/asm/data/game.sbss.s:158`).
+* **The writer.** `SetOverlayPointers`, a `switch (g_LevelId)` whose 100-entry jump table is at
+  **`0x800113A4`** in the main image. There are exactly **43** `sw ..., 0x5734($at)` sites, one per
+  implemented level, each preceded by the `lui`/`addiu` that materialises the value. The other 57
+  level ids share the tail at `0x8005B6E0` (`g_Buffers.m_DiscCopyBuf = g_Buffers.m_CopyBuf`) and store
+  nothing. Level 10's is **`0x8005A744`**, storing **`0x8007D9C8`**; level 11's is `0x8005A7DC`,
+  storing `0x8007DA78`. **43 of 43 levels agree with `external/spyro-1/src/overlay_pointers.c`.**
+* **The readers.** Five `lw` of `0x80075734` in the main image; four have a `jalr` on the loaded
+  register within 8 instructions: `0x8002F47C` (in `func_8002F3E4`, the gamestate update's case 0),
+  `0x80033AA4`, `0x80042EE8` (in `func_80041670`) and `0x8004A4A0` (in `func_8004A200`).
+  `0x8002EAD8` loads it and does not call it.
+
+The "guest address alone is not identity" concern does not apply here, and that is worth stating
+rather than assuming: the writer is in the MAIN image, the values are the level overlays' fixed
+addresses, and this is a data flow between two globals, not a call the framework resolves.
+
+### It is entered, with denominators, and `$ra` names the caller
+
+Live route (`tools/drive.py gameplay`, new game, `g_LevelId = 10`, `g_Gamestate = 0`), armed on the
+STORE PCs the image actually contains — `0x80051FF8` is `func_80051FEC`'s unconditional first store
+(`sw $zero, ($at)`, the clear loop over `D_80077868`, 4 iterations per call) and `0x8005205C` is its
+near-path append (`sw $at, ($t6)`):
+
+```
+[store-observe] report: armed=yes store_pcs=2 jit_instructions=116056872 fallback_instructions=0 callback_lines=1112
+[store-observe]   [0] store PC 0x80051FF8 EXECUTED: 280 store(s) observed at this PC
+[store-observe]   [1] store PC 0x8005205C EXECUTED: 276 store(s) observed at this PC
+```
+
+**280 = 4 x 70**, and `g_GameTick` was 70: the filler ran once per update, every update. The
+per-callback records carry `$ra = 0x8007D9F8`, which is the instruction after level 10's overlay
+calls the filler — so the caller is named, not inferred. A second run armed the pointer writer and the
+consumer too: `0x8005A744` (the switch's level-10 store) fired **1** time, `0x80033A6C`
+(`g_GameTick++`, immediately before the `jalr $v0` at `0x80033AA4`) fired **90** times over
+117,543,447 executed instructions, and `0x800523E8` — `func_800522C0`'s animation flush, reachable
+ONLY inside the list walk — fired **368** times. The walk runs over a populated list. The one target
+that never fired is `0x8002F478`, the gamestate-update path: this port does not go through
+`func_8002F3E4`'s case 0, it goes through the main loop's own `jalr`. That is a fact about which path
+is taken, not a defect.
+
+The console was observed the same way at `g_GameTick` 41 on the demo route: `0x8005205C` recorded
+**16** times with `ra = 0x8007DAA8`, level 11's overlay resume address. Both cores reach the filler
+from the resident overlay.
+
+### The list reads zero at a frame park, and the guest's own draw pass is why
+
+`0x800700F4` is `D_8006FCF4 + 0x400`, and `D_8006FCF4` is the head of the region the guest clears in
+its DRAW pass. `func_8002B9CC` (`0x8002B9CC`, read out of the image) is
+`memset(0x8006FCF4, 0, 0x1C00)`: `jal 0x80016930` at `0x8002B9E0` with `$a0 = 0x8006FCF4` built at
+`0x8002B9D0` and `$a2 = 0x1C00` in the delay slot. The list base is `+0x400` inside that region. This
+repo reproduces it at `game/render/field_scene_recipe.cpp:62-67`
+(`spyro::field_scene_recipe::applyEnvironment`), byte-wise over the same 0x1C00.
+
+So a list read taken at a frame boundary is not an observation of the update. On this route it is
+zero at every park sampled (four parks, 0 of 64 words each). The console's read at `g_GameTick` 41 is
+NOT zero (`801A92E8, 801A92E8, 0, 0, 801A9130, ...`) while `g_GameTick` 40 is zero on both cores — and
+the console was also observed executing `func_8002B9CC` inside the update ending at tick 41. **The two
+parks are therefore not the same point in the frame.** Whether that is a product ordering difference or
+a harness park-phase difference is named as UNKNOWN below, not resolved.
+
+A sentinel write settles the product side on its own: `0x80077868` (which the filler clears
+unconditionally) and `0x800700F4` were each written through the control channel and read back
+immediately — both VISIBLE, so the channel and the RAM are fine — and both were zero again within one
+field. The product's list really is filled and really is cleared, and the only host-side eraser of
+that address is `applyEnvironment`, which mirrors the guest.
+
+`PSXPORT_CW` over `0x8006FC00..0x80070600`, uncapped, names every writer: **196,860 byte stores of
+zero** at `0x8006FCF4..0x800705FF` with `interp_pc=0xDEAD0000` (a host context, not guest execution)
+and `$sp=0x801FFFF8`, i.e. exactly `applyEnvironment`'s 0x1C00-byte `mem_w8` loop clipped by the
+watch band, in 85 complete passes. The same census shows 7,733 word stores of RAM pointers from
+`interp_pc=0x8002BEA4` across `0x8006FCF8..0x80070230` — the guest writing moby pointers into this
+region, which the native clear then erases.
+
+### What is now known not to be the cause
+
+The dispatch is a function pointer that is written correctly once, read correctly, and called. The
+filler is entered once per update and appends. The consumer walks the filled list. The store-observer
+zero was a tautology. Nothing in the framework's dispatch, invalidation or image identity is
+implicated, and no native owner is missing or wrong.
+
+### What is still UNKNOWN, named as unknown
+
+1. **Whether the product's list CONTENT matches the console's during the update.** The append counts
+   differ (about 4 per update on level 10 here; 16 in one console update on level 11), but the routes
+   are different levels and the level-11 comparison has not been run on the product. The per-moby
+   identity of the appended entries is unmeasured.
+2. **Why the two parks differ.** Whether the product's native producers run at a different point in
+   the frame than the guest's `func_8002B9CC`, or whether the harness parks the two cores at different
+   points, is not established. It needs a park the two cores share, which this route does not have.
+3. **Whether anything downstream of the list is wrong.** This section refutes "the update is never
+   entered" and "the list is never filled". It does not establish that the product's list content
+   equals the console's, and so it does not close the `Moby+0x42` / `g_DynMobyCount` observations the
+   sections below rest on. Those remain open, on a premise that has since been corrected.
+
+### The next measurement, and the instrument gap that produced this section
+
+`tools/probe_level_update_dispatch.py` derives the dispatch from the image, checks the derivation
+against the decompilation (43/43), reports the controls before the readings, and states that a park
+is not a valid observation point instead of printing its zero as a finding. `--selftest` drives
+nothing and requires both answers — a level id with a case body and one without — plus the derived
+values that must agree with the decompilation.
+
+The instrument gap that caused this whole section is now closed in the framework, so the next question
+can be asked directly: read the list base and its contents **from inside the update**, on both cores, at
+the same point. `PSXPORT_STORE_OBSERVE` can do it for the product (arm the filler's own store) and the
+console's PC observer can do it for the reference, but the product has no PC observer, so the two
+cores cannot yet be compared at a point inside the same update.
+
 ## 2026-09-27: the writer of `Moby+0x42` is NAMED, and the convergence with the spawner is REFUTED
 
 ### The earlier "zero stores cover 0x42" was a property of the search, not of the tree
@@ -290,6 +428,75 @@ afterwards. The store observer rules out only the last of those for these three 
 of the first two it is needs the same instrument pointed at a store the filler is known to make — the
 clear loop at `0x80051FF8` (`sw $zero, 0($at)`, over `D_80077868`, stride 8) is the right next target
 because it is unconditional, so a zero there means the function never started.
+
+## ROOT CAUSE, CORRECTED 2026-09-27: the filler DOES run and DOES append — to the wrong slot
+
+**Everything above this line is wrong about one thing, and the correction is a measurement.**
+
+`PSXPORT_STORE_OBSERVE` matches the PC OF each executed translated store, not a guest data address. Every
+run above armed DATA addresses (`0x800700F4`, `0x80077868`) and read "MATCHED NONE" over 116,056,872
+executed JIT instructions as proof the filler never ran. **`0x800700F4` is not an instruction, so no store
+instruction can be AT it: that answer was guaranteed before the game started.** The 116-million denominator
+is what made a tautology read as evidence. Two commits and one findings document carried that claim before
+it was caught; see `psxport/docs/findings/diagnostics-that-cannot-lie.md`.
+
+Armed on real store PCs, with the instrument's own abort defect fixed first (it was killing the product for
+being watched — `psxport` commit `17dcc33e`):
+
+```
+[0] store PC 0x80051FF8 EXECUTED: 280 store(s)     <- the filler's UNCONDITIONAL clear
+[1] store PC 0x8005205C EXECUTED: 276 store(s)     <- the near-path append,  sw $at, 0($t6)
+        last write:  address=0x800701C8 value=0x8016F228 (base $r14, disp +0, from $r1);
+                     275 further address change(s) observed
+        first write: address=0x800700F8 value=0x8016D6A8 — THIS STORE MOVED
+[2] store PC 0x800523E8 EXECUTED: 284 store(s)     <- the animation pass, func_800522C0
+```
+
+**So the filler runs, appends ~117 moby pointers, and the animation pass runs 284 times.** The earlier
+"the filler never executes" is refuted outright.
+
+### The defect, as measured
+
+**The filler's first append is `0x800700F8`. The consumer is handed `0x800700F4`.** One slot — four bytes.
+`func_800522C0` does `lw $t5, 0($t9)` on the address it is given, and `0x800700F4` is a slot nobody ever
+writes, so it reads zero and `beqz` exits before walking anything. The list is full; the walk starts one
+slot too early and stops on a hole.
+
+That is the whole reason no moby ever animates or updates, and it is a four-byte disagreement between the
+function that writes the list and the function that reads it.
+
+### And the walk is unbounded, which is a second, independent fact
+
+`tools/probe_moby_list.py` reports, over the live level's own moby array:
+
+```
+NO TERMINATOR in the first 64 mobies: +0x48 never reached -1, so the filler's own walk would run off the
+end of the array
+```
+
+`func_80051FEC` terminates on `moby[+0x48] == -1` (`0x8005212C`: `addi $v1, $zero, -0x1` / `bne $v1, $v0,
+.L80052040`). If no moby in 64 satisfies that, the walk has no stop and appends pointers from whatever memory
+follows — which is what ~117 appends spanning `0x800700F8`..`0x800701C8` looks like. So either the
+terminator field is not at `+0x48`, or its value is not `-1`, and **that is now the open question**, with
+the instrument that can answer it.
+
+**Read the offsets as unverified.** This file asserted `+0x48`, `+0x51`, `+0x43`, `+0x52` from the listing
+alone. The same class of error already produced two false claims in this issue (`Moby+0x42` is not a class
+byte — the image dispatches on the halfword at `0x36`; and `m_Class` in `include/moby.h` is a header offset
+error). The gate fields must be confirmed against the IMAGE before the walk is judged, exactly as the store
+sites were.
+
+### The next two steps, both single commands
+
+1. **Confirm the four-byte disagreement from the guest, not from us.** The filler computes `$t6` as
+   `D_8006FCF4 + 0x400` at `0x80052038` and the consumer is entered with `$a0` from the level's caller
+   (`0x8007DAB0`: `addu $a0, $s0, $zero`, with `$s0` set at `0x8007DAA8`). Read both and see which of
+   `0x800700F4` and `0x800700F8` each side really uses. `PSXPORT_STORE_OBSERVE` now reports the resolved
+   destination of every observed store, so one run answers it.
+2. **Find the terminator.** The filler ran ~70 times (280 clear executions / 4 slots per call) and appended
+   ~117 entries per run. Either the terminator field's offset is wrong or the walk is genuinely unbounded in
+   retail too — and "retail is also unbounded" is a real possibility that this evidence does not exclude,
+   because the reference's own list is only 2 entries at tick 41 of the DEMO route, a different level.
 
 ### The next step, and it is not a guess
 

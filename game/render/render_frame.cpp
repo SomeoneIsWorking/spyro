@@ -28,6 +28,7 @@
 #include "guest_call.h" // Bounded runtime execution of the retained reference driver.
 #include "guest_globals.h"
 #include "level_transition_scene.h"
+#include "pause_menu_scene.h"
 #include "presentation_owner.h"
 #include "render.h"
 #include "screen_fade_recipe.h"
@@ -112,8 +113,15 @@ bool pairedActorScene(Core *core, const Scene &scene) {
   // serves always arm the same ownership gate as a field stage.
   const bool levelTransition =
       scene.stage == kStageLevelTransition || scene.stage == kStageEntranceAnimation;
+  // 0x8001A40C — the pause / inventory / old-dragon handler — reaches the same whole 0x80019698
+  // chain on its world path, so it arms the same gate through the same field-player question. The
+  // menu's own frames carry no separate ownership: the world behind the menu is the field's world.
+  const bool menuArm =
+      scene.stage == kStagePauseMenu || scene.stage == kStageInventoryMenu ||
+      scene.stage == kStageOldDragon;
   return frontend || dragon || levelTransition ||
-         (isFieldStage(scene.stage) && !respawnFading && spyro_field_player_visible(core));
+         ((isFieldStage(scene.stage) || menuArm) && !respawnFading &&
+          spyro_field_player_visible(core));
 }
 } // namespace
 
@@ -279,6 +287,18 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     const auto refusal = spyro::level_transition_scene::submit(mC);
     if (refusal != spyro::level_transition_scene::Refusal::None) {
       abortUnimplemented(sc, spyro::level_transition_scene::refusalName(refusal));
+    }
+    return;
+  }
+  // STAGES 2, 3 AND 6 SHARE ONE HANDLER, 0x8001A40C: the FIELD arm's five world calls in the
+  // guest's own order, plus — from the menu's SECOND frame on — a translucent panel, a lit border
+  // and the page's captions. None of its 2D layers is a HUD layer, which is why this arm composes
+  // the world producers itself rather than reusing the FIELD arm's route.
+  if (sc.stage == kStagePauseMenu || sc.stage == kStageInventoryMenu ||
+      sc.stage == kStageOldDragon) {
+    const auto refusal = spyro::pause_menu_scene::submit(mC, cx + cw - 1);
+    if (refusal != spyro::pause_menu_scene::Refusal::None) {
+      abortUnimplemented(sc, spyro::pause_menu_scene::refusalName(refusal));
     }
     return;
   }

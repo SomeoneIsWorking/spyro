@@ -96,6 +96,8 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/guest_trig.cpp
   game/render/hud_text_builder.cpp
   game/render/level_transition_scene.cpp
+  game/render/pause_menu_recipe.cpp
+  game/render/pause_menu_scene.cpp
   game/render/level_transition_tally_recipe.cpp
   game/render/cyclorama_portal_submitter.cpp
   game/render/cyclorama_scene_recipe.cpp
@@ -314,6 +316,17 @@ if(BUILD_TESTING)
   #                       rather than zero, and an unauthored count of 0 that must scan nothing at all
   #                       (the fixed 128-index scan that preceded it read 6 fabricated "entries" out of
   #                       a table Artisans never authored, three carrying a nonzero factor byte).
+  #   probe_load_step  where `g_LoadStage`'s value at a checkpoint was TAKEN, decided by the image's
+  #                     own bytes: `LoadLevel`'s case 1 stores `stage + 1` at 0x800155E0, the next
+  #                     instruction is a `lui` and NOT a branch, and case 2's body writes nothing to
+  #                     `g_LoadStage` before the shared tail overwrites it at 0x800163B8 -- so stage 2
+  #                     exists only INSIDE one call and is not a resting value. The selftest re-reads
+  #                     every one of those words out of SCUS_942.28 and fails if they change, and
+  #                     requires the classifier to return the OTHER verdict on stage 1-vs-3 and on a
+  #                     differing `m_State`, so a classifier that can only ever exonerate cannot pass.
+  #                     Like `probe_guest_disasm`, it needs the provisioned image and REFUSES (exit 2)
+  #                     without it rather than passing vacuously; that refusal is the correct answer
+  #                     on a machine with no disc, not a green test.
   foreach(probe
       probe_guest_disasm
       probe_emitter_predicate

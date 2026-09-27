@@ -298,6 +298,15 @@ if(BUILD_TESTING)
   #                       positive displacement, or have no `lui` base at all.
   #   probe_tick_divergence  `dist2d`/`OctDistance` against 5 listing-derived values, including both
   #                       asymmetric arms that a swapped transcription gets wrong.
+  #   probe_blended_anim  the census of the environment animation BLEND FACTOR, the one byte the image
+  #                       reads at 0x80025BF4 to choose INTPL/DPCS over a straight copy. Its zero is the
+  #                       load-bearing claim -- "no reachable nonzero blend factor in the levels these
+  #                       routes load" -- so the selftest covers the four ways that zero can be
+  #                       manufactured: a positive fixture that must be READ, a negative fixture that
+  #                       must read as zero, a set pointer outside the dump that must report NOT READ
+  #                       rather than zero, and an unauthored count of 0 that must scan nothing at all
+  #                       (the fixed 128-index scan that preceded it read 6 fabricated "entries" out of
+  #                       a table Artisans never authored, three carrying a nonzero factor byte).
   #   probe_level_update_dispatch  the per-level update dispatch is DERIVED from the image (the switch's
   #                       jump table, the `lui`/`addiu` pair feeding each store, the `jalr` on each
   #                       reader) and cross-checked against external/spyro-1. Its selftest requires both
@@ -310,7 +319,8 @@ if(BUILD_TESTING)
       probe_emitter_predicate
       probe_store_sites
       probe_tick_divergence
-      probe_level_update_dispatch)
+      probe_level_update_dispatch
+      probe_blended_anim)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

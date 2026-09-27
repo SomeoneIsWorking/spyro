@@ -429,6 +429,77 @@ of the first two it is needs the same instrument pointed at a store the filler i
 clear loop at `0x80051FF8` (`sw $zero, 0($at)`, over `D_80077868`, stride 8) is the right next target
 because it is unconditional, so a zero there means the function never started.
 
+## THE MOBY LIST IS NOT THE DEFECT — the previous section is WRONG, and here is what it got wrong
+
+Commit `27acd14` in this file claimed the list's defect is "four bytes wide": that the filler's first append
+is `0x800700F8` while the consumer is handed `0x800700F4`. **Both halves of that are wrong, and the image
+refutes it directly.**
+
+**1. The base is `0x800700F4`, so there is no disagreement.** Disassembled from the image, not the listing:
+
+```
+0x80052030  07800E3C  lui    $t6, 0x8007
+0x80052034  F4FCCE25  addiu  $t6, $t6, -0x30c      -> 0x8006FCF4
+0x80052038  0004CE21  addi   $t6, $t6, 0x400       -> 0x800700F4
+```
+
+`0x8007_0000 - 0x30C + 0x400 = 0x800700F4`. The filler's cursor starts exactly where the consumer is
+pointed, and both were read from the same guest code. The `0x800700F8` in that commit's log line is a
+**LATER append**: the cursor advances 4 per append on the `bltz` path at `0x80052064`, and the first line I
+quoted was misattributed to the first observation. So the "four-byte disagreement between the function that
+writes the list and the function that reads it" is an artefact of reading one line of a report as a summary.
+
+**2. The list is not empty at a frame park, because the guest clears it every frame.** Also from the image:
+
+```
+0x8002B9D0  lui    $a0, 0x8007
+0x8002B9D4  addiu  $a0, $a0, -0x30c      -> 0x8006FCF4
+0x8002B9D8  move   $a1, $zero
+0x8002B9E0  jal    0x80016930            -> memset
+0x8002B9E4  addiu  $a2, $zero, 0x1c00    -> 0x1C00 bytes
+```
+
+`memset(0x8006FCF4, 0, 0x1C00)` covers `0x8006FCF4 .. 0x80078EF4`, **which contains the list**. The list is
+built and consumed WITHIN one update and cleared before the next, so a probe that reads it while the frame
+loop is parked reads the clear. **Every "the list is empty" reading in this issue, including
+`tools/probe_moby_list.py`'s verdict, was taken at exactly that moment and is evidence of nothing.** A park
+is not an observation point for a per-frame scratch list; that is now stated in the probe rather than
+discovered a third time.
+
+**3. The decisive refutation, and it needs no arithmetic at all.** The consumer's own store at `0x800523E8`
+— reachable only on a NON-NULL entry, since `0x800522E8` is `beqz $t5` — fired **284 times**, and its first
+write was `0x8016D690`, i.e. moby `0x8016D650`, a real main-RAM moby. **If the list's first slot were an
+unwritten hole the walk would have exited immediately and the consumer would have fired ZERO times.** It
+fired more often (284) than the filler appended (276), so the walk processes every appended moby.
+
+**So there is no moby-list defect.** The list is filled, walked, and cleared, exactly as retail does. What
+this investigation actually established is the three facts worth keeping:
+
+- `func_80051FEC` (the filler) runs — 280 executions of its unconditional clear, 276 near-path appends, with
+  resolved destinations walking `0x800700F4` upward four bytes at a time.
+- `func_800522C0` (the animation pass) runs — 284 executions, first resolved write a real moby pointer.
+- The level-10 update is reached through `g_UpdateMoby` (`0x80075734`), written by `SetOverlayPointers` via a
+  100-entry jump table at `0x800113A4`; level 10's is `0x8005A744 -> 0x8007D9C8`, level 11's is
+  `0x8005A7DC -> 0x8007DA78`, and `$ra` at the filler's call site is `0x8007D9F8`, inside level 10's overlay.
+
+**The "WAD images reuse one load address" hypothesis is refuted, and that is measured**: the writer is in the
+main image and the values are the overlays' fixed addresses. See `tools/probe_level_update_dispatch.py`.
+
+### The pattern in this file, stated once so it stops recurring
+
+Three claims in this issue were wrong, and all three came from the same move: **reading a value at a moment
+when it does not hold, or trusting a derivation that had not been checked against an independent oracle.**
+
+| claim | what was wrong |
+|---|---|
+| "the filler never executes" | armed DATA addresses on a PC-matching observer — a guaranteed answer, given a 116M denominator |
+| "the list is empty" | read a per-frame scratch list while the frame loop was parked, i.e. after the guest's own `memset` |
+| "the defect is four bytes wide" | read one line of a report as a summary; the cursor had already advanced |
+
+The instruments were not the problem in the first two cases — the store observer reported faithfully both
+times. **The measurement was.** A per-frame list needs a per-frame observer, and a control run with no
+observer is what proves the instrument is not the cause.
+
 ## ROOT CAUSE, CORRECTED 2026-09-27: the filler DOES run and DOES append — to the wrong slot
 
 **Everything above this line is wrong about one thing, and the correction is a measurement.**

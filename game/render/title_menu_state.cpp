@@ -18,8 +18,18 @@ constexpr uint32_t kSaveFileDragons = 0x88u;
 constexpr uint32_t kLevelCount = 36u;
 constexpr uint32_t kEaseSlideOut = 0x8006FA84u;
 constexpr int32_t kSlideYBias = 119;
-constexpr uint32_t kGateVarPtr = 0x80075680u;
-constexpr uint32_t kGateValue = 0x492u;
+// g_CutsceneLayout -- the pointer global, NOT a value. Recovered from SCUS_942.28: exactly one
+// `lui $rX,0x8007` + `sw 0x5680($rX)` writer in the whole main image, at 0x80014A38, and seventeen
+// `lui`+`lw` reads as a pointer base (loaders.c:955 is its only writer in the decompilation). So the
+// word AT this address is a pointer, and the value this state gates on is the first int through it.
+constexpr uint32_t kCutsceneLayout = 0x80075680u;
+constexpr uint32_t kCutsceneCurrentTick = 0u;
+// CutsceneLayout.m_CurrentTick >= 1170 (0x492) -- RETAIL'S OWN logo gate, from the
+// `m_CurrentTick < 1100` / `>= 1169` tests in overlays/titlescreen.c:100-157. This was
+// `kGateValue`, which named a number without saying whose decision it was; two constants in this
+// workspace were confused with an unrelated gameplay word before they were ever measured, so the
+// threshold is stated as retail's and not as a bare literal.
+constexpr uint32_t kTitleLogoTick = 1170u;
 
 } // namespace
 
@@ -41,7 +51,7 @@ title_menu_recipe::Mode2Input State::mode2Input() const {
 }
 
 State read(Core *core) {
-  const uint32_t gatePtr = core->mem_r32(kGateVarPtr);
+  const uint32_t cutsceneLayout = core->mem_r32(kCutsceneLayout);
   State state = {.mode = core->mem_r32(spyro::guest::kTitlescreenState),
                  .mode2State = core->mem_r32(kMode2State),
                  .page = core->mem_r32(kPage),
@@ -49,7 +59,8 @@ State read(Core *core) {
                  .optionSelected = core->mem_r32(kOption),
                  .secondaryOption = core->mem_r32(kSecondaryOption),
                  .cardSelected = static_cast<int32_t>(core->mem_r32(kCard)),
-                 .gateOpen = gatePtr != 0u && core->mem_r32(gatePtr) >= kGateValue};
+                 .gateOpen = cutsceneLayout != 0u &&
+                             core->mem_r32(cutsceneLayout + kCutsceneCurrentTick) >= kTitleLogoTick};
 
   if (state.mode == 2u && state.mode2State > 0u && state.mode2State < 5u) {
     for (size_t i = 0; i < state.mode2Slots.size(); ++i) {

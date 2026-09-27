@@ -902,6 +902,40 @@ proportions, and the level-intro card's 2D text stays centred. The default watch
 route: a level load blocks presentation past its three-second frame-progress timeout, so an
 unattended replay run must raise `PSXPORT_WATCHDOG`.
 
+**THE DISCRIMINATOR VERDICT, measured 2026-09-27 — this had never been run on a Spyro pair.**
+`external/psxport/tools/port/widescreen_pair.py` on a matched 4:3/wide pair from the SAME recorded
+replay at the SAME presentation fences, 960x720 against 1284x720:
+
+    predicted offset for a pure widening : +162
+    best translation                     :     6.47 at dx=+162
+    next best translation                :    13.34
+    stretch hypothesis                   :    88.75
+    left  margin 162px wide :  92.8% non-black, 698 colours, 0/161 repeated columns
+    right margin 162px wide :  92.7% non-black, 755 colours, 1/161 repeated columns
+    left  join at x=161  : gap 11.88 against a neighbourhood of 13.74 (0.86x, limit 2.0x)
+    right join at x=1121 : gap 11.65 against a neighbourhood of 12.60 (0.92x, limit 2.0x)
+    VERDICT: WIDENED
+
+The 4:3 content appears at its ORIGINAL SCALE and centred, the stretch hypothesis is 13.7x worse, both
+margins carry hundreds of distinct colours with no repeated edge column, and both joins are continuous
+against their own neighbourhoods. The capture was read as an image: the Artisans courtyard at the dragon
+rescue, with hills, sky and stonework running to both edges of the 1284-wide frame. `[wide]` reads
+`native_width=512 render_width=684`, and `render_width > native_width` is the authoritative check.
+
+**AND THE COUNTER-CASE, because one frame is not a verdict.** The same pair at fence 3300 REFUSES, and
+the refusal is informative: both margins are `0.0% non-black, 1 colours, 161/161 repeated columns` — the
+margins are BLACK there. So margin coverage is SCENE-DEPENDENT, and a single capture cannot settle it
+either way. Any future claim should quote which fence it measured.
+
+**WHY `looks_right.py` SAID "NO GAIN" ON THE SAME RUN, and why that was not a defect.** Its coverage check
+reported `drawn aspect 1.992 -> 2.000 — the same picture rescaled, no horizontal gain`. Both of its legs
+were 960 wide: `PSXPORT_PRESENT_SINK` is process-wide, so one `--env` cannot size the two legs
+differently, and a pair whose legs are the same width cannot show a gain. The wide leg has to be captured
+in its own process at `PSXPORT_PRESENT_SINK=1284x720`. Both legs must name their aspect in a settings
+file (`aspect=0` / `aspect=1`); `aspect=3` is AUTO and resolves to the SINK's aspect, which headless means
+4:3. Recording this because the "NO GAIN" reading is a FALSE NEGATIVE with true numbers, which is the
+failure mode this whole area has produced repeatedly.
+
 Oracle state parity with widescreen ON (2026-09-19, `tools/oracle_compare.py --bios ../SCPH1001.BIN
 --frame-step 1 --product-env PSXPORT_WATCHDOG=60 --product-env PSXPORT_SETTINGS=<wide.ini>`): 485
 checkpoints, 6,305 decisive range comparisons, **0 divergences**, run complete. The baseline leg —

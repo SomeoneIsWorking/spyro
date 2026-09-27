@@ -35,7 +35,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image | partial | S005 | G003 |
-| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial | S004, S005 | G003 |
+| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; live gap is LEVEL COVERAGE (issue 0134), not code | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
 | S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | missing | — | G001 |
@@ -172,6 +172,22 @@ post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.l
 the recorded user input and 10,000 presented fields with rc=0, 5,057 reconciled frames, zero dropped layers, and no native
 render refusal. That is a route-continuity result, not visual or full-oracle parity. The animation's
 BLENDED (GTE-interpolated) form is covered hermetically only; no live frame has exercised it yet.
+**UPDATED 2026-09-27 (issue 0134): that sentence is still true, but the reason it was read as a port gap
+is wrong, and the reason is now known.** The form is selected by ONE AUTHORED BYTE — `0x80025BF4 lbu
+$a1,4($v0)` reads a factor and `0x80025C00 bgtz $a1` chooses GTE `INTPL` over a straight copy — and
+`world_animation.cpp` implements it, with `tests/test_world_animation.cpp:158-191` proving it. Across three
+live runs the product's own counter decoded **22 channels in 1,225 submits: 22 direct, 0 blended, 0
+refusals**, and a 7,348-frame census of live RAM found level 10 (Artisans) authors 24 environment
+animations — 12 LowPoly, 12 HighPoly, **no colour animations at all** — with **all 24 keyframes carrying
+factor 0**. Boot/attract and level 11 author none. Each slot is preceded by its own authored count, so the
+denominator is exact.
+
+**So S020 is `partial` because of LEVEL COVERAGE, not missing capability**, and the smallest change is a
+route to a level authoring a nonzero factor byte; nothing else can create one without writing guest bytes,
+which would be forging state. `tools/probe_blended_anim.py` is ready for that route and its selftest is
+registered. **Not established:** the other levels — two of a ~40-level homeworld — and the colour channels,
+which are unauthored in both levels reached and are where a nonzero factor is most plausible, since a
+colour fade is what a blend is for.
 The current audio-field trace ran 1,200 NTSC fields with 882,882 expected and queued samples, every
 field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. SBS now compares exact per-field
 PCM reports after rebinding each core's isolated SPU output state: a 120-frame oracle run produced

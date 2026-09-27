@@ -434,7 +434,14 @@ def configure_and_build(psxport, compiler_options, spec=provision_title.SPECS["s
 
 def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
     policy = runpy.run_path(str(Path(psxport) / "tools/port/launch_environment.py"))
-    env = policy["player_environment"](os.environ, product=spec.slug)
+    # Name the TRACKED shipping configuration. Without this the player build resolved
+    # `PSXPORT_SETTINGS` by working-directory discovery, so the shipping picture was whatever
+    # untracked file happened to sit beside the binary — measured 2026-09-27: the tracked file's
+    # `aspect=1` gives `render_width=684` and an untracked `aspect=3` (ASPECT_AUTO, which resolves to
+    # the sink) gives `render_width=512`, i.e. no widescreen at all, while every agent measurement used
+    # the tracked file and reported 16:9. An explicit PSXPORT_SETTINGS in the environment still wins.
+    env = policy["player_environment"](os.environ, product=spec.slug,
+                                      settings=ROOT / "tools" / "shipping_settings.ini")
     env.setdefault("PSXPORT_ASSET_DIR", str(psxport))
     env.setdefault("PSXPORT_DEBUG_SERVER", "1")
     env["PSXPORT_DISC"] = str(disc)

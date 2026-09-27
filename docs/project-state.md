@@ -857,13 +857,44 @@ diverged at 4:3; widening moves it closer to the console. So this is not evidenc
 the guest -- it is evidence that the level-11 demo's camera-relative playback diverges either way, by
 different amounts.
 
-**The open question, named rather than guessed:** whether `load_stage` 1-vs-2 is a REGRESSION from a
-framework change since 2026-09-26. The only commits touching load-relevant runtime code are `492adace`
-("DMA ignored BCR's sync mode, so a chained transfer ran a block count and then announced completion") and
-`436c3762`. `492adace` is the prime suspect on mechanism -- it changed what a chained DMA writes **and**
-what MADR reads back as, and a guest load loop that continues from MADR would then run a different number
-of iterations, which is exactly a step count. **That is a suspect, not a conclusion**, and the experiment
-that settles it is running against a framework worktree at `492adace^`.
+**THE SUSPECT IS REFUTED. `492adace` did not cause this, and neither did the rest of that range**
+([0135](issues/0135-the-load-stage-divergence-is-not-a-consequence-of-the-dma-sync-mode-fix.md)). The prime
+suspect was framework `492adace` ("DMA ignored BCR's sync mode, so a chained transfer ran a block count and
+then announced completion"), on the mechanism that it changed what a chained DMA writes **and** what MADR
+reads back as, so a guest load loop continuing from MADR would run a different number of iterations -- which
+is exactly a step count. Three arms, same spyro sources, same provisioned image, same BIOS, same
+`aspect=1, fps60=1`, same `Release` build:
+
+| arm | framework | `load_stage` | `player.position` |
+|---|---|---|---|
+| control | `7f537273` (dev clone HEAD) | `01000000` / `02000000` | `b3d70200fd4a02004d520000` |
+| **`492adace^`** | **`7e3ae28f`** | **`01000000` / `02000000`** | **`b3d70200fd4a02004d520000`** |
+| oldest buildable | `8432c9b4` | `01000000` / `02000000` | `b3d70200fd4a02004d520000` |
+
+**All three exit 1 on the same two decisive ranges, and the three logs are byte-for-byte identical** once the
+elapsed-time line is normalised -- same hash, same arrival frames. The arms genuinely differ in the code
+under test: the `492adace^` worktree has no `runtime/psx/dma_linked_list.*` and zero `syncMode`/`chainWords`
+references in `mem.cpp`, where the dev clone has two. **So the route CAN see a DMA change, and it did not
+move.** The instrument produced its other answer, which is the only reason this is a refutation rather than
+three identical failures.
+
+**What that does and does not establish.** It clears the whole range `7e3ae28f..7f537273`. It does **not**
+name a cause: three identical points on a line say the divergence is at least as old as `8432c9b4`
+(2026-09-27 05:44), and the window below that is **not testable from today's tree** -- current spyro sources
+include `store_observe.h` and call `store_observe_attach`, so they configure-and-fail against `0e730da6` and
+`0a0e454b`. That is the WORKSPACE.md incident class (a game tree that has moved past its framework), so
+closing the window needs a framework-side revert of one of the `store_observe` commits or a date-matched
+spyro checkout, not more bisecting of a range already exonerated. `tools/oracle_spyro1_demo.py` has exactly
+one commit and its `load_stage` decisive line is unchanged, so the measurement's definition is constant and
+the spyro repository is not the variable.
+
+**A CORRECTION TO HOW THIS WAS FIRST REPORTED.** The claim that "the level entry no longer matches" is
+**wrong**, and this file should be read carefully on that point: `demo_playing` -- which IS the level entry
+-- matches on all 13 decisive ranges including `level_id`, in all three arms. What fails is
+`demo_level_load`, the mid-load barrier, which is a different checkpoint. The residual question is only
+whether `demo_level_load`'s `load_stage` was ever reported clean on 2026-09-26, and the candidate window is
+the nine framework commits between `0a0e454b` (2026-09-26 22:48, HEAD when `9ed5ce2` landed) and `8432c9b4`,
+of which the first four cannot be built from today's tree.
 
 It then finds a REAL divergence, which is the point of running it: at tick 556 `player.position` reads
 (+9, +51, -2) against the console, growing to (+59, +405, 0) by tick 702, with the camera differing at

@@ -798,12 +798,34 @@ is wrong, the image dispatches on the halfword at `0x36` -- and its only writer 
 code is `func_800522C0`'s `sw $at, 0x40($t5)` at `0x800523E8` and `0x8005243C`, the animation state
 machine, not the spawner. The product executes that updater (16,199 + 119,369 flush stores over 60
 iterations) yet the class-`0x71` moby at `0x80173B80` is frozen, with `0x40 + 0x41 == 64`, which the
-updater's own `srl $at,$a0,6; beqz` arithmetic says would have set bit 0: the moby is not being reached
-through the `Moby*` list both walk at `0x80070BF4`. Separately, `g_DynMobyCount` first differs at tick
-528 and the reference's 4 -> 15 jump in that one update did NOT execute `MobyAlloc`'s count store at
-`0x800524D8` (0 observer entries against a positive control's 1 over 680,953 scanned instructions), so
-the counter does not measure `MobyAlloc` calls and issue 0133's "ten fewer allocations" is not
-established. No guest byte was written to move any of these numbers.
+updater's own `srl $at,$a0,6; beqz` arithmetic says would have set bit 0. Separately, `g_DynMobyCount`
+first differs at tick 528 and the reference's 4 -> 15 jump in that one update did NOT execute `MobyAlloc`'s
+count store at `0x800524D8` (0 observer entries against a positive control's 1 over 680,953 scanned
+instructions), so the counter does not measure `MobyAlloc` calls and issue 0133's "ten fewer allocations"
+is not established. No guest byte was written to move any of these numbers.
+
+**The list question in that paragraph is now superseded, and the correction matters because the
+superseded reading was a tautology.** The per-level update is a function pointer, not a computed call
+and not a pointer table: `SetOverlayPointers` switches on `g_LevelId` through a 100-entry jump table at
+`0x800113A4` and stores the level's update into the global `g_UpdateMoby` (`0x80075734`) with
+`lui`/`addiu`/`sw`, and four `jalr`s in the main image call it (`0x8002F47C`, `0x80033AA4`,
+`0x80042EE8`, `0x8004A4A0`). All 43 levels' stored values agree with
+`external/spyro-1/src/overlay_pointers.c`, and `tools/probe_level_update_dispatch.py` derives the whole
+map from the image and checks it. On the live route the product holds `g_UpdateMoby = 0x8007D9C8`,
+which is exactly what level 10's case body stores, and the store at that site `0x8005A744` fired once.
+The level overlay's update therefore **is** entered: armed on the filler's own store PCs,
+`0x80051FF8` fired 280 times and `0x8005205C` 276 times over 116,056,872 executed instructions, with
+`$ra = 0x8007D9F8` naming level 10's overlay as the caller, and `0x800523E8` -- reachable only inside
+the list walk -- fired 368 times. The earlier "MATCHED NONE" evidence armed `PSXPORT_STORE_OBSERVE` on
+DATA addresses (`0x800700F4`, `0x80077868`), which the instrument cannot match by construction, so it
+reported nothing about the guest. The list base is `D_8006FCF4 + 0x400`, inside the region the guest's
+own draw pass clears (`func_8002B9CC` is `memset(0x8006FCF4, 0, 0x1C00)`, reproduced by
+`spyro::field_scene_recipe::applyEnvironment`), so a frame-park read of the list is expected to be zero
+and is not an observation of the update. Whether the list CONTENT the product fills matches the
+console's DURING the update is still unmeasured, so the `Moby+0x42` observation above stands as open on
+a corrected premise. Evidence in
+[0133](issues/0133-the-attract-demo-s-recorded-input-diverges-from.md); the dispatch itself is not a
+product defect, and no framework dispatch, invalidation or image-identity code is implicated.
 
 Two further measurements came out of it. The product spends **2.00 fields per attract-flyby iteration
 where the reference spends 1.00** (768 against 385, with both cores running the same 383 iterations of

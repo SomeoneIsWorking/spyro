@@ -298,11 +298,19 @@ if(BUILD_TESTING)
   #                       positive displacement, or have no `lui` base at all.
   #   probe_tick_divergence  `dist2d`/`OctDistance` against 5 listing-derived values, including both
   #                       asymmetric arms that a swapped transcription gets wrong.
+  #   probe_level_update_dispatch  the per-level update dispatch is DERIVED from the image (the switch's
+  #                       jump table, the `lui`/`addiu` pair feeding each store, the `jalr` on each
+  #                       reader) and cross-checked against external/spyro-1. Its selftest requires both
+  #                       answers -- a level id with a case body and one that shares the tail -- plus the
+  #                       derived values that must agree with the decompilation, so a derivation that
+  #                       silently stopped matching cannot pass. This is the instrument issue 0133's
+  #                       "the level update is never entered" conclusion needed and did not have.
   foreach(probe
       probe_guest_disasm
       probe_emitter_predicate
       probe_store_sites
-      probe_tick_divergence)
+      probe_tick_divergence
+      probe_level_update_dispatch)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

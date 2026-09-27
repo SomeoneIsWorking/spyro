@@ -792,6 +792,19 @@ the same tick downstream of Spyro. Input delivery, the level entry, and a phase 
 out with evidence in [0133](issues/0133-the-attract-demo-s-recorded-input-diverges-from.md). The route
 exits 1 and is not tuned to pass.
 
+Two named writers now sit at or before that divergence, both read out of the guest image rather than
+inferred. `Moby+0x42` is the moby's animation-flags byte -- the community header's `m_Class` at `0x42`
+is wrong, the image dispatches on the halfword at `0x36` -- and its only writer in level 11's resident
+code is `func_800522C0`'s `sw $at, 0x40($t5)` at `0x800523E8` and `0x8005243C`, the animation state
+machine, not the spawner. The product executes that updater (16,199 + 119,369 flush stores over 60
+iterations) yet the class-`0x71` moby at `0x80173B80` is frozen, with `0x40 + 0x41 == 64`, which the
+updater's own `srl $at,$a0,6; beqz` arithmetic says would have set bit 0: the moby is not being reached
+through the `Moby*` list both walk at `0x80070BF4`. Separately, `g_DynMobyCount` first differs at tick
+528 and the reference's 4 -> 15 jump in that one update did NOT execute `MobyAlloc`'s count store at
+`0x800524D8` (0 observer entries against a positive control's 1 over 680,953 scanned instructions), so
+the counter does not measure `MobyAlloc` calls and issue 0133's "ten fewer allocations" is not
+established. No guest byte was written to move any of these numbers.
+
 Two further measurements came out of it. The product spends **2.00 fields per attract-flyby iteration
 where the reference spends 1.00** (768 against 385, with both cores running the same 383 iterations of
 the guest's own flyby clock), so the attract flyby is presented at half speed; that is

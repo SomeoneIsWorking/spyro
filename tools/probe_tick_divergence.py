@@ -377,7 +377,10 @@ TRAJECTORY = (
 # for are named, and the rest stay raw offsets -- a wrong name here would send the next reader after
 # a field that does not exist.
 MOBY_FIELDS = (
-    (0x00, "m_Props"),            # set by func_800524C4's tail (asm/42CC4.s:57)
+    (0x00, "m_Props"),            # NOT written by MobyAlloc: 42CC4.s:57 stores g_PropsAllocPtr.
+                                  # Measured 2026-09-27, a dynamic slot the product never allocated
+                                  # still held the console's m_Props, so a constructor that does not
+                                  # set it leaves the level-data value behind.
     (0x04, "m_CollisionChainNext"),  # func_800529E4 splices it (asm/42CC4.s:100-104)
     (0x08, "m_CollisionGroup"),   # func_800529CC zeroes it (asm/42CC4.s:3)
     (0x0C, "m_Position.x"),       # passed to OctDistance as a0 (level_11 ...:376)
@@ -1012,9 +1015,14 @@ def _report_moby_pool(native, console, tick, limit: int, raw: bool = False) -> N
     WHY THIS EXISTS. g_DynMobyCount is a CALL COUNT, so a difference in it says how many allocations
     were missed and nothing about which mobies they would have been. The pool says that directly:
     each core's g_DynMobys gives the first dynamic slot, the 0x58 stride comes from the allocator's
-    own free list (asm/42CC4.s:23-34), and a slot's m_State byte of 0xFF is the never-allocated
-    sentinel the loader writes (loaders.c:638). The class is read at Moby+0x42, which is what turns
-    "ten fewer allocations" into "ten letter mobies the console made and the product did not".
+    own free list (asm/42CC4.s:23-34), and a slot's byte of 0x48 is 0 for a live moby. The class is
+    read at Moby+0x36, the halfword the level-11 update dispatches on (`lh $v1, 0x36($s3)` at
+    0x8007DB30) and the one the per-level constructor writes (`sh $s0, 0x36($s3)`, level_20
+    func_level_20_8008A258:16), which is what turns "ten fewer allocations" into "ten letter mobies
+    the console made and the product did not". An earlier version of this docstring said the class
+    was read at Moby+0x42, repeating external/spyro-1/include/moby.h's wrong offset; 0x42 is the
+    moby's animation-flags byte (see anim_state_writers / issue 0133) and reading a class from it
+    reports 0x71 for a moby whose flags happen to be 0x71.
 
     It needs no store observer, which matters: PSXPORT_STORE_OBSERVE is armed from native_boot_run,
     and the Spyro 1 product's frame loop is the title's own driver, so that surface never arms here.
@@ -1219,10 +1227,16 @@ def _drain_observer(core, native_words, console_words) -> None:
     # gpr 31 is $ra, and a record is taken on ARRIVAL at the entry, so $ra is the address the
     # CALLER will resume at: for a callee reached by `jal`, that is the instruction after the call.
     # Naming it is what turns "this function ran" into "this function ran from THERE".
+    # $t5 and $t8 because `func_800522C0` (asm/moby_lists.s:293) stores the moby animation state
+    # through `sw $at, 0x40($t5)` with $t5 the list entry -- the moby -- and keeps its 8-byte staging
+    # copy at $t8 = 0x1F800004, so those two registers are what identify WHICH moby a record is about.
+    EXTRA_REGISTERS = ((8, "t0"), (13, "t5"), (16, "t8"))
     for record in records:
         gpr = record["gpr"]
         registers = " ".join(f"{name}={value:08X}" for name, value in
                              zip(("at", "v0", "v1", "a0", "a1", "a2", "a3"), gpr[1:8]))
+        registers += "".join(f" {name}={gpr[index]:08X}" for index, name in EXTRA_REGISTERS
+                             if len(gpr) > index)
         caller = f"ra={gpr[31]:08X}" if len(gpr) > 31 else "ra=?"
         print(f"[probe]   field={record['field']} pc=0x{record['pc']:08X} "
               f"next_pc=0x{record['next_pc']:08X} instr={record['instruction']:08X} {registers} "

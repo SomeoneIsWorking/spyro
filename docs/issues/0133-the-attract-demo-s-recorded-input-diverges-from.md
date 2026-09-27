@@ -8,6 +8,200 @@ created: 2026-09-26
 updated: 2026-09-27
 ---
 
+## 2026-09-27: the writer of `Moby+0x42` is NAMED, and the convergence with the spawner is REFUTED
+
+### The earlier "zero stores cover 0x42" was a property of the search, not of the tree
+
+`scratch/conv/store_scan.py` re-runs the search over all 513,543 instructions / 64,891 stores of
+`external/spyro-1/asm` and prints, per byte of the moby header, how many stores of each width can
+reach it. Column `0x42`:
+
+```
+  k         1B       2B       4B       8B
+ 40       1495       11      310        0
+ 41       1361       11      310        0
+ 42          0       10      310        0   <- the divergent byte
+ 43         11       10      310        0
+```
+
+**310 word stores reach `Moby+0x42`.** The earlier search looked for a direct `0x42` displacement and
+so missed every `sw ..., 0x40(base)`, which covers 0x40..0x43.
+
+### `Moby+0x42` is `m_AnimationFlags`, and its only writer in level 11 is `func_800522C0`
+
+`func_800522C0` (asm/moby_lists.s:214) stages each moby's 8 animation bytes in D_MEM at `$t8` =
+`0x1F800004` and flushes them with **two** word stores:
+
+```
+0x800523E0  lw   $at, 0x1F800004($t8)
+0x800523E4  lw   $v0, 0x1F800008($t8)
+0x800523E8  sw   $at, 0x40($t5)     ; writes Moby+0x42
+0x800523EC  sw   $v0, 0x3c($t5)
+```
+
+and the second exit repeats it at **0x8005243C**. Both read out of the real image with
+`tools/probe_guest_disasm.py` (words `4000A1AD` at both, offset check 62,183/62,183 agree). `$t5` is
+the list entry, so `$t5` is the Moby. The scan's other non-stack candidates are `$sp` (270), the
+cyclorama's own state (12) and moby *props* blocks — `0x8007F304 sw $s0, 0x40($s2)` is props+0x40
+(`$s2 = m_Props`, set at `0x8007E0B8`).
+
+The staged flags byte has exactly three writers, which is the whole lifecycle: `0x80052378`
+(`ori $v0,$v0,0x1` at `0x80052374`) sets bit 0 on a frame boundary, `0x8005238C`/`0x80052394` sets
+bit 1 when the animation runs past its last frame, and `0x8005242C` (`sb $zero, 2($t8)`) clears it on
+the `beqz $at, 0x80052424` path where the moby has no frame left to advance. So the console's
+`0x00/0x01/0x03` oscillation is that state machine, and `Moby[0x42] & 2` is its "animation finished"
+bit — which is what the class-`0x71` handler at `0x80083858` polls.
+
+**The writer allocates nothing and is not in the spawner's call chain.** The per-level constructor is
+reached through the `g_SpawnMoby` function pointer (`0x800758CC`), and `func_800522C0` is called
+directly by the moby update at `0x8007DAB4`. Issue 0133's hypothesis — that `+0x42` is a class/flags
+byte whose writer is the spawner, which is where the missing allocations point — is **refuted**.
+
+The moby header band is now read off the tree's own accesses, and the community header is wrong about
+it: the image writes and dispatches on the halfword at **0x36** (`lh $v1, 0x36($s3)` at `0x8007DB30`;
+`sh $s0, 0x36($s3)` in the per-level constructor), and 0x42 is a one-byte flag field. The header's
+field ORDER is right, its offsets are not.
+
+### The product RUNS the animation updater, and this moby's animation state is frozen
+
+`--store-observe 0x800523E8,0x8005243C,0x800524D8` over 60 iterations (ticks 3..62), 271,544
+store-observe lines, 3 armed targets, 0 fault lines:
+
+| armed store PC | what it is | per-callback lines | stores |
+|---|---|---|---|
+| 0x800523E8 | animation flush, frame crossed | 32,398 | 16,199 |
+| 0x8005243C | animation flush, no frame left | 238,738 | 119,369 |
+| 0x800524D8 | `MobyAlloc`'s `g_DynMobyCount++` | 404 | 202 |
+
+So `func_800522C0` executes on the product, tens of thousands of times. And `--read
+0x80173B80:0x58 --read-at 3,40,41` on both cores says the class-`0x71` moby at `0x80173B80` (level
+moby index 15; `0x36` = `0x0071`) is frozen on the product and moving on the console:
+
+| tick | byte | native | console |
+|---|---|---|---|
+| 3 | 0x3C | 0x00 | 0x01 |
+| 3 | 0x42 | 0x00 | 0x01 |
+| 40 | 0x3D | 0x00 | 0x12 |
+| 40 | 0x40 / 0x41 | 0x20 / 0x20 | 0x20 / 0x20 |
+| 40 | 0x42 | 0x00 | 0x00 |
+| 41 | 0x3C | 0x00 | 0x01 |
+| 41 | 0x40 / 0x41 | 0x20 / 0x20 | 0x10 / 0x10 |
+| 41 | 0x42 | 0x00 | 0x01 |
+
+The product's 0x3C..0x43 is `00 00 20 20 00 00 FF` at all three ticks.
+
+**That value is a proof, not a symptom.** The product's `0x40 + 0x41` = 32 + 32 = 64, and
+`func_800522C0` computes `at = (moby[0x40] + (moby[0x41] >> $t6)) >> 6` with `beqz $at, 0x80052424`:
+64 >> 6 = 1, so the updater would take the ADVANCE path and set bit 0 of the flags at `0x80052378`.
+`0x42` is 0. **The updater therefore does not process this moby on the product**, even though it runs
+on the product. What differs is the moby LIST both the updater and the level dispatch walk: the
+NULL-terminated `Moby*` array at `D_8006FCF4 + 0x400` = `0x80070BF4`, which `func_800522C0` walks at
+`0x800522E0` and the update walks at `0x8007DAF0`. That list is the next thing to read, on both cores.
+
+### `g_DynMobyCount` does not get its increment from `MobyAlloc` — the premise was wrong
+
+`g_DynMobyCount` (`0x800756A4`) and `g_MobyAllocPtr` (`0x8007573C`) first differ at `g_GameTick` 528
+and in only 5 of 530 iterations, so the reference jumps 4 -> 15 in ONE update while the product goes
+4 -> 5. The pool census at that tick: both pools start at `0x80177960`; the reference's cursor has
+walked 15 slots, the product's 4; the reference's slots 4..13 are class `255/256/257` and LIVE, and
+the product's slots 4..13 are the same LEVEL DATA untouched (`Moby[0x48] = 0xFE`, every other byte
+equal, `m_Props` included). So the product never allocated them.
+
+Armed on the console for exactly that update — `0x800524D8` (`MobyAlloc`'s count store), `0x800525E0`
+(the release function `func_80052568`'s decrement), `0x8008772C` (`g_SpawnMoby`), and `0x8003FE7C` as
+a positive control — the observer reports **scanned 680,953, matched 1, retained 1, dropped 0,
+pairing_errors 0**:
+
+| target | entries |
+|---|---|
+| 0x8003FE7C (positive control) | **1** — `instr=AC208AE0`, `at=80080000`, i.e. the `sw $zero` to `g_Spyro+0x88` |
+| 0x800524D8 | 0 |
+| 0x800525E0 | 0 |
+| 0x8008772C | 0 |
+
+and the record's RAM snapshot of `g_DynMobyCount` is `0x0000000F` = 15.
+
+So the +11 did **not** pass through `func_800524C4` and did not go through `g_SpawnMoby`.
+`g_DynMobyCount = 0` at `loaders.c:643` is the only other write in the tree. Issue 0133's line
+"`g_DynMobyCount` is incremented once per call by `func_800524C4` … so the product made 10 FEWER
+`MobyAlloc` calls" is therefore **not established**: the reference's increment came from code this
+route has not identified, and the number of `MobyAlloc` calls is not what the counter measures.
+
+### What the resident images contain, measured
+
+`--find-instruction 0x800524C4` scans all 2,097,152 bytes of main RAM on both cores: **exactly three
+`jal 0x800524C4` words, identical on both cores**, at `0x80030524`, `0x80030610` (both inside
+`func_8002F3E4`, gamestates/update) and `0x80087750` — the last one inside the function `g_SpawnMoby`
+points at, `0x8008772C`, **which the reconstructed tree does not carry** (`grep -rn 8008772C
+external/spyro-1/asm` matches nothing). The 16 bytes before it are the constructor's prologue
+(`sw $s5,0x50($sp)` / `s4,0x48` / `s3,0x44` / `s2,0x40`), which is level 20's shape exactly.
+
+Three `func_800522C0` callers execute on the product, from `$ra`: `0x8007DAB8` (16,199 flush stores,
+the update's `jal` at `0x8007DAB4`), `0x8007CFF8`, `0x8007B7EC` and `0x8007AEFC` — of which only
+`0x8007DAB4` is in the reconstructed listing. **Guest address alone is not identity**: the product's
+`MobyAlloc` store records carry `$ra` of `0x80082054 / 0x8008461C / 0x80087758 / 0x80086E04`, and
+level 11's listing has `addiu $s1, $s1, %lo(g_CollisionNormal)` at `0x80082050`, so those 202 calls
+were made by a DIFFERENT resident image at the same addresses, during the approach to the level. The
+counter was reset to 0 by the level load (`loaders.c:643`) after them.
+
+## ROOT CAUSE FOUND 2026-09-27: the product's moby list is EMPTY
+
+**This is the divergence's cause, and it explains every symptom above it in one fact.**
+
+Measured with `tools/probe_emitter_predicate.py`, both cores, at `g_GameTick` 41. The list base was
+recovered from the guest itself rather than from the listing: `0x800522CC` is `addi $t9, $a0, 0x0`, the
+second instruction of `func_800522C0`, and its observer record carries `a0=800700F4` with
+`ra=8007DABC` and `v1=80077888` — the list cursor. (`0x800700F4` is `D_8006FCF4 + 0x400`, so the listing's
+constant was right and an earlier transcription of it as `0x80070BF4` was an arithmetic slip, not a
+different address.)
+
+Reading 192 bytes from that base on both cores:
+
+```
+RANGE 0x800700F4..0x800701B4 at g_GameTick 41
+  +0x00  native 00000000   console 801A92E8
+  +0x04  native 00000000   console 801A92E8
+  +0x10  native 00000000   console 801A9130
+  +0x14  native 00000000   console 801A9130
+  ... every word: native 00000000
+```
+
+**The product's list is entirely zero. The console's holds real moby pointers, and every pointer the
+product has is one the console has too — the product simply has none.** The node shape is two pointers
+followed by a NULL terminator, and the console reaches its terminator where the product has been zero
+since before the first sample.
+
+That single fact accounts for the whole chain, and each link was previously measured in isolation:
+
+- **`Moby+0x42` is never set** because the writer is `func_800522C0`'s animation state machine
+  (`sw $at, 0x40($t5)` at `0x800523E8` and `0x8005243C`), which stages the flags byte in scratchpad
+  `0x1F800004` from three writers — `0x80052378` (bit 0, a frame boundary), `0x8005238C/94` (bit 1, ran
+  past the last frame) and `0x8005242C` (clear). The console's `0x00/0x01/0x03` IS that state machine and
+  `& 2` is the "animation finished" bit `0x80083858` polls. **A moby that is not in the list is never
+  animated**, so its byte stays 0 forever. That is the tick-41 `rand()` divergence: the console fires
+  `jal RandRange` twice because two of its mobies are animated, the product zero times.
+- **`g_DynMobyCount` 5 against 15** is not a `MobyAlloc` call count at all — a positive-controlled
+  observer proved the console's `+11` never passes through `0x800524D8`. It is the size of a list the
+  product never filled.
+- **The frozen animation bytes on moby `0x80173B80`** (`0x3C..0x43` identical at ticks 3, 40 and 41 while
+  the console's move every tick) are the same fact seen from inside one moby.
+- **The updater demonstrably runs on the product** — `0x800523E8` fired 16,199 times — so this is NOT
+  "the moby update never executes". The walk runs; it has nothing to walk.
+
+**What is NOT the cause, now measured rather than argued:** the class-0x71 handler never runs (it does),
+`0x80037EA0`'s emitter `func_80039AA8` has no caller in level 11 at all, and `Moby+0x42` is not a class
+byte — the image dispatches on the halfword at `0x36` (`lh $v1, 0x36($s3)` at `0x8007DB30`), so
+`external/spyro-1/include/moby.h`'s `m_Class` at `0x42` is a header offset error, not evidence.
+
+### The next step, and it is not a guess
+
+`--find-instruction 0x800700F4` over all 2,097,152 bytes of both cores' main RAM finds **0 `jal` and 0
+big-endian data pointers on either core**, so the list is not reached by a direct call and not through a
+pointer table — it is loaded GP-relative (`%hi(D_8006FCF4) + 0x400`), which is why an absolute-pointer
+scan cannot see it. Naming the writer needs a scan for **stores at displacement `+0x400` off a `$gp`
+base**, which no instrument here does yet. That scan, over the reconstructed listing and then over the
+image, is the one thing that turns this into a located write.
+
 ## THE LEAD IS EARLIER STILL: `Moby+0x42` already differs at the FIRST sample (tick 3)
 
 Measured 2026-09-27 with `tools/probe_emitter_predicate.py`. **One byte**, on the two class-`0x71`
@@ -389,25 +583,59 @@ prints the hit's GPRs, product-side only, test-only) is what turns the next step
 guesses into a comparison: arm both cores on the sub-step block at 0x80047B60 and find the first
 instruction where the two register files differ.
 
-## Open
+### What the moby list is NOT, and the one-PC measurement that names it
 
-The cause is not yet established, and it is now known to sit at or before `Moby+0x42`, which differs on
-the very first sample of the window. What is established is where it is not: not the input, not the
-level entry, not any native override, not the collision response, not the arithmetic of the movement,
-not `dist2d`/`OctDistance`, not `D_800757F4` (which is downstream of the divergent byte), and not the
-cyclorama scroll offsets (a field-cadence call-count residue). The console's own PC observer shows it
-executed a store to `g_Spyro + 0x88` in the update that the product did not, and the product holds a 1
-there that nothing in the decompiled tree can write.
+The listing resolves the list base as `%hi(D_8006FCF4 + 0x400)` = `0x80070BF4` (spimdisasm printed the
+nearest preceding label, and `D_8006FCF4` is `g_SonyImage`, a `.data` blob in
+`asm/data/sony_text.s:5`). Reading 1,024 bytes there on both cores:
 
-The blocker on the next step is an INSTRUMENT GAP, not an idea: the reconstructed tree has no store of
-any width covering `Moby+0x42` (429,885 instructions searched, abundant stores to `+0x40` and `+0x41`),
-so the writer is in a function the decomp does not carry, and no instrument here can name it —
-`PSXPORT_STORE_OBSERVE` needs the PC up front, `PSXPORT_CW` only sees the slow path, and the console
-observer needs a PC up front too. Closing that needs either the missing decomp or an instrument that
-can ask "which translated store last wrote this word" without being given a PC.
+| tick | differing bytes | product | console |
+|---|---|---|---|
+| 3 | 223 / 1024 | **every word zero** | `0x8BC, 0x8CE, 0x8D1, 0x8DD, 0x8D5, 0x8F5, …` |
+| 41 | 466 / 1024 | **every word zero** | `0x9D3, …` |
+
+So that region is a real, growing divergence — and it is **not** the moby list, for two measured
+reasons: the console's values (2183..2515) are far too small to be `Moby*`, and the product's
+`func_800522C0` demonstrably executes 135,568 flush stores in the same window. The listing's constant
+for the list base is therefore not the list base, which is consistent with
+`func_level_11_8007DA78` being a 10,832-line `nonmatchings` reconstruction.
+
+**The measurement that names the list, with no guess, is one PC and no RAM range:**
+`tools/probe_emitter_predicate.py --ticks 45 --observe-at 41 --observe 0x800522CC`. `0x800522CC` is
+`addi $t9, $a0, 0x0`, `func_800522C0`'s second instruction, and it fires ONCE PER CALL (1-2 per
+update, against the updater's ~1,000 per update), so it fits the observer's 128-record ring where the
+per-moby instructions do not. The record's `$a0` is the list base the guest itself used; walk it to
+its NULL terminator on both cores and compare entry by entry.
+
+
+
+* `Moby+0x42` is the moby's animation-flags byte and its only writer in level 11's resident code is
+  `func_800522C0`'s `sw $at, 0x40($t5)` at `0x800523E8` / `0x8005243C`. The writer is the animation
+  state machine, **not** the spawner, so the two leads are not the same defect as hypothesised.
+* The product runs that updater (16,199 + 119,369 flush stores over 60 iterations) and the
+  class-`0x71` moby at `0x80173B80` is nevertheless frozen, with `0x40 + 0x41 == 64`, which the
+  updater's own arithmetic says would have set bit 0. So the moby is not being REACHED.
+* `g_DynMobyCount`'s reference-side jump at tick 528 does not pass through `func_800524C4` (0 observer
+  entries against a positive control's 1, 680,953 instructions scanned), so "fewer `MobyAlloc` calls"
+  is not what the counter shows.
+
+**The next measurement is one PC and no RAM range:** `--observe-at 41 --observe 0x800522CC`, whose
+`$a0` is the list base the guest itself used, then walk that list to its NULL terminator on both
+cores and compare entry by entry. That decides whether the product's list is short, reordered, or
+holds a different pointer for the frozen moby, and it is the one thing both leads now point at: the
+updater, the class-`0x71` handler and the level dispatch all walk that list, and the dynamic mobies
+the reference allocated and the product did not are exactly the kind of thing a list-builder
+difference produces. If the list matches, the next candidate is what BUILDS it — the level loader's
+moby section, whose `g_DynMobys` / `g_MobyAllocPtr` bookkeeping (`loaders.c:635-641`) is the only
+other place the pool is advanced.
+
+The blocker is an INSTRUMENT GAP, narrowed: to name which translated store last wrote an arbitrary
+word, neither `PSXPORT_STORE_OBSERVE` (store PCs, so it can only confirm a PC you already have) nor
+`PSXPORT_CW` (biased to the slow path) is enough, and the console observer also needs a PC up front.
+With the writer now named, neither is needed for this lead.
 
 No fix is claimed and no tolerance is proposed: this is a decisive declared range, so it either matches
-or it is a defect.
+or it is a defect. Nothing in this session wrote a guest byte.
 
 ## Route result
 

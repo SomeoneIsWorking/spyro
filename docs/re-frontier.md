@@ -61,10 +61,10 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 ### dynarec.gameplay — Prove representative interactive gameplay
 - status: todo
 - deps: dynarec.stage13, dynarec.world-resume
-- evidence: The project goal defines a bounded interactive route with independent state comparison and native/original dispatch coverage.
-- where: docs/project-goals.md; docs/project-state.md; tools/verify.py
-- gap: Compare timing, interrupts, memory, and relevant device state against an independent emulator; exercise WAD invalidation; prove bounded fallback admission and no interpreter-only product selector; meet the declared host frame-time budget.
-- notes: Boot, logos, menus, FMV, and a clean trace are not gameplay conformance.
+- evidence: The project goal defines a bounded interactive route with independent state comparison and native/original dispatch coverage. The no-input attract route crosses a level entry and then diverges at `g_GameTick` 556; issue 0133 names the two writers ahead of it — `Moby+0x42` is the animation-flags byte written only by `func_800522C0` (`sw $at, 0x40($t5)` at `0x800523E8`/`0x8005243C`, read out of the image), and the level's `Moby*` list at `0x80070BF4` is what both the updater and the class dispatch walk.
+- where: docs/project-goals.md; docs/project-state.md; docs/issues/0133-the-attract-demo-s-recorded-input-diverges-from.md; tools/verify.py
+- gap: The class-`0x71` moby at `0x80173B80` is frozen on the product while its `0x40+0x41` is 64, which `func_800522C0`'s own arithmetic says would have set the flags bit, so the product's copy of the list does not reach it. Compare timing, interrupts, memory, and relevant device state against an independent emulator; exercise WAD invalidation; prove bounded fallback admission and no interpreter-only product selector; meet the declared host frame-time budget.
+- notes: Boot, logos, menus, FMV, and a clean trace are not gameplay conformance. `g_DynMobyCount` is not a `MobyAlloc` call count: the reference's 4 -> 15 jump at tick 528 executed neither `0x800524D8` nor `g_SpawnMoby`.
 
 ### delivery.host-matrix — Qualify every claimed host architecture
 - status: todo

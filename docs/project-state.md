@@ -1579,11 +1579,48 @@ That is an EMITTER SELF-REPORT, and two things the "60fps" claim actually rests 
    discriminating measurement is that consecutive presented frames DIFFER, and that the interpolated
    geometry lies BETWEEN the two captured endpoints — not equal to either.
 
-Both are cheap to measure over the existing control channel and neither needs a new mechanism, which is
-why this is a measurement gap and not a capability gap. The machine's single product slot is currently
-held by another title, so the run is queued rather than claimed. **Until both are measured, "60fps" for
-this title rests on structural and emit evidence plus oracle parity of guest state, and not on observed
-presentation cadence** — which is the honest reading of `partial`.
+**BOTH ARE NOW MEASURED, and the answer is that the feature works — after the instrument was wrong twice
+and said so both times.** `tools/verify_fps60_cadence.py`, 2026-09-27, both legs through the live control
+channel on the documented route to `GS_Playing` with real held input, and the player's position changing
+in every window:
+
+| leg | tracked settings | presented frames per guest UPDATE | per-window | spread |
+|---|---|---|---|---|
+| shipped | `tools/shipping_settings.ini` (`PSXPORT_FPS60=true [value]`) | **2.0165** | 2.0, 2.0328, 2.0165, 2.0167 | 0.0328 |
+| control | `tools/fps60_control_settings.ini` (`PSXPORT_FPS60=false [value]`) | **1.0061** | 1.0083, 1.0083, 1.008, 1.0 | 0.0083 |
+
+**The feature GAINS 1.0104 presented frames per guest update** — one extra presentation per update, which
+is what "60fps from a 30fps title" means. And **0 of 5 consecutive captured presentations are
+byte-identical**, so the extra frame is a new picture rather than a repeated one. Both legs are read from
+`PSXPORT_FPS60`'s resolved value AND its layer, so each leg says what it was testing.
+
+**The instrument was wrong twice before it was right, and both wrong answers were confident.** That is
+the part worth keeping:
+
+1. **Wrong numerator.** The first version counted `frame`, which is the REAL present counter. An
+   interpolated in-between reaches the screen without advancing it, so the shipped leg read **1.006**
+   presented frames per guest update — indistinguishable from the control, and a perfectly plausible
+   "the feature computes midpoints and then presents at 30 Hz". The same run emitted 3,915 in-betweens.
+   Fixed in psxport `7e3ae28f`, which added the missing counter and made `frame` answer
+   `frame=<real> interp=<in-between> total=<sum>`; `dbgclient.frames()` REFUSES when a binary carries no
+   `total=`, so a stale build cannot answer the question quietly.
+2. **Wrong window.** The second version used wall-clock windows and reported per-window rates of 1.00,
+   1.62 and 5.96 — and the tool REFUSED to call any of them a cadence, correctly: the guest's update rate
+   moves by more than an order of magnitude between game states. Windows are now defined in guest
+   UPDATES, with input held across all of them, which is what took the spread to 0.03.
+
+An instrument that reported a clean number on its first run would have recorded a working feature as
+broken. One that reported an unstable number refused rather than guessed. The third reported a stable
+number with a control beside it.
+
+**What this still does NOT establish, stated so `partial` is not over-read:**
+- **Not interpolation CORRECTNESS.** A midpoint that snapped to the earlier endpoint would present at
+  2.0165 per update with every consecutive pair differing. Whether the emitted geometry lies BETWEEN the
+  two captured endpoints is a per-object question and remains S020's open gap.
+- **Not a wall-clock rate.** Agent runs are unpaced, so this is frames per guest UPDATE, not Hz.
+- **Not a clean in-between census.** The per-capture in-between attribution is coarse — one `frames()`
+  round trip can span several presents — so the tool's `6 of 6 captured presentations were in-betweens`
+  is a sampling artefact of a fast presenter and is not claimed as a ratio.
 
 ### S021 — SVG touch-control interface
 

@@ -23,6 +23,7 @@ fabricated state, and every number it prints came out of the running game.
 from __future__ import annotations
 
 import argparse
+import re
 import signal
 import subprocess
 import sys
@@ -46,11 +47,19 @@ OUT_DIR = ROOT / "scratch" / "live"
 OBSERVE_FRAMES = 20  # frames between decisions, as drive.py's Navigator uses
 
 
-def launch(executable: Path, binary: Path, disc: str | None, port: int, log: Path) -> subprocess.Popen:
+def launch(executable: Path, binary: Path, disc: str | None, port: int, log: Path,
+           settings: Path | None = None) -> subprocess.Popen:
     """The product, headless and silent, with the live endpoint on its own port. PSXPORT_REPL is popped
     because nothing here speaks that protocol, and a product waiting for a prompt on stdin would never
-    start presenting."""
-    environment = drive.environment(disc)
+    start presenting.
+
+    `settings` names the tracked .ini the run is configured with, and defaults to the shipping one. It
+    is a parameter because a MEASUREMENT sometimes needs the other configuration: the 60fps cadence
+    claim is only readable against a leg with the feature OFF, and that leg is a different tracked file,
+    not a patched default. Reading a boot log line to decide which configuration ran is not good enough
+    either — the picture's mode can change after boot — so the caller asks the configuration owner over
+    the endpoint afterwards."""
+    environment = drive.environment(disc, settings)
     environment.pop("PSXPORT_REPL", None)
     environment["PSXPORT_DEBUG_SERVER"] = str(port)
     environment["PSXPORT_LOG_FILE"] = str(log)
@@ -170,12 +179,17 @@ def effective_configuration(client: LiveClient) -> dict:
     knobs: dict[str, str] = {}
     layers: dict[str, str] = {}
     for line in reply.splitlines():
-        fields = line.split()
-        # "  NAME  kind = value [layer]" — the name is the first token, the layer the bracketed one.
-        if len(fields) < 6 or fields[2] != "=" or not fields[-1].startswith("["):
+        # "  NAME  kind = value [layer]" — parsed by SHAPE, not by field count. The old parser required
+        # six whitespace-separated fields, and a cvar whose value has no space produces exactly FIVE
+        # ("PSXPORT_FPS60 bool = true [value]"), so it dropped nearly every knob and returned a partial
+        # dict that looked like an answer. The layer is whatever is in the trailing bracket and the
+        # value is everything between the first "=" and that bracket, which also survives a value that
+        # legitimately contains spaces.
+        match = re.match(r"\s+(\S+)\s+(\S+)\s+=\s+(.*?)\s+\[([^\]]+)\]", line)
+        if not match:
             continue
-        knobs[fields[0]] = fields[3]
-        layers[fields[0]] = fields[-1].strip("[]")
+        knobs[match.group(1)] = match.group(3).strip()
+        layers[match.group(1)] = match.group(4)
     audit = next((line for line in reply.splitlines() if line.startswith("env audit:")), "")
     return {"knobs": knobs, "layers": layers, "env_audit": audit.strip(),
             "unmatched": sorted({line.split("UNKNOWN ")[1].split(" ")[0]

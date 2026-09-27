@@ -830,6 +830,42 @@ barrier, which is a different thing and was previously not reported.
 `player.position` is unchanged: (+59, +405, 0) against the console, byte for byte what this file already
 recorded. The camera differs at the same tick, downstream of Spyro.
 
+**INVERTED 2026-09-27. The product is NOT one load step behind; the barrier sampled INSIDE one `LoadLevel`
+call** ([0137](issues/0137-the-product-is-not-one-load-step-behind-the-barrier-sampled-inside-one-loadlevel-call.md)).
+`LoadLevel` is `0x80015370`, with **36/36 quoted words byte-for-byte** against the image. Its **case 1 FALLS
+THROUGH into case 2** -- the instruction after the store at `0x800155E0` is a `lui`, not a branch; case 2's
+body `[0x800155E4,0x800156B0)` contains no store to `g_LoadStage`; and both stores write `stage + 1`. **One
+call entered at stage 1 writes 2 then 3, so `g_LoadStage == 2` exists only INSIDE a call and is not a resting
+value.** The caller is the flyby's blocking `while (g_LoadStage < 6) { LoadLevel(1); }`, and `m_State` only
+becomes `TSS_Active` after that loop.
+
+**At the barrier both cores are on the same instruction with the same registers.** The reference's own PC
+observer at its park: `pc=0x800155E0 insn=0xAC225864 load_stage=1 v0=0x00000002 t0=0x7F t1=0x8007623C
+ra=0x800155BC`. That observer is **before-opcode** -- its RAM still reads `1` while `$v0` already holds `2` --
+and the comparator reads after the store retires, so it reads `2`. The product ran the same store with the
+same registers, and `0x800163B8` fired 20 times: two complete 0->13 climbs.
+
+**So it is a CD-LATENCY difference, not a load-stepper difference, and the framing recorded here was
+backwards.** The product's field boundary lands BEFORE `0x800155E0`; the reference's lands ON it and sits at
+stage 2 for four more fields while its `CDLoadAsync` overlay read is unfinished. The product crosses the loop
+in one field, the reference in five or more. **The console sampled later inside the call; the product did not
+fall behind.** Still unexplained, and framework CD timing rather than the stepper: why the two field
+boundaries land on opposite sides of that store.
+
+**NO OVERRIDE WAS WRITTEN, AND THAT IS CORRECT.** `LoadLevel` is ~600 instructions of CD-paced loading that
+produces a correct level entry on both cores -- `demo_playing` and `gameplay[0]` match on all 13 decisive
+ranges. Replacing a correct loader to change a number a barrier sampled mid-call would risk the load and leave
+the cause unexplained. **The fix belongs to the route** at `tools/oracle_spyro1.py:63`, which makes
+`load_stage` decisive route-wide when it is a step index stable only BETWEEN calls.
+
+**AND IT CORRECTS A NUMBER IN 0133: the tick-702 `player.position` is PRESENTATION-DEPENDENT.** Six runs of
+one binary differing only in `PSXPORT_SETTINGS`, console byte-identical in all six: `aspect=1, fps60=1` gives
+`b3d70200fd4a02004d520000` and **`aspect=3, fps60=1` gives `0adc0200e94c0200ff500000`** -- render width changes
+`g_Spyro.m_Position` 500+ ticks later. `load_stage` reads `01`/`02` in all six, so the load finding is
+independent. **Any A/B against the recorded value must pin `aspect=1`**, and `--product-env PSXPORT_ASPECT=1`
+does NOT -- the ini wins; `PSXPORT_SETTINGS=<file>` does. `aspect=3` is also how that tracked file acquired the
+value, via the save-target bug fixed in psxport `006eb917`.
+
 **`g_LoadStage` is a LOAD STATE MACHINE'S STEP INDEX, so its exact value at a threshold barrier compares
 iteration counts, not state identity.** From the guest image, not the `nonmatchings` listing:
 `external/spyro-1/include/loaders.h:9` declares `extern int g_LoadStage; // Load stage`, `loaders.c:824-844`

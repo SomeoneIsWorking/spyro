@@ -306,4 +306,14 @@ if(BUILD_TESTING)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()
+  # THE COMPARATOR'S OWN SELFTEST, which was never wired in. A comparator that reports 0 divergences
+  # is only evidence if it CAN report one, and this is the check that says so: it seeds a byte at a
+  # declared range and requires the comparator to detect it. Verified working before being gated --
+  # `selftest: seeded byte at 0x80078A58; comparator DETECTED it`.
+  #
+  # It costs ~82 s because it drives both cores for real, so it is labelled SLOW: a full gate should
+  # pay it, and a tight edit loop should not. `ctest -LE slow` skips it; nothing else is skipped.
+  add_test(NAME oracle_compare_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/oracle_compare.py --selftest)
+  set_tests_properties(oracle_compare_selftest PROPERTIES LABELS slow TIMEOUT 900)
 endif()

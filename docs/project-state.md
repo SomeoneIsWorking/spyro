@@ -1562,6 +1562,29 @@ Discontinuous paired-model intervals retain endpoint presentation. Full-scene 60
 paced timing/audio and performance remain unqualified.
 Issue 0102 resolves the observed duplicate field tick; it does not qualify full-scene cadence parity.
 
+**What the LIVE evidence does and does not establish, stated so the gap is not read as smaller than it
+is.** A live product run exists with the feature on — `scratch/live/live2.log`, 2026-09-27, opening
+`[fps60] TRUE per-object interpolated 60fps ON (source: value)` — and it drives the per-interval
+ownership gate with real denominators: `leg=native armed_groups=1/1 invocations=1 faces=156..165
+culled=false refusal=none => PASS`, repeated per interval. So **interpolated geometry is genuinely being
+emitted through the shipping JIT product during live play**, and the emitter's refusal path is not firing.
+
+That is an EMITTER SELF-REPORT, and two things the "60fps" claim actually rests on are not in it:
+
+1. **Presented-frame cadence.** Nothing recorded here shows presented frames arriving at 2x the guest
+   field rate while the feature is on. Nonzero midpoint emission is compatible with a product that
+   computes midpoints and then presents at 30 Hz, and that would satisfy every check above.
+2. **That the motion is CORRECT rather than merely present.** A midpoint that duplicated its endpoint,
+   or that snapped to the earlier one, would emit the same nonzero face count with the same PASS. The
+   discriminating measurement is that consecutive presented frames DIFFER, and that the interpolated
+   geometry lies BETWEEN the two captured endpoints — not equal to either.
+
+Both are cheap to measure over the existing control channel and neither needs a new mechanism, which is
+why this is a measurement gap and not a capability gap. The machine's single product slot is currently
+held by another title, so the run is queued rather than claimed. **Until both are measured, "60fps" for
+this title rests on structural and emit evidence plus oracle parity of guest state, and not on observed
+presentation cadence** — which is the honest reading of `partial`.
+
 ### S021 — SVG touch-control interface
 
 **Status: missing.** Touch-enabled releases require an authored SVG overlay, reachable multi-touch

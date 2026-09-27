@@ -9,6 +9,7 @@
 #include "runtime_run.h"
 #include "spyro_game.h"
 #include "spyro_runtime.h"
+#include "store_observe.h" // store_observe_attach — PSXPORT_STORE_OBSERVE on a title-owned spine
 #include "title_runtime_registry.h"
 #include "title_selection.h"
 
@@ -78,6 +79,14 @@ int main(int argc, char **argv) {
   // `honourPause` before each frame and `service` after it, both the framework's. A title that
   // reimplements any of this is the second copy the factoring exists to prevent.
   const int frameCap = game->dbg_server.attach(&core, cfg_int("PSXPORT_NATIVE_FRAMES", 0));
+  // PSXPORT_STORE_OBSERVE: this is a TITLE-OWNED spine, so it never reaches the framework's
+  // `native_boot_run` line that arms the dynarec store observer, and was therefore silently unarmed
+  // while the boot audit printed the variable as `[env]`. Measured 2026-09-27: `nm -C` showed
+  // `store_observe_configure` linked in, the audit showed the variable set, and a run with
+  // `PSXPORT_STORE_OBSERVE=nothex` produced not one line — not even the parse refusal that a bad
+  // token emits unconditionally. Arm it here, beside the live endpoint, which is the same class of
+  // opt-in diagnostic on the same spine.
+  store_observe_attach(core);
   spyro::runtimeRun(core) = spyro::RuntimeRun(frameCap);
 
   dc_boot_init(&core);

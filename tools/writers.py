@@ -34,8 +34,12 @@ import struct
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(REPO, "scratch", "bin", "spyro", "SCUS_942.28")
-OVDIR = os.path.join(REPO, "scratch", "bin", "overlays")
+# The PROVISIONED layout, which is what tools/provision_title.py writes and what every other
+# instrument in tools/ reads. The previous defaults named scratch/bin/spyro/ and
+# scratch/bin/overlays/, a layout this repository does not produce: the tool died with a
+# FileNotFoundError before scanning a word, which is indistinguishable from having found nothing.
+EXE = os.path.join(REPO, "scratch", "assets", "spyro1", "SCUS_942.28")
+OVDIR = os.path.join(REPO, "scratch", "assets", "spyro1", "overlays")
 ARENA_BASE = 0x8007AA38          # every Spyro overlay loads here — see AGENTS.md / the router
 
 REG = ["zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
@@ -125,13 +129,28 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("target")
     ap.add_argument("--value", type=lambda s: int(s, 0), help="only report stores of this constant")
+    ap.add_argument("--exe", default=EXE, help=f"main executable (default {EXE})")
+    ap.add_argument("--ovdir", default=OVDIR,
+                    help=f"directory of OV_*.BIN overlay images to scan as well (default {OVDIR})")
     a = ap.parse_args()
     target = int(a.target, 16)
 
-    images = []
-    exe = open(EXE, "rb").read()
-    images.append(("MAIN", exe[0x800:], struct.unpack_from("<I", exe, 0x18)[0]))
-    for f in sorted(glob.glob(os.path.join(OVDIR, "OV_*.BIN"))):
+    # A missing image is a REFUSAL, not an empty result. This tool's value is that "no immediate-form
+    # writer" is a distinguishable answer, and a traceback out of open() is not an answer at all --
+    # it is the shape of failure that gets read as "nothing writes this".
+    try:
+        exe = open(a.exe, "rb").read()
+    except OSError as failure:
+        print(f"REFUSED: cannot read {a.exe}: {failure.strerror}. Provision the image "
+              f"(tools/provision_title.py) or pass --exe.", file=sys.stderr)
+        return 2
+    if exe[:8] != b"PS-X EXE":
+        print(f"REFUSED: {a.exe} is not a PS-X EXE, so its text base cannot be read from the header; "
+              f"a guessed base reports stores at wrong addresses", file=sys.stderr)
+        return 2
+
+    images = [("MAIN", exe[0x800:], struct.unpack_from("<I", exe, 0x18)[0])]
+    for f in sorted(glob.glob(os.path.join(a.ovdir, "OV_*.BIN"))):
         images.append((os.path.basename(f), open(f, "rb").read(), ARENA_BASE))
 
     total = 0
@@ -143,7 +162,11 @@ def main():
             print(f"  {tag:16s} 0x{pc:08X}  {mn} ${REG[rt]}   {v}")
             total += 1
     sel = f" storing {a.value}" if a.value is not None else ""
-    print(f"\n{total} immediate-form store(s) to 0x{target:08X}{sel}")
+    # The denominator, in the same sentence as the count: how many images were scanned and how many
+    # of them were overlays. Spyro reuses one load address across many WAD images, so a corpus that
+    # silently scanned only MAIN is a DIFFERENT and weaker answer than one that scanned the overlays.
+    print(f"\n{total} immediate-form store(s) to 0x{target:08X}{sel}, from {len(images)} image(s) "
+          f"scanned: {', '.join(tag for tag, _, _ in images)}")
     print("\nThis lists writers that EXIST, not writers that RUN, and it cannot see stores through a\n"
           "computed pointer. Use PSXPORT_WWATCH=<lo>,<hi> PSXPORT_WWATCH_BT=1 for either question —\n"
           "an empty result here means 'no immediate-form writer', never 'nothing writes this'.")

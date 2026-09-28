@@ -24,6 +24,7 @@ Usage:
   drive.py gameplay --shot scratch/screenshots/gameplay.ppm
   drive.py gameplay --hold left --hold-frames 60 --shot scratch/screenshots/left.ppm
   drive.py gameplay --tap circle --after 120 --shot scratch/screenshots/flame.ppm
+  drive.py gameplay --press-while 0:start --shot scratch/screenshots/boot-pressed.ppm
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import guest_globals
+import pre_arrival_press
 import spyro1_steering
 from spyro1_steering import Refusal as SteeringRefusal
 from spyro1_steering import moby_class_targets, portal_targets
@@ -124,6 +126,10 @@ class Port:
         # dragon producer works or because the run never met a dragon, and the log cannot tell them
         # apart.
         self.gamestate_census: dict[int, int] = {}
+        # The gamestate the most recent `run` chunk ended in, for consumers that must not re-read it.
+        # -1 means "no sample yet", which is a different answer from any gamestate and is refused as
+        # such by the press conditions rather than compared against 0.
+        self._last_sampled_gamestate = -1
         # The census restarted at arrival. A whole-run census cannot tell "the dragon cutscene
         # rendered during gameplay" from "the attract sequence happened to pass through it on the
         # way in", and those are different answers to issue 0103.
@@ -147,11 +153,22 @@ class Port:
             result = self._await_prompt()
             remaining -= step
             state = self.gamestate()
+            self._last_sampled_gamestate = state
             self.gamestate_census[state] = self.gamestate_census.get(state, 0) + 1
         return result
 
     def mark_arrival(self) -> None:
         self._census_at_arrival = dict(self.gamestate_census)
+
+    @property
+    def last_sampled_gamestate(self) -> int:
+        """The gamestate `run` last sampled, or -1 before the first sample.
+
+        A pre-arrival press condition is decided from this rather than from a fresh `rw`, because the
+        navigator has just sampled it to choose its own next step and a second read is a second REPL
+        round trip per observation for a value already in hand.
+        """
+        return self._last_sampled_gamestate
 
     def census_line(self) -> str:
         """One line naming every gamestate reached, with its denominator.
@@ -326,15 +343,33 @@ class Navigator:
 
     STEP = 20  # frames between observations; small enough to catch a one-shot menu state
 
-    def __init__(self, port: Port, budget: int = 12000, skip_transitions: bool = False):
+    def __init__(self, port: Port, budget: int = 12000, skip_transitions: bool = False,
+                 presses: pre_arrival_press.PressConditions | None = None):
         self._port = port
         self._budget = budget
         self._skip_transitions = skip_transitions
+        # The pre-arrival pad script lives HERE, not in main(), because the guarantee it rests on is
+        # structural: only _advance() applies it, only the three pre-arrival phases call _advance(),
+        # and reach_gameplay() returns before any of them can run again. So a --press-while spec
+        # cannot fire during gameplay, where Start is the pause button and the next gamestate's
+        # producer may not exist at all.
+        self._presses = presses if presses is not None else pre_arrival_press.PressConditions()
 
     def reach_gameplay(self) -> None:
         self._reach_title_menu()
         self._start_new_game()
         self._wait_for_playing()
+
+    def _advance(self) -> None:
+        """Run one observation step, then apply any pre-arrival edge its condition now authorises.
+
+        Every pre-arrival phase advances through here, so a `--press-while` spec reaches the boot
+        logos, the attract fly-in and the transition screens between them -- the states --hold, --tap
+        and --after cannot, because those are applied only after arrival at GS_Playing.
+        """
+        self._port.run(self.STEP)
+        for condition in self._presses.apply(self._port, self._port.last_sampled_gamestate):
+            print(f"press: {condition.name()} at frame {self._port.frame}", file=sys.stderr)
 
     def _screen(self) -> "title_prompts.Screen":
         return title_prompts.Screen(gamestate=self._port.gamestate(), title=self._port.title(),
@@ -365,7 +400,7 @@ class Navigator:
                 return
             self._answer(prompt)
             spent += self.STEP
-            self._port.run(self.STEP)
+            self._advance()
         raise Refusal(
             f"never reached the save picker (TSM_Loading) within {self._budget} frames; "
             f"last gamestate={self._port.gamestate()} title={self._port.title()}"
@@ -384,7 +419,7 @@ class Navigator:
                 return
             self._answer(prompt)
             spent += self.STEP
-            self._port.run(self.STEP)
+            self._advance()
         raise Refusal(
             f"the save picker never committed a slot within {self._budget} frames; "
             f"last title={self._port.title()}"
@@ -398,7 +433,7 @@ class Navigator:
                 return
             self._answer(prompt)
             spent += self.STEP
-            self._port.run(self.STEP)
+            self._advance()
         raise Refusal(
             f"never reached GS_Playing within {self._budget} frames; "
             f"gamestate={self._port.gamestate()} load_stage={self._port.word(G_LOAD_STAGE)}"
@@ -476,6 +511,22 @@ def main() -> int:
         help="press Start on the level-transition tally and the level flyby while driving in, exercising the port's "
         "cancellation of those screens",
     )
+    parser.add_argument(
+        "--press-while",
+        action="append",
+        default=[],
+        metavar="GAMESTATE:BUTTON[:FRAMES]",
+        help="tap a button on the first occasion the guest is observed in that gamestate, BEFORE "
+        "arrival. This is the only way to touch boot, the logos, the attract fly-in and the "
+        "transition screens: --hold/--tap/--after are all applied after GS_Playing, so no driven run "
+        "could press anything before it. Conditional rather than a frame count, because the "
+        "boot/attract sequence is timing dependent and field 400 is a different screen on every run. "
+        "Exactly one edge per spec, never a second: gamestate 0 is both the boot logo and the "
+        "arrival state, and a live run that re-fired there pressed Start in gameplay and opened the "
+        "pause menu. The states are "
+        + ", ".join(f"{n}={s}" for s, n in sorted(pre_arrival_press.GAMESTATE_NAMES.items()))
+        + ".",
+    )
     parser.add_argument("--hold", action="append", default=[], help="button held after arrival")
     parser.add_argument("--hold-frames", type=int, default=60)
     parser.add_argument("--tap", action="append", default=[], help="button tapped after arrival")
@@ -535,10 +586,20 @@ def main() -> int:
             parser.error(f"--env expects NAME=VALUE, got {entry!r}")
         env[name] = value
 
+    try:
+        presses = pre_arrival_press.parse_all(args.press_while)
+    except pre_arrival_press.Refusal as refusal:
+        parser.error(str(refusal))
     port = Port(ROOT / args.executable, ROOT / args.binary, ROOT / args.log, env)
     try:
-        Navigator(port, skip_transitions=args.skip_transitions).reach_gameplay()
+        Navigator(port, skip_transitions=args.skip_transitions, presses=presses).reach_gameplay()
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
+        # What the pre-arrival presses did, reported at arrival. A condition that scanned the whole
+        # approach and matched nothing is named, because "the press never happened" and "the screen
+        # never appeared" are the two readings of a clean log and only one of them is a port defect.
+        # The script is not cleared here -- it is simply never applied again, because _advance() is
+        # unreachable once reach_gameplay() has returned.
+        print(presses.report(), file=sys.stderr)
         port.mark_arrival()
         if args.settle:
             port.run(args.settle)
@@ -580,6 +641,7 @@ def main() -> int:
     except Refusal as refusal:
         print(f"drive.py REFUSED: {refusal}", file=sys.stderr)
         print(f"  {port.census_line()}", file=sys.stderr)
+        print(f"  {presses.report()}", file=sys.stderr)
         print(f"  run log: {args.log}", file=sys.stderr)
         port.end()
         return 2

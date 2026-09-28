@@ -144,9 +144,19 @@ were checked by removing the thing they test and watching them fail, not by read
 
 Each of these has a named natural terminal writer but no exercised route, so none is installed:
 
-- `GS_EntranceAnimation = 9` (`func_8002E000`): terminates by writing `g_Gamestate = GS_Playing`
-  once the camera y-rotation drops below `-0x200` or the spherical preset reaches `D_8006CA84`. A
-  cancellation would have to leave the camera mid-rotation, which is a state question, not a flag.
+- `GS_EntranceAnimation = 9` (`func_8002E000` at **`0x8002E000`**): its terminal is one guest
+  store, `0x8002E070: sw $zero, 0x57d8($at)` = `g_Gamestate = GS_Playing`, and nothing else. It is
+  reached only through the camera gate, so a cancellation has to move the camera — but the reason
+  this section used to give ("it would have to leave the camera mid-rotation, which is a state
+  question, not a flag") is **wrong**: `g_Camera.m_Rotation.y` is a derived value rewritten every
+  frame by `func_800342F8`, and the camera's owner is `CameraUpdate` `0x80037BD4`, which the
+  GS_Playing arm calls at `0x80033B4C` exactly as stage 9 calls it at `0x8002E010`. Ending the
+  screen does not strand the camera. The real reasons there is no arm are that the terminal cannot be
+  dispatched (it sits `0x10` bytes before an epilogue whose `lw $ra` clobbers the dispatcher's return
+  address) and that, in the resident text, there is no guest acceleration route for it (the main
+  image's only two Start/Cross-mask sites are the pause menu's confirm and stage 14's own skip; the
+  WAD overlays, where this title's other Start handling lives, were **not** scanned). Recovered,
+  measured, and written up in `docs/issues/0138`.
 - `GS_ExitLevel = 10` (`func_8002E084`): terminates through its own counter chain into
   `func_8002C664` (`0x8002C664`), which is a complete recovered route — a scoped original call to it
   is the shape a cancellation should take, once the state can be reached.
@@ -182,6 +192,20 @@ the full 7800 fields), and the boot-skip routes already shipped rely on that sam
 
 Any future skip verification for a pre-gameplay state therefore needs a pre-arrival input path; the
 drive's arrival-gated route cannot express it, and that is a harness gap rather than a title defect.
+
+**CLOSED 2026-09-28.** `tools/pre_arrival_press.py` and `drive.py --press-while GAMESTATE:BUTTON
+[:FRAMES]`, gated by `pre_arrival_press_selftest`. It is condition-driven, not a frame count, because
+the boot/attract sequence is timing dependent and field 400 is a different screen on every run. One
+edge per spec, never a second: gamestate 0 is both the boot logo and the arrival state, and the first
+version of the rule (one edge per contiguous run) fired a second Start at the `GS_Playing` hand-off
+in a live run and the guest opened `GS_PauseMenu`. Measured legs, same disc and settings, one product
+instance at a time:
+
+| run | presses | arrival | port's own log | census |
+|---|---|---|---|---|
+| no press | 0 | field 6380 | `Start/Cross ends …` ×0 | 651 samples; never reached `level_transition`, `dragon`, `entrance_animation`, `credits` |
+| `--press-while 0:start` | 1 at field 20 | field **6180** | `Start/Cross ends Spyro 1's first presentation hold` ×1 | 631 samples; `since GS_Playing: playing=13` |
+| `--press-while 9:start --press-while 1:start` | 0 | field 6360 | — | 649 samples; both conditions `fired 0 time(s) in 0 sample(s) -- scanned, never matched`, and the census independently names both states unreached |
 
 PARTLY CLOSED 2026-09-19. `--skip-transitions` now also presses Start on the flyby card during the
 approach, alongside the level-transition tally, so the navigator does issue pre-arrival edges on the

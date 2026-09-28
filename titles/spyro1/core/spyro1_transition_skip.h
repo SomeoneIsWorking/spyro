@@ -46,6 +46,14 @@ Cancellation classify(const TransitionState &state);
 // stage, timers, sprite state — as the natural route leaves it. A screen whose terminal transition
 // has not been recovered is deliberately absent rather than approximated, so no press can jump a
 // state or bypass required I/O.
+//
+// A screen whose terminal IS recovered can still be absent, and stage 9 is the case that needs the
+// distinction recorded. GS_EntranceAnimation's whole terminal is one guest store, `0x8002E070:
+// sw $zero, 0x57d8($at)`, so nothing is un-recovered about it — but the store cannot be dispatched
+// (it sits 0x10 bytes before an epilogue whose `lw $ra` clobbers the dispatcher's return address)
+// and the only well-formed unit in the screen re-tests the same camera gate, so dispatching it
+// cannot make the terminal happen early. See docs/issues/0138 for the recovery, the arguments, and
+// the shapes a differently-owned decision could still take.
 class TransitionSkip {
 public:
   explicit TransitionSkip(FieldScheduler &fields);

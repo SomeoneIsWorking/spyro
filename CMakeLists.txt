@@ -285,6 +285,16 @@ if(BUILD_TESTING)
   # that is quietly wrong still reaches destinations, by detouring; only a fixture catches it.
   add_test(NAME spyro1_steering_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/spyro1_steering.py --selftest)
+  # The pre-arrival pad script, which is the ONLY way a driven run can press anything before it
+  # reaches GS_Playing -- boot, the logos, the attract fly-in and every transition screen. Gated
+  # because the failure it has to not have is the quiet one: a condition that silently never matches
+  # looks exactly like a screen the game never reached. So its selftest covers a screen that IS up
+  # (one edge out of forty samples), a screen that is NOT (scanned and matched nothing, reported as
+  # such with the sample count), a re-visit (still ONE edge -- gamestate 0 is both the boot logo and
+  # the arrival state, and a live run that re-fired there pressed Start in gameplay and opened the
+  # pause menu), and every malformed spec refused by name rather than left looking armed.
+  add_test(NAME pre_arrival_press_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/pre_arrival_press.py --selftest)
   # The four instruments the tick-41 divergence rests on. Each one's answer is only worth reading if
   # the instrument can be shown to produce the OTHER answer, which is what these selftests are for —
   # and three of the four exist because the instrument was caught being wrong first:

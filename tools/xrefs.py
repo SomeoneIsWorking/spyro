@@ -31,8 +31,8 @@ without it inverts the meaning: at 0x8007CAA8 the delay slot sets v0 = 5 uncondi
 
 Usage:
   xrefs.py 0x8007CBA0                                  # search the resident MAIN executable
-  xrefs.py 0x8007CBA0 --img scratch/bin/overlays/OV_5B800.BIN --base 0x8007AA38
-  xrefs.py 0x8007CC48 --img ... --base ...             # a known-busy address, to validate the scan
+  xrefs.py 0x8007CBA0 --img <overlay image> --base 0x8007AA38
+  xrefs.py 0x8007CC48 --img <image> --base <addr>      # a known-busy address, to validate the scan
 
 An overlay is keyed BY its load address, so --base is required with --img and is never guessed: a wrong
 base silently reports correctly-decoded branches at wrong addresses.
@@ -43,7 +43,11 @@ import struct
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_EXE = os.path.join(REPO, "scratch", "bin", "spyro", "SCUS_942.28")
+# The PROVISIONED layout, which is what tools/provision_title.py writes and what every other
+# instrument in tools/ reads. The previous default named scratch/bin/spyro/, a layout this repository
+# does not produce, so the tool died with a FileNotFoundError before scanning anything -- an
+# instrument that cannot run is indistinguishable from one that found nothing.
+DEFAULT_EXE = os.path.join(REPO, "scratch", "assets", "spyro1", "SCUS_942.28")
 
 # op codes whose target is pc-relative (simm16 << 2): REGIMM, beq/bne/blez/bgtz and their _L forms,
 # plus the COP branch opcodes (bc0f/bc1t/...), which are encoded in the same shape.
@@ -64,8 +68,17 @@ def branch_target(w, pc):
 
 
 def load_image(path, base):
-    """(bytes, base). For the PS-EXE, the text base and payload come from the header, not guessed."""
-    data = open(path, "rb").read()
+    """(bytes, base). For the PS-EXE, the text base and payload come from the header, not guessed.
+
+    A missing image is a REFUSAL, not an empty scan: this tool's whole value is that a scan which
+    found nothing is distinguishable from a scan that never ran, and a traceback out of open() is
+    neither answer.
+    """
+    try:
+        data = open(path, "rb").read()
+    except OSError as failure:
+        sys.exit(f"REFUSED: cannot read {path}: {failure.strerror}. Provision the image "
+                 f"(tools/provision_title.py) or name another with --img.")
     if base is not None:
         return data, base
     if data[:8] == b"PS-X EXE":

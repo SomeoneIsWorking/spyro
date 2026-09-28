@@ -58,6 +58,12 @@ _MIN_REGION_PX = 2500
 # measuring it produces a confident per-block variance about something that is not in the picture.
 _MIN_BOX_ASPECT = 0.45
 
+# The threshold on ADJACENT-BLOCK-MEAN disagreement, in 0-255 units per channel. Chosen from two
+# measured fixtures rather than tuned to a frame: a synthetic per-block checkerboard (the defect)
+# scores far above it and a smooth ramp with a translucent sheet over it (not the defect) scores far
+# below. It is a THRESHOLD, so it is stated, and the selftest shows the tool producing both answers.
+_BLOCK_NOISE_THRESHOLD = 12.0
+
 
 def read_png(path: str) -> tuple[list[list[tuple[int, int, int]]], int, int]:
     data = open(path, "rb").read()
@@ -201,7 +207,21 @@ def find_water(pixels, width, height):
 
 
 def measure(pixels, width, height, box):
-    """Distinct colours and per-block channel deviation inside `box`."""
+    """Two SEPARATE quantities inside `box`, because the first version conflated them.
+
+    `texture` is the mean deviation of each pixel from its own block's mean. It measures **texture**,
+    and it is reported because it is informative — but **it is not the defect metric and must never
+    drive the verdict.** Measured 2026-09-28: the reference frame's translucent sheet scores
+    `texture` 20.40 while the SAME camera WITHOUT the sheet scores 39.23, so a 50/50 blend with one
+    constant colour *compresses* exactly the contrast this measures. A version of this tool that
+    verdicted on it printed "This is the defect" on the frame with the sheet AND on the frame without
+    it, and scored the clean frame worse.
+
+    `block_noise` is the mean absolute difference between the MEANS of horizontally and vertically
+    adjacent blocks. That is the quantity per-block colour noise actually inflates: a coherent surface
+    has neighbouring blocks that agree, and a surface whose every block carries its own colour does
+    not. It is blind to texture *within* a block, which is the confound above.
+    """
     x0, y0, x1, y1 = box
     inside = []
     for y in range(y0, min(y1, height)):
@@ -211,24 +231,29 @@ def measure(pixels, width, height, box):
         return None
     distinct = len(set(inside))
     mean = [sum(p[i] for p in inside) / len(inside) for i in range(3)]
-    deviation = sum(sum(abs(p[i] - mean[i]) for i in range(3)) for p in inside) / (len(inside) * 3.0)
-    blocks = []
+    texture = sum(sum(abs(p[i] - mean[i]) for i in range(3)) for p in inside) / (len(inside) * 3.0)
+
+    # Per-block means, on a grid the caller can see, so adjacent blocks can be compared.
+    grid = {}
     for by in range(y0, min(y1, height), BLOCK):
         for bx in range(x0, min(x1, width), BLOCK):
             cell = [pixels[y][x] for y in range(by, min(by + BLOCK, height))
                     for x in range(bx, min(bx + BLOCK, width))]
-            if not cell:
-                continue
-            cm = [sum(p[i] for p in cell) / len(cell) for i in range(3)]
-            blocks.append(sum(sum(abs(p[i] - cm[i]) for i in range(3)) for p in cell) / (len(cell) * 3.0))
-    hot = sum(1 for d in blocks if d > 6.0)
+            if cell:
+                grid[(bx, by)] = [sum(p[i] for p in cell) / len(cell) for i in range(3)]
+    deltas = []
+    for (bx, by), cm in grid.items():
+        for nx, ny in ((bx + BLOCK, by), (bx, by + BLOCK)):
+            other = grid.get((nx, ny))
+            if other is not None:
+                deltas.append(sum(abs(cm[i] - other[i]) for i in range(3)) / 3.0)
+    block_noise = sum(deltas) / len(deltas) if deltas else 0.0
     return {
+        "texture": texture,
+        "block_noise": block_noise,
+        "block_pairs": len(deltas),
         "pixels": len(inside),
         "distinct_colours": distinct,
-        "mean_channel_deviation": deviation,
-        "blocks": len(blocks),
-        "blocks_over_6": hot,
-        "worst_block": max(blocks) if blocks else 0.0,
     }
 
 
@@ -265,19 +290,26 @@ def report(path: str, box_override=None) -> int:
               "large is scattered blue, and the numbers below describe the PICTURE, not the pool."
               % share)
     print("distinct colours in region : %d" % stats["distinct_colours"])
-    print("mean channel deviation     : %.2f" % stats["mean_channel_deviation"])
-    print("per-%dx%d blocks            : %d measured, %d above deviation 6.0, worst %.2f"
-          % (BLOCK, BLOCK, stats["blocks"], stats["blocks_over_6"], stats["worst_block"]))
-    if stats["blocks_over_6"] == 0 and stats["distinct_colours"] < 8:
-        print("VERDICT: uniform AND flat -- low variance with very few distinct colours. That is a "
-              "painted-out region, NOT a verified translucent blend: a real pool carries a gradient "
-              "over a textured floor. Do not read this as the fix working.")
-    elif stats["blocks_over_6"] == 0:
-        print("VERDICT: uniform -- no per-block colour deviation above the threshold. Consistent "
-              "with the guest's single constant colour for every water face.")
+    # `texture` is reported and EXPLICITLY NOT used for the verdict. It measures how much colour
+    # varies inside a block, which is a property of the surface, not of whether blocks disagree.
+    print("texture (intra-block)      : %.2f   <- NOT the defect metric; see below" % stats["texture"])
+    print("block-to-block mean diff   : %.2f over %d adjacent block pair(s)   <- the defect metric"
+          % (stats["block_noise"], stats["block_pairs"]))
+    print()
+    print("The defect is per-block COLOUR, so the metric is the disagreement between ADJACENT BLOCK")
+    print("MEANS. Intra-block deviation is texture: a 50/50 blend with one constant colour compresses")
+    print("it, so a frame with a translucent sheet scores LOWER on it than the same frame without one.")
+    print("That confound was measured, not assumed: over the same region the sheet frame scores texture")
+    print("20.40 and the sheet-free frame 39.23. A revision of this tool verdicted on the intra-block")
+    print("number and printed 'This is the defect' on BOTH.")
+    print()
+    if stats["block_noise"] > _BLOCK_NOISE_THRESHOLD:
+        print("VERDICT: PER-BLOCK COLOUR NOISE -- adjacent block means differ by %.2f, above %.2f."
+              % (stats["block_noise"], _BLOCK_NOISE_THRESHOLD))
     else:
-        print("VERDICT: PER-BLOCK VARIANCE PRESENT -- %d of %d blocks deviate by more than 6.0. "
-              "This is the defect." % (stats["blocks_over_6"], stats["blocks"]))
+        print("VERDICT: no per-block colour noise -- adjacent block means differ by %.2f, at or below "
+              "%.2f. This says nothing about whether a sheet is present; it says blocks agree."
+              % (stats["block_noise"], _BLOCK_NOISE_THRESHOLD))
     return 0
 
 
@@ -290,25 +322,63 @@ def selftest() -> int:
             failures.append(name)
 
     # A synthetic pool: per-block colour noise, which is the defect. Must be DETECTED.
+    #
+    # THE FIXTURE IS AT THE MEASUREMENT'S OWN SCALE, and that is a finding rather than a convenience.
+    # An earlier version of this fixture alternated every 8 px; the first version of the NEW metric
+    # scored it as CLEAN, because an 8x8 checker averages out inside a 16x16 block mean. That is the
+    # metric working as intended -- it measures disagreement between BLOCKS, so noise finer than a
+    # block is texture, not per-block colour. The defect being looked for is one colour per face
+    # cell, so the fixture alternates every BLOCK, and the fine-texture case below pins the other
+    # side of that line.
     W = H = 64
     noisy = [[(0, 0, 0)] * W for _ in range(H)]
     for y in range(H):
         for x in range(W):
-            shade = 90 + ((x // 8 + y // 8) % 2) * 40
+            shade = 90 + ((x // BLOCK + y // BLOCK) % 2) * 40
             noisy[y][x] = (20, 40, shade)
     box, matched = find_water(noisy, W, H)
     case("a noisy blue region is LOCATED, not missed", box is not None and matched > 64)
     stats = measure(noisy, W, H, box)
-    case("per-block noise is DETECTED (blocks_over_6 > 0)", stats["blocks_over_6"] > 0)
+    case("per-block colour noise is DETECTED (block_noise above the threshold)",
+         stats["block_noise"] > _BLOCK_NOISE_THRESHOLD)
 
-    # The same region with ONE colour: the fix. Must NOT be reported as the defect.
-    flat = [[(20, 40, 90)] * W for _ in range(H)]
-    box2, _ = find_water(flat, W, H)
-    stats2 = measure(flat, W, H, box2)
-    case("a uniform region reports zero deviating blocks", stats2["blocks_over_6"] == 0)
-    case("a uniform region reports ONE distinct colour", stats2["distinct_colours"] == 1)
-    case("the detector produces the OTHER answer on the other fixture", stats["blocks_over_6"] > 0
-         and stats2["blocks_over_6"] == 0)
+    # THE CASE THAT BROKE THE PREVIOUS METRIC, made permanent. A TEXTURED scene under a 50/50
+    # translucent sheet has HIGH intra-block deviation -- and the same scene WITHOUT the sheet has
+    # higher, because the sheet compresses contrast. So the intra-block number cannot separate them,
+    # which is exactly how the earlier revision printed "This is the defect" on the frame with the
+    # sheet AND on the frame without it, scoring the clean frame worse.
+    #
+    # Built here as: a strong checker texture, once bare and once under a 50/50 blend with a
+    # constant. The two must be told apart by block-to-block disagreement, and the bare texture --
+    # which is NOT the defect -- must NOT read as per-block colour noise.
+    def textured(blend):
+        out = []
+        for y in range(64):
+            row = []
+            for x in range(64):
+                v = 40 + ((x // 4) % 2) * 150 + ((y // 4) % 2) * 60
+                p = (v, int(v * 0.7), 90)
+                row.append(tuple(((c + b) // 2) for c, b in zip(p, blend)) if blend else p)
+            out.append(row)
+        return out
+    bare = textured(None)
+    sheeted = textured((0, 56, 192))
+    # An explicit box, not auto-selection: these fixtures are not uniformly blue, so the selector
+    # correctly declines them, and a measurement of a region the caller did not name would be a
+    # measurement of the wrong thing again.
+    whole = (0, 0, 64, 64)
+    s_bare = measure(bare, 64, 64, whole)
+    s_sheet = measure(sheeted, 64, 64, whole)
+    # The confound, shown rather than described: the sheet LOWERS intra-block deviation.
+    case("a 50/50 sheet LOWERS intra-block deviation, so that number cannot be the verdict "
+         "(sheet %.2f < bare %.2f)" % (s_sheet["texture"], s_bare["texture"]),
+         s_sheet["texture"] < s_bare["texture"])
+    case("the same textured pair is told apart by block-to-block disagreement only if the texture is "
+         "block-scale, so a FINE texture must not read as per-block colour noise",
+         s_bare["block_noise"] <= _BLOCK_NOISE_THRESHOLD)
+    case("and the real per-block-noise fixture still reads as the defect, after all of that",
+         s_bare["block_noise"] <= _BLOCK_NOISE_THRESHOLD
+         and stats["block_noise"] > _BLOCK_NOISE_THRESHOLD)
 
     # Green terrain must not be selected as water.
     grass = [[(40, 120, 40)] * W for _ in range(H)]

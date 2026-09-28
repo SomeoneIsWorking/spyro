@@ -1,5 +1,5 @@
 ---
-id: 0144
+id: 0145
 title: Six of Spyro 1's thirty-five levels author a translucent low-poly face, so the water fix is live — and Artisans is one of the twenty-nine that do not
 status: open
 symptom: `c229e45` made `world_lq_recipe.cpp` take the guest's CONSTANT colour for faces with

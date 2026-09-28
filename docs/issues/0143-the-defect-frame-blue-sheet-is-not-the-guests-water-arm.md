@@ -81,7 +81,7 @@ frame without it. It is not a regression either: the sheet is absent from `pause
 `pause3.png`, `pause-menu.png` and `pause_text.png`, which are all **pre-fix** captures of the same
 camera.
 
-**SUPERSEDED IN SCOPE, 2026-09-28, by `docs/issues/0144`.** "Dead in this level" was correct and was
+**SUPERSEDED IN SCOPE, 2026-09-28, by `docs/issues/0145`.** "Dead in this level" was correct and was
 not the whole question. Censusing every level DATA entry in `WAD.WAD`
 (`tools/census_level_face_material.py`) finds **1,592 translucent faces across 6 of 35 levels**, the
 largest population in level 17 (levelId 35, CRYSTAL FLIGHT) at 494 of 3,341 faces across 95 of its

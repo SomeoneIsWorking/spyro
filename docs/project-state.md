@@ -35,7 +35,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image | partial | S005 | G003 |
-| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; live gap is LEVEL COVERAGE (issue 0134), not code | S004, S005 | G003 |
+| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; the gap is LEVEL CHOICE, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
 | S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | missing | — | G001 |
@@ -188,6 +188,37 @@ which would be forging state. `tools/probe_blended_anim.py` is ready for that ro
 registered. **Not established:** the other levels — two of a ~40-level homeworld — and the colour channels,
 which are unauthored in both levels reached and are where a nonzero factor is most plausible, since a
 colour fade is what a blend is for.
+
+**THE UNBLOCKER IS NOW MEASURED, AND IT IS NOT LEVEL COVERAGE — IT IS LEVEL CHOICE (2026-09-28,
+`f632e4d`, `docs/findings/level-blend-factor-census.md`).** The paragraph above asks whether a nonzero
+factor exists anywhere in the game. It does, overwhelmingly: **26 of the 35 level-data entries author at
+least one, and 47,932 of 51,042 authored keyframes carry a nonzero factor (93.9%)**.
+
+**The number above needed correcting, and the correction is the finding.** "all 24 of their keyframes
+carry factor 0" is a census of a *different set* than the one that matters. It read **one** keyframe per
+animation — the one the runtime index byte `animation[2]` selects at a live capture — while an
+animation's authored form is its whole 8-byte-strided table, **120 or 240 slots long**. **Slot 0's
+factor is `0` in every one of the game's 739 animations**, so a census of the selected slot finds nothing
+in *any* level, not just the two reached. Both metrics on the same corpus:
+
+| metric | what it reads | Artisans | whole game |
+|---|---|---|---|
+| SELECTED (the live probe's metric) | the one slot `animation[2]` names | 24 slots, **0 nonzero** | 739 slots, **0 nonzero** |
+| AUTHORED | every slot, bounded by the record's own base-offset word | 3,360 slots, **3,312 nonzero** | 51,042 slots, **47,932 nonzero** |
+
+**The flag byte explains why the live counter reads what it does.** `func_8002A6FC` skips any record
+whose byte 1 has bit 1 set, and **all 24 of Artisans' records carry `0x02`** — Artisans pins its index
+byte at 0 *by asking to be skipped*. Records with `flags=0x00` get the index byte written every frame
+and are exactly the ones that reach the blend arm. The colour-channel guess was right: ch3 alone
+carries 24,515 nonzero factors, ch1 1,233, against ch0 5,452 and ch2 16,732.
+
+**So the remaining work is ONE driven run, not a capability and not coverage.** Target **entry 52**
+(75 HighColor animations, every flag byte `0x00`, 3,280 authored nonzero factors); entry 18 is the
+smallest case. `fieldenv` reporting `blended=N, N>0` closes S020. **Not established:** the
+`func_8002A6FC` advance rule — that a *clear* skip bit gets the index byte written every frame is
+disassembly fact, but which value it lands on is a live question, and it is what decides whether entry
+52 actually reaches `blended>0`. 7 of the 44 runless entries are unidentified data and are reported
+UNKNOWN rather than zero.
 The current audio-field trace ran 1,200 NTSC fields with 882,882 expected and queued samples, every
 field rendering 735 or 736 samples into a valid 44.1 kHz stereo WAV. SBS now compares exact per-field
 PCM reports after rebinding each core's isolated SPU output state: a 120-frame oracle run produced

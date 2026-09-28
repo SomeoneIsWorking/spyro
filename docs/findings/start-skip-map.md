@@ -48,6 +48,14 @@ establish the two input shapes in the resident `OV_5B800` image:
 
 - `[0x80077380]` is held input; `0x8007AC48` tests Start while the title timer is armed.
 - `[0x80077378]` is newly-pressed input; `0x8007B88C` tests Start/X in the sub-state-1 arm.
+
+**CORRECTED 2026-09-28 by `docs/issues/0141` / claim C229, which read the overlay bytes.** The
+second address is the `lw` of the EDGE word, and that word is loaded ONCE and then tested twice: the
+mask consumed first is `0xA000` at `0x8007B894` (`beqz` to `0x8007B8BC`), and only then the `0x840`
+at `0x8007B8BC`. The sub-state-1 arm therefore tests Circle-or-Start *before* it tests
+Start-or-Cross, and `0x840` is its second gate rather than its only one. `0xA000` occurs at 10 sites
+across the WAD overlays, so a census that looks only for `0x840` cannot see it. The arm's meaning, and
+the conclusion drawn from it, are unchanged.
 - the legitimate transition writes stage sub-state 2 and sub-sub-state 5 at
   `0x8007B8F0..0x8007B8F8`; it then reaches sub-state 3 through the guest's memory-card completion
   chain. That chain is now functional (issue 0027 resolution), so no PC state poke is justified.
@@ -154,9 +162,15 @@ Each of these has a named natural terminal writer but no exercised route, so non
   screen does not strand the camera. The real reasons there is no arm are that the terminal cannot be
   dispatched (it sits `0x10` bytes before an epilogue whose `lw $ra` clobbers the dispatcher's return
   address) and that, in the resident text, there is no guest acceleration route for it (the main
-  image's only two Start/Cross-mask sites are the pause menu's confirm and stage 14's own skip; the
-  WAD overlays, where this title's other Start handling lives, were **not** scanned). Recovered,
-  measured, and written up in `docs/issues/0138`.
+  image's only two Start/Cross-mask sites are the pause menu's confirm and stage 14's own skip).
+  **The WAD overlays have now been scanned too** — `docs/issues/0141`, claim C229, over 36 code
+  entries and 501,760 words — and the answer there is the same: 44 `andi …,0x840` sites (22 of them
+  on a pad word, all in the title overlay's menu or in a level's own card), 15 overlay sites storing
+  stage 9's terminal value of which **none** is pad-reachable, 51 overlay writes to the camera
+  rotation it is gated on of which **none** is pad-reachable, and 50 overlay reads of `g_Gamestate`
+  whose consumers compare it against 7 or 8 and **never** 9. So "no guest acceleration route" is now
+  a measurement over the whole overlay corpus rather than a scope limit. Recovered, measured and
+  written up in `docs/issues/0138`, extended in `docs/issues/0141`.
 - `GS_ExitLevel = 10` (`func_8002E084`): terminates through its own counter chain into
   `func_8002C664` (`0x8002C664`), which is a complete recovered route — a scoped original call to it
   is the shape a cancellation should take, once the state can be reached.

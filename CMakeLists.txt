@@ -361,6 +361,15 @@ if(BUILD_TESTING)
       probe_level_update_dispatch
       probe_blended_anim
       census_level_blend
+      # pool_water_probe measures whether the pool's per-block colour noise -- the defect the
+      # guest's discarded water colours caused -- is present in a captured frame. Its load-bearing
+      # selftest cases are the two WRONG-REGION failures this tool actually made in the wild, made
+      # permanent: a saturated blue DRAGON is larger in pixel count than the pool and is not a
+      # sheet, and a sky/gem sliver is blue and tiny. Both were measured and both produced a
+      # confident "this is the defect" verdict about something that was not in the picture. The
+      # positive case -- a broad noisy sheet IS located -- is asserted alongside them so the shape
+      # guard cannot be satisfied by refusing everything.
+      pool_water_probe
       probe_load_stage
       probe_load_step
       # The HUD GLYPH reader. Its selftest is hermetic and covers the three ways the read can lie

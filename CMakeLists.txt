@@ -362,6 +362,27 @@ if(BUILD_TESTING)
   add_test(NAME oracle_compare_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/oracle_compare.py --selftest)
   set_tests_properties(oracle_compare_selftest PROPERTIES LABELS slow TIMEOUT 900)
+
+  # The cadence probe's arithmetic, gated because it is what issue 0114's cadence claim rests on and
+  # an ungated boundary rule is exactly the kind of thing that silently stops being the rule. It is
+  # hermetic (synthetic series, no disc, no window) and instant, so it is NOT labelled slow: that
+  # label means "drives both cores for ~80 s", and this does not.
+  #
+  # Its cases are the ones that WOULD fail: a window whose size and the value the guest stored
+  # DISAGREE must be reported rather than accepted, and a 6-field window must read as the clamp's 4
+  # and not as 6. A build that only ever saw 2-field windows would pass a weaker version of this.
+  add_test(NAME oracle_cadence_probe_selftest
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/oracle_cadence_probe.py --selftest)
+  set_tests_properties(oracle_cadence_probe_selftest PROPERTIES TIMEOUT 60)
+
+  # The level-entry attribution's arithmetic, gated for the same reason and because the failure it
+  # must not have is the quiet one: an address no transfer covers must return NOTHING, and two
+  # transfers that both cover it must both be returned. A reader that returned the nearest load
+  # would name a supplier for bytes nobody wrote, which is how a level entry gets "evidence" that
+  # no image was ever resident.
+  add_test(NAME oracle_level_entry_selftest
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/oracle_level_entry.py --selftest)
+  set_tests_properties(oracle_level_entry_selftest PROPERTIES TIMEOUT 60)
 endif()
 
 # THE PIN TOOL AND ITS BEHAVIOUR TEST. Unguarded, because this repository calls enable_testing()

@@ -48,6 +48,17 @@ void reportRuntimeRun(Core &core, std::uint64_t completedSteps) {
   // measuring this port's coverage means counting where its producers SET depth, at RqItem::depth
   // on submission, and nothing does that yet (see docs/info/instruments/051-*.md).
   render_depth_coverage_report(&core, "run-complete");
+  // WHO DREW THIS RUN, per producer. The census has been FED since `render_submission.cpp` started
+  // calling `noteNativeLayer`, but nothing ever printed it, so the one question the census exists to
+  // answer -- "which producer owns the thing I am looking at" -- had no answer even with every number
+  // already collected. It was asked for directly when a frame showed the pool water rendering as
+  // per-block colour noise while the actors, hedges and buildings were clean: the census is the
+  // instrument for exactly that, and it was running and mute.
+  //
+  // `report()` REFUSES LOUDLY when it was never fed, so a future zero cannot read as "no producer
+  // drew anything" -- which is the failure `depth_cov.py` made when it reported zero for a run whose
+  // path never executes its counters.
+  core.rsub.census.report("spyro run-complete");
   spyro_paired_actor_temporal_finish(&core);
 }
 } // namespace spyro

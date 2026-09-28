@@ -3,6 +3,7 @@ id: 110
 title: Artisans native and full-console camera checkpoints are not yet phase aligned
 status: resolved
 symptom: At the same Artisans level tick and player position, native and console game ticks and camera states differ before movement input
+updated: 2026-09-28
 state_items: S011
 tags: oracle,camera,gameplay,timing,input
 created: 2026-09-12
@@ -889,3 +890,118 @@ this issue's decisive result stands. A camera-relative route does diverge becaus
 why no route out of Artisans replays. That consequence is
 [issue 0114](0114-no-reproducible-route-out-of-artisans-so-level-entry-is-uncompared.md); closing it
 means reproducing `g_DeltaTime` per update, which is this issue's cause rather than its symptom.
+
+## RESOLVED 2026-09-28: retail's cadence rule, from bytes — and it is the DISK, not a phase convention
+
+This issue parked the residual `g_LevelTicks` offset as "a pacing-model convention". **That framing
+was wrong, and the `g_DeltaTime` residual above is not a convention at all: it is a synchronous CD
+read the product performs at zero guest-time cost.**
+
+### The rule, read out of the image
+
+`main()` is `0x80012204` in the admitted `SCUS_942.28` (PS-X EXE header: `pc0=0x8005B8E0`,
+`t_addr=0x80010000`, `t_size=0x65800` = **103,936 aligned words, text at file offset `0x800`**).
+Decoded numerically, not from a listing:
+
+```
+0x8001222C  sb   $zero, 0x604($gp)     ; g_PadMutex = 0        (g_PadMutex is 0x80075794)
+0x80012230  jal  0x8003385C            ; GamestateUpdate()
+0x80012238  lw   $v0, 0x4FC($gp)       ; g_DeltaTime = g_UnprocessedFrames   (0x80075760)
+0x8001223C  sb   $s1, 0x604($gp)       ; g_PadMutex = 1
+0x80012240  sw   $v0, 0x468($gp)       ; g_DeltaTime          (0x800756CC)
+0x80012244  slti $v0, $v0, 2
+0x80012248  beq  $v0, $zero, +2
+0x80012250  sw   $s1, 0x468($gp)       ; clamp low  to 2   ($s1 = 2 from 0x80012224)
+0x80012254  lw   $v0, 0x468($gp)
+0x8001225C  slti $v0, $v0, 5
+0x80012260  bne  $v0, $zero, +2
+0x80012268  sw   $s0, 0x468($gp)       ; clamp high to 4   ($s0 = 4 from 0x80012228)
+0x8001226C  lw   $v0, 0x538($gp)       ; g_StateSwitch      (0x8007579C)
+0x80012270  sw   $zero, 0x4FC($gp)     ; g_UnprocessedFrames = 0
+0x80012274  bne  $v0, $zero, 0x8001222C   ; draw-less iteration: loop WITHOUT drawing
+0x8001227C  jal  0x8001ED5C            ; GamestateDraw()
+```
+
+`$gp = 0x80075264`, from crt0 itself (`0x8005B95C lui gp,0x8007` / `0x8005B960 addiu gp,gp,0x5264`),
+so every `0x4NN($gp)` above is checkable against the word.
+
+**The four writers of `g_UnprocessedFrames` in the whole loaded image**, from a scan of all 103,936
+aligned words that reports its own coverage (a `$gp` displacement; a `lui`+`addiu`/`ori` pair within
+12 instructions; an `addiu`/`ori` off `$gp` within 12 — and it names what it does NOT cover: a store
+through a pointer loaded from memory, or a computed register):
+
+```
+0x80012270  sw $zero, 0x4FC($gp)              the main loop's zeroing
+0x80053C50  sw $v0,   0x5760($at)             the value-2 / demo path
+0x800542C8  sw $v0,   0x5760($at)             PadVSync's per-field increment
+0x80012CBC  sw $zero, 0x5760($at)             the title overlay's clear
+```
+
+`PadVSync`'s frame is the one at `0x80053C78` (`addiu $sp,$sp,-0x28`; the only such prologue in the
+image), it loads `0x800758C8` (`g_LevelTicks`) at `0x80053C6C` and stores `g_UnprocessedFrames` at
+its tail `0x800542C8`, before the epilogue at `0x800542CC`. So **`g_UnprocessedFrames` counts
+completed VSync callbacks**, which is what `g_DeltaTime` clamps.
+
+### The rule is that the count is unbounded above, and the clamp is the whole of it
+
+`g_DeltaTime = clamp(g_UnprocessedFrames, 2, 4)`, so the product's 2 is CORRECT whenever the guest
+completed two VSync callbacks since the main loop last ran — and it is **the console that exceeds
+it, by spending more display fields inside one update than the two-field draw wait would**.
+
+### Measured, both cores, field by field — `tools/oracle_cadence_probe.py`
+
+The field-granular census, arming at `g_GameTick 1` and reading every field of the Artisans route,
+holding the pad once per main-loop ITERATION exactly as `compare.Playback` does:
+
+| core | fields sampled | iteration boundaries | window per iteration | `g_DeltaTime` stored | iterations where stored != clamp(window,2,4) |
+|---|---:|---:|---|---|---:|
+| console | 1000 of 1000 | 497 | **495 x 2, 1 x 1, 1 x 6** | 495 x 2, 1 x 2, 1 x **4** | **0 of 497** |
+| product | 1000 of 1000 | 499 | **499 x 2** | **499 x 2** | **0 of 499** |
+
+So the product's cadence is not "a convention that happens to be 2": it is 2 on **499 of 499**
+iterations, and the console's single 6-field iteration is the only place either core leaves 2.
+
+### What the 6-field iteration IS: a CD read, and it is reproducible
+
+The widest window, with the words live in it, and nothing suppressed:
+
+```
+field 8283  window=6  g_DeltaTime=4  g_CDMaxReadTime=600  g_CDReadTime=0
+                g_GameTick=362  g_LevelTicks=837  g_StateSwitch=0
+```
+
+**`g_CDMaxReadTime = 600`, and 0 at all 496 other boundaries.** That is retail's own CD-read budget
+being armed: `src/cd.c` `CDLoadSync`/`CDLoadAsync` set `g_CDMaxReadTime = maxTime` and then spin in
+`while (g_CdState.m_IsReading || CdSync(1,0) != CdlComplete) CDLoadTime();`, and `g_CDReadTime` is
+incremented once per VSync by `PadVSync` (`src/gamepad.c:231`). 600 fields is 10 seconds — the
+timeout the title gives a slow read. So the 6-field window is **one update that waited on the CD
+drive**, and `g_DeltaTime` clamped 6 to 4.
+
+The same event reproduces in the shipped oracle: `tools/oracle_compare.py --frame-step 1` over the
+same route, **two independent runs agreeing on the iteration, the field and the tick**:
+
+```
+gameplay[3] hold ['left'] 26/45f : console g_DeltaTime=4  g_LevelTicks=837  g_GameTick=362
+                                    native  g_DeltaTime=2  (2 at all 485 other comparisons)
+```
+
+That is the *first* `delta_time` inequality [issue 0114](0114-no-reproducible-route-out-of-artisans-so-level-entry-is-uncompared.md)
+recorded, and it is a CD read, not a phase.
+
+### So the product's `setFrameStep` arithmetic is right and the CAUSE is elsewhere
+
+`spyro1_frame_driver.cpp:111` already writes `clamp(elapsedFields(), 2, 4)`, and the field census
+confirms the product's count reaches that clamp on 499 of 499 iterations. **No change to
+`kFrameStepMin`/`kFrameStepMax` would move the number, and fitting one would be a fitted constant.**
+What the product does not do is spend display fields waiting for the disk: it delivers a WAD
+transfer synchronously in host code (`game/core/cd_queue.cpp` -> `ArchiveTransfer::read`, plus the
+`cd_override.cpp` synchronous loaders), so a read that costs the console 4 extra fields costs the
+product none.
+
+**The proper fix, and it is not in this file:** a synchronous archive read must cost the guest the
+display time the console's read costs, so the count the main loop sees reaches the same 6. That is a
+change to the CD/archive owner's field accounting — the `notifyDisplayField` re-anchor and the field
+delivery a transfer implies — not to the pacing clamp, and it is registered as the next step in
+[issue 0114](0114-no-reproducible-route-out-of-artisans-so-level-entry-is-uncompared.md).
+**No code change is shipped for it here**, and the honest consequence is stated there: until it
+lands, a camera-relative route out of Artisans still does not replay.

@@ -117,15 +117,20 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
   //   material bit 2 clear -> the four per-face colour words go into the primitive as its GOUROD
   //                          colours, one per vertex, indexed by the material word's four 6-bit
   //                          fields. That is what the loop below has always done.
-  //   material bit 2 SET   -> the guest writes a CONSTANT colour word and a command word of
-  //                          0x02000000. The four authored colours are computed and then DISCARDED.
-  //                          The constant is 0xE100 OR'd into the high half and 0x600 OR'd into the
-  //                          low half after the material word is shifted left five, so 0xE100's
-  //                          code nibble (bits 24..27) is 1: the polygon is a 50/50
-  //                          semi-transparent black -- Spyro's pool water, which is a tinted sheet
-  //                          over the pool floor rather than a coloured surface of its own. The
-  //                          shift carries material bit 2 into colour bit 7 as well, which is why
-  //                          the mask below is 7 and not 3.
+  //   material bit 2 SET   -> the guest writes a CONSTANT colour word whose top byte is 0xE100 OR'd
+  //                          in, and discards the four authored colours. 0xE1's semi-transparency
+  //                          code (bits 27..24) is 1, which in GP0 is B/2 + F/2 -- a 50/50 blend --
+  //                          and bit 24 is the polygon bit, so this is a semi-transparent untextured
+  //                          polygon: Spyro's pool water, a tinted sheet over the pool floor rather
+  //                          than a coloured surface of its own. The shift carries material bit 2
+  //                          into colour bit 7 as well, which is why the mask below is 7 and not 3.
+  //
+  //   THE BLEND MODE THIS PORT ACTUALLY USES IS A DIFFERENT FIELD, and this comment previously
+  //   claimed otherwise. gpu_native_raster.cpp blends with s_tp_blend, taken from the texpage, and
+  //   the tpage below is a PORT-INVENTED encoding of material bits 0..1 -- not the guest's DR_MODE
+  //   and not the command word above. The two agree only when those bits are clear, which is the
+  //   50/50 this constant describes. See docs/issues/0140 for the measured mapping and for what
+  //   would settle it against the authored data.
   //
   // Reading the authored colour for those faces is what made the water render as per-block colour
   // noise: the pool is a grid of such faces, each carrying its own colour-array entry, and the
@@ -206,11 +211,13 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
   face.otBin = (uint16_t)otBin;
   face.material.textured = false;
   face.material.semiTransparent = translucent;
-  // The LQ DR_MODE packet carries ABR in draw-mode bits 5..6. Retaining
-  // those bits in tpage lets the single queue submitter reproduce the state
-  // change without a second material interpretation. The same two material bits are ALSO the low
-  // bits of the water colour above, which is why this stays a shift of `material & 3` rather than
-  // becoming an independent reading of the same two bits.
+  // The single queue submitter has no DR_MODE field, so the blend mode rides in the texpage's own
+  // ABR bits ((tpage >> 5) & 3), which is what gpu_native_raster.cpp reads. This is a PORT-INVENTED
+  // encoding of material bits 0..1 -- NOT the guest's draw mode and NOT the 0xE1 command word above,
+  // which carry their own semi-transparency code. They coincide when these bits are clear; they do
+  // not coincide in general. The same two material bits are also the low bits of the water colour
+  // above, which is why this stays one reading of the same pair rather than a second one. See
+  // docs/issues/0140.
   face.material.tpage = (uint16_t)((material & 3u) << 5);
   if (!world_recipe::appendLinked(out, face, kFaceLimit)) {
     why = "face_capacity";

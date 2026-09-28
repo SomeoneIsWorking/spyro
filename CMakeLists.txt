@@ -326,6 +326,22 @@ if(BUILD_TESTING)
   #                       rather than zero, and an unauthored count of 0 that must scan nothing at all
   #                       (the fixed 128-index scan that preceded it read 6 fabricated "entries" out of
   #                       a table Artisans never authored, three carrying a nonzero factor byte).
+  #   census_level_blend  the OFFLINE census of that same blend-factor byte across every level in
+  #                       WAD.WAD, bounded by each channel's own authored count and each record's own
+  #                       base-offset word. Nine hermetic cases, and the load-bearing one is that it
+  #                       reports BOTH metrics at once: the SELECTED keyframe (the one the record's
+  #                       index byte names) and the AUTHORED table (every 8-byte slot). They disagree
+  #                       on real data -- every level authors 739 selected keyframes at factor 0 and
+  #                       47,932 of 51,042 authored keyframes at a nonzero factor -- so an
+  #                       instrument reporting only one of them could agree with a wrong conclusion
+  #                       forever. Its fixtures are built with `LoadLevelScene`'s own component
+  #                       arithmetic, so a fixture cannot pass by agreeing with itself about a
+  #                       convention the census invented. The refusal cases are the ones 0134 needed:
+  #                       a count of 0 scans nothing, a record resolving outside its entry is NOT
+  #                       READ and never factor 0, a payload claiming more than its component holds
+  #                       is flagged, a run shorter than seven has no channel attribution and is
+  #                       refused outright, and an authored count above the guest's own 0x80 index
+  #                       ceiling is refused rather than scanned.
   #   probe_load_step  where `g_LoadStage`'s value at a checkpoint was TAKEN, decided by the image's
   #                     own bytes: `LoadLevel`'s case 1 stores `stage + 1` at 0x800155E0, the next
   #                     instruction is a `lui` and NOT a branch, and case 2's body writes nothing to
@@ -344,6 +360,7 @@ if(BUILD_TESTING)
       probe_tick_divergence
       probe_level_update_dispatch
       probe_blended_anim
+      census_level_blend
       probe_load_stage
       probe_load_step
       # The HUD GLYPH reader. Its selftest is hermetic and covers the three ways the read can lie

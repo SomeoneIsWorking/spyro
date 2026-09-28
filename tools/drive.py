@@ -235,6 +235,18 @@ class Port:
         Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)
         self._send(f"shot {path}")
 
+    def preseq(self, count: int, directory: str) -> None:
+        """Dump the next `count` PRESENTED frames, so a per-present question has a denominator.
+
+        `shot` answers "what does one present look like". This is the port's own
+        `preseq <N> [dir]` REPL command, which is the only thing here that writes a SEQUENCE: a
+        screen-space overlay is submitted once per field into a double-buffered picture, so whether
+        it is on the picture at all is a question about the sequence, not about one sample of it.
+        """
+        target = ROOT / directory
+        target.mkdir(parents=True, exist_ok=True)
+        self._send(f"preseq {count} {target}")
+
     def end(self) -> int:
         self._send("end")
         assert self._proc.stdin is not None
@@ -564,6 +576,22 @@ def main() -> int:
         "level; mutually exclusive with --seek-class",
     )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
+    parser.add_argument(
+        "--preseq",
+        type=int,
+        default=0,
+        help="capture the next N PRESENTED frames into --preseq-dir, in addition to --shot. "
+        "A single capture cannot tell 'this prim is not drawn' from 'this prim is drawn on the other "
+        "half of the presents': the product is double buffered and a HUD quad is submitted once per "
+        "field, so a one-shot measurement of whether a screen-space overlay is on the picture is a "
+        "coin flip that reads like a result. The strip is the denominator (issue 0144).",
+    )
+    parser.add_argument(
+        "--preseq-dir",
+        default="scratch/screenshots/preseq",
+        help="directory --preseq writes p%%04d.ppm into. It is NOT cleared for you: a stale file in "
+        "here is read as one of the N presents, which is the C138 failure. Clear it yourself.",
+    )
     args = parser.parse_args()
 
     env = environment(disc_path())
@@ -635,6 +663,9 @@ def main() -> int:
                 port.tap(button, 8)
             if args.after:
                 port.run(args.after)
+        if args.preseq:
+            port.preseq(args.preseq, args.preseq_dir)
+            port.run(args.preseq + 1)
         if args.shot:
             port.shot(args.shot)
             port.run(1)

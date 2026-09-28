@@ -1,5 +1,5 @@
-// pause_menu_scene.h — the native owner of the shared GS_PauseMenu / GS_InventoryMenu / GS_OldDragon
-// draw handler 0x8001A40C.
+// pause_menu_scene.h — the native owner of the shared GS_PauseMenu / GS_InventoryMenu /
+// GS_OldDragon draw handler 0x8001A40C.
 //
 // The handler is the FIELD arm minus its 2D layers, plus a menu. Its zero path calls, in order,
 // 0x800521C0 (moby list build), 0x80019698 (actor pass), 0x800573C8 (particles), 0x80050BD0
@@ -24,12 +24,12 @@ namespace spyro::pause_menu_scene {
 // that names only a guest address cannot be acted on from a log (producer_refusal.h).
 enum class Refusal {
   None,
-  ActorChain,   // 0x80019698
-  Particles,    // 0x800573C8
-  Cyclorama,    // 0x80050BD0
-  Environment,  // 0x8002B9CC
-  Text,         // the caption arena, through the shared HUD text owner
-  ShadedActors  // 0x80022A2C, which draws the captions' glyph mobys
+  ActorChain,  // 0x80019698
+  Particles,   // 0x800573C8
+  Cyclorama,   // 0x80050BD0
+  Environment, // 0x8002B9CC
+  Text,        // the caption arena, through the shared HUD text owner
+  ShadedActors // 0x80022A2C, which draws the captions' glyph mobys
 };
 
 // One frame of the handler. `drawAreaX1` is the active draw env's right edge, so a border line that

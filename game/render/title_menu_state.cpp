@@ -20,8 +20,9 @@ constexpr uint32_t kEaseSlideOut = 0x8006FA84u;
 constexpr int32_t kSlideYBias = 119;
 // g_CutsceneLayout -- the pointer global, NOT a value. Recovered from SCUS_942.28: exactly one
 // `lui $rX,0x8007` + `sw 0x5680($rX)` writer in the whole main image, at 0x80014A38, and seventeen
-// `lui`+`lw` reads as a pointer base (loaders.c:955 is its only writer in the decompilation). So the
-// word AT this address is a pointer, and the value this state gates on is the first int through it.
+// `lui`+`lw` reads as a pointer base (loaders.c:955 is its only writer in the decompilation). So
+// the word AT this address is a pointer, and the value this state gates on is the first int through
+// it.
 constexpr uint32_t kCutsceneLayout = 0x80075680u;
 constexpr uint32_t kCutsceneCurrentTick = 0u;
 // CutsceneLayout.m_CurrentTick >= 1170 (0x492) -- RETAIL'S OWN logo gate, from the
@@ -59,8 +60,9 @@ State read(Core *core) {
                  .optionSelected = core->mem_r32(kOption),
                  .secondaryOption = core->mem_r32(kSecondaryOption),
                  .cardSelected = static_cast<int32_t>(core->mem_r32(kCard)),
-                 .gateOpen = cutsceneLayout != 0u &&
-                             core->mem_r32(cutsceneLayout + kCutsceneCurrentTick) >= kTitleLogoTick};
+                 .gateOpen =
+                     cutsceneLayout != 0u &&
+                     core->mem_r32(cutsceneLayout + kCutsceneCurrentTick) >= kTitleLogoTick};
 
   if (state.mode == 2u && state.mode2State > 0u && state.mode2State < 5u) {
     for (size_t i = 0; i < state.mode2Slots.size(); ++i) {

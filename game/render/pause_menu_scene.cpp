@@ -3,11 +3,11 @@
 #include "core.h"
 #include "cutscene_scene_recipe.h"
 #include "field_moby_lists.h"
+#include "field_model_chain.h"
 #include "fx_field_actor_composition.h"
 #include "fx_field_cyclorama.h"
 #include "fx_field_environment.h"
 #include "fx_field_particles.h"
-#include "field_model_chain.h"
 #include "game.h"
 #include "guest_call.h"
 #include "guest_globals.h"
@@ -37,8 +37,8 @@ using spyro::pause_menu::State;
 // the half of the guest that used to. Measured, not inferred: tools/probe_pause_gate_writer.py asks
 // the IMAGE (not the sparse external/spyro-1/asm listing, which covers 17.2% of main RAM and
 // reported "0 stores" for a word this very handler reads at 0x8001A410) and finds 23 lw sites and 6
-// sw sites. Five of the writes are `sw $zero` inside the world renderer 0x8002B9CC -> 0x800258F0, at
-// 0x8002C498, 0x8002C4B8, 0x8002C640 and 0x8002C79C. The sixth, and the only one that ever makes
+// sw sites. Five of the writes are `sw $zero` inside the world renderer 0x8002B9CC -> 0x800258F0,
+// at 0x8002C498, 0x8002C4B8, 0x8002C640 and 0x8002C79C. The sixth, and the only one that ever makes
 // the word NON-zero, is 0x8001C65C: `lw` it, `addiu $v0,$v0,1`, `sw` it back — at 0x8001C65C, which
 // is the EPILOGUE OF THIS HANDLER (0x8001A40C + 8840 = 0x8001C69C). So the guest's sequence is:
 // frame 1 takes the world path, the world renderer zeroes the counter, and the epilogue leaves it
@@ -47,7 +47,7 @@ using spyro::pause_menu::State;
 // frame, and the menu never draws. That is the whole defect, and it is why "exit 0" arrived with a
 // picture of the world and no menu on it.
 constexpr std::uint32_t kMenuFrameCounter = 0x800758B8u;
-constexpr std::uint32_t kMenuPage = 0x800757C8u;      // the three-way page branch
+constexpr std::uint32_t kMenuPage = 0x800757C8u; // the three-way page branch
 constexpr std::uint32_t kMenuSelected = 0x80075720u;
 constexpr std::uint32_t kIsFlightLevel = 0x80075690u;
 constexpr std::uint32_t kFourthItemPhase = 0x8007596Cu;
@@ -80,8 +80,8 @@ constexpr std::uint32_t kShadedMobyQueue = 0x8006FCF4u + 0x2400u;
 // the guest's, which is the point of the comparison.
 constexpr std::uint32_t kProducerKey = 0x8001A40Cu;
 
-// The captions' glyph mobys carry this specular index. It is not a per-screen choice: it is what the
-// guest's shared builder 0x80017FE4 / 0x800181AC write, which is why the level-transition tally
+// The captions' glyph mobys carry this specular index. It is not a per-screen choice: it is what
+// the guest's shared builder 0x80017FE4 / 0x800181AC write, which is why the level-transition tally
 // passes the same value.
 constexpr std::uint8_t kCaptionShade = 2;
 
@@ -105,7 +105,8 @@ constexpr std::uint32_t kLinePrimBytes = 5u * 4u;
 State readState(Core *core) {
   std::array<std::uint8_t, kDirectionRampLength> ramp{};
   for (std::size_t i = 0; i < ramp.size(); ++i) {
-    ramp[i] = core->mem_r8(kDirectionRampBase + kDirectionRampOffset + static_cast<std::uint32_t>(i));
+    ramp[i] =
+        core->mem_r8(kDirectionRampBase + kDirectionRampOffset + static_cast<std::uint32_t>(i));
   }
   State state;
   state.frameCounter = core->mem_r32(kMenuFrameCounter);
@@ -141,9 +142,10 @@ std::string readString(Core *core, std::uint32_t address) {
 // semi-transparency bit, so the panel is a dark translucent wash over the world rather than an
 // opaque plate. Both facts are in the constant, not in a guess about which one it meant.
 void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe) {
-  const std::uint32_t word = static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) |
-                             (static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) << 8) |
-                             (static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) << 16);
+  const std::uint32_t word =
+      static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) |
+      (static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) << 8) |
+      (static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) << 16);
   const auto expand = [](std::uint32_t v) {
     return static_cast<unsigned char>((v << 3) | (v >> 2));
   };
@@ -158,10 +160,37 @@ void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe) {
   const unsigned char gs[4] = {g, g, g, g};
   const unsigned char bs[4] = {b, b, b, b};
   const GpuState gpu = core->game->gpu;
-  queue.emitOrQueue(core, 1, RQ_HUD, RQ_OM_2D_FG, 4,
-                    spyro::pause_menu::kPanelStp, 0, xs, ys, nullptr, nullptr, us, vs, rs, gs, bs,
-                    nullptr, 3, 0, 0, 0, 0, gpu.s_tw_mx, gpu.s_tw_my, gpu.s_tw_ox, gpu.s_tw_oy,
-                    gpu.s_da_x0, gpu.s_da_y0, recipe.panelX1, gpu.s_da_y1, gpu.s_tp_blend);
+  queue.emitOrQueue(core,
+                    1,
+                    RQ_HUD,
+                    RQ_OM_2D_FG,
+                    4,
+                    spyro::pause_menu::kPanelStp,
+                    0,
+                    xs,
+                    ys,
+                    nullptr,
+                    nullptr,
+                    us,
+                    vs,
+                    rs,
+                    gs,
+                    bs,
+                    nullptr,
+                    3,
+                    0,
+                    0,
+                    0,
+                    0,
+                    gpu.s_tw_mx,
+                    gpu.s_tw_my,
+                    gpu.s_tw_ox,
+                    gpu.s_tw_oy,
+                    gpu.s_da_x0,
+                    gpu.s_da_y0,
+                    recipe.panelX1,
+                    gpu.s_da_y1,
+                    gpu.s_tp_blend);
 }
 
 void submitBorder(Core *core, RenderQueue &queue, const Recipe &recipe, std::int32_t drawAreaX1) {
@@ -183,9 +212,37 @@ void submitBorder(Core *core, RenderQueue &queue, const Recipe &recipe, std::int
     const unsigned char rs[4] = {start.r, end.r, start.r, end.r};
     const unsigned char gs[4] = {start.g, end.g, start.g, end.g};
     const unsigned char bs[4] = {start.b, end.b, start.b, end.b};
-    queue.emitOrQueue(core, 1, RQ_HUD, RQ_OM_2D_FG, 2, 0, 0, xs, ys, nullptr, nullptr, us, vs, rs,
-                      gs, bs, nullptr, 0, 0, 0, 0, 0, gpu.s_tw_mx, gpu.s_tw_my, gpu.s_tw_ox, gpu.s_tw_oy,
-                      gpu.s_da_x0, gpu.s_da_y0, drawAreaX1 - 1, gpu.s_da_y1, 0);
+    queue.emitOrQueue(core,
+                      1,
+                      RQ_HUD,
+                      RQ_OM_2D_FG,
+                      2,
+                      0,
+                      0,
+                      xs,
+                      ys,
+                      nullptr,
+                      nullptr,
+                      us,
+                      vs,
+                      rs,
+                      gs,
+                      bs,
+                      nullptr,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      gpu.s_tw_mx,
+                      gpu.s_tw_my,
+                      gpu.s_tw_ox,
+                      gpu.s_tw_oy,
+                      gpu.s_da_x0,
+                      gpu.s_da_y0,
+                      drawAreaX1 - 1,
+                      gpu.s_da_y1,
+                      0);
   }
 }
 
@@ -209,9 +266,10 @@ bool submitText(Core *core, const Recipe &recipe) {
     const std::string text = readString(core, caption.text);
     const spyro::hud_text::Point3 position{caption.x, caption.y, caption.z};
     const spyro::hud_text::Point3 spacing{recipe.spacing.x, recipe.spacing.y, recipe.spacing.z};
-    const auto layout = caption.proportional
-                            ? spyro::hud_text::layoutCaption(text, position, spacing, caption.maxLength)
-                            : spyro::hud_text::layoutCounter(text, position, recipe.captionPitch);
+    const auto layout =
+        caption.proportional
+            ? spyro::hud_text::layoutCaption(text, position, spacing, caption.maxLength)
+            : spyro::hud_text::layoutCounter(text, position, recipe.captionPitch);
     if (spyro::hud_text::append(core, layout, kCaptionShade).size() != layout.glyphs.size()) {
       return false;
     }
@@ -254,9 +312,15 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
   lucent::debug("render",
                 "pause-menu: frameCounter={} page={} gui={} panel=({},{})..({},{}) border={} "
                 "captions={}",
-                state.frameCounter, static_cast<unsigned>(state.page), recipe.gui ? 1 : 0,
-                recipe.panelX0, recipe.panelY0, recipe.panelX1, recipe.panelY1,
-                recipe.border.size(), recipe.captions.size());
+                state.frameCounter,
+                static_cast<unsigned>(state.page),
+                recipe.gui ? 1 : 0,
+                recipe.panelX0,
+                recipe.panelY0,
+                recipe.panelX1,
+                recipe.panelY1,
+                recipe.border.size(),
+                recipe.captions.size());
   if (recipe.gui) {
     // THE MENU'S OWN TWO ARENAS, established exactly where 0x8001A5E0 establishes them
     // (0x8001A604-0x8001A650), before anything is built in either. Both are guest state this
@@ -293,15 +357,17 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
     // level-transition tally's: terminate the shaded queue, let 0x80018880 append the arena it just
     // filled, and let 0x80022A2C draw it.
     core->mem_w32(kShadedMobyQueue, 0u);
-    psx::cpu::dispatchGuestToReturn0(*core, kCopyHudMobys,
-                                     psx::cpu::ExecutionBudget::currentTurn(*core),
-                                     "pause-menu-text");
-    lucent::debug("render",
-                  "pause-menu text: shadedQueueHead=0x{:08X} firstEntry=0x{:08X} arenaCursor=0x{:08X} "
-                  "arenaEnd=0x{:08X} primCursor=0x{:08X}",
-                  core->mem_r32(kShadedMobyQueue), core->mem_r32(kShadedMobyQueue + 4u),
-                  core->mem_r32(kMenuMobyArenaCursor), core->mem_r32(kMenuMobyArenaEnd),
-                  core->mem_r32(kMenuPrimPoolCursor));
+    psx::cpu::dispatchGuestToReturn0(
+        *core, kCopyHudMobys, psx::cpu::ExecutionBudget::currentTurn(*core), "pause-menu-text");
+    lucent::debug(
+        "render",
+        "pause-menu text: shadedQueueHead=0x{:08X} firstEntry=0x{:08X} arenaCursor=0x{:08X} "
+        "arenaEnd=0x{:08X} primCursor=0x{:08X}",
+        core->mem_r32(kShadedMobyQueue),
+        core->mem_r32(kShadedMobyQueue + 4u),
+        core->mem_r32(kMenuMobyArenaCursor),
+        core->mem_r32(kMenuMobyArenaEnd),
+        core->mem_r32(kMenuPrimPoolCursor));
     if (spyro_field_actor_composition_submit(core, {.secondary = false, .shaded = true})) {
       return Refusal::ShadedActors;
     }

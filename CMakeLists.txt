@@ -361,6 +361,37 @@ if(BUILD_TESTING)
       probe_level_update_dispatch
       probe_blended_anim
       census_level_blend
+      #   census_level_face_material  the OFFLINE census of the material word on every low-poly
+      #                       face of every level in WAD.WAD, which is the question `c229e45`'s
+      #                       translucent arm turns on: does ANY level author a face whose material
+      #                       word has bit 2 set, the bit 0x8002651C `andi $a3,$t6,4` tests? It
+      #                       answers YES -- 1,592 of 83,401 faces across 6 of 35 levels -- so the
+      #                       arm is live in this game and unreachable only in the one resident
+      #                       level issue 0143 measured. Two things make that answer trustworthy
+      #                       rather than a plausible one. The face record's layout is EXTRACTED
+      #                       from the shipping game/render/world_chunk_codec.cpp by
+      #                       world_chunk_layout.py and refused if that text stops having the
+      #                       shape it reads, and the material bit censused is the bit
+      #                       world_lq_recipe.cpp itself tests, read from that file. And the
+      #                       selftest covers the four ways this answer could be manufactured: a
+      #                       positive fixture whose bit-2 face MUST be found, a negative over a
+      #                       corpus whose low bits span four combinations (0143's all-multiples-
+      #                       of-8 Artisans corpus could be reproduced by a broken mask), a sector
+      #                       pointer resolving outside the entry reported NOT READ rather than
+      #                       zero faces, and an authored sector count of 0 scanning nothing. The
+      #                       mis-stride case is the load-bearing one: reading past the declared
+      #                       face count FINDS bit-2 faces the narrow walk does not, so a reported
+      #                       narrow zero cannot be a runaway read in disguise.
+      census_level_face_material
+      #   world_chunk_layout  the reader the census above depends on, which reads the low-poly
+      #                       field layout out of the shipping codec instead of restating it. Its
+      #                       selftest requires four perturbed COPIES of the codec to each change
+      #                       or refuse the extracted layout, and requires the port's own
+      #                       `& 4u` translucent selector to be read from world_lq_recipe.cpp
+      #                       rather than taken on trust -- a second copy of a layout is a second
+      #                       unverified claim about the same guest bytes, and it drifts exactly
+      #                       where a re-port drifts.
+      world_chunk_layout
       # pool_water_probe measures whether the pool's per-block colour noise -- the defect the
       # guest's discarded water colours caused -- is present in a captured frame. Its load-bearing
       # selftest cases are the two WRONG-REGION failures this tool actually made in the wild, made
@@ -384,7 +415,15 @@ if(BUILD_TESTING)
       # misread as "no button held"), and a `lui` immediate read as a low displacement -- the bug
       # that made this file's first module map print an arena of 0x80082A40 and still agree with
       # itself, because both of its cross-checks went through the same wrong decoder.
-      probe_title_card)
+      probe_title_card
+      # The SCREEN-SPACE OVERLAY EXTENT reader: how many columns of a submitted 2D quad actually
+      # reach the picture, over a strip of consecutive presents. Hermetic, and its selftest is the
+      # negative set that matters for a detector: a clean frame (ABSENT), a 13-column world glow the
+      # same statistic also fires on (not the overlay), scattered hits (not a rectangle), an overlay
+      # clipped to 146 of its own 232 columns (NARROWER, with the short span), a strip whose overlay
+      # is on 3 of 6 presents (the cadence a single screenshot cannot see), and three refusals -- no
+      # frames, a non-P6 file, a truncated PPM -- none of which may read as a clean zero.
+      overlay_extent)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

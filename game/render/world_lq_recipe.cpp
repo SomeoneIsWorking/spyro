@@ -120,10 +120,11 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
   //   material bit 2 SET   -> the guest writes a CONSTANT colour word whose top byte is 0xE100 OR'd
   //                          in, and discards the four authored colours. 0xE1's semi-transparency
   //                          code (bits 27..24) is 1, which in GP0 is B/2 + F/2 -- a 50/50 blend --
-  //                          and bit 24 is the polygon bit, so this is a semi-transparent untextured
-  //                          polygon: Spyro's pool water, a tinted sheet over the pool floor rather
-  //                          than a coloured surface of its own. The shift carries material bit 2
-  //                          into colour bit 7 as well, which is why the mask below is 7 and not 3.
+  //                          and bit 24 is the polygon bit, so this is a semi-transparent
+  //                          untextured polygon: Spyro's pool water, a tinted sheet over the pool
+  //                          floor rather than a coloured surface of its own. The shift carries
+  //                          material bit 2 into colour bit 7 as well, which is why the mask below
+  //                          is 7 and not 3.
   //
   //   THE BLEND MODE THIS PORT ACTUALLY USES IS A DIFFERENT FIELD, and this comment previously
   //   claimed otherwise. gpu_native_raster.cpp blends with s_tp_blend, taken from the texpage, and
@@ -213,11 +214,11 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
   face.material.semiTransparent = translucent;
   // The single queue submitter has no DR_MODE field, so the blend mode rides in the texpage's own
   // ABR bits ((tpage >> 5) & 3), which is what gpu_native_raster.cpp reads. This is a PORT-INVENTED
-  // encoding of material bits 0..1 -- NOT the guest's draw mode and NOT the 0xE1 command word above,
-  // which carry their own semi-transparency code. They coincide when these bits are clear; they do
-  // not coincide in general. The same two material bits are also the low bits of the water colour
-  // above, which is why this stays one reading of the same pair rather than a second one. See
-  // docs/issues/0140.
+  // encoding of material bits 0..1 -- NOT the guest's draw mode and NOT the 0xE1 command word
+  // above, which carry their own semi-transparency code. They coincide when these bits are clear;
+  // they do not coincide in general. The same two material bits are also the low bits of the water
+  // colour above, which is why this stays one reading of the same pair rather than a second one.
+  // See docs/issues/0140.
   face.material.tpage = (uint16_t)((material & 3u) << 5);
   if (!world_recipe::appendLinked(out, face, kFaceLimit)) {
     why = "face_capacity";

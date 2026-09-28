@@ -8,19 +8,19 @@ namespace {
 // image, because the decompiler's symbol names for them are wrong: it calls 0x80010B24
 // "s_QUIT_GAME" when the image holds "QUIT GAME?", and 0x800755C8 / 0x800755CC "DAT_" when they
 // hold "YES" and "NO". A name copied from the decompiler would have been a caption that lies.
-constexpr std::uint32_t kStrPaused = 0x800755C0u;      // "PAUSED"
-constexpr std::uint32_t kStrYes = 0x800755C8u;         // "YES"
-constexpr std::uint32_t kStrNo = 0x800755CCu;          // "NO"
-constexpr std::uint32_t kStrCamera = 0x800755D0u;      // "CAMERA"
-constexpr std::uint32_t kStrDone = 0x800755D8u;        // "DONE"
-constexpr std::uint32_t kStrOff = 0x800755E0u;         // "OFF"
-constexpr std::uint32_t kStrMono = 0x800755E4u;         // "MONO"
-constexpr std::uint32_t kStrStereo = 0x800755ECu;      // "STEREO"
-constexpr std::uint32_t kStrOn = 0x800755F4u;          // "ON"
-constexpr std::uint32_t kStrActive = 0x800755F8u;      // "ACTIVE"
-constexpr std::uint32_t kStrPassive = 0x80075600u;     // "PASSIVE"
-constexpr std::uint32_t kStrOptions = 0x80075608u;     // "OPTIONS"
-constexpr std::uint32_t kStrQuit = 0x80075610u;        // "QUIT"
+constexpr std::uint32_t kStrPaused = 0x800755C0u;        // "PAUSED"
+constexpr std::uint32_t kStrYes = 0x800755C8u;           // "YES"
+constexpr std::uint32_t kStrNo = 0x800755CCu;            // "NO"
+constexpr std::uint32_t kStrCamera = 0x800755D0u;        // "CAMERA"
+constexpr std::uint32_t kStrDone = 0x800755D8u;          // "DONE"
+constexpr std::uint32_t kStrOff = 0x800755E0u;           // "OFF"
+constexpr std::uint32_t kStrMono = 0x800755E4u;          // "MONO"
+constexpr std::uint32_t kStrStereo = 0x800755ECu;        // "STEREO"
+constexpr std::uint32_t kStrOn = 0x800755F4u;            // "ON"
+constexpr std::uint32_t kStrActive = 0x800755F8u;        // "ACTIVE"
+constexpr std::uint32_t kStrPassive = 0x80075600u;       // "PASSIVE"
+constexpr std::uint32_t kStrOptions = 0x80075608u;       // "OPTIONS"
+constexpr std::uint32_t kStrQuit = 0x80075610u;          // "QUIT"
 constexpr std::uint32_t kStrQuitGameAsked = 0x80010B24u; // "QUIT GAME?"
 constexpr std::uint32_t kStrSoundEffects = 0x80010B30u;  // "SOUND EFFECTS"
 constexpr std::uint32_t kStrMusicVolume = 0x80010B40u;   // "MUSIC VOLUME"
@@ -51,21 +51,22 @@ constexpr std::int32_t kPanelTop = 0x43;
 // The rule under the title: 0x8001844C(0xE0, 0x61, 0x120, 0x61).
 constexpr Segment kTitleRule{0xE0, 0x61, 0x120, 0x61, 0, 0};
 
-// 0x8001844C's endpoint inputs are biased by -0x100 and -0x78 (0x80018468, 0x8001846C), which is the
-// 512x240 frame's own centre. The menu is authored in that 512-wide space: the frame's OFX is 256,
-// and the box is centred on 0x100.
+// 0x8001844C's endpoint inputs are biased by -0x100 and -0x78 (0x80018468, 0x8001846C), which is
+// the 512x240 frame's own centre. The menu is authored in that 512-wide space: the frame's OFX is
+// 256, and the box is centred on 0x100.
 constexpr std::int32_t kCentreX = 0x100;
 constexpr std::int32_t kCentreY = 0x78;
 
-// 0x8001844C: `subu $s1,$zero(0x80),$v0` / `addiu $v1,$s1,0x60` / `sb $v1,4` / `sb $v1,5` / `sb $s1,6`
-// — 0x800184C8, 0x800184CC, 0x800184D0, 0x800184D4, 0x800184DC. So the two colour bytes the guest
-// computes from one endpoint are 0xE0-shade and 0x80-shade.
+// 0x8001844C: `subu $s1,$zero(0x80),$v0` / `addiu $v1,$s1,0x60` / `sb $v1,4` / `sb $v1,5` / `sb
+// $s1,6` — 0x800184C8, 0x800184CC, 0x800184D0, 0x800184D4, 0x800184DC. So the two colour bytes the
+// guest computes from one endpoint are 0xE0-shade and 0x80-shade.
 constexpr std::uint8_t kBorderHighByte = 0x60; // 0x80 (the complement base) + 0x60
 constexpr std::uint8_t kBorderBase = 0x80;
 
 // 0x80017908: `subu $t0,$zero(0x80),$v0` is the complement, and the result is folded into 0..0x80.
 std::uint8_t foldShade(std::int32_t directionIndex, std::uint32_t phase) {
-  std::uint32_t t = static_cast<std::uint32_t>(directionIndex - static_cast<std::int32_t>(phase)) & 0xFFu;
+  std::uint32_t t =
+      static_cast<std::uint32_t>(directionIndex - static_cast<std::int32_t>(phase)) & 0xFFu;
   if (t >= 0x80u) {
     t = 0x100u - t;
   }
@@ -110,23 +111,22 @@ std::int32_t directionIndex(std::int32_t dx, std::int32_t dy, std::span<const st
   if (offset >= ramp.size()) {
     return base;
   }
-  const std::int32_t value =
-      static_cast<std::int8_t>(ramp[offset]);
+  const std::int32_t value = static_cast<std::int8_t>(ramp[offset]);
   return base + (negate ? -value : value);
 }
 
 void addBorder(Recipe &recipe, const State &state, Segment segment) {
-  segment.shade0 = foldShade(directionIndex(segment.x0 - kCentreX, segment.y0 - kCentreY,
-                                            state.directionRamp),
-                             state.lightingPhase);
-  segment.shade1 = foldShade(directionIndex(segment.x1 - kCentreX, segment.y1 - kCentreY,
-                                            state.directionRamp),
-                             state.lightingPhase);
+  segment.shade0 =
+      foldShade(directionIndex(segment.x0 - kCentreX, segment.y0 - kCentreY, state.directionRamp),
+                state.lightingPhase);
+  segment.shade1 =
+      foldShade(directionIndex(segment.x1 - kCentreX, segment.y1 - kCentreY, state.directionRamp),
+                state.lightingPhase);
   recipe.border.push_back(segment);
 }
 
-Caption caption(std::uint32_t text, std::int32_t x, std::int32_t y, std::int32_t z,
-                std::int32_t maxLength) {
+Caption caption(
+    std::uint32_t text, std::int32_t x, std::int32_t y, std::int32_t z, std::int32_t maxLength) {
   return Caption{text, x, y, z, maxLength, true};
 }
 
@@ -162,7 +162,8 @@ Recipe derive(const State &state) {
   Recipe recipe;
   recipe.page = state.page;
   // The gate is the guest's own: [0x800758B8] == 0 draws the world with no panel at all. On the
-  // menu's first frame that is the whole picture, and it is the frame the operator's run aborted on.
+  // menu's first frame that is the whole picture, and it is the frame the operator's run aborted
+  // on.
   recipe.gui = state.frameCounter != 0u;
   if (!recipe.gui) {
     return recipe;
@@ -188,8 +189,7 @@ Recipe derive(const State &state) {
   addBorder(recipe, state, Segment{panelX0, panelY1, panelX0, kPanelTop, 0, 0});
 
   // "PAUSED" through the FIXED-PITCH builder 0x80017FE4, at 0x8001A980.
-  recipe.captions.push_back(
-      Caption{kStrPaused, 0xBA, 0x52, kPauseTitleDepth, 0x1C, false});
+  recipe.captions.push_back(Caption{kStrPaused, 0xBA, 0x52, kPauseTitleDepth, 0x1C, false});
   recipe.captionPitch = kCaptionPitch;
 
   if (state.page == Page::Main) {
@@ -197,12 +197,13 @@ Recipe derive(const State &state) {
     // offers "QUIT" (0x8001B4CC), and otherwise the guest tests its own %10 discriminator
     // (0x8001B54C) between "EXIT LEVEL" and "QUIT GAME".
     recipe.spacing = Spacing{16, 1, 0x1400};
-    recipe.captions.push_back(caption(kStrContinue, 0xC7, 0x6E, kPageItemDepth, kPageCaptionLength));
+    recipe.captions.push_back(
+        caption(kStrContinue, 0xC7, 0x6E, kPageItemDepth, kPageCaptionLength));
     recipe.captions.push_back(caption(kStrOptions, 0xCF, 0x80, kPageItemDepth, kPageCaptionLength));
-    recipe.captions.push_back(caption(kStrInventory, 0xBF, 0x92, kPageItemDepth, kPageCaptionLength));
+    recipe.captions.push_back(
+        caption(kStrInventory, 0xBF, 0x92, kPageItemDepth, kPageCaptionLength));
     if (state.flightLevel) {
-      recipe.captions.push_back(
-          caption(kStrQuit, 0xE7, 0xA4, kPageItemDepth, kPageCaptionLength));
+      recipe.captions.push_back(caption(kStrQuit, 0xE7, 0xA4, kPageItemDepth, kPageCaptionLength));
     } else if (everyTenthTick(state.fourthItemPhase)) {
       recipe.captions.push_back(
           caption(kStrQuitGame, 0xBF, 0xA4, kPageItemDepth, kPageCaptionLength));
@@ -223,10 +224,10 @@ Recipe derive(const State &state) {
     return recipe;
   }
 
-  // OPTIONS, 0x8001AAF0 onward. The left column is 0x6B/0x79/0x6B at y 0x6C/0x7C/0x8C, the VIBRATION
-  // row only exists when [0x800756D8] is set, and that same flag shifts CAMERA and DONE down by
-  // 0x10 (0x8001AC94, 0x8001ACE4). The right column at x=0x142 carries each setting's current
-  // value, and the two volume captions appear only while their row count is 0.
+  // OPTIONS, 0x8001AAF0 onward. The left column is 0x6B/0x79/0x6B at y 0x6C/0x7C/0x8C, the
+  // VIBRATION row only exists when [0x800756D8] is set, and that same flag shifts CAMERA and DONE
+  // down by 0x10 (0x8001AC94, 0x8001ACE4). The right column at x=0x142 carries each setting's
+  // current value, and the two volume captions appear only while their row count is 0.
   recipe.spacing = Spacing{15, 1, 0x1600};
   const std::int32_t valueDepth = kOptionsLeftDepth;
   recipe.captions.push_back(
@@ -240,28 +241,31 @@ Recipe derive(const State &state) {
         caption(kStrVibration, 0xA3, 0x9C, valueDepth, kOptionsCaptionLength));
   }
   const std::int32_t cameraShift = state.vibrationAvailable ? 0x10 : 0;
-  recipe.captions.push_back(caption(kStrCamera, 0xD0, cameraShift + 0x9C, kPageItemDepth,
-                                    kOptionsCaptionLength));
-  recipe.captions.push_back(caption(kStrDone, 0xEE, cameraShift + 0xAC, kPageItemDepth,
-                                    kOptionsCaptionLength));
+  recipe.captions.push_back(
+      caption(kStrCamera, 0xD0, cameraShift + 0x9C, kPageItemDepth, kOptionsCaptionLength));
+  recipe.captions.push_back(
+      caption(kStrDone, 0xEE, cameraShift + 0xAC, kPageItemDepth, kOptionsCaptionLength));
   // The value column, 0x8001AD8C-0x8001AF68.
   if (state.musicRowCount == 0) {
-    recipe.captions.push_back(
-        caption(kStrOff, 0x142, 0x6C, valueDepth, kOptionsCaptionLength));
+    recipe.captions.push_back(caption(kStrOff, 0x142, 0x6C, valueDepth, kOptionsCaptionLength));
   }
   if (state.soundRowCount == 0) {
     recipe.captions.push_back(caption(kStrOff, 0x142, 0x7C, valueDepth, kOptionsCaptionLength));
   }
-  recipe.captions.push_back(caption(state.stereoAvailable ? kStrMono : kStrStereo, 0x142, 0x8C,
-                                    valueDepth, kOptionsCaptionLength));
+  recipe.captions.push_back(caption(state.stereoAvailable ? kStrMono : kStrStereo,
+                                    0x142,
+                                    0x8C,
+                                    valueDepth,
+                                    kOptionsCaptionLength));
   if (state.vibrationAvailable) {
-    recipe.captions.push_back(
-        caption(state.vibrationEnabled ? kStrOn : kStrOff, 0x142, 0x9C, valueDepth,
-                kOptionsCaptionLength));
+    recipe.captions.push_back(caption(
+        state.vibrationEnabled ? kStrOn : kStrOff, 0x142, 0x9C, valueDepth, kOptionsCaptionLength));
   }
-  recipe.captions.push_back(
-      caption(state.cameraMode == 2u ? kStrActive : kStrPassive, 0x142, cameraShift + 0x9C,
-              valueDepth, kOptionsCaptionLength));
+  recipe.captions.push_back(caption(state.cameraMode == 2u ? kStrActive : kStrPassive,
+                                    0x142,
+                                    cameraShift + 0x9C,
+                                    valueDepth,
+                                    kOptionsCaptionLength));
   return recipe;
 }
 

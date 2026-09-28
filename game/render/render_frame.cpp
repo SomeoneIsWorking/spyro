@@ -116,9 +116,8 @@ bool pairedActorScene(Core *core, const Scene &scene) {
   // 0x8001A40C — the pause / inventory / old-dragon handler — reaches the same whole 0x80019698
   // chain on its world path, so it arms the same gate through the same field-player question. The
   // menu's own frames carry no separate ownership: the world behind the menu is the field's world.
-  const bool menuArm =
-      scene.stage == kStagePauseMenu || scene.stage == kStageInventoryMenu ||
-      scene.stage == kStageOldDragon;
+  const bool menuArm = scene.stage == kStagePauseMenu || scene.stage == kStageInventoryMenu ||
+                       scene.stage == kStageOldDragon;
   return frontend || dragon || levelTransition ||
          ((isFieldStage(scene.stage) || menuArm) && !respawnFading &&
           spyro_field_player_visible(core));

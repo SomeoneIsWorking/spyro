@@ -27,17 +27,17 @@
 // StoreImage, 0x80017E98 (an in-place RGB555 -> 3-3-2 conversion of exactly 0x7000 = 128*224
 // pixels, one tile per loop iteration) and 0x8005FA28 LoadImage. A per-tile pixel-count constant, a
 // colour-space conversion, and a VRAM round trip through a framebuffer-sized buffer are a FROZEN
-// COPY OF THE JUST-DRAWN WORLD, not menu art: the game captures the field once and re-blits it while
-// the menu is up rather than redrawing an unchanging scene. This port draws the world through its
-// own producers on every menu frame instead, which is the same picture and is neither a captured
-// framebuffer nor wrong under widescreen (the port's frame is wider than the 512x240 the guest
-// captured). Everything the menu ADDS is owned here.
+// COPY OF THE JUST-DRAWN WORLD, not menu art: the game captures the field once and re-blits it
+// while the menu is up rather than redrawing an unchanging scene. This port draws the world through
+// its own producers on every menu frame instead, which is the same picture and is neither a
+// captured framebuffer nor wrong under widescreen (the port's frame is wider than the 512x240 the
+// guest captured). Everything the menu ADDS is owned here.
 //
 // THE PANEL IS THE VISIBLE PART, and it is not subtle: 0x8001A7C4-0x8001A84C builds a GP0(0x2A)
 // untextured quad whose colour word is 0xE0,0xE0,0xE0 over the three low bytes — BGR555, so
 // R=0, G=7, B=7 with bit 15 set, a dark SEMI-TRANSPARENT wash. The five 0x8001844C calls draw that
-// box's outline plus the rule under the title, each endpoint lit through 0x800169AC / 0x80017908 off
-// a byte table in the main image. The captions are the guest's own two HUD text builders, which
+// box's outline plus the rule under the title, each endpoint lit through 0x800169AC / 0x80017908
+// off a byte table in the main image. The captions are the guest's own two HUD text builders, which
 // game/render/hud_text_builder already owns.
 #pragma once
 
@@ -63,7 +63,7 @@ enum class Page : std::uint32_t {
 // nothing in this repository has a name for 0x80075748, 0x80075754, 0x80075914 or 0x80076240, and
 // inventing a role for them would read as knowledge. What each one chooses is stated at its field.
 struct State {
-  std::uint32_t frameCounter = 0;        // [0x800758B8] — 0 on the menu's first frame: world only
+  std::uint32_t frameCounter = 0;    // [0x800758B8] — 0 on the menu's first frame: world only
   Page page = Page::Main;            // [0x800757C8]
   std::uint32_t selected = 0;        // [0x80075720]
   bool flightLevel = false;          // [0x80075690] g_IsFlightLevel
@@ -102,8 +102,8 @@ struct Caption {
 };
 
 // The spacing vector the guest passes by pointer to 0x800181AC. One value per page: 0x8001AB0C sets
-// {15, 1, 0x1600} for the options page, and 0x8001A9B4 sets {16, 1, 0x1400} for the confirm page and
-// the main page.
+// {15, 1, 0x1600} for the options page, and 0x8001A9B4 sets {16, 1, 0x1400} for the confirm page
+// and the main page.
 struct Spacing {
   std::int32_t x = 0;
   std::int32_t y = 0;
@@ -133,14 +133,15 @@ struct Rgb {
 };
 
 // 0x8001844C's flat border colour, from its own instruction words: `subu $s1,$zero(0x80),$v0` then
-// `addiu $v1,$s1,0x60` for colour bytes 4 and 5, and `$s1` itself for byte 6 (0x800184C8-0x800184D4,
-// 0x800184F0-0x80018504). So one 24-bit BGR555 word is (0xE0-shade, 0xE0-shade, 0x80-shade), and the
-// 5-bit fields expand the way the PSX expands them.
+// `addiu $v1,$s1,0x60` for colour bytes 4 and 5, and `$s1` itself for byte 6
+// (0x800184C8-0x800184D4, 0x800184F0-0x80018504). So one 24-bit BGR555 word is (0xE0-shade,
+// 0xE0-shade, 0x80-shade), and the 5-bit fields expand the way the PSX expands them.
 Rgb borderColour(std::uint8_t shade);
 
 // The panel's colour, from the guest's own three stored bytes (0x8001A7CC-0x8001A7E0).
 constexpr std::uint8_t kPanelColourByte = 0xE0;
-// 0x8001A7D0 stores the GP0 command byte; bit 15 of the assembled word is the semi-transparency bit.
+// 0x8001A7D0 stores the GP0 command byte; bit 15 of the assembled word is the semi-transparency
+// bit.
 constexpr std::uint8_t kPanelStp = 1;
 
 // 0x8001A5E0's GUI, derived from `state`. Pure: no Core, no GPU, no guest write.

@@ -12,6 +12,20 @@ created: 2026-09-28
 updated: 2026-09-28
 ---
 
+> **The attribution this issue left open is now closed, and its answer is not either named candidate.**
+> `docs/issues/0144` names the producer: the rectangle is the **pause menu's panel quad**, submitted
+> by `spyro::pause_menu_scene::submitPanel` under guest handler `0x8001A40C` at guest
+> `g_Gamestate` = 2, and it is painted **147 of its own 232 columns under widescreen** because the
+> port passes a guest-space constant as a drawn-space clip. `func_80018F30` and `func_8001860C` are
+> both excluded by the guest's own bytes. Two corrections to this issue's §1 stand: (a) the
+> "unfilled outline box beside it" **is** the same panel's own right-hand border, 86 columns past
+> where the fill stops — it was never a second primitive; and (b) the geometry this issue fitted
+> assumed the port scales screen-space x, and it does not: the margin is `(684-512)/2 = 86` added
+> whole, so the rectangle is the guest's `140..372` and not a `110x110` box at `(169,67)`.
+> **`PSXPORT_MUTE_FN`, which §"What would settle it" names as the instrument, no longer exists** (see
+> 0144 §1), and §"What would settle it" item 2's "0 of 104 captures" is explained by 0144 §5: the
+> overlay is on the picture in half the presents, so a one-shot capture is a coin flip.
+
 ## 1. The defect frame's blue is a screen rectangle, and it is not the water
 
 `scratch/screenshots/pause2.png` and `scratch/screenshots/pause-final.png` are the SAME camera: they
@@ -66,6 +80,14 @@ no-op for this level, and therefore cannot be the difference between a frame wit
 frame without it. It is not a regression either: the sheet is absent from `pause2.png`,
 `pause3.png`, `pause-menu.png` and `pause_text.png`, which are all **pre-fix** captures of the same
 camera.
+
+**SUPERSEDED IN SCOPE, 2026-09-28, by `docs/issues/0144`.** "Dead in this level" was correct and was
+not the whole question. Censusing every level DATA entry in `WAD.WAD`
+(`tools/census_level_face_material.py`) finds **1,592 translucent faces across 6 of 35 levels**, the
+largest population in level 17 (levelId 35, CRYSTAL FLIGHT) at 494 of 3,341 faces across 95 of its
+219 sectors. **The arm is live code in this game and unreachable only in Artisans' Home** -- so the
+fix is verifiable on a level nobody has driven to yet, and 0143's zero stands as a correct
+measurement of the one level it measured.
 
 ## 3. `pool_water_probe`'s metric cannot answer the question it is being asked
 

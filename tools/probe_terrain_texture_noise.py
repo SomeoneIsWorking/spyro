@@ -53,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import guest_globals  # noqa: E402
 from drive import Port, disc_path, environment  # noqa: E402
+import drive  # noqa: E402  -- the Navigator, so the route to gameplay is observed, not counted
 
 SINK_H = 240
 
@@ -170,7 +171,39 @@ def run_leg(name: str, ini_rel: str, frames: int, keep: int) -> dict:
     shot_rel = f"scratch/screenshots/terrain-{name}.ppm"
     out: dict = {"leg": name, "settings": str(ini)}
     try:
+        # A FIXED FRAME COUNT IS NOT A ROUTE TO GAMEPLAY, and this tool used one. Measured
+        # 2026-09-28: at 260 fields this leg presented the UNIVERSAL INTERACTIVE boot logo, and the
+        # tool published "ground 14.3% vs buildings 19.9% -- coherent" from it. A boot logo has no
+        # ground and no buildings, so both regions were scenery and a verdict about terrain texture
+        # noise was reported from a frame containing no terrain.
+        #
+        # The refusal-by-gamestate gate tried first was ALSO wrong, and measurably so: it did not
+        # fire, because **g_Gamestate is 0 during the boot logos too** (the recorded boot timeline has
+        # both logos at gamestate 0). So "gamestate == GS_Playing" is not a gameplay predicate on
+        # this title, and a gate built on it would have been a gate that cannot fail on the exact
+        # input it exists to catch.
+        #
+        # The route is drive.py's Navigator, which OBSERVES the guest (title menu, start new game,
+        # wait for playing) and refuses by name when a state is not reached. That is why it exists:
+        # drive.py's docstring records that the same fixed script reaches the save picker on one run
+        # and the Insomniac card on the next. This tool now uses it rather than re-deriving a worse
+        # version of the same idea.
+        navigator = drive.Navigator(port, skip_transitions=True)
+        navigator.reach_gameplay()
+        out["reached"] = "gameplay"
         port.run(frames)
+        # Still refuse if the state moved away, and say which state, rather than measuring a title
+        # screen because the route arrived and then the level ended.
+        state = port.word(0x800757D8)
+        out["gamestate"] = state
+        if state != 0:
+            out["error"] = (
+                f"REFUSED: after the gameplay route and {frames} further fields, g_Gamestate is "
+                f"{state}, not 0 (GS_Playing). The regions are not ground and buildings on that "
+                f"screen, so measuring them would publish a terrain verdict from a frame with no "
+                f"terrain in it."
+            )
+            return out
         port.shot(shot_rel)
         reply = port.word(0x1F801802)  # not the width; read it from the log below instead
         out["done"] = True
@@ -204,7 +237,9 @@ def main() -> int:
         r = run_leg(name, ini, args.frames, args.keep)
         results.append(r)
         if "error" in r:
-            print(f"{name:14s} ERROR {r['error'][:90]}")
+            # A refusal is printed in full, not truncated to a column: a leg that did not measure
+            # must not read as a leg that measured nothing and found it clean.
+            print(f"{name:14s} REFUSED — {r['error']}")
             continue
         shot = ROOT / f"scratch/screenshots/terrain-{name}.ppm"
         if not shot.is_file():

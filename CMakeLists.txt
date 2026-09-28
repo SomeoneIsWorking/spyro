@@ -379,6 +379,20 @@ if(BUILD_TESTING)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()
+  # THE DECOMPILATION PIPELINE'S OWN SELFTEST. Gated because a decompilation tool that reports a
+  # clean result while it never ran, or while it emitted a TRUNCATED body that reads like a complete
+  # function, is the workspace's signature failure mode -- and this tool's whole output is prose a
+  # human is expected to trust. Four modules, each with its own negative cases: the image mapping
+  # (62,183 recorded instructions, and a discriminator that shows a shifted formula separating),
+  # the decompile ADMISSION rules (7 refusals plus the falsifier that proves the anchor check can
+  # fail), the Ghidra session (6 refusals, driven through an injected runner so no Ghidra is needed),
+  # and the work order (which must refuse an address it does not name, or the corpus is unbounded).
+  # Hermetic: no Ghidra, no network, no product run. The decompile itself is NOT a test -- it needs
+  # the provisioned image and 1 GB of heap, and its verdict belongs to a run, not to a gate.
+  add_test(NAME decomp_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/decomp.py --selftest)
+  set_tests_properties(decomp_selftest PROPERTIES TIMEOUT 300)
+
   # THE COMPARATOR'S OWN SELFTEST, which was never wired in. A comparator that reports 0 divergences
   # is only evidence if it CAN report one, and this is the check that says so: it seeds a byte at a
   # declared range and requires the comparator to detect it. Verified working before being gated --

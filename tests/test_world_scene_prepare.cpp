@@ -202,12 +202,31 @@ void immutable_source_contract() {
   require(endpoint.status == spyro::world_recipe::Status::Ready && endpoint.faces.size() == 2 &&
               endpoint.candidates == 2 && endpoint.highSectors == 0,
           "authored duplicate LQ faces render while unused invalid HQ is retained");
-  require(endpoint.faces[0].vertices[0].rgb == 0x00123456u &&
+  require(endpoint.faces[0].vertices[0].rgb == 0xe10006e0u &&
               endpoint.faces[0].material.semiTransparent &&
               endpoint.faces[0].material.tpage == 96u &&
               endpoint.faces[0].vertices[0].sz == 1000u && endpoint.faces[0].paintGroup == 0u &&
               endpoint.faces[1].paintGroup == 1u,
-          "source endpoint retains colors, material, exact depth and duplicate OT link order");
+          "source endpoint retains the translucent material, exact depth and duplicate OT link "
+          "order, and a material-bit-2 face takes the guest's CONSTANT colour rather than the "
+          "authored per-face colour it discards");
+  // THE OTHER ARM, because a fix that only pins the new answer passes while the gouraud arm is
+  // broken. Same fixture, same face, with ONLY material bit 2 cleared: the four authored colours
+  // must come back, because that is the arm every other surface in the game takes. The face's
+  // material word is the second word of the one face, at kSector + 0x1c + 4 vertices + 4 colours.
+  {
+    auto opaqueBytes = bytes;
+    w32(opaqueBytes, kSector + 0x1cu + 32u + 4u, (1u << 20) | (2u << 14) | (3u << 8) | 3u);
+    std::fill(std::begin(core.ram), std::end(core.ram), 0u);
+    std::copy(opaqueBytes.begin(), opaqueBytes.end(), core.ram);
+    const auto opaque = spyro::world_scene::build(&core, 0);
+    require(opaque.status == spyro::world_recipe::Status::Ready && opaque.faces.size() == 2u &&
+                opaque.faces[0].vertices[0].rgb == 0x00123456u &&
+                !opaque.faces[0].material.semiTransparent && opaque.faces[0].material.tpage == 96u,
+            "clearing material bit 2 restores the authored per-face colour and the opaque arm");
+    std::fill(std::begin(core.ram), std::end(core.ram), 0u);
+    std::copy(bytes.begin(), bytes.end(), core.ram);
+  }
   std::fill(std::begin(core.ram), std::end(core.ram), 0u);
   core.rsub.projParams.setGeomOffset(0, 0);
   const auto rebuilt = spyro::world_scene::build(captured);

@@ -206,6 +206,9 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/stage_update_observer.cpp
   titles/spyro1/core/spyro1_transition_skip.cpp
   titles/spyro1/core/spyro1_runtime.cpp
+  titles/spyro1/core/native_sound_position.cpp
+  titles/spyro1/core/native_camera.cpp
+  titles/spyro1/core/native_player_animation.cpp
   titles/spyro2/core/spyro2_gpu_sync.cpp
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
@@ -434,7 +437,9 @@ if(BUILD_TESTING)
       # `jr` that must refuse, the `sw` in place of the `sb`, and the perturbed immediate that must
       # move the answer. Hermetic: it builds bodies, never reads the image, so it cannot pass by
       # having a corpus.
-      probe_pause_panel_colour)
+      probe_pause_panel_colour
+      # The swarm acceptance gate for one native override; its selftest pins the scope rule.
+      native_override_gate)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

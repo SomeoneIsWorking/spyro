@@ -5,6 +5,9 @@
 #include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
+#include "native_camera.h"
+#include "native_player_animation.h"
+#include "native_sound_position.h"
 #include "presentation_owner.h"
 #include "spyro1_frame_driver.h"
 #include "spyro_context.h"
@@ -51,6 +54,9 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   spyro_register_native_gte(game.core);
   spyro_register_native_angle(game.core);
   spyro_register_native_util(game.core);
+  native::registerSoundPositionOverrides(game.core);
+  native::registerCameraOverrides(game.core);
+  native::registerPlayerAnimationOverrides(game.core);
   lucent::info("boot", "installed Spyro 1's verified image-scoped native overrides");
 }
 

@@ -82,10 +82,10 @@ the recorder.
 | gem-seek | 315 |
 | portal-level | 323 |
 | skip-transitions | 321 |
-| **union** | **331 (60.5%)** |
-| attract-demo | crashes, issue 0148 |
+| attract-demo | 308 (the last flush before the timeout kill; crashed before issue 0148's fix) |
+| **union of all six** | **352 (64.4%)** |
 
-WAD overlays: 2 images and up to 398 distinct entry pcs per route. There is no function list for them
+WAD overlays: 2 images and up to 398 distinct entry pcs per gameplay route, and 5 images with 2,360 on the attract demo. There is no function list for them
 yet, so they are counted without a denominator.
 
 Differential across the corpus:

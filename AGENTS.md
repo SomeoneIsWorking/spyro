@@ -49,8 +49,10 @@ interactive gameplay route must prove native and scoped-original dispatch,
 address-reusing WAD invalidation, independent-oracle state, bounded fallback admission, and the
 declared correctness/performance budget on each released host.
 
-Finish Spyro 1 before continuing title-specific Spyro 2 or Spyro 3 implementation. Preserve their
-measured identities and boot facts, but do not extend their retired generated bring-up paths.
+Spyro 1 is the active title and its work lands first. Spyro 2 and 3 may progress in parallel on
+Space Bunny (boot, RE, title-local owners), but nothing merged for them may regress Spyro 1's gates;
+re-run Spyro 1's verify and corpus on any shared change. Preserve their measured identities and boot
+facts, but do not extend their retired generated bring-up paths.
 
 ## Preserved binary and behavior facts
 

@@ -38,8 +38,11 @@ override read level-overlay bytes as animation numbers. On the gated gameplay le
 to be valid animations, so nothing crashed there. The attract demo's level produced one past the model's
 animation pointers, and the renderer followed it into unmapped RAM.
 
-The override differential passed this override at 17/17 because none of the sampled calls took the
-transition branch. The differential cannot judge a branch its route never takes.
+The override differential passed this override at 17/17 on the gameplay route. It sampled the first
+16 calls and every 64th after that, and none of those took the transition branch with a divergent
+byte. Shadowing EVERY call on the attract demo (`PSXPORT_OVERRIDE_DIFF_EVERY=1`) catches it: 8 of 395
+calls mismatch, each on exactly `0x80078A71` (`m_nextBodyAnimation`), for example original 02 against
+native 06. So the instrument can give the other answer, and the per-job gate now shadows every call.
 
 ## Fix
 

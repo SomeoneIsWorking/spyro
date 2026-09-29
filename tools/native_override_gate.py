@@ -260,6 +260,10 @@ def run_differential(
             f"PSXPORT_OVERRIDE_DIFF={name}",
             "--env",
             f"PSXPORT_OVERRIDE_DIFF_REPORT={REPORT}",
+            # Every call, not the first 16 and every 64th: a rare branch hides between samples
+            # (docs/issues/0148 passed 17/17 sampled and mismatched 8 of 395 when all were shadowed).
+            "--env",
+            "PSXPORT_OVERRIDE_DIFF_EVERY=1",
             "--hold",
             "RIGHT",
             "--hold-frames",

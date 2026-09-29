@@ -10,6 +10,22 @@ namespace {
 constexpr std::uint32_t kAudioMonoFlag = 0x80076240u;
 constexpr std::int32_t kChannelCeiling = 0x3FFF;
 
+constexpr std::uint32_t kActiveSounds = 0x80075F30u;
+constexpr std::uint32_t kStopVoiceWord = 0x8007623Cu;
+constexpr std::uint32_t kActiveSoundCount = 24u;
+constexpr std::uint32_t kActiveSoundStride = 0x1Cu;
+constexpr std::uint32_t kSlotMoby = 0x00u;
+constexpr std::uint32_t kSlotSoundId = 0x0Du;
+constexpr std::uint32_t kSlotFlags = 0x0Eu;
+constexpr std::uint32_t kSlotPitchIncrease = 0x14u;
+constexpr std::uint32_t kSlotSoundRef = 0x18u;
+constexpr std::uint32_t kStopEverySound = 1u;
+constexpr std::uint32_t kStopVoiceSounds = 2u;
+constexpr std::uint32_t kVoiceFlag = 0x100u;
+constexpr std::uint32_t kClearedSlotFlags = 0x40u;
+constexpr std::uint32_t kClearedSoundId = 0xFFu;
+constexpr std::uint8_t kStopRequest = 0x7Fu;
+
 // 0x80056C84 (func_80056C84) - stereo volume and pan for one positional sound: attenuates each
 // input channel by distance/max distance, pans it by the angle to the sound, clamps both channels
 // to [0, 0x3fff] and, with mono audio set, averages the clamped pair. The input SpuVolume is the
@@ -92,11 +108,56 @@ void positionalStereoVolume(Core *c) {
   c->r[3] = static_cast<std::uint32_t>(clampedLeft);
 }
 
+// 0x800562A4 (func_800562A4) - stop the active sounds a moby owns: every one of the 24 slots whose
+// owner is a0 and which pass the a1 filter (a1 == 1 takes them all, a1 == 2 only those whose flags
+// carry 0x100) is marked in a stop mask, told to stop through its sound-reference byte, and cleared
+// back to a free slot. Two delay slots carry state a source-level reading misses: the mask OR is
+// the delay slot of the reference-pointer test, so a slot is stopped whether or not it had a
+// reference to write through, and the final stop-word store is the delay slot of the return, so
+// every path leaves v0 as the merged stop mask and v1 as 0x8007623C, the address it was written at.
+void stopMobySounds(Core *c) {
+  const std::uint32_t moby = c->r[4];
+  const std::uint32_t stopType = c->r[5];
+
+  std::uint32_t toStop = 0;
+  for (std::uint32_t slot = 0; slot < kActiveSoundCount; ++slot) {
+    const std::uint32_t base = kActiveSounds + slot * kActiveSoundStride;
+    if (c->mem_r32(base + kSlotMoby) != moby) {
+      continue;
+    }
+    if (stopType != kStopEverySound) {
+      if (stopType != kStopVoiceSounds) {
+        continue;
+      }
+      if ((c->mem_r16(base + kSlotFlags) & kVoiceFlag) == 0u) {
+        continue;
+      }
+    }
+    toStop |= 1u << slot;
+
+    const std::uint32_t soundRef = c->mem_r32(base + kSlotSoundRef);
+    if (soundRef != 0u) {
+      c->mem_w8(soundRef, kStopRequest);
+    }
+    c->mem_w32(base + kSlotSoundRef, 0);
+    c->mem_w16(base + kSlotFlags, static_cast<std::uint16_t>(kClearedSlotFlags));
+    c->mem_w32(base + kSlotMoby, 0);
+    c->mem_w32(base + kSlotPitchIncrease, 0);
+    c->mem_w8(base + kSlotSoundId, static_cast<std::uint8_t>(kClearedSoundId));
+  }
+
+  const std::uint32_t merged = c->mem_r32(kStopVoiceWord) | toStop;
+  c->mem_w32(kStopVoiceWord, merged);
+  c->r[2] = merged;
+  c->r[3] = kStopVoiceWord;
+}
+
 } // namespace
 
 void registerSoundPositionOverrides(Core &core) {
   spyro::installNativeOverride(
       core, 0x80056C84u, "positional_stereo_volume", positionalStereoVolume);
+  spyro::installNativeOverride(core, 0x800562A4u, "stop_moby_sounds", stopMobySounds);
 }
 
 } // namespace spyro1::native

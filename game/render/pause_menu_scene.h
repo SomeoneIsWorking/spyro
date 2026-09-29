@@ -24,12 +24,13 @@ namespace spyro::pause_menu_scene {
 // that names only a guest address cannot be acted on from a log (producer_refusal.h).
 enum class Refusal {
   None,
-  ActorChain,  // 0x80019698
-  Particles,   // 0x800573C8
-  Cyclorama,   // 0x80050BD0
-  Environment, // 0x8002B9CC
-  Text,        // the caption arena, through the shared HUD text owner
-  ShadedActors // 0x80022A2C, which draws the captions' glyph mobys
+  ActorChain,   // 0x80019698
+  Particles,    // 0x800573C8
+  Cyclorama,    // 0x80050BD0
+  Environment,  // 0x8002B9CC
+  Text,         // the caption arena, through the shared HUD text owner
+  ShadedActors, // 0x80022A2C, which draws the captions' glyph mobys
+  PanelColour   // the guest's own colour byte at 0x8001A6C8 is not the instruction it is read as
 };
 
 // One frame of the handler. `drawAreaX1` is the active draw env's right edge, so a border line that

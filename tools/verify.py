@@ -87,7 +87,14 @@ def verify(jobs: int) -> None:
     run.command(
         ["ctest", "--test-dir", run.MAINTAINER_BUILD, "--output-on-failure"]
     )
-    run.command([sys.executable, run.ROOT / "tools/psxport_sync.py", "--check"])
+    # `--build` IS PASSED, and it has to be. The pin tool's default is the shared tree's `build/ci`,
+    # which is not this repository's gate -- this one's maintainer build is `build` -- so the bare
+    # call refused with "no usable psxport_resolved.txt in build/ci", a directory that does not exist
+    # here. The registered `spyro_psxport_pin_live` test has always passed `--build
+    # ${CMAKE_BINARY_DIR}` and is green, which is why this went unnoticed: the same check ran twice
+    # under two different build directories and only one of them was the real tree's.
+    run.command([sys.executable, run.ROOT / "tools/psxport_sync.py", "--check",
+                 "--build", run.MAINTAINER_BUILD])
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -239,7 +239,7 @@ if(BUILD_TESTING)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)
-  foreach(test_name IN ITEMS actor_billboard_face actor_prefix_builder actor_mesh_scratch actor_model_codec archive_transfer_contract cutscene_scene_recipe cyclorama_mask_recipe cyclorama_scene_recipe field_collectables_recipe field_2d_overlay_recipe field_environment_recipe field_environment_scene field_scene_recipe field_tracers_recipe memcard_event_stack paired_actor_decode screen_border_recipe screen_fade_recipe secondary_actor_scene spu_hardware_init spu_pio_upload spyro_gate_debug stage13_scene_recipe text_sprites title_menu_recipe wide_clip_plan world_chunk_codec world_material_codec world_recipe world_scene_oracle actor_draw_recipe native_render_producers face_light_program secondary_actor_recipe secondary_actor_temporal temporal_scene world_animation world_source_pair world_temporal actor_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix glow_recipe sparkle_recipe dragon_scene_recipe dragon_burst_recipe actor_scale_translation field_particles_recipe field_particle_oriented paired_actor_color_fade actor_global_order field_scheduler transition_skip cyclorama_portal_mesh_recipe hud_text_builder level_transition_tally_recipe field_shaded_queue_recipe field_shaded_queue_scene field_shaded_queue_temporal terrain_recipe terrain_temporal gpu_packet_decode)
+  foreach(test_name IN ITEMS actor_billboard_face actor_prefix_builder actor_mesh_scratch actor_model_codec archive_transfer_contract cutscene_scene_recipe cyclorama_mask_recipe cyclorama_scene_recipe field_collectables_recipe field_2d_overlay_recipe pause_menu_recipe field_environment_recipe field_environment_scene field_scene_recipe field_tracers_recipe memcard_event_stack paired_actor_decode screen_border_recipe screen_fade_recipe secondary_actor_scene spu_hardware_init spu_pio_upload spyro_gate_debug stage13_scene_recipe text_sprites title_menu_recipe wide_clip_plan world_chunk_codec world_material_codec world_recipe world_scene_oracle actor_draw_recipe native_render_producers face_light_program secondary_actor_recipe secondary_actor_temporal temporal_scene world_animation world_source_pair world_temporal actor_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix glow_recipe sparkle_recipe dragon_scene_recipe dragon_burst_recipe actor_scale_translation field_particles_recipe field_particle_oriented paired_actor_color_fade actor_global_order field_scheduler transition_skip cyclorama_portal_mesh_recipe hud_text_builder level_transition_tally_recipe field_shaded_queue_recipe field_shaded_queue_scene field_shaded_queue_temporal terrain_recipe terrain_temporal gpu_packet_decode)
     add_executable(test_${test_name} tests/test_${test_name}.cpp)
     target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
     target_link_libraries(test_${test_name} PRIVATE spyro_runtime)
@@ -423,7 +423,18 @@ if(BUILD_TESTING)
       # clipped to 146 of its own 232 columns (NARROWER, with the short span), a strip whose overlay
       # is on 3 of 6 presents (the cadence a single screenshot cannot see), and three refusals -- no
       # frames, a non-P6 file, a truncated PPM -- none of which may read as a clean zero.
-      overlay_extent)
+      overlay_extent
+      # The PAUSE PANEL COLOUR RECOVERY. docs/issues/0144 shipped a panel whose colour byte was the
+      # port's own 0xE0 where retail stores 0x40, and the recovery is a reaching-definition dataflow
+      # over all 2,212 words of the handler: 29 writes to $s4 exist and exactly ONE of them reaches the
+      # panel's three colour stores. That "exactly one" is a claim a reader cannot check by eye -- an
+      # omitted opcode class, a mishandled delay-slot branch, or a wrongly modelled unconditional jump
+      # all produce a confident answer about a different program -- so the analysis is gated on its
+      # negative set: the fallthrough case that must report TWO definitions, the computed-register
+      # `jr` that must refuse, the `sw` in place of the `sb`, and the perturbed immediate that must
+      # move the answer. Hermetic: it builds bodies, never reads the image, so it cannot pass by
+      # having a corpus.
+      probe_pause_panel_colour)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

@@ -34,14 +34,20 @@
 // guest captured). Everything the menu ADDS is owned here.
 //
 // THE PANEL IS THE VISIBLE PART, and it is not subtle: 0x8001A7C4-0x8001A84C builds a GP0(0x2A)
-// untextured quad whose colour word is 0xE0,0xE0,0xE0 over the three low bytes — BGR555, so
-// R=0, G=7, B=7 with bit 15 set, a dark SEMI-TRANSPARENT wash. The five 0x8001844C calls draw that
-// box's outline plus the rule under the title, each endpoint lit through 0x800169AC / 0x80017908
-// off a byte table in the main image. The captions are the guest's own two HUD text builders, which
+// untextured quad whose three colour bytes are whatever `$s4` holds at 0x8001A7D8-0x8001A7E0, i.e.
+// BGR555 with bit 15 set — a dark SEMI-TRANSPARENT wash. The five 0x8001844C calls draw that box's
+// outline plus the rule under the title, each endpoint lit through 0x800169AC / 0x80017908 off a
+// byte table in the main image. The captions are the guest's own two HUD text builders, which
 // game/render/hud_text_builder already owns.
+//
+// The colour byte is 0x40 (decomp draw.c:986 `setRGB0(f4, 64, 64, 64)`), not 0xE0: the handler's
+// `addiu $s4,$zero,0xE0` at 0x8001A450 is on the world arm, which never reaches the panel.
+// tools/probe_pause_panel_colour.py proves exactly one of the 29 `$s4` definitions reaches the
+// panel's colour stores. See docs/issues/0144.
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -138,8 +144,16 @@ struct Rgb {
 // 0xE0-shade, 0x80-shade), and the 5-bit fields expand the way the PSX expands them.
 Rgb borderColour(std::uint8_t shade);
 
-// The panel's colour, from the guest's own three stored bytes (0x8001A7CC-0x8001A7E0).
-constexpr std::uint8_t kPanelColourByte = 0xE0;
+// The panel's colour byte: the guest stores `$s4` with `sb` at 0x8001A7D8-0x8001A7E0, and the one
+// reaching definition is `addiu $s4,$zero,imm` at kPanelColourDefinitionPc. Returns the immediate's
+// low byte, or nothing when the word is not that exact instruction.
+std::optional<std::uint8_t> panelColourByte(std::uint32_t instructionWord);
+
+// The guest address of that definition, read from the resident executable.
+constexpr std::uint32_t kPanelColourDefinitionPc = 0x8001A6C8u;
+// MIPS32 `addiu` opcode and its expected `rt` ($s4); `rs` must be $zero.
+constexpr std::uint32_t kAddImmediateOpcode = 0x09u;
+constexpr std::uint32_t kColourRegister = 20u; // $s4
 // 0x8001A7D0 stores the GP0 command byte; bit 15 of the assembled word is the semi-transparency
 // bit.
 constexpr std::uint8_t kPanelStp = 1;

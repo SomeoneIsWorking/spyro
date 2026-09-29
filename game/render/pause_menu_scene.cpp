@@ -18,6 +18,7 @@
 
 #include <array>
 #include <lucent/log.h>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -141,11 +142,17 @@ std::string readString(Core *core, std::uint32_t address) {
 // and the GP0 command 0x2A in the fourth; 0x2A is an untextured 4-vertex quad whose bit 15 is the
 // semi-transparency bit, so the panel is a dark translucent wash over the world rather than an
 // opaque plate. Both facts are in the constant, not in a guess about which one it meant.
-void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe) {
-  const std::uint32_t word =
-      static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) |
-      (static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) << 8) |
-      (static_cast<std::uint32_t>(spyro::pause_menu::kPanelColourByte) << 16);
+// The panel's colour byte is the immediate of the guest's own `addiu $s4,$zero,imm` at
+// kPanelColourDefinitionPc (retail 0x40), read from the resident image; an unexpected word refuses.
+std::optional<std::uint8_t> readPanelColourByte(Core *core) {
+  return spyro::pause_menu::panelColourByte(
+      core->mem_r32(spyro::pause_menu::kPanelColourDefinitionPc));
+}
+
+void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe, std::uint8_t colourByte) {
+  const std::uint32_t word = static_cast<std::uint32_t>(colourByte) |
+                             (static_cast<std::uint32_t>(colourByte) << 8) |
+                             (static_cast<std::uint32_t>(colourByte) << 16);
   const auto expand = [](std::uint32_t v) {
     return static_cast<unsigned char>((v << 3) | (v >> 2));
   };
@@ -342,7 +349,19 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
     // the panel instead of stretching it.
     ProducerScope producer(&core->rsub.producerScope, kProducerKey, "pause:menu");
     RenderQueue::Space2dScope authored(core->game->rq, RQ_2D_AUTHORED_4_3);
-    submitPanel(core, core->game->rq, recipe);
+    const auto panelColour = readPanelColourByte(core);
+    if (!panelColour) {
+      lucent::error("render",
+                    "the guest's panel colour byte at 0x{:08X} is not `addiu $s4, $zero, imm`; "
+                    "refusing to draw the pause panel with an assumed colour",
+                    spyro::pause_menu::kPanelColourDefinitionPc);
+      return Refusal::PanelColour;
+    }
+    lucent::debug("render",
+                  "pause-menu panel colour: byte=0x{:02X} from guest 0x{:08X}",
+                  *panelColour,
+                  spyro::pause_menu::kPanelColourDefinitionPc);
+    submitPanel(core, core->game->rq, recipe, *panelColour);
     submitBorder(core, core->game->rq, recipe, drawAreaX1);
     // The guest's AddPrim (0x800168DC) advances the prim cursor by each record it links: 6 words
     // for the GP0(0x2A) panel and 5 for each 0x8001844C line. Reproduced so the pool position the
@@ -396,6 +415,8 @@ const char *refusalName(Refusal refusal) {
     return "pause-menu captions refused the HUD moby arena";
   case Refusal::ShadedActors:
     return "shaded actor producer 0x80022A2C refused its atomic recipe";
+  case Refusal::PanelColour:
+    return "the guest's panel colour byte at 0x8001A6C8 is not `addiu $s4, $zero, imm`";
   }
   return "unknown";
 }

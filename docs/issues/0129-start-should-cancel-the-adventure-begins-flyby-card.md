@@ -136,3 +136,17 @@ gate fails `testHonoursTheFlybysLoadGate`, and dropping `demoType` from `flybyCa
 `testLeavesTheUnrecoveredFlybyPathsAlone`.
 
 Route and addresses recorded in `docs/findings/start-skip-map.md`.
+
+## 2026-09-29 finding: the boot card is TSD_DemoLevel, and the route has not been shown to fire
+
+A from-boot observation reads the card at frame 3550 with `m_DemoType = 2` (TSD_DemoLevel), so
+`flybyCardUp`'s `demoType == TSD_Level` never matches the card seen at boot. The bytes and the decomp
+agree on the terminal: update.c's level arm serves both TSD_Level and TSD_DemoLevel, and only
+TSD_DemoLevel additionally writes `g_DemoMode = 1` and `g_DemoFadeTimer = 0` (0x80033140
+`bne m_DemoType, 2` skips those two stores otherwise) before `func_8004AC24(1); LoadLevel(1)`.
+
+A predicate of `demoType != TSD_Cutscene` with those two writes conditional on TSD_DemoLevel was
+tried and NOT landed: a from-boot Start press at the card produced no `level flyby cancelled` log line
+and reached GS_Playing at the same frame (4318) as a press 400 frames later, so the route did not
+demonstrably fire. The next step is to confirm the press reaches `presentationSkipPressed()` during
+the attract flyby (the guest may consume Start there first) before changing the predicate.

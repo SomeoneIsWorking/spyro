@@ -158,6 +158,17 @@ Rgb borderColour(std::uint8_t shade) {
   return Rgb{expand(red5), expand(green5), expand(blue5)};
 }
 
+std::optional<std::uint8_t> panelColourByte(std::uint32_t instructionWord) {
+  if (((instructionWord >> 26) & 0x3Fu) != kAddImmediateOpcode) {
+    return std::nullopt;
+  }
+  if (((instructionWord >> 21) & 0x1Fu) != 0u ||
+      ((instructionWord >> 16) & 0x1Fu) != kColourRegister) {
+    return std::nullopt;
+  }
+  return static_cast<std::uint8_t>(instructionWord & 0xFFu);
+}
+
 Recipe derive(const State &state) {
   Recipe recipe;
   recipe.page = state.page;

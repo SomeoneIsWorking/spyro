@@ -227,3 +227,12 @@ display origin is 240 the quad is rasterised into the other buffer's rows. **I d
 
 `--preseq-dir` is **not** cleared for you, on purpose: a stale `p0000.ppm` in it is read as one of
 the N presents, which is the C138 failure. Delete the directory before every run, as above.
+
+## 2026-09-29: D2 fixed, D1 open
+
+D2 (panel colour) is fixed: the byte is read from the guest's `addiu $s4,$zero,imm` at 0x8001A6C8
+(retail 0x40, decomp `setRGB0(f4, 64, 64, 64)`), gated by `tools/probe_pause_panel_colour.py
+--selftest` and `test_pause_menu_recipe`. D1 (the 147-of-232-column clip at 16:9) is open. Its cause
+is psxport `RenderQueue::emitOrQueue` transforming a 2D prim's vertices through `Rq2dXform` but not its
+`da_*` clip; the fix belongs there and must be gated across every title's 2D producers. A title-side
+stopgap was drafted and not landed without approval.

@@ -9,15 +9,15 @@ worktree. A change passes only when all of these hold, in this order:
   3. QUALITY. Every changed C++ file is clang-format clean, under the 1,200-line structure limit, and
      clang-tidy clean; the repository source policy passes; every guest address constant in a changed
      override module is one the retail code computes (tools/override_constants.py).
-  4. TESTS. The CTest suite passes, except the `slow` label: those drive the console oracle, whose
+  4. TESTS (skipped by --light). The CTest suite passes, except the `slow` label: those drive the console oracle, whose
      activity lock admits one run per machine, so concurrent job gates would refuse each other. The
      operator's tools/verify.py runs the whole suite once on the combined tree before landing.
-  5. BEHAVIOUR. A headless gameplay run (tools/drive.py) with PSXPORT_OVERRIDE_DIFF armed for the
-     named override samples at least one comparable call, and every sampled call matches the guest
+  5. BEHAVIOUR. A headless run of one reach-corpus route (--route, default artisans-walk) with
+     PSXPORT_OVERRIDE_DIFF armed for the named override samples at least one comparable call, and every sampled call matches the guest
      body it replaces (psxport tools/port/override_differential_gate.py).
 
 Usage (from the job worktree):
-    uv run --frozen python tools/native_override_gate.py <override-name>
+    uv run --frozen python tools/native_override_gate.py <override-name>... [--route NAME] [--light]
     uv run --frozen python tools/native_override_gate.py --selftest
 """
 
@@ -30,6 +30,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from reach_corpus import registered_overrides, route_invocation, route_named
+
 ROOT = Path(__file__).resolve().parent.parent
 ALLOWED_ROOTS = ("game/", "titles/", "tests/")
 ALLOWED_FILES = ("CMakeLists.txt",)
@@ -39,6 +41,7 @@ BUILD = (
     ROOT / "build"
 )  # the maintainer build dir, which some probe selftests locate by name
 REPORT = ROOT / "scratch/override-gate/differential.json"
+CCACHE = shutil.which("ccache") is not None
 
 
 class GateFailure(RuntimeError):
@@ -152,6 +155,9 @@ def gate_environment(framework: Path) -> dict[str, str]:
     """
     env = dict(os.environ)
     env["RE_HARNESS_DIR"] = str(framework.parent.parent / "shared/re-harness")
+    # Every job builds in its own fresh worktree; relative-path ccache keys let them share objects.
+    env["CCACHE_BASEDIR"] = str(ROOT)
+    env["CCACHE_NOHASHDIR"] = "1"
     return env
 
 
@@ -177,7 +183,7 @@ def check_scope() -> list[Path]:
     return [ROOT / p for p in paths if p.endswith(CPP_SUFFIXES)]
 
 
-def build(framework: Path, env: dict[str, str]) -> None:
+def build(framework: Path, env: dict[str, str], light: bool) -> None:
     step(
         "configure",
         [
@@ -198,10 +204,19 @@ def build(framework: Path, env: dict[str, str]) -> None:
             # the symlinked external/psxport, which misses shared/ from a nested worktree.
             f"-DPSXPORT_LIGHTREC_DIR={framework.parent.parent / 'shared/lightrec'}",
             f"-DPython3_EXECUTABLE={sys.executable}",
+            *(
+                [
+                    "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                    "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+                ]
+                if CCACHE
+                else []
+            ),
         ],
         env,
     )
-    step("build", ["cmake", "--build", BUILD, "-j", "6"], env)
+    targets = ["--target", "spyro_port"] if light else []
+    step("build", ["cmake", "--build", BUILD, "-j", "6", *targets], env)
 
 
 def check_quality(cpp: list[Path], env: dict[str, str]) -> None:
@@ -241,42 +256,42 @@ def read_dotenv(path: Path) -> dict[str, str]:
 
 
 def run_differential(
-    name: str, framework: Path, checkout: Path, base_env: dict[str, str]
+    names: list[str],
+    route_name: str,
+    framework: Path,
+    checkout: Path,
+    base_env: dict[str, str],
 ) -> None:
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.unlink(missing_ok=True)
     env = dict(base_env)
     env.update(read_dotenv(checkout / ".env"))
+    route = route_named(route_name)
+    command, route_env = route_invocation(
+        route,
+        str(BUILD / "bin/spyro_port"),
+        ROOT / "scratch/override-gate/route.log",
+        {
+            "PSXPORT_OVERRIDE_DIFF": ",".join(names),
+            "PSXPORT_OVERRIDE_DIFF_REPORT": str(REPORT),
+            # Every call, not the first 16 and every 64th: a rare branch hides between samples
+            # (docs/issues/0148 passed 17/17 sampled and mismatched 8 of 395 when all were shadowed).
+            "PSXPORT_OVERRIDE_DIFF_EVERY": "1",
+        },
+    )
     step(
-        "gameplay run",
+        f"{route_name} run",
         [
             "heavy.py",
             "--kind",
             "run",
             "--",
             sys.executable,
-            ROOT / "tools/drive.py",
-            "--executable",
-            BUILD / "bin/spyro_port",
+            *(ROOT / part if part.startswith("tools/") else part for part in command),
             "--binary",
             checkout / "scratch/assets/spyro1/SCUS_942.28",
-            "--log",
-            ROOT / "scratch/override-gate/drive.log",
-            "--env",
-            f"PSXPORT_OVERRIDE_DIFF={name}",
-            "--env",
-            f"PSXPORT_OVERRIDE_DIFF_REPORT={REPORT}",
-            # Every call, not the first 16 and every 64th: a rare branch hides between samples
-            # (docs/issues/0148 passed 17/17 sampled and mismatched 8 of 395 when all were shadowed).
-            "--env",
-            "PSXPORT_OVERRIDE_DIFF_EVERY=1",
-            "--hold",
-            "RIGHT",
-            "--hold-frames",
-            "300",
-            "gameplay",
         ],
-        env=env,
+        env={**env, **(route_env or {})},
     )
     step(
         "override differential",
@@ -284,14 +299,31 @@ def run_differential(
             sys.executable,
             framework / "tools/port/override_differential_gate.py",
             REPORT,
-            "--require",
-            name,
+            *(flag for name in names for flag in ("--require", name)),
+            # A route that ends by a timeout kill leaves the report's last periodic flush.
+            *(["--allow-incomplete"] if route.ends_by_timeout else []),
         ],
         base_env,
     )
 
 
-def gate(name: str) -> None:
+def names_for_addresses(addresses: str) -> list[str]:
+    """The names this worktree registers for each requested entry address; every one must be registered."""
+    wanted = [int(a, 16) for a in addresses.split(",") if a]
+    registered = {address: name for name, address in registered_overrides(ROOT).items()}
+    missing = [f"0x{a:08X}" for a in wanted if a not in registered]
+    if missing:
+        raise GateFailure(
+            f"registration: no installNativeOverride for {', '.join(missing)}"
+        )
+    return [registered[a] for a in wanted]
+
+
+def gate(names: list[str], route: str, light: bool) -> None:
+    try:
+        route_named(route)
+    except ValueError as unknown:
+        raise GateFailure(f"route: {unknown}") from unknown
     if shutil.which("heavy.py") is None:
         raise GateFailure(
             "heavy.py is not on PATH; the gameplay run must take a machine-wide run slot"
@@ -304,15 +336,25 @@ def gate(name: str) -> None:
     link_provisioned_inputs(checkout)
     populate_submodules(checkout)
     env = gate_environment(framework)
-    build(framework, env)
+    build(framework, env, light)
     check_quality(cpp, env)
-    step(
-        "ctest",
-        ["ctest", "--test-dir", BUILD, "-j", "6", "--output-on-failure", "-LE", "slow"],
-        env,
-    )
-    run_differential(name, framework, checkout, env)
-    print(f"[gate] PASS: {name}")
+    if not light:
+        step(
+            "ctest",
+            [
+                "ctest",
+                "--test-dir",
+                BUILD,
+                "-j",
+                "6",
+                "--output-on-failure",
+                "-LE",
+                "slow",
+            ],
+            env,
+        )
+    run_differential(names, route, framework, checkout, env)
+    print(f"[gate] PASS: {', '.join(names)}")
 
 
 def selftest() -> int:
@@ -336,16 +378,34 @@ def selftest() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "name", nargs="?", help="the registered override name the job added"
+        "names", nargs="*", help="the registered override name(s) the job added"
+    )
+    parser.add_argument(
+        "--addresses",
+        default="",
+        help="comma-separated guest entry addresses the job must override; their registered names are "
+        "read from the worktree, so the worker names them",
+    )
+    parser.add_argument(
+        "--route",
+        default="artisans-walk",
+        help="the reach-corpus route (tools/reach_corpus.py) that calls the override",
+    )
+    parser.add_argument(
+        "--light",
+        action="store_true",
+        help="build only the product and skip CTest; for per-job swarm gates, whose applied batch then "
+        "passes tools/verify.py once",
     )
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args()
     if args.selftest:
         return selftest()
-    if not args.name:
-        parser.error("an override name is required")
     try:
-        gate(args.name)
+        names = args.names + names_for_addresses(args.addresses)
+        if not names:
+            parser.error("at least one override name or --addresses is required")
+        gate(names, args.route, args.light)
     except GateFailure as failure:
         print(f"[gate] REJECTED: {failure}")
         return 1

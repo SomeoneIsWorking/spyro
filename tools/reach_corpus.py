@@ -144,37 +144,51 @@ def overlay_images(report: dict) -> dict[str, int]:
     }
 
 
+def route_named(name: str) -> Route:
+    for route in ROUTES:
+        if route.name == name:
+            return route
+    raise ValueError(
+        f"unknown route {name!r}; routes: {', '.join(r.name for r in ROUTES)}"
+    )
+
+
+def route_invocation(
+    route: Route, executable: str, log: Path, env_flags: dict[str, str]
+) -> tuple[list[str], dict[str, str] | None]:
+    """The argv and environment that run `route` with `env_flags` reaching the product.
+
+    drive.py forwards product variables with --env; demo_run.py passes its own environment through.
+    """
+    command = [*route.command, "--executable", executable, "--log", str(log)]
+    if route.command[0] == "tools/drive.py":
+        for key, value in env_flags.items():
+            command += ["--env", f"{key}={value}"]
+        return command, None
+    return command, {**os.environ, **env_flags}
+
+
 def run_route(
     route: Route, out: Path, overrides: dict[str, int], executable: str
 ) -> int:
     reach, diff = out / f"{route.name}.reach.json", out / f"{route.name}.diff.json"
     for stale in (reach, diff):
         stale.unlink(missing_ok=True)
-    command = [
-        "uv",
-        "run",
-        "--frozen",
-        "python",
-        *route.command,
-        "--executable",
+    command, environment = route_invocation(
+        route,
         executable,
-    ]
-    env_flags = {
-        "PSXPORT_REACH_REPORT": str(reach),
-        "PSXPORT_OVERRIDE_DIFF": ",".join(sorted(set(overrides) - set(UNSHADOWABLE))),
-        "PSXPORT_OVERRIDE_DIFF_REPORT": str(diff),
-    }
-    if route.command[0] == "tools/drive.py":
-        command += ["--log", str(out / f"{route.name}.log")]
-        for key, value in env_flags.items():
-            command += ["--env", f"{key}={value}"]
-        environment = None
-    else:
-        command += ["--log", str(out / f"{route.name}.log")]
-        environment = {**os.environ, **env_flags}
+        out / f"{route.name}.log",
+        {
+            "PSXPORT_REACH_REPORT": str(reach),
+            "PSXPORT_OVERRIDE_DIFF": ",".join(
+                sorted(set(overrides) - set(UNSHADOWABLE))
+            ),
+            "PSXPORT_OVERRIDE_DIFF_REPORT": str(diff),
+        },
+    )
     with open(out / f"{route.name}.out", "w") as sink:
         code = subprocess.run(
-            command,
+            ["uv", "run", "--frozen", "python", *command],
             cwd=ROOT,
             stdout=sink,
             stderr=subprocess.STDOUT,

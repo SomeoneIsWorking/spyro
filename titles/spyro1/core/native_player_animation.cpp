@@ -133,6 +133,58 @@ void advanceBodyAnimationWithTransitions(Core *c) {
   c->r[3] = state;
 }
 
+// Spyro's head-look state: per axis, a target angle, the current angle and its velocity (words),
+// plus one signed rotation byte per axis.
+struct HeadLookAxis {
+  std::uint32_t target;
+  std::uint32_t current;
+  std::uint32_t velocity;
+  std::uint32_t rotation;
+};
+constexpr HeadLookAxis kHeadLookAxes[3] = {
+    {0x80078BFCu, 0x80078C08u, 0x80078C14u, 0x80078A68u},
+    {0x80078C00u, 0x80078C0Cu, 0x80078C18u, 0x80078A69u},
+    {0x80078C04u, 0x80078C10u, 0x80078C1Cu, 0x80078A6Au},
+};
+constexpr std::uint32_t kAngleMask = 0xFFFu;
+constexpr std::uint32_t kFullTurn = 0x1000u;
+constexpr std::uint32_t kHalfTurn = 0x800u;
+
+struct HeadLookStep {
+  std::int32_t rotation; // the new angle >> 4, as stored in the rotation byte
+  std::int32_t acceleration;
+};
+
+// One axis: wrap the 12-bit (target - current) delta to the shortest signed direction, integrate it
+// into the velocity, advance the angle by velocity >> 6, and store the angle >> 4 as the rotation.
+HeadLookStep stepHeadLookAxis(Core *c, const HeadLookAxis &axis) {
+  const std::uint32_t current = c->mem_r32(axis.current);
+  std::uint32_t delta = (c->mem_r32(axis.target) - current) & kAngleMask;
+  if (delta > kHalfTurn) {
+    delta -= kFullTurn;
+  }
+  const std::int32_t velocity = static_cast<std::int32_t>(c->mem_r32(axis.velocity));
+  const std::int32_t acceleration =
+      static_cast<std::int32_t>((delta << 7) - (static_cast<std::uint32_t>(velocity) << 4)) >> 6;
+  const std::int32_t newVelocity = velocity + acceleration;
+  c->mem_w32(axis.velocity, static_cast<std::uint32_t>(newVelocity));
+  const std::int32_t angle = static_cast<std::int32_t>(current) + (newVelocity >> 6);
+  c->mem_w32(axis.current, static_cast<std::uint32_t>(angle));
+  c->mem_w8(axis.rotation, static_cast<std::uint8_t>(angle >> 4));
+  return {angle >> 4, acceleration};
+}
+
+// 0x80049880: per-frame head-look smoothing over the three axes in order. v0 exits holding the z
+// rotation (angle >> 4) and v1 the z acceleration term.
+void smoothHeadLook(Core *c) {
+  HeadLookStep last{};
+  for (const HeadLookAxis &axis : kHeadLookAxes) {
+    last = stepHeadLookAxis(c, axis);
+  }
+  c->r[2] = static_cast<std::uint32_t>(last.rotation);
+  c->r[3] = static_cast<std::uint32_t>(last.acceleration);
+}
+
 } // namespace
 
 void registerPlayerAnimationOverrides(Core &core) {
@@ -142,6 +194,7 @@ void registerPlayerAnimationOverrides(Core &core) {
                                0x8003CBB8u,
                                "advance_body_animation_with_transitions",
                                advanceBodyAnimationWithTransitions);
+  spyro::installNativeOverride(core, 0x80049880u, "smooth_head_look", smoothHeadLook);
 }
 
 } // namespace spyro1::native

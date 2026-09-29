@@ -35,6 +35,7 @@ planted `+2` on its counter path mismatched 22 of 22 (first difference: v0 1 vs 
 | `0x8003CBB8` | `advance_body_animation_with_transitions` | `native_player_animation` | 91 | 17 | 17 |
 | `0x80037F90` | `tick_moby_timer` | `native_moby_helpers` | 817 | 28 | 28 |
 | `0x8003A720` | `reset_moby_defaults` | `native_moby_helpers` | 21 | 16 | 16 |
+| `0x80049880` | `smooth_head_look` | `native_player_animation` | 440 | 22 | 22 |
 
 `positional_stereo_volume`'s mono branch is never taken on the route, because mono audio is off. It
 was checked against the bytes at `0x80056D94..0x80056DB4` instead: v0 is the `srl` of the

@@ -45,8 +45,11 @@ Run 1's two 231 readings are the second buffer's presents. Column 226 is the bor
 panel fill. Its colour excess changes with the world behind it, which is the same one-column jitter
 the 4:3 control showed as 232/233 in 0144. Columns 227..457 are identical in both buffers.
 
-## Interpolated 60 fps
+## Interpolated 60 fps: measured, the in-between presents carry the overlay
 
-This removes the guest-side half of the question. Interpolated in-between presents have not been
-measured with the menu open. That check is still required before interpolated 60 fps is called
-verified.
+Shipping settings (`fps60=1`, 16:9) with `PSXPORT_DEBUG=fps60`, main at bb08875. The 8-present
+`--preseq` window is 4 in-between presents (`slotA: in-between ... t=0.500`, fences f3488..f3491, all
+logged between `preseq armed` and `preseq done`) and 4 real ones. `tools/overlay_extent.py` finds the
+panel on **8 of 8, all 232 columns**, so no present at 60 fps drops it. That is expected: the in-between
+pass replays the same captured queue as the real present (`psxport runtime/psx/fps60.cpp`,
+`Fps60::frame_commit`), so a 2D item submitted once per logic frame is drawn in both.

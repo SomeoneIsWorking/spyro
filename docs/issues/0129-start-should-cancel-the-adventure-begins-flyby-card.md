@@ -1,7 +1,7 @@
 ---
 id: 129
 title: Start should cancel the "THE ADVENTURE BEGINS..." flyby card
-status: open
+status: resolved
 symptom: the flyby card (Spyro arcing across black while the level loads) runs to its full 384-tick animation with no way to cancel it. TransitionSkip already cancels the level-transition tally and the return-home glide; this screen is simply absent from it
 state_items: S011
 tags: transition,skip,input,frontend
@@ -150,3 +150,21 @@ tried and NOT landed: a from-boot Start press at the card produced no `level fly
 and reached GS_Playing at the same frame (4318) as a press 400 frames later, so the route did not
 demonstrably fire. The next step is to confirm the press reaches `presentationSkipPressed()` during
 the attract flyby (the guest may consume Start there first) before changing the predicate.
+
+## 2026-09-29 correction: the DemoType=2 card at boot is the attract demo, not the new-game card
+
+The card seen from boot at frame 3550 is not the card this issue is about. Two paths reach it:
+
+- The title's idle timeout: `overlays/titlescreen.c`, SubState 5 after `m_Tick >= 990`. It fades out
+  and enters `TSM_Demo` with `m_DemoType = 2` (`TSD_DemoLevel`). That is the attract demo, whose level
+  comes from `g_DemoLevelIds` and which then plays back recorded input under `g_DemoMode`.
+- A new game: `gamestates/init.c:736-738` enters `TSM_Demo` with `m_DemoType = TSD_Level`. That is the
+  "THE ADVENTURE BEGINS" flyby the user presses Start on, and it is what
+  `Cancellation::CutsceneTransitionFlyby` handles. The route measured 2026-09-19 (arrival 760 fields
+  earlier) exercised exactly this path.
+
+So "the route did not fire at the boot card" is the expected answer, not a defect. Widening the
+predicate to `TSD_DemoLevel` would make Start load the attract demo's level as if it were a new game.
+That is a different transition from anything retail does there, so the predicate stays
+`TSD_Level`-only. What Start should do during the attract demo is the title's own concern (demo
+playback exits through `func_800334D4`), and it is not this issue.

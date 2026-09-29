@@ -216,7 +216,7 @@ def build(framework: Path, env: dict[str, str], light: bool) -> None:
         env,
     )
     targets = ["--target", "spyro_port"] if light else []
-    step("build", ["cmake", "--build", BUILD, "-j", "6", *targets], env)
+    step("build", ["cmake", "--build", BUILD, "-j", "4", *targets], env)
 
 
 def check_quality(cpp: list[Path], env: dict[str, str]) -> None:

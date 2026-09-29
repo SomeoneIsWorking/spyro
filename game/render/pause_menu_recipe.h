@@ -161,4 +161,23 @@ constexpr std::uint8_t kPanelStp = 1;
 // 0x8001A5E0's GUI, derived from `state`. Pure: no Core, no GPU, no guest write.
 Recipe derive(const State &state);
 
+// The GPU drawing offset (GP0 E5). A recipe is in the guest's offset-relative coordinates and the
+// hardware adds this to every vertex; the two display buffers differ only in it (y 0 or 240), so a
+// quad placed without it lands outside the draw area on every other frame.
+struct DrawOffset {
+  std::int32_t x = 0;
+  std::int32_t y = 0;
+};
+
+struct PanelRect {
+  std::int32_t x0 = 0;
+  std::int32_t y0 = 0;
+  std::int32_t x1 = 0;
+  std::int32_t y1 = 0;
+};
+
+// The panel quad and one border segment in framebuffer coordinates.
+PanelRect placePanel(const Recipe &recipe, DrawOffset offset);
+Segment placeSegment(const Segment &segment, DrawOffset offset);
+
 } // namespace spyro::pause_menu

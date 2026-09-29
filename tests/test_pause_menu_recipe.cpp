@@ -128,11 +128,38 @@ static void test_the_panels_authored_extent_is_232_columns(void) {
   CHECK_EQ(options.panelX1 - options.panelX0, 344);
 }
 
+// The two display buffers differ only in the drawing offset. Placing the panel without it put the
+// quad outside the second buffer's draw area, so the menu showed on 4 of 8 presents (issue 0146).
+static void test_placement_adds_the_drawing_offset_on_both_buffers(void) {
+  spyro::pause_menu::State state;
+  state.frameCounter = 1u;
+  const auto recipe = spyro::pause_menu::derive(state);
+  const auto front = spyro::pause_menu::placePanel(recipe, {0, 0});
+  CHECK_EQ(front.x0, recipe.panelX0);
+  CHECK_EQ(front.y0, recipe.panelY0);
+  CHECK_EQ(front.y1, recipe.panelY1);
+  const auto back = spyro::pause_menu::placePanel(recipe, {0, 240});
+  CHECK_EQ(back.x0, recipe.panelX0);
+  CHECK_EQ(back.x1, recipe.panelX1);
+  CHECK_EQ(back.y0, recipe.panelY0 + 240);
+  CHECK_EQ(back.y1, recipe.panelY1 + 240);
+  CHECK(!recipe.border.empty());
+  const auto &edge = recipe.border.front();
+  const auto placed = spyro::pause_menu::placeSegment(edge, {3, 240});
+  CHECK_EQ(placed.x0, edge.x0 + 3);
+  CHECK_EQ(placed.x1, edge.x1 + 3);
+  CHECK_EQ(placed.y0, edge.y0 + 240);
+  CHECK_EQ(placed.y1, edge.y1 + 240);
+  CHECK_EQ(placed.shade0, edge.shade0);
+  CHECK_EQ(placed.shade1, edge.shade1);
+}
+
 int main(void) {
   RUN(retail_colour_is_derived_from_the_guest_instruction);
   RUN(perturbing_the_guest_word_changes_the_colour);
   RUN(a_different_instruction_refuses_rather_than_inventing_a_colour);
   RUN(the_definition_site_is_the_guest_address_the_probe_named);
   RUN(the_panels_authored_extent_is_232_columns);
+  RUN(placement_adds_the_drawing_offset_on_both_buffers);
   return pt_summary();
 }

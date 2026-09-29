@@ -280,4 +280,20 @@ Recipe derive(const State &state) {
   return recipe;
 }
 
+PanelRect placePanel(const Recipe &recipe, DrawOffset offset) {
+  return {recipe.panelX0 + offset.x,
+          recipe.panelY0 + offset.y,
+          recipe.panelX1 + offset.x,
+          recipe.panelY1 + offset.y};
+}
+
+Segment placeSegment(const Segment &segment, DrawOffset offset) {
+  Segment placed = segment;
+  placed.x0 += offset.x;
+  placed.y0 += offset.y;
+  placed.x1 += offset.x;
+  placed.y1 += offset.y;
+  return placed;
+}
+
 } // namespace spyro::pause_menu

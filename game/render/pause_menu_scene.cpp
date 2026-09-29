@@ -159,14 +159,15 @@ void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe, std::uint
   const unsigned char r = expand(word & 0x1Fu);
   const unsigned char g = expand((word >> 5) & 0x1Fu);
   const unsigned char b = expand((word >> 10) & 0x1Fu);
-  const int xs[4] = {recipe.panelX0, recipe.panelX1, recipe.panelX0, recipe.panelX1};
-  const int ys[4] = {recipe.panelY0, recipe.panelY0, recipe.panelY1, recipe.panelY1};
+  const GpuState gpu = core->game->gpu;
+  const auto panel = spyro::pause_menu::placePanel(recipe, {gpu.s_off_x, gpu.s_off_y});
+  const int xs[4] = {panel.x0, panel.x1, panel.x0, panel.x1};
+  const int ys[4] = {panel.y0, panel.y0, panel.y1, panel.y1};
   const int us[4] = {};
   const int vs[4] = {};
   const unsigned char rs[4] = {r, r, r, r};
   const unsigned char gs[4] = {g, g, g, g};
   const unsigned char bs[4] = {b, b, b, b};
-  const GpuState gpu = core->game->gpu;
   queue.emitOrQueue(core,
                     1,
                     RQ_HUD,
@@ -195,14 +196,15 @@ void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe, std::uint
                     gpu.s_tw_oy,
                     gpu.s_da_x0,
                     gpu.s_da_y0,
-                    recipe.panelX1,
+                    panel.x1,
                     gpu.s_da_y1,
                     gpu.s_tp_blend);
 }
 
 void submitBorder(Core *core, RenderQueue &queue, const Recipe &recipe, std::int32_t drawAreaX1) {
   const GpuState gpu = core->game->gpu;
-  for (const Segment &segment : recipe.border) {
+  for (const Segment &authored : recipe.border) {
+    const Segment segment = spyro::pause_menu::placeSegment(authored, {gpu.s_off_x, gpu.s_off_y});
     // NO endpoint-ordering test. A line is a line: the guest's box walks right-to-left on its
     // bottom edge and bottom-to-top on its left one, and an x0<x1 / y0<y1 guard here refused two of
     // the five edges while letting the other three through, which is how a box came out with one

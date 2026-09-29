@@ -7,7 +7,8 @@ worktree. A change passes only when all of these hold, in this order:
   1. SCOPE. The worktree differs from HEAD, and only under game/, titles/, tests/ or CMakeLists.txt.
   2. BUILD. The product and its tests build with Clang against the workspace's psxport.
   3. QUALITY. Every changed C++ file is clang-format clean, under the 1,200-line structure limit, and
-     clang-tidy clean; the repository source policy passes.
+     clang-tidy clean; the repository source policy passes; every guest address constant in a changed
+     override module is one the retail code computes (tools/override_constants.py).
   4. TESTS. The CTest suite passes, except the `slow` label: those drive the console oracle, whose
      activity lock admits one run per machine, so concurrent job gates would refuse each other. The
      operator's tools/verify.py runs the whole suite once on the combined tree before landing.
@@ -218,6 +219,9 @@ def check_quality(cpp: list[Path], env: dict[str, str]) -> None:
         if units:
             step("clang-tidy", ["clang-tidy", "-p", BUILD, "--quiet", *units], env)
     step("source policy", [sys.executable, ROOT / "tools/source_policy.py"], env)
+    modules = [p for p in present if p.suffix == ".cpp" and p.name.startswith("native_")]
+    if modules:
+        step("override constants", [sys.executable, ROOT / "tools/override_constants.py", *modules], env)
 
 
 def read_dotenv(path: Path) -> dict[str, str]:

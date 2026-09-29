@@ -440,7 +440,12 @@ if(BUILD_TESTING)
       # having a corpus.
       probe_pause_panel_colour
       # The swarm acceptance gate for one native override; its selftest pins the scope rule.
-      native_override_gate)
+      native_override_gate
+      # Override constants must be addresses the retail code computes (docs/issues/0148): the
+      # selftest pins a sign-extended table accepted and its unsigned-immediate twin refused.
+      override_constants
+      # The route corpus's jal-target denominator, image split and registration parse.
+      reach_corpus)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

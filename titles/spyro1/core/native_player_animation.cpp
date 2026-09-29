@@ -21,7 +21,8 @@ constexpr std::uint32_t kLastAnimationState = 0x80078AB4u; // g_Spyro.m_lastAnim
 constexpr std::uint32_t kPlayerState = 0x80078AD0u;        // g_Spyro.m_State (32-bit index)
 constexpr std::uint32_t kStatePairTable = 0x8006BC84u;     // [lastAnimationState][state] (u8)
 constexpr std::uint32_t kStatePairRowBytes = 45u;
-constexpr std::uint32_t kStateDefaultAnimation = 0x8007C470u; // indexed by m_State (u8)
+// 0x8003CC38 builds this as `lui 0x8007; addiu -0x3B90`: the addiu immediate is sign-extended.
+constexpr std::uint32_t kStateDefaultAnimation = 0x8006C470u; // indexed by m_State (u8)
 constexpr std::uint32_t kRestartAtAnimationStart = 10u; // state-pair value taking the start frame
 constexpr std::uint32_t kSeparateTailAnimation = 0x80078C40u;
 constexpr std::uint32_t kFlameableFrames = 0x80078C44u;

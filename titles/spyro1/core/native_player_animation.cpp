@@ -15,6 +15,14 @@ constexpr std::uint32_t kNextBodyAnimationFrame = 0x80078A77u; // g_Spyro.m_next
 constexpr std::uint32_t kBodyFrameProgress = 0x80078A7Cu;      // g_Spyro.m_bodyFrameProgress (u8)
 constexpr std::uint32_t kAnimationDetails = 0x8006C4A0u; // spyro_AnimationDetails (4-byte stride)
 constexpr std::uint32_t kAnimationEntryBytes = 4u;
+// The two byte fields this file reads are 2 bytes apart: 0x80070000 - 0x3B5E and - 0x3B60.
+constexpr std::uint32_t kAnimationTransitionLastFrameOffset = 2u; // m_TransitionLastFrame (u8)
+constexpr std::uint32_t kLastAnimationState = 0x80078AB4u; // g_Spyro.m_lastAnimationState (32-bit)
+constexpr std::uint32_t kPlayerState = 0x80078AD0u;        // g_Spyro.m_State (32-bit index)
+constexpr std::uint32_t kStatePairTable = 0x8006BC84u;     // [lastAnimationState][state] (u8)
+constexpr std::uint32_t kStatePairRowBytes = 45u;
+constexpr std::uint32_t kStateDefaultAnimation = 0x8007C470u; // indexed by m_State (u8)
+constexpr std::uint32_t kRestartAtAnimationStart = 10u; // state-pair value taking the start frame
 constexpr std::uint32_t kSeparateTailAnimation = 0x80078C40u;
 constexpr std::uint32_t kFlameableFrames = 0x80078C44u;
 constexpr std::uint32_t kFlameBlockedInAnimation = 0x8006C558u; // u8 per body animation
@@ -74,11 +82,66 @@ void advanceBodyAnimation(Core *c) {
   }
 }
 
+// 0x8003CBB8: add the delta time (a0) to the 16-step body frame progress and, on the wrap, promote
+// the queued body animation and frame to current and advance the queued frame; once that frame has
+// passed the animation's transition-last frame, queue the state default animation instead and
+// record the state the transition came from. The progress store is the delay slot of the wrap test,
+// so the un-wrapped sum is written on both paths, and the state is recorded with a 32-bit `sw` of
+// the 32-bit state word. v0 exits 0 on the two no-transition paths and 1 on the transition; v1
+// exits the un-wrapped sum, the transition-last frame it was compared against, or the state word.
+void advanceBodyAnimationWithTransitions(Core *c) {
+  const std::uint32_t sum = c->mem_r8(kBodyFrameProgress) + c->r[4];
+  const std::uint32_t belowWrap = (sum & 0xFFu) < 0x10u ? 1u : 0u;
+  c->r[3] = sum;
+  c->mem_w8(kBodyFrameProgress, static_cast<std::uint8_t>(sum));
+  if (belowWrap != 0) {
+    c->r[2] = 0;
+    return;
+  }
+  const std::uint32_t remaining = sum - 0x10u;
+  c->mem_w8(kBodyFrameProgress, static_cast<std::uint8_t>(remaining));
+  const std::uint32_t queuedFrame = c->mem_r8(kNextBodyAnimationFrame);
+  const std::uint32_t queuedAnimation = c->mem_r8(kNextBodyAnimation);
+  const std::uint32_t advancedFrame = queuedFrame + 1u;
+  c->mem_w8(kBodyAnimation, static_cast<std::uint8_t>(queuedAnimation));
+  c->mem_w8(kBodyAnimationFrame, static_cast<std::uint8_t>(queuedFrame));
+  c->mem_w8(kNextBodyAnimationFrame, static_cast<std::uint8_t>(advancedFrame));
+  const std::uint32_t details = kAnimationDetails + queuedAnimation * kAnimationEntryBytes;
+  const std::uint32_t transitionLastFrame =
+      c->mem_r8(details + kAnimationTransitionLastFrameOffset);
+  const std::uint32_t withinAnimation = (advancedFrame & 0xFFu) < transitionLastFrame ? 1u : 0u;
+  if (withinAnimation != 0) {
+    c->r[2] = 0;
+    c->r[3] = transitionLastFrame;
+    return;
+  }
+  const std::uint32_t state = c->mem_r32(kPlayerState);
+  const std::uint32_t defaultAnimation = c->mem_r8(state + kStateDefaultAnimation);
+  c->mem_w8(kNextBodyAnimation, static_cast<std::uint8_t>(defaultAnimation));
+  const std::uint32_t lastAnimationState = c->mem_r32(kLastAnimationState);
+  const std::uint32_t statePair =
+      c->mem_r8(kStatePairTable + lastAnimationState * kStatePairRowBytes + state);
+  if (statePair == kRestartAtAnimationStart) {
+    const std::uint32_t restart = kAnimationDetails + defaultAnimation * kAnimationEntryBytes;
+    c->mem_w8(kNextBodyAnimationFrame, static_cast<std::uint8_t>(c->mem_r8(restart)));
+  } else {
+    c->mem_w8(kNextBodyAnimationFrame, 1);
+    c->mem_w8(kBodyFrameProgress, 4);
+  }
+  c->mem_w32(kLastAnimationState, state);
+  c->r[2] = 1;
+  c->r[3] = state;
+}
+
 } // namespace
 
 void registerPlayerAnimationOverrides(Core &core) {
   spyro::installNativeOverride(core, 0x80049F3Cu, "update_flame_tail_lock", updateFlameTailLock);
   spyro::installNativeOverride(core, 0x8003CB24u, "advance_body_animation", advanceBodyAnimation);
+  spyro::installNativeOverride(core,
+                               0x8003CBB8u,
+                               "advance_body_animation_with_transitions",
+                               advanceBodyAnimationWithTransitions);
 }
 
 } // namespace spyro1::native

@@ -46,6 +46,11 @@ RIGHT. They were checked against the bytes at `0x80035F90..0x80035FA8`: R2 store
 | guest | decomp | why it is not owned |
 |---|---|---|
 | `0x80038D54` | `moby_helpers.c` point-to-plane distance | 0 calls on the gameplay route in three runs, so there is nothing to compare |
+| `0x800495D8` | `pete.c` head-animation stepper | 0 calls on the route in 3 gate runs (the body stepper `0x8003CB24` is called 1,116 times on the same route) |
+| `0x8003D92C` | `pete.c` approach target speed | 0 calls on the route in 3 gate runs |
 
 A function here needs a route that calls it before it can be owned. It is not an implementation
-problem.
+problem. A worker job on such a function can never pass the gate, so round 3 spent two
+40-minute worker timeouts learning this. The fix is to screen candidates before dispatch with a
+title-neutral reach census in psxport (a counting pass-through override per candidate address). That
+tool does not exist yet.

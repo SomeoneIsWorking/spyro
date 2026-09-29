@@ -1,7 +1,7 @@
 ---
 id: 0144
 title: The defect frame's blue rectangle is the pause menu's panel, clipped to 147 of its 232 columns by the port's own widescreen clip
-status: open
+status: fixed
 symptom: `docs/issues/0143` established that the blue in the defect frame is a screen-space 50%-blend
   of constant RGB(0,56,192) and named two unattributed screen-space producers, `func_80018F30` and
   `func_8001860C`. Both are excluded, and neither is the answer: the rectangle is the **pause menu's
@@ -10,7 +10,7 @@ symptom: `docs/issues/0143` established that the blue in the defect frame is a s
   gives it is a guest-space constant used as a drawn-space bound.
 tags: render,overlay,pause,widescreen,probe
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-29
 ---
 
 ## 1. Which producer draws it: 1 of 4 candidates tried owns it, and it is not one of the two named
@@ -236,3 +236,12 @@ D2 (panel colour) is fixed: the byte is read from the guest's `addiu $s4,$zero,i
 is psxport `RenderQueue::emitOrQueue` transforming a 2D prim's vertices through `Rq2dXform` but not its
 `da_*` clip; the fix belongs there and must be gated across every title's 2D producers. A title-side
 stopgap was drafted and not landed without approval.
+
+## 2026-09-29: D1 fixed in psxport 9973db33
+
+`RenderQueue::emitOrQueue` now carries the `da_*` clip through the same `Rq2dXform` as the vertices
+(psxport `tests/test_rq_2d_clip.cpp`: 4:3 identity, 16:9 clip = `[shift, 372+shift]`, red before the
+fix). Measured at 16:9 with `drive.py gameplay --tap start --after 60 --preseq 8 --env
+PSXPORT_PRIMRGB=0,56,192` and `tools/overlay_extent.py`: the panel spans **columns 226..457, 232 of
+232**, on every present that carries it (4 of 8, peak 118.6). The 4-of-8 presence is the pre-existing
+alternation measured at both aspects in §4's table and is not part of D1.

@@ -49,6 +49,9 @@ class Route:
     name: str
     scene: str
     command: tuple[str, ...]
+    # The route ends by its driver killing the product at a timeout, so its reach report is the
+    # recorder's last periodic flush (complete=false), missing at most its final few entries.
+    ends_by_timeout: bool = False
 
 
 DRIVE = ("tools/drive.py", "gameplay")
@@ -57,6 +60,7 @@ ROUTES = (
         "attract-demo",
         "boot, logos, title, the attract flyby and the self-playing demo",
         ("tools/demo_run.py", "--timeout", "420"),
+        ends_by_timeout=True,
     ),
     Route(
         "artisans-walk",
@@ -205,9 +209,10 @@ def summarize(
         report = json.loads(reach_path.read_text())
         pcs = main_image_pcs(report)
         reached = pcs & entries
-        if not report.get("complete") or not reached:
+        partial = not report.get("complete")
+        if (partial and not route.ends_by_timeout) or not reached:
             print(
-                f"FAIL {route.name}: report complete={report.get('complete')}, {len(reached)} functions reached"
+                f"FAIL {route.name}: report complete={not partial}, {len(reached)} functions reached"
             )
             failures += 1
         union |= reached
@@ -216,7 +221,7 @@ def summarize(
         overlays = overlay_images(report)
         print(
             f"{route.name:18} {len(reached):5}/{len(entries)} functions   overlays: {len(overlays)} image(s), "
-            f"{sum(overlays.values())} distinct entry pc(s), no denominator   [{route.scene}]"
+            f"{sum(overlays.values())} distinct entry pc(s), no denominator   [{route.scene}]{' (partial: last flush before the timeout kill)' if partial else ''}"
         )
         if diff_path.exists():
             for key in json.loads(diff_path.read_text())["keys"]:

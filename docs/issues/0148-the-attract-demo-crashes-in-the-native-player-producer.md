@@ -1,7 +1,7 @@
 ---
 id: 0148
 title: The attract demo crashed in the native player producer because an override lost an immediate's sign
-status: open
+status: fixed
 symptom: Left idle, the product plays the attract demo and dies after about 3 minutes with
   `FATAL: UNMAPPED RAM read8 @ 0x01EEDE6C`, deterministically, with or without any instrument armed.
 state_items: S011
@@ -53,3 +53,10 @@ native 06. So the instrument can give the other answer, and the per-job gate now
   modules after the fix (60 constants in total).
 - `tools/native_override_gate.py` runs it on every job.
 - The worker prompt now states the sign-extension rule.
+
+## Verified
+
+On main at 4d08ce2 (and pinned in 7735458), `tools/reach_corpus.py`'s attract-demo route runs its
+full 420-second clock and exits 0, with no `FATAL`. Before the fix it died about 3 minutes in, on every
+run. The differential run that armed only this override (every call shadowed) is the discriminator: 8 of
+395 calls mismatched before the fix, all on `0x80078A71`.

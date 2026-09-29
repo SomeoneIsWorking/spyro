@@ -208,6 +208,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro1/core/native_sound_position.cpp
   titles/spyro1/core/native_camera.cpp
+  titles/spyro1/core/native_moby_helpers.cpp
   titles/spyro1/core/native_player_animation.cpp
   titles/spyro2/core/spyro2_gpu_sync.cpp
   titles/spyro2/core/spyro2_runtime.cpp

@@ -235,6 +235,10 @@ class Port:
         Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)
         self._send(f"shot {path}")
 
+    def dumpram(self, path: str) -> None:
+        Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)
+        self._send(f"dumpram {path}")
+
     def preseq(self, count: int, directory: str) -> None:
         """Dump the next `count` PRESENTED frames, so a per-present question has a denominator.
 
@@ -577,6 +581,12 @@ def main() -> int:
     )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     parser.add_argument(
+        "--dumpram",
+        default="",
+        help="write guest main RAM here once the route and inputs are done; two runs that differ only "
+        "in one setting then show whether that setting reached guest state",
+    )
+    parser.add_argument(
         "--preseq",
         type=int,
         default=0,
@@ -668,6 +678,9 @@ def main() -> int:
             port.run(args.preseq + 1)
         if args.shot:
             port.shot(args.shot)
+        if args.dumpram:
+            port.dumpram(args.dumpram)
+        if args.shot or args.dumpram:
             port.run(1)
     except Refusal as refusal:
         print(f"drive.py REFUSED: {refusal}", file=sys.stderr)

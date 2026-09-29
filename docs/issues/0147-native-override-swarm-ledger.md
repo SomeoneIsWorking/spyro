@@ -64,3 +64,36 @@ moby_helpers.c, special_surfaces.c, init.c and draw.c leaves, it measured 4 reac
 `0x8002C85C`, `0x80018880`, `0x8003B7C0`, `0x800381BC`. A first census run read 0 for all ten
 because the probe build had failed and the run used the previous binary. That is why a census must
 show at least one nonzero.
+
+## Route corpus (2026-09-29)
+
+One gameplay route was too narrow. It both chose what to own and gated what was owned, so any
+function it never called was neither a candidate nor gated. `tools/reach_corpus.py` now runs every
+route it names with two instruments armed: psxport's function-reach recorder (`PSXPORT_REACH_REPORT`,
+which records every pc the dynarec dispatches, keyed by code image) and the override differential for
+every registered override. The denominator is the 547 statically called functions in `SCUS_942.28`
+(its `jal` targets). Functions reached only through pointers are missed by that denominator, not by
+the recorder.
+
+| route | reached / 547 |
+|---|---|
+| artisans-walk | 302 |
+| pause-menu | 296 |
+| gem-seek | 315 |
+| portal-level | 323 |
+| skip-transitions | 321 |
+| **union** | **331 (60.5%)** |
+| attract-demo | crashes, issue 0148 |
+
+WAD overlays: 2 images and up to 398 distinct entry pcs per route. There is no function list for them
+yet, so they are counted without a denominator.
+
+Differential across the corpus:
+- 29 overrides were gated, with 0 mismatches.
+- `dllink` (0x800168DC) was reached on no route.
+- The three CD overrides (`cd_loader`, `cd_retry_step`, `cd_stream_read`) cannot be shadowed:
+  arming any one of them alone aborts boot at libetc VSync 0x8005DBC4, which the product keeps fatal,
+  because their original bodies poll it. The tool excludes them by name and prints why.
+
+MISSING routes, which no headless route reaches yet: a flight level, a boss, death and continue, and
+the save screen after a level.

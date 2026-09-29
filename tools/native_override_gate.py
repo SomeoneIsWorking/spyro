@@ -219,9 +219,15 @@ def check_quality(cpp: list[Path], env: dict[str, str]) -> None:
         if units:
             step("clang-tidy", ["clang-tidy", "-p", BUILD, "--quiet", *units], env)
     step("source policy", [sys.executable, ROOT / "tools/source_policy.py"], env)
-    modules = [p for p in present if p.suffix == ".cpp" and p.name.startswith("native_")]
+    modules = [
+        p for p in present if p.suffix == ".cpp" and p.name.startswith("native_")
+    ]
     if modules:
-        step("override constants", [sys.executable, ROOT / "tools/override_constants.py", *modules], env)
+        step(
+            "override constants",
+            [sys.executable, ROOT / "tools/override_constants.py", *modules],
+            env,
+        )
 
 
 def read_dotenv(path: Path) -> dict[str, str]:

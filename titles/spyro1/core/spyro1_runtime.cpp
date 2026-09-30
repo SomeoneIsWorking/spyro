@@ -6,8 +6,21 @@
 #include "frame_pacer.h"
 #include "game.h"
 #include "native_camera.h"
+#include "native_cutscene.h"
+#include "native_draw_setup.h"
+#include "native_effect_state.h"
+#include "native_gamepad.h"
+#include "native_glow_sparkle_pools.h"
+#include "native_level_globals_table.h"
 #include "native_moby_helpers.h"
+#include "native_moby_lists.h"
+#include "native_particle_alloc.h"
+#include "native_pause_menu.h"
+#include "native_pixel_fade.h"
 #include "native_player_animation.h"
+#include "native_player_physics.h"
+#include "native_random_range.h"
+#include "native_shaded_moby_queue.h"
 #include "native_sound_position.h"
 #include "presentation_owner.h"
 #include "spyro1_frame_driver.h"
@@ -55,10 +68,23 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   spyro_register_native_gte(game.core);
   spyro_register_native_angle(game.core);
   spyro_register_native_util(game.core);
-  native::registerSoundPositionOverrides(game.core);
   native::registerCameraOverrides(game.core);
+  native::registerCutsceneOverrides(game.core);
+  native::registerDrawSetupOverrides(game.core);
+  native::registerEffectStateOverrides(game.core);
+  native::registerGamepadOverrides(game.core);
+  native::registerGlowSparklePoolOverrides(game.core);
+  native::registerLevelGlobalsTableOverrides(game.core);
   native::registerMobyHelperOverrides(game.core);
+  native::registerMobyListOverrides(game.core);
+  native::registerParticleAllocOverrides(game.core);
+  native::registerPauseMenuOverrides(game.core);
+  native::registerPixelFadeOverrides(game.core);
   native::registerPlayerAnimationOverrides(game.core);
+  native::registerPlayerPhysicsOverrides(game.core);
+  native::registerRandomRangeOverrides(game.core);
+  native::registerShadedMobyQueueOverrides(game.core);
+  native::registerSoundPositionOverrides(game.core);
   lucent::info("boot", "installed Spyro 1's verified image-scoped native overrides");
 }
 

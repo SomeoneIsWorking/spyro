@@ -65,5 +65,7 @@ void rand_native(Core *c) {
 } // namespace
 
 void spyro_register_native_rand(Core &core) {
+  // The literal, not kRandEntry: tools/reach_corpus.py and tools/override_constants.py both read
+  // the registered entry address out of this call, so the owner's own registration spells it.
   spyro::installNativeOverride(core, 0x8006272Cu, "rand", rand_native);
 }

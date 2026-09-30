@@ -45,6 +45,30 @@ sign-extended sum, v1 the clamped left channel, and both stores are made.
 RIGHT. They were checked against the bytes at `0x80035F90..0x80035FA8`: R2 stores -0x400, L2 stores
 0x400, and with neither held v0 exits as 0x400 and nothing is stored.
 
+## Round b1r (2026-09-30): 32 landed, 5 held back by the corpus
+
+Swarm b1r's 20 accepted jobs added 37 overrides. Every one was re-gated on EVERY call on its own
+route after 4286922 fixed the gate (from 3c071ae until then the gate crashed before its differential
+step, so b1r had been accepted without one). 36 of 37 matched every call; `mvmva_camera_matrix` was
+unsampled there only because its callers were shadowed at the same time, and the corpus sampled it
+301/301.
+
+The six-route corpus then caught five that pass on their own route and mismatch on others, all
+first seen on attract-demo. They are NOT landed; their code is kept for a fix round:
+
+| guest | name | mismatching / sampled | routes |
+|---|---|---|---|
+| `0x800499C0` | `update_flame_burst` | 15 / 236 | attract-demo |
+| `0x80054988` | `update_hud_collectables` | 20 / 164 | attract-demo |
+| `0x8002A6FC` | `propagate_environment_light` | 29 / 165 | attract-demo |
+| `0x8004E3C8` | `moby_collision_walk` | 11 / 271 | attract-demo, skip-transitions |
+| `0x80055A78` | `assign_active_sound_slot` | 7 / 137 | attract-demo, portal-level, skip-transitions |
+
+**A single-route gate is not enough to accept an override**: each of these passed every call on the
+route its job named. The corpus over all six routes is the acceptance bar for a landing batch.
+
+With the 32 landed, the corpus reports 65 owned overrides and 0 mismatches (union 353/547 jal targets).
+
 ## Measured but unexercised
 
 | guest | decomp | why it is not owned |

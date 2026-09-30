@@ -208,8 +208,21 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro1/core/native_sound_position.cpp
   titles/spyro1/core/native_camera.cpp
+  titles/spyro1/core/native_cutscene.cpp
+  titles/spyro1/core/native_draw_setup.cpp
+  titles/spyro1/core/native_effect_state.cpp
+  titles/spyro1/core/native_gamepad.cpp
+  titles/spyro1/core/native_glow_sparkle_pools.cpp
+  titles/spyro1/core/native_level_globals_table.cpp
   titles/spyro1/core/native_moby_helpers.cpp
+  titles/spyro1/core/native_moby_lists.cpp
+  titles/spyro1/core/native_particle_alloc.cpp
+  titles/spyro1/core/native_pause_menu.cpp
+  titles/spyro1/core/native_pixel_fade.cpp
   titles/spyro1/core/native_player_animation.cpp
+  titles/spyro1/core/native_player_physics.cpp
+  titles/spyro1/core/native_random_range.cpp
+  titles/spyro1/core/native_shaded_moby_queue.cpp
   titles/spyro2/core/spyro2_gpu_sync.cpp
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp)

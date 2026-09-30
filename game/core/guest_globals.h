@@ -23,12 +23,32 @@ namespace spyro::guest {
 inline constexpr std::uint32_t kGamestate = kGp + 0x574u; // 0x800757D8
 
 // g_Camera (camera.h). The occlusion group selects which collision groups the scene admits; the
-// handwritten query at 0x8004DF24 recomputes it every frame.
+// handwritten query at 0x8004DF24 recomputes it every frame. The rotation is three halfwords, and
+// both the camera owner that writes them and the cutscene owner that copies them out of a keyframe
+// read the same three addresses.
 inline constexpr std::uint32_t kCamera = 0x80076DD0u;
 inline constexpr std::uint32_t kCameraOcclusionGroup = kCamera + 0x54u; // 0x80076E24
+inline constexpr std::uint32_t kCameraRotationX = kCamera + 0x4Cu;      // 0x80076E1C
+inline constexpr std::uint32_t kCameraRotationY = kCamera + 0x4Eu;      // 0x80076E1E
+inline constexpr std::uint32_t kCameraRotationZ = kCamera + 0x50u;      // 0x80076E20
 
-// g_Spyro (spyro.h): m_Position at +0, m_State at +0x78.
+// D_80077DD8: the four words every guest callee spills its caller's s0..s7, gp, sp, fp and ra
+// into before it reads an argument. The collision walker rewrites the eight saved registers there
+// so the differential sees the file the retail body held, and the moby animation pass drains its
+// own queue through the same words — one guest global with two readers, so it is named once.
+inline constexpr std::uint32_t kRegisterSpillArea = 0x80077DD8u;
+
+// g_ModelSoundTables (moby.h): the per-model-class pointer table, indexed by the signed halfword at
+// a moby's +0x36. The moby list pass, the moby animation/sound pass and the moby sound helper all
+// index it the same way.
+inline constexpr std::uint32_t kModelSoundTables = 0x80076378u;
+
+// g_Spyro (spyro.h): m_Position at +0, m_State at +0x78, m_controlFlags at +0x1F4. The state
+// index is what the animation owner switches on and what a level entry forces to its post-load
+// value; the control flags are the camera owner's skip bit and what a level entry clears.
 inline constexpr std::uint32_t kSpyro = 0x80078A58u;
+inline constexpr std::uint32_t kPlayerState = kSpyro + 0x78u;         // 0x80078AD0
+inline constexpr std::uint32_t kPlayerControlFlags = kSpyro + 0x1F4u; // 0x80078C4C
 
 // g_Environment (environment.h): +0x0C is the occlusion group count, +0x2C the collision header.
 inline constexpr std::uint32_t kEnvironment = 0x800785A8u;

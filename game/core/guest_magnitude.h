@@ -6,10 +6,11 @@ namespace spyro::guest_magnitude {
 
 // One normalise step of the reciprocal-magnitude lookup at 0x80074B84.
 //
-// Three shipping paths perform it: libgte's vector length 0x800171FC, its integer square root
-// 0x80017A38, and the inline copy inside r_moby's per-face lighting program at 0x80021EB4. They
-// differ only in which registers hold the value and where the leading-zero count comes from, so the
-// arithmetic lives here once. Splitting it again would mean fixing one and not the others.
+// Four shipping paths perform it: libgte's vector length 0x800171FC, its scale-to-length
+// 0x80017330, its integer square root 0x80017A38, and the inline copy inside r_moby's per-face
+// lighting program at 0x80021EB4. They differ only in which registers hold the value and where the
+// leading-zero count comes from, so the arithmetic lives here once. Splitting it again would mean
+// fixing one and not the others.
 //
 // `leadingZeros` is the guest's LZCR read. The two library routines take it from the GTE, which is
 // the faithful source when a Core is in hand; a pure caller counts the host's own leading zeros,

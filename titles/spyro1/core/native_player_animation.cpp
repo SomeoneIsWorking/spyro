@@ -1,5 +1,7 @@
 #include "native_player_animation.h"
 
+#include "guest_call.h"
+#include "guest_globals.h"
 #include "native_execution.h"
 
 #include <cstdint>
@@ -7,6 +9,8 @@
 namespace spyro1::native {
 
 namespace {
+
+using spyro::guest::kPlayerState;
 
 constexpr std::uint32_t kBodyAnimation = 0x80078A70u;          // g_Spyro.m_bodyAnimation (u8)
 constexpr std::uint32_t kNextBodyAnimation = 0x80078A71u;      // g_Spyro.m_nextBodyAnimation (u8)
@@ -18,13 +22,24 @@ constexpr std::uint32_t kAnimationEntryBytes = 4u;
 // The two byte fields this file reads are 2 bytes apart: 0x80070000 - 0x3B5E and - 0x3B60.
 constexpr std::uint32_t kAnimationTransitionLastFrameOffset = 2u; // m_TransitionLastFrame (u8)
 constexpr std::uint32_t kLastAnimationState = 0x80078AB4u; // g_Spyro.m_lastAnimationState (32-bit)
-constexpr std::uint32_t kPlayerState = 0x80078AD0u;        // g_Spyro.m_State (32-bit index)
 constexpr std::uint32_t kStatePairTable = 0x8006BC84u;     // [lastAnimationState][state] (u8)
 constexpr std::uint32_t kStatePairRowBytes = 45u;
 // 0x8003CC38 builds this as `lui 0x8007; addiu -0x3B90`: the addiu immediate is sign-extended.
 constexpr std::uint32_t kStateDefaultAnimation = 0x8006C470u; // indexed by m_State (u8)
 constexpr std::uint32_t kRestartAtAnimationStart = 10u; // state-pair value taking the start frame
 constexpr std::uint32_t kSeparateTailAnimation = 0x80078C40u;
+constexpr std::uint32_t kTailAnimation = 0x80078A74u;
+constexpr std::uint32_t kNextTailAnimation = 0x80078A75u;
+constexpr std::uint32_t kTailAnimationFrame = 0x80078A7Au;
+constexpr std::uint32_t kNextTailAnimationFrame = 0x80078A7Bu;
+constexpr std::uint32_t kTailFrameProgress = 0x80078A7Eu;
+// The three g_Spyro words beside m_seperateTailAnimation that the decompilation leaves unnamed,
+// named here for the tail stepper's own use of them.
+constexpr std::uint32_t kTailAnimationHold = 0x80078AC4u;
+constexpr std::uint32_t kTailAnimationSpeed = 0x80078AC8u;
+constexpr std::uint32_t kTailAnimationMode = 0x80078ACCu;
+// 0x80049DFC, the tail stepper's own callee, from the `jal` at 0x80049F24.
+constexpr std::uint32_t kAdvanceTailAnimationFrames = 0x80049DFCu;
 constexpr std::uint32_t kFlameableFrames = 0x80078C44u;
 constexpr std::uint32_t kFlameBlockedInAnimation = 0x8006C558u; // u8 per body animation
 
@@ -186,16 +201,64 @@ void smoothHeadLook(Core *c) {
   c->r[3] = static_cast<std::uint32_t>(last.acceleration);
 }
 
+// 0x80049E8C — the tail animation stepper: while the tail is not separately animated, copy the
+// body's animation state onto the tail; otherwise advance the tail on its own speed.
+//
+// The three exits differ, and the register state is the whole reason to own this body:
+//   * the hold word is loaded BEFORE the branch that tests it, so that early exit hands back the
+//     hold word in v0 and leaves v1 exactly as the caller left it.
+//   * the separate-tail test loads both words, so that exit hands back the mode in v0 and the
+//     separate-tail word in v1.
+//   * the copy path hands back the body animation and frame it has just copied, not the tail's.
+void updateTailAnimation(Core *c) {
+  const std::uint32_t hold = c->mem_r32(kTailAnimationHold);
+  c->r[2] = hold;
+  if (hold != 0u) {
+    return;
+  }
+  const std::uint32_t separate = c->mem_r32(kSeparateTailAnimation);
+  const std::uint32_t mode = c->mem_r32(kTailAnimationMode);
+  c->r[3] = separate;
+  c->r[2] = mode;
+  if (separate != mode) {
+    return;
+  }
+  if (separate != 0u) {
+    c->r[4] = c->mem_r32(kTailAnimationSpeed);
+    psx::cpu::callGuestNow(*c,
+                           "update_tail_animation",
+                           kAdvanceTailAnimationFrames,
+                           c->r[4],
+                           c->r[5],
+                           c->r[6],
+                           c->r[7]);
+    return;
+  }
+  const std::uint32_t animation = c->mem_r8(kBodyAnimation);
+  const std::uint32_t frame = c->mem_r8(kBodyAnimationFrame);
+  const std::uint32_t nextAnimation = c->mem_r8(kNextBodyAnimation);
+  const std::uint32_t nextFrame = c->mem_r8(kNextBodyAnimationFrame);
+  const std::uint32_t progress = c->mem_r8(kBodyFrameProgress);
+  c->mem_w8(kTailAnimation, static_cast<std::uint8_t>(animation));
+  c->mem_w8(kTailAnimationFrame, static_cast<std::uint8_t>(frame));
+  c->mem_w8(kNextTailAnimation, static_cast<std::uint8_t>(nextAnimation));
+  c->mem_w8(kNextTailAnimationFrame, static_cast<std::uint8_t>(nextFrame));
+  c->mem_w8(kTailFrameProgress, static_cast<std::uint8_t>(progress));
+  c->r[2] = animation;
+  c->r[3] = frame;
+}
+
 } // namespace
 
 void registerPlayerAnimationOverrides(Core &core) {
-  spyro::installNativeOverride(core, 0x80049F3Cu, "update_flame_tail_lock", updateFlameTailLock);
   spyro::installNativeOverride(core, 0x8003CB24u, "advance_body_animation", advanceBodyAnimation);
   spyro::installNativeOverride(core,
                                0x8003CBB8u,
                                "advance_body_animation_with_transitions",
                                advanceBodyAnimationWithTransitions);
   spyro::installNativeOverride(core, 0x80049880u, "smooth_head_look", smoothHeadLook);
+  spyro::installNativeOverride(core, 0x80049E8Cu, "update_tail_animation", updateTailAnimation);
+  spyro::installNativeOverride(core, 0x80049F3Cu, "update_flame_tail_lock", updateFlameTailLock);
 }
 
 } // namespace spyro1::native

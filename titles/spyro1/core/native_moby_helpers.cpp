@@ -1,12 +1,15 @@
 #include "native_moby_helpers.h"
 
+#include "guest_call.h"
+#include "guest_globals.h"
 #include "native_execution.h"
 
 #include <cstdint>
 
 namespace spyro1::native {
-
 namespace {
+
+using spyro::guest::kModelSoundTables;
 
 // ── 0x80037F90 — count a moby timer down by the frame delta global: a0 is the timer, a1 its width
 //     in bytes (4, 2 or 1), and each width is one copy of load, `slt` the signed 32-bit delta
@@ -114,10 +117,191 @@ void resetMobyDefaults(Core *c) {
   c->r[3] = 0xffu;
 }
 
+constexpr std::uint32_t kMobyPosition = 0x0cu;
+constexpr std::uint32_t kMobyPositionZ = 0x14u;
+constexpr std::uint32_t kMobyModelClass = 0x36u;
+constexpr std::uint32_t kMobyAnimationFrame = 0x46u;
+constexpr std::uint32_t kSoundReferenceByte = 4u;
+constexpr std::uint32_t kPositionalSound = 8u;
+constexpr std::uint32_t kStopEverySound = 1u;
+constexpr std::uint32_t kGroundProbeHeight = 0x5dcu;
+constexpr std::uint32_t kGroundProbeRadius = 0x1000u;
+constexpr std::uint32_t kGroundProbeFrame = 0x18u;
+constexpr std::uint32_t kFifthArgumentSlot = 0x10u;
+constexpr std::uint32_t kLagThreeFields = 3u;
+constexpr std::uint32_t kLagFourFields = 4u;
+
+// The guest callees the bodies below call, each named by the `jal` that reaches it. Every one is a
+// code address, so it is the 26-bit field of that instruction rather than a `lui`+immediate pair
+// the retail body assembles, and tools/override_constants.py re-derives it from the `jal` itself.
+//
+// kFindGroundHeightBelow is the highest world or actor triangle below a point, searched within a1.
+// It snapshots its CALLER's s0..s7, gp, sp, fp and ra into RAM at 0x3C017DD8 (the KUSEG mirror of
+// the guest's 0x80017DD8) before it reads a0/a1, so an override that enters it must present
+// retail's sp, ra and s0 or it writes two words no other caller writes — which is why the return
+// address it records is behaviour too, and is named beside it.
+constexpr std::uint32_t kFindGroundHeightBelow = 0x8004D5ECu;       // `jal` at 0x80038360
+constexpr std::uint32_t kFindGroundHeightBelowReturn = 0x80038368u; // the `jal`'s own pc + 8
+// Stop the sounds a moby owns. Already an override in its own right (native_sound_position), so
+// this is the same entry from the caller's side.
+constexpr std::uint32_t kStopMobySounds = 0x800562A4u; // `jal` at 0x8003856C
+// Start one sound, 3D (flag 8) or 2D, on a named channel.
+constexpr std::uint32_t kPlaySound = 0x80055A78u; // `jal` at 0x8003859C
+// The shortest delta between two 8-bit angles, |a0 - a1| wrapped into [0, 0x80]. A leaf — a0 and a1
+// are all it reads.
+constexpr std::uint32_t kAnimationAngleDelta = 0x80017908u; // `jal` at 0x80038F14
+// The frame an animation reaches from its current frame, a1, by a2, with a3 the wrap threshold. A
+// leaf — a0..a3 are all it reads.
+constexpr std::uint32_t kAdvanceAnimationFrame = 0x800179F0u; // `jal` at 0x80038F70 and 0x80038F94
+
+// ── 0x80038340 — the ground height under a moby, asked for from 1500 units above it.
+//     a0 = &moby->m_Position, a1 = 4096. The z bump is STORED before the query runs — the store is
+//     the `jal`'s delay slot — and the z the restore leaves is what v1 exits holding, reloaded from
+//     memory rather than from the pre-call word, so a query that moved z is reflected. v0 is the
+//     query's own return, which the body never touches again.
+//     The frame, s0 and ra are behaviour, not bookkeeping: the query records its CALLER's s0..s7,
+//     gp, sp, fp and ra into RAM at 0x3C017DD8 before it reads a0/a1, so an override that entered
+//     it with the host's sp and ra wrote words nobody else writes. The body therefore stands up
+//     retail's 0x18-byte frame, s0 = the moby, and ra = the instruction after the `jal` for the
+//     duration of the call. The frame's own two stores are inside the 8 KiB of dead stack the
+//     differential ignores, and the callee reads the caller's registers rather than the caller's
+//     frame, so they are not reproduced.
+void mobyGroundHeight(Core *c) {
+  const std::uint32_t moby = c->r[4];
+  const std::uint32_t callerSp = c->r[29];
+  const std::uint32_t callerS0 = c->r[16];
+  const std::uint32_t callerRa = c->r[31];
+  c->r[29] = callerSp - kGroundProbeFrame;
+  c->r[16] = moby; // `move $s0, $a0`
+  c->r[31] = kFindGroundHeightBelowReturn;
+  c->mem_w32(moby + kMobyPositionZ, c->mem_r32(moby + kMobyPositionZ) + kGroundProbeHeight);
+  psx::cpu::callGuestNow(
+      *c, "moby_ground_height", kFindGroundHeightBelow, moby + kMobyPosition, kGroundProbeRadius);
+  const std::uint32_t restored = c->mem_r32(moby + kMobyPositionZ) - kGroundProbeHeight;
+  c->mem_w32(moby + kMobyPositionZ, restored);
+  c->r[16] = callerS0;
+  c->r[31] = callerRa;
+  c->r[29] = callerSp;
+  c->r[3] = restored;
+}
+
+// The `lbu 4(v0)` one level above the model's sound table: the class is a SIGNED halfword, so a
+// negative one indexes downwards, and the entry itself is taken from the model's table plus the
+// sound index. Both the channel-present and channel-absent paths re-run these four instructions,
+// the second one after the stop call, so the class is read again rather than carried over.
+std::uint32_t
+mobySoundReference(Core *c, const std::uint32_t moby, const std::uint32_t soundIndex) {
+  const std::uint32_t modelClass = static_cast<std::uint32_t>(c->mem_r16s(moby + kMobyModelClass));
+  const std::uint32_t soundTable = c->mem_r32(kModelSoundTables + (modelClass << 2));
+  return c->mem_r8(soundTable + soundIndex + kSoundReferenceByte);
+}
+
+// ── 0x8003851C — play one of a moby model's sounds positionally, on a caller-named channel.
+//     With a channel nothing else happens; without one the moby's own sounds are stopped FIRST and
+//     the play goes to its own channel at +0x54. Both paths end in the same `jal`, so v0 and v1 are
+//     whatever it leaves — the body writes neither register itself, and the "with a channel" path
+//     never ran the stop call whose v1 would otherwise still be there.
+void playMobySound(Core *c) {
+  const std::uint32_t moby = c->r[4];
+  const std::uint32_t soundIndex = c->r[5];
+  const std::uint32_t channel = c->r[6];
+  if (channel != 0u) {
+    psx::cpu::callGuestNow(*c,
+                           "play_moby_sound",
+                           kPlaySound,
+                           mobySoundReference(c, moby, soundIndex),
+                           moby,
+                           kPositionalSound,
+                           channel);
+    return;
+  }
+  psx::cpu::callGuestNow(*c, "play_moby_sound", kStopMobySounds, moby, kStopEverySound);
+  psx::cpu::callGuestNow(*c,
+                         "play_moby_sound",
+                         kPlaySound,
+                         mobySoundReference(c, moby, soundIndex),
+                         moby,
+                         kPositionalSound,
+                         moby + kSoundChannel);
+}
+
+// ── kAdvanceAnimationFrame's caller half: ask for the new frame, then store the byte
+//     it returns. The frame argument is the same word in both halves, and the fourth argument is
+//     that word halved (`sra 1` then +1), which is arithmetic, so it rounds towards minus infinity.
+void setMobyAnimationFrame(Core *c,
+                           const std::uint32_t animation,
+                           const std::uint32_t moby,
+                           const std::uint32_t frame) {
+  const std::uint32_t half = static_cast<std::uint32_t>(static_cast<std::int32_t>(frame) >> 1);
+  psx::cpu::callGuestNow(*c,
+                         "advance_moby_animation",
+                         kAdvanceAnimationFrame,
+                         animation,
+                         c->mem_r8(moby + kMobyAnimationFrame),
+                         frame,
+                         half + 1u);
+  c->mem_w8(moby + kMobyAnimationFrame, static_cast<std::uint8_t>(c->r[2]));
+}
+
+// ── 0x80038EE0 — advance a moby's animation frame, stretched by the frame-lag global, and report
+//     whether the animation has run past its length. Lag 3 scales the step by 1.5 and lag 4 by 2,
+//     anything else leaves it alone; a signed `slt` then clamps the step down to the length
+//     guest kAnimationAngleDelta reports, and a second one against the caller's limit
+//     decides the exit value: 1 when the length is BELOW the limit, 0 when it has reached it. The
+//     fifth argument arrives on the stack at entry sp+0x10 and only decides whether the wrap is
+//     stored, so v0 is 1 either way on the short arm. v1 holds the lag global, set after the length
+//     call and then overwritten by the frame call wherever that one runs.
+void advanceMobyAnimation(Core *c) {
+  const std::uint32_t moby = c->r[4];
+  const std::uint32_t animation = c->r[5];
+  const std::uint32_t step = c->r[6];
+  const std::uint32_t limit = c->r[7];
+  const std::uint32_t wrapRequested = c->mem_r32(c->r[29] + kFifthArgumentSlot);
+
+  psx::cpu::callGuestNow(*c,
+                         "advance_moby_animation",
+                         kAnimationAngleDelta,
+                         animation,
+                         c->mem_r8(moby + kMobyAnimationFrame));
+  const std::uint32_t length = c->r[2];
+
+  const std::uint32_t lag = c->mem_r32(kDeltaTimeGlobal);
+  c->r[3] = lag;
+  std::uint32_t frame = step;
+  if (lag == kLagThreeFields) {
+    frame = step + static_cast<std::uint32_t>(static_cast<std::int32_t>(step) >> 1);
+  } else if (lag == kLagFourFields) {
+    frame = step << 1;
+  }
+  if (static_cast<std::int32_t>(length) < static_cast<std::int32_t>(frame)) {
+    frame = length;
+  }
+  if (static_cast<std::int32_t>(length) >= static_cast<std::int32_t>(limit)) {
+    setMobyAnimationFrame(c, animation, moby, frame);
+    c->r[2] = 0;
+    return;
+  }
+  if (wrapRequested != 0u) {
+    setMobyAnimationFrame(c, animation, moby, frame);
+  }
+  c->r[2] = 1;
+}
+
+// ── 0x80037E98 — the moby interpolation check, whose retail body is EMPTY: `jr $ra` at 0x80037E98
+//     and a `nop` in its delay slot, and no third instruction anywhere in the function. It writes
+//     no register and no memory, so v0 and v1 carry in whatever the caller left and the moby
+//     pointer it is handed is never read.
+void mobyInterpolationCheck(Core *) {}
+
 } // namespace
 
 void registerMobyHelperOverrides(Core &core) {
+  spyro::installNativeOverride(
+      core, 0x80037E98u, "moby_interpolation_check", mobyInterpolationCheck);
   spyro::installNativeOverride(core, 0x80037F90u, "tick_moby_timer", tickMobyTimer);
+  spyro::installNativeOverride(core, 0x80038340u, "moby_ground_height", mobyGroundHeight);
+  spyro::installNativeOverride(core, 0x8003851Cu, "play_moby_sound", playMobySound);
+  spyro::installNativeOverride(core, 0x80038EE0u, "advance_moby_animation", advanceMobyAnimation);
   spyro::installNativeOverride(core, 0x8003A720u, "reset_moby_defaults", resetMobyDefaults);
 }
 

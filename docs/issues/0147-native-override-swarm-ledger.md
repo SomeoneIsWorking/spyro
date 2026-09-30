@@ -121,3 +121,20 @@ Differential across the corpus:
 
 MISSING routes, which no headless route reaches yet: a flight level, a boss, death and continue, and
 the save screen after a level.
+
+## Round b2 (2026-09-30): 5 landed, 1 held back by the corpus
+
+Six further jobs (camera-artisans-walk-1, 42cc4-gem-seek-0, initialization-artisans-walk-0/1, psyq-libspu-8005cb7c,
+psyq-libspu-8005cc58) were re-gated across the six-route corpus. Five match every sampled call:
+
+| guest | name | sampled / match |
+|---|---|---|
+| `0x80033F08` | `camera_spherical_follow` | 183 / 183 |
+| `0x80052568` | `release_moby` | 42 / 42 |
+| `0x8001277C` | `initialise_artisans_level` | 13 / 13 |
+| `0x8005CB7C` | `spu_set_transfer_mode` | 6 / 6 |
+| `0x8005CC58` | `spu_set_common_attr` | 96 / 96 |
+
+`reset_game_progress_for_new_game` (`0x80012604`) is NOT landed: no route calls the installed override
+(0 sampled on all six; the only entry into the address is the scoped guest call
+`initialise_artisans_level` makes), so there is nothing to compare. It needs a new-game route.

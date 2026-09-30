@@ -161,6 +161,8 @@ constexpr std::uint32_t kVecSub = 0x8001778Cu;                       // `jal` at
 constexpr std::uint32_t kVecMagnitude = 0x800171FCu;                 // `jal` at 0x800344CC
 constexpr std::uint32_t kVecCopy = 0x80017700u;                      // `jal` at 0x800344E0
 constexpr std::uint32_t kVecAdd = 0x80017758u;                       // `jal` at 0x80034428
+constexpr std::uint32_t kVecRefineMagnitude = 0x8001729Cu;           // `jal` at 0x80033F40
+constexpr std::uint32_t kAtan2 = 0x80016AB4u;                        // `jal` at 0x80033F74
 constexpr std::uint32_t kRayBetweenPointsIsClear = 0x80033E40u;      // `jal` at 0x8003475C
 constexpr std::uint32_t kUpdateSphericalCoords = 0x80033F08u;        // `jal` at 0x80034440
 constexpr std::uint32_t kResetCameraToSphericalPreset = 0x80034358u; // `jal` at 0x800347E4
@@ -213,6 +215,10 @@ constexpr std::uint32_t kCameraCollisionCounter = 0x80076E94u;    // unk_0xC4
 constexpr std::uint32_t kCameraOffCenterFrames = 0x80076E98u;     // m_SpyroOffCenterFrames
 constexpr std::uint32_t kCameraForcedToDestination = 0x80076E9Cu; // unk_0xCC
 constexpr std::uint32_t kCameraFocusPointer = 0x80076EA0u;        // m_Focus, loaded as an address
+constexpr std::uint32_t kSimulationRadius = 0x80076E68u;          // m_Simulation.m_Coords.z
+constexpr std::uint32_t kSimulationOffsetX = 0x80076E6Cu;         // m_Simulation.m_Offset.x
+constexpr std::uint32_t kSimulationOffsetY = 0x80076E70u;         // m_Simulation.m_Offset.y
+constexpr std::uint32_t kSimulationOffsetZ = 0x80076E74u;         // m_Simulation.m_Offset.z
 constexpr std::uint32_t kCameraSphericalPreset = 0x80076EA8u;     // m_SphericalPreset
 constexpr std::uint32_t kCameraAzimuthChanged = 0x80076EB8u;      // unk_0xE8
 constexpr std::uint32_t kCollisionPoint = 0x80076B80u;            // g_CollisionPoint
@@ -229,8 +235,20 @@ constexpr std::uint32_t kScreenShakeSecond = 0x8007590Cu; // D_8007590C
 
 constexpr char kCameraCollisionUpdate[] = "camera_collision_update";
 constexpr char kCameraSphericalPresetReset[] = "camera_spherical_preset_reset";
+constexpr char kCameraSphericalFollow[] = "camera_spherical_follow";
 
 constexpr std::uint32_t kAngleMask = 0xFFFu;
+constexpr std::uint32_t kAngleFold = 0x1000u;
+constexpr std::uint32_t kAngleUpperHalf = 0x801u;
+constexpr std::uint32_t kHalfTurn = 0x800u;
+// A Cartesian component at or below this magnitude, on both axes, is "the camera is standing on the
+// focus point" and the body falls back to the sphere row's own angle instead of the new one.
+constexpr std::uint32_t kOnTheFocusPoint = 0x81u;
+// The retail body's 0x28-byte frame: it holds one working Vector3D at +0x10 and $ra at +0x20. An
+// override has no frame of its own, so it runs with the same lowered $sp and the same offsets,
+// which puts the vector above the frame pointer where no callee frame pushed below it can reach.
+constexpr std::uint32_t kFollowFrameBytes = 0x28u;
+constexpr std::uint32_t kFollowVectorOffset = 0x10u;
 constexpr std::uint32_t kRowCount = 5u;
 constexpr std::uint32_t kRowStride = 0x18u;
 constexpr std::uint32_t kSavedSimulationWords = 6u;
@@ -251,6 +269,88 @@ constexpr std::int32_t kWalkProbeLimit = 6;
 constexpr std::int32_t kWalkStartsBelowLength = 0x2001;
 constexpr std::int32_t kOffCenterLimit = 0x1F;
 constexpr std::int32_t kTinyVectorLimit = 0x20;
+
+// The guest's twelve-bit angle fold, applied to a whole 32-bit difference and never to the operands
+// separately: mask, then read bit 11 as the sign.
+std::int32_t foldAngle(std::uint32_t difference) {
+  const std::uint32_t folded = difference & kAngleMask;
+  return static_cast<std::int32_t>(folded < kAngleUpperHalf ? folded : folded - kAngleFold);
+}
+
+// The `bgez`/`negu`/`slti` triplet the body runs on one value, whether that value is a folded angle
+// or a raw Cartesian component: the magnitude, never the value.
+std::uint32_t magnitudeOf(std::int32_t angle) {
+  const std::uint32_t bits = static_cast<std::uint32_t>(angle);
+  return angle < 0 ? 0u - bits : bits;
+}
+
+bool isOnTheFocusPoint(std::uint32_t component) {
+  return magnitudeOf(static_cast<std::int32_t>(component)) < kOnTheFocusPoint;
+}
+
+// ── 0x80033F08 — turn a Cartesian camera position into the camera's spherical coordinates, and
+//     report whether the azimuth turned with it. The radius and elevation come from the offset
+//     between the position and g_Camera.m_Focus; the azimuth is the one the body KEEPS when the
+//     movement is a real turn, and otherwise the sphere row's own angle. The body takes the slower
+//     elevation read (a magnitude refined twice, then an arctangent) on BOTH the radius and the
+//     azimuth, and every caller stores the answer in g_Camera.unk_0xE8.
+//     $v0 carries that answer out through the body's last `move $v0, $a1`, and $v1 the RAW
+//     twelve-bit Z offset: the tail stores its signed form and hands back the unsigned one.
+// MEASURED on route artisans-walk (319 of 319 sampled calls matching, and a poison store at the
+// body's first statement is caught on all 319, so the instrument does report this class of
+// difference): a poison on the turned arm and on the on-focus arm is caught on NONE of them, so
+// every sampled call leaves through the neither arm. The turned arm (the half-turn fold, the
+// elevation rewrite and the $v0 = 1 exit) and BOTH sphere-row fallbacks therefore follow the retail
+// disassembly alone — unexercised rather than unchecked by accident.
+void cameraSphericalFollow(Core *c) {
+  const std::uint32_t entrySp = c->r[29];
+  c->r[29] -= kFollowFrameBytes;
+  const std::uint32_t offset = c->r[29] + kFollowVectorOffset;
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalFollow, kVecSub, offset, c->r[4], c->mem_r32(kCameraFocusPointer));
+  psx::cpu::callGuestNow(*c, kCameraSphericalFollow, kVecMagnitude, offset, 1u);
+  c->mem_w32(kSimulationRadius, c->r[2]);
+  psx::cpu::callGuestNow(*c, kCameraSphericalFollow, kVecRefineMagnitude, offset, c->r[2], 1u);
+  c->mem_w32(kSimulationRadius, c->r[2]);
+  psx::cpu::callGuestNow(*c, kCameraSphericalFollow, kVecMagnitude, offset, 0u);
+  psx::cpu::callGuestNow(*c, kCameraSphericalFollow, kVecRefineMagnitude, offset, c->r[2], 0u);
+  psx::cpu::callGuestNow(*c, kCameraSphericalFollow, kAtan2, c->r[2], c->mem_r32(offset + 8u), 1u);
+  const std::uint32_t elevation = c->r[2];
+  c->mem_w32(kSimulationElevation, elevation);
+  // The delay slot of this `jal` negates the argument the body had already loaded, so the second
+  // arctangent sees the mirrored Y component rather than a fresh load of it.
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalFollow, kAtan2, c->mem_r32(offset), 0u - c->mem_r32(offset + 4u), 1u);
+  const std::uint32_t azimuth = c->r[2];
+  const std::uint32_t previousAzimuth = c->mem_r32(kSimulationAzimuth);
+  const std::uint32_t rawStep = azimuth - previousAzimuth;
+  bool turned = magnitudeOf(foldAngle(rawStep + kHalfTurn)) < magnitudeOf(foldAngle(rawStep));
+  if (turned) {
+    turned = c->mem_r32(kCameraState) == kCameraStateAlternative ||
+             c->mem_r32(kCameraAzimuthChanged) != 0u;
+  }
+  const bool onFocus =
+      isOnTheFocusPoint(c->mem_r32(offset)) && isOnTheFocusPoint(c->mem_r32(offset + 4u));
+  if (turned) {
+    c->mem_w32(kSimulationAzimuth,
+               onFocus ? c->mem_r32(kCameraSphereRows) : ((azimuth + kHalfTurn) & kAngleMask));
+    c->mem_w32(kSimulationElevation, (kHalfTurn - elevation) & kAngleMask);
+    c->r[2] = 1u;
+  } else {
+    c->mem_w32(kSimulationAzimuth, onFocus ? c->mem_r32(kCameraSphereRows) : azimuth);
+    c->r[2] = 0u;
+  }
+  // The tail re-reads the rotation as SIGNED halfwords and writes all three offsets against the
+  // spherical coordinates this body has just settled.
+  const std::uint32_t rotationY = static_cast<std::uint32_t>(c->mem_r16s(kCameraRotationY));
+  const std::uint32_t rotationZ = static_cast<std::uint32_t>(c->mem_r16s(kCameraRotationZ));
+  const std::uint32_t zStep = (kHalfTurn - c->mem_r32(kSimulationAzimuth) - rotationZ) & kAngleMask;
+  c->mem_w32(kSimulationOffsetX, static_cast<std::uint32_t>(c->mem_r16s(kCameraRotationX)));
+  c->mem_w32(kSimulationOffsetY, static_cast<std::uint32_t>(foldAngle(rotationY - elevation)));
+  c->mem_w32(kSimulationOffsetZ, static_cast<std::uint32_t>(foldAngle(zStep)));
+  c->r[3] = zStep;
+  c->r[29] = entrySp;
+}
 
 // The retail body's own 0x68-byte frame, which the differential ignores as dead stack. An override
 // has no frame of its own, so it runs with the same lowered $sp and keeps its two working vectors
@@ -798,6 +898,7 @@ void resetCameraToSphericalPreset(Core *c) {
 void registerCameraOverrides(Core &core) {
   spyro::installNativeOverride(
       core, 0x800342F8u, "camera_rotation_from_sphere", cameraRotationFromSphere);
+  spyro::installNativeOverride(core, 0x80033F08u, "camera_spherical_follow", cameraSphericalFollow);
   spyro::installNativeOverride(
       core, 0x80035F58u, "camera_shoulder_rotation_input", cameraShoulderRotationInput);
   spyro::installNativeOverride(

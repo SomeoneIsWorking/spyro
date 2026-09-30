@@ -236,6 +236,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_glow_sparkle_pools.cpp
   titles/spyro1/core/native_level_globals_table.cpp
   titles/spyro1/core/native_moby_allocator.cpp
+  titles/spyro1/core/native_level_initialization.cpp
   titles/spyro1/core/native_moby_helpers.cpp
   titles/spyro1/core/native_moby_lists.cpp
   titles/spyro1/core/native_moby_transform.cpp
@@ -255,6 +256,8 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_spu_callbacks.cpp
   titles/spyro1/core/native_spu_voice_attributes.cpp
   titles/spyro1/core/native_spu_key_status.cpp
+  titles/spyro1/core/native_spu_transfer_mode.cpp
+  titles/spyro1/core/native_spu_common_attr.cpp
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 

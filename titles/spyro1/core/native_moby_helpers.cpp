@@ -319,6 +319,110 @@ void advanceMobyAnimation(Core *c) {
 //     pointer it is handed is never read.
 void mobyInterpolationCheck(Core *) {}
 
+// The globals the body below reaches, each spelled the way external/spyro-1/asm/42CC4.s annotates
+// its own `lui`/`addiu` pair for this very function, and each the full literal so
+// tools/override_constants.py can decode it back to those two instructions instead of trusting a
+// comment.
+constexpr std::uint32_t kMobyCollisionChain = 0x80075778u;
+constexpr std::uint32_t kDynMobys = 0x80075890u;
+constexpr std::uint32_t kDynMobyCount = 0x800756A4u;
+constexpr std::uint32_t kMobyAllocPtr = 0x8007573Cu;
+constexpr std::uint32_t kPropsAllocPtr = 0x80075930u;
+// The moby fields it reads, and the two block strides it walks in. 0x48 is the mark byte the
+// allocator at 0x800524C4 writes 0 to for a live moby, and 0x58 is the pool's own stride.
+constexpr std::uint32_t kMobyChainLink = 0x04u;
+constexpr std::uint32_t kMobyMark = 0x48u;
+constexpr std::uint32_t kMobyPoolStride = 0x58u;
+constexpr std::uint32_t kMobyPropsEntryStride = 0x18u;
+// The three dead-moby marks, in the sign-extended form the body holds in $v0/$v1. The allocator
+// gives a live moby 0, so every one of these is written to a moby this body is giving up. `sb`
+// truncates all three to a byte.
+constexpr std::uint32_t kMarkBelowPool = 0xFFFFFFFDu;
+constexpr std::uint32_t kMarkReleased = 0xFFFFFFFEu;
+constexpr std::uint32_t kMarkRunBoundary = 0xFFFFFFFFu;
+
+// ── 0x80052568 — release one moby, the counterpart of the allocator at 0x800524C4. A non-negative
+//     m_CollisionRegion unlinks the moby from that region's chain; a moby below the dynamic pool is
+//     only marked -3 and returns, v1 untouched. Otherwise the count drops and the free list is
+//     reopened at the moby: its own mark becomes -2, or, when the node above it already carries
+//     the -1 run boundary, the run of -2 below it is walked and the top of that run marked -1
+//     instead, extending the run. Every mark test is a sign-extended byte read in a delay slot that
+//     also steps the walk, so v1 is -2 or -1 at each store. g_MobyAllocPtr rolls back to whichever
+//     node was marked, and the 0x18-byte entries behind m_Props — each mark its last byte — repeat
+//     the whole thing against g_PropsAllocPtr, walking up where the pool walk walks down. v0 exits
+//     holding g_PropsAllocPtr's own address and v1 the signed difference that cursor tested.
+void releaseMoby(Core *c) {
+  const std::uint32_t moby = c->r[4];
+  const std::uint32_t region = static_cast<std::uint32_t>(c->mem_r16s(moby + kMobyCollisionRegion));
+  if (static_cast<std::int32_t>(region) >= 0) {
+    std::uint32_t slot = c->mem_r32(kMobyCollisionChain) + (region << 2);
+    while (c->mem_r32(slot) != moby) {
+      slot = c->mem_r32(slot) + 4u;
+    }
+    c->mem_w32(slot, c->mem_r32(moby + kMobyChainLink));
+  }
+
+  c->r[2] = kMarkBelowPool;
+  if (static_cast<std::int32_t>(c->mem_r32(kDynMobys) - moby) > 0) {
+    c->mem_w8(moby + kMobyMark, static_cast<std::uint8_t>(kMarkBelowPool));
+    return;
+  }
+  c->r[2] = c->mem_r32(kDynMobyCount) - 1u;
+  c->mem_w32(kDynMobyCount, c->r[2]);
+
+  std::uint32_t pool = moby;
+  c->r[2] = static_cast<std::uint32_t>(c->mem_r8s(moby + kMobyPoolStride + kMobyMark));
+  c->r[3] = kMarkReleased;
+  if (c->r[2] != kMarkRunBoundary) {
+    c->mem_w8(pool + kMobyMark, c->r[3]);
+  } else {
+    pool = moby - kMobyPoolStride;
+    for (;;) {
+      c->r[2] = static_cast<std::uint32_t>(c->mem_r8s(pool + kMobyMark));
+      c->r[3] = kMarkReleased;
+      pool -= kMobyPoolStride;
+      if (c->r[2] != kMarkReleased) {
+        break;
+      }
+    }
+    pool += kMobyPoolStride;
+    pool += kMobyPoolStride;
+    c->r[3] = kMarkRunBoundary;
+    c->mem_w8(pool + kMobyMark, c->r[3]);
+  }
+  c->r[3] = c->mem_r32(kMobyAllocPtr);
+  if (static_cast<std::int32_t>(c->r[3] - pool) >= 0) {
+    c->mem_w32(kMobyAllocPtr, pool);
+  }
+
+  const std::uint32_t props = c->mem_r32(moby);
+  std::uint32_t entry = props + kMobyPropsEntryStride;
+  c->r[2] = static_cast<std::uint32_t>(c->mem_r8s(props - 1u));
+  c->r[3] = kMarkReleased;
+  if (c->r[2] != kMarkRunBoundary) {
+    c->mem_w8(entry - 1u, c->r[3]);
+  } else {
+    entry += kMobyPropsEntryStride;
+    for (;;) {
+      c->r[2] = static_cast<std::uint32_t>(c->mem_r8s(entry - 1u));
+      c->r[3] = kMarkReleased;
+      entry += kMobyPropsEntryStride;
+      if (c->r[2] != kMarkReleased) {
+        break;
+      }
+    }
+    entry -= kMobyPropsEntryStride;
+    entry -= kMobyPropsEntryStride;
+    c->r[3] = kMarkRunBoundary;
+    c->mem_w8(entry - 1u, c->r[3]);
+  }
+  c->r[2] = kPropsAllocPtr;
+  c->r[3] = c->mem_r32(kPropsAllocPtr) - entry;
+  if (static_cast<std::int32_t>(c->r[3]) <= 0) {
+    c->mem_w32(kPropsAllocPtr, entry);
+  }
+}
+
 } // namespace
 
 void registerMobyHelperOverrides(Core &core) {
@@ -331,6 +435,7 @@ void registerMobyHelperOverrides(Core &core) {
   spyro::installNativeOverride(core, 0x8003A720u, "reset_moby_defaults", resetMobyDefaults);
   spyro::installNativeOverride(
       core, 0x800529CCu, "clear_moby_collision_state", clearMobyCollisionState);
+  spyro::installNativeOverride(core, 0x80052568u, "release_moby", releaseMoby);
 }
 
 } // namespace spyro1::native

@@ -14,6 +14,7 @@
 #include "native_gamepad.h"
 #include "native_glow_sparkle_pools.h"
 #include "native_level_globals_table.h"
+#include "native_level_initialization.h"
 #include "native_moby_allocator.h"
 #include "native_moby_helpers.h"
 #include "native_moby_lists.h"
@@ -28,9 +29,11 @@
 #include "native_shared_models.h"
 #include "native_sound_position.h"
 #include "native_spu_callbacks.h"
+#include "native_spu_common_attr.h"
 #include "native_spu_key_status.h"
 #include "native_spu_registers.h"
 #include "native_spu_state.h"
+#include "native_spu_transfer_mode.h"
 #include "native_spu_voice_attributes.h"
 #include "native_spu_voice_pitch.h"
 #include "presentation_owner.h"
@@ -89,6 +92,7 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   native::registerGlowSparklePoolOverrides(game.core);
   native::registerLevelGlobalsTableOverrides(game.core);
   native::registerMobyAllocatorOverrides(game.core);
+  native::registerLevelInitializationOverrides(game.core);
   native::registerMobyHelperOverrides(game.core);
   native::registerMobyListOverrides(game.core);
   native::registerMobyTransformOverrides(game.core);
@@ -107,6 +111,8 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   native::registerSpuCallbackOverrides(game.core);
   native::registerSpuVoiceAttributeOverrides(game.core);
   native::registerSpuKeyStatusOverrides(game.core);
+  native::registerSpuTransferModeOverrides(game.core);
+  native::registerSpuCommonAttrOverrides(game.core);
   lucent::info("boot", "installed Spyro 1's verified image-scoped native overrides");
 }
 

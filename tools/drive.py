@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import guest_globals
-import pre_arrival_press
+import press_conditions
 import route_scenes
 from repl_walk import Seeker
 from spyro1_steering import Refusal as SteeringRefusal
@@ -65,16 +65,32 @@ G_LOAD_STAGE = guest_globals.kLoadStage
 G_LEVEL_ID = guest_globals.kLevelId
 G_LEVEL_TRANS_TICKS = 0x800756AC
 G_LEVEL_TRANS_HUD = 0x800756B0
+# The pause menu's own two words, read by the --quit-home route: D_80075720 is the selected entry
+# and D_800757C8 the submenu (0 = the main list). Reached with tools/re_globals.py on the pause-menu
+# update 0x8002E12C; they are read here and nowhere else, so they stay with their only reader. They
+# are 0xA8 apart, so they are two reads and never one.
+G_PAUSE_OPTION = 0x80075720
+G_PAUSE_SUBMENU = 0x800757C8
 
 # The gamestate / overlay vocabulary is title_states' (one home, because tools/title_prompts.py needs it
 # too and a second copy is how two drivers come to disagree about which screen they are on). Re-exported
 # here because this module is where every other tool has always imported them from.
 from title_states import (  # noqa: F401  (re-exported on purpose — see above)
+    GS_BALLOONIST,
     GS_CUTSCENE,
     GS_CREDITS,
+    GS_DRAGON,
     GS_ENTRANCE_ANIMATION,
+    GS_EXIT_LEVEL,
+    GS_FAIRY,
+    GS_FLIGHT_RESULTS,
+    GS_GAME_OVER,
+    GS_INVENTORY_MENU,
     GS_LEVEL_TRANSITION,
+    GS_OLD_DRAGON,
+    GS_PAUSE_MENU,
     GS_PLAYING,
+    GS_RESPAWN,
     GS_TITLE_SCREEN,
     TSS_ACTIVE,
     TSM_DEMO,
@@ -83,16 +99,27 @@ from title_states import (  # noqa: F401  (re-exported on purpose — see above)
     TSM_MENU,
     TitleState,
 )
+from title_states import GAMESTATE_PRESENTATION
 
 import title_prompts  # the menu sequence, shared with tools/live_play.py's driver
 
-# Named so a census line reads as game states rather than as integers. These are the states a Spyro 1
-# route can enter; the census reports the ones it did not reach as well as the ones it did.
+# Named so a census line reads as game states rather than as integers, and carrying EVERY state the
+# enum defines so a route reports the presentations it did not reach as well as the ones it did. The
+# presentation each state owns is title_states' vocabulary; this is only the name.
 GAMESTATE_NAMES = {
     GS_PLAYING: "playing",
     GS_LEVEL_TRANSITION: "level_transition",
-    8: "dragon",
+    GS_PAUSE_MENU: "pause_menu",
+    GS_INVENTORY_MENU: "inventory_menu",
+    GS_RESPAWN: "respawn",
+    GS_GAME_OVER: "game_over",
+    GS_OLD_DRAGON: "old_dragon",
+    GS_FLIGHT_RESULTS: "flight_results",
+    GS_DRAGON: "dragon",
     GS_ENTRANCE_ANIMATION: "entrance_animation",
+    GS_EXIT_LEVEL: "exit_level",
+    GS_FAIRY: "fairy",
+    GS_BALLOONIST: "balloonist",
     GS_TITLE_SCREEN: "title_screen",
     GS_CUTSCENE: "cutscene",
     GS_CREDITS: "credits",
@@ -108,7 +135,8 @@ class Port:
     _WORDS = re.compile(r"\[repl\] ([0-9A-F]{8}):((?: [0-9A-F]{8})+)")
     _READY = re.compile(r"\[repl\] frame=(\d+) ready")
 
-    def __init__(self, executable: Path, binary: Path, log: Path, env: dict[str, str]):
+    def __init__(self, executable: Path, binary: Path, log: Path, env: dict[str, str],
+                 post_presses: "press_conditions.PostArrivalPressConditions | None" = None):
         log.parent.mkdir(parents=True, exist_ok=True)
         self._log = log.open("w")
         self._proc = subprocess.Popen(
@@ -122,6 +150,12 @@ class Port:
             bufsize=1,
         )
         self.frame = 0
+        # The pad script for the screens that only exist AFTER arrival, applied from this class's own
+        # sampler (see run()). It is a member rather than a Navigator's because the run spends most of
+        # its time here: the level-transition tally, the entrance sweep and the return-home glide are
+        # all reached by walking or by the pause menu, long after reach_gameplay() returned.
+        self._post_presses = (post_presses if post_presses is not None
+                              else press_conditions.PostArrivalPressConditions())
         # Every gamestate this run was ever observed in, and how many samples saw it. A driven run
         # that ends without its symptom proves nothing unless the state under test was reached, and
         # until now no driver could say: issue 0103's documented repro exits 0 either because the
@@ -157,6 +191,11 @@ class Port:
             state = self.gamestate()
             self._last_sampled_gamestate = state
             self.gamestate_census[state] = self.gamestate_census.get(state, 0) + 1
+            # Decided from the sample just taken, for the same reason the Navigator does it that
+            # way: a second read of a state already in hand is a second REPL round trip per sample.
+            for condition in self._post_presses.apply(self, state):
+                print(f"press: {condition.name()} at frame {self.frame} (post-arrival)",
+                      file=sys.stderr)
         return result
 
     def mark_arrival(self) -> None:
@@ -184,7 +223,11 @@ class Port:
             return "gamestates: nothing sampled (no frames were advanced)"
         seen = ", ".join(f"{GAMESTATE_NAMES.get(state, str(state))}={count}"
                          for state, count in sorted(self.gamestate_census.items()))
-        missing = [name for state, name in sorted(GAMESTATE_NAMES.items())
+        # The states NOT seen, each with the presentation it owns: "the balloonist flight never
+        # appeared" and "the balloonist flight rendered fine" are the two readings of a clean run, and
+        # a bare integer is what makes them hard to tell apart in a log read days later.
+        missing = [f"{name} ({GAMESTATE_PRESENTATION.get(state, '?')})"
+                   for state, name in sorted(GAMESTATE_NAMES.items())
                    if state not in self.gamestate_census]
         line = (f"gamestates over {total} samples ({self.SAMPLE_FRAMES} frames apart): {seen}"
                 + (f"; never reached: {', '.join(missing)}" if missing else ""))
@@ -215,6 +258,16 @@ class Port:
 
     def gamestate(self) -> int:
         return self.word(G_GAMESTATE)
+
+    def pause_menu(self) -> tuple[int, int]:
+        """The pause menu's selected entry (`D_80075720`) and its submenu flag (`D_800757C8`).
+
+        Two reads, not one: the two words are 0xA8 apart (measured with tools/re_globals.py over the
+        pause-menu update's 640 decoded instructions, where `0x80075720` has 30 accesses and
+        `0x800757C8` has 5), so a single `rw` at the first would have returned the second field of
+        whichever struct follows it and the route would have read a submenu that was never there.
+        """
+        return self.word(G_PAUSE_OPTION), self.word(G_PAUSE_SUBMENU)
 
     def title(self) -> TitleState:
         w = self.words(G_TITLESCREEN, 6)
@@ -303,16 +356,28 @@ class Navigator:
     STEP = 20  # frames between observations; small enough to catch a one-shot menu state
 
     def __init__(self, port: Port, budget: int = 12000, skip_transitions: bool = False,
-                 presses: pre_arrival_press.PressConditions | None = None):
+                 presses: "press_conditions.PressConditions | None" = None,
+                 skip_button: str = "start"):
         self._port = port
         self._budget = budget
         self._skip_transitions = skip_transitions
+        self._skip_button = skip_button
         # The pre-arrival pad script lives HERE, not in main(), because the guarantee it rests on is
         # structural: only _advance() applies it, only the three pre-arrival phases call _advance(),
         # and reach_gameplay() returns before any of them can run again. So a --press-while spec
         # cannot fire during gameplay, where Start is the pause button and the next gamestate's
-        # producer may not exist at all.
-        self._presses = presses if presses is not None else pre_arrival_press.PressConditions()
+        # producer may not exist at all. The screens that DO come after arrival are driven by
+        # Port.run()'s own sampler instead; see tools/press_conditions.py.
+        self._presses = presses if presses is not None else press_conditions.PressConditions()
+        # The (screen, button) presses this route has already delivered, for the whole run.
+        # load_route_prompt() is consulted once per observation step and derives its answer from the
+        # guest's CURRENT screen struct; after a cancellation the same struct can still read like the
+        # card the guest just left, so without this the same screen is pressed again, and with Start
+        # that re-fire opened GS_PauseMenu mid-route in a live run (exit 2). The key is (screen,
+        # button) and not screen alone because one screen can need two DIFFERENT presses, and the
+        # picker's own selection is a navigation that must repeat until the guest's option word reads
+        # NEW GAME -- title_prompts gives those two actions separate targets so both survive.
+        self._cancelled: set[tuple[str, str]] = set()
 
     def reach_gameplay(self) -> None:
         self._reach_title_menu()
@@ -337,8 +402,18 @@ class Navigator:
     def _answer(self, prompt: "title_prompts.Prompt") -> None:
         if prompt.refuse:
             raise Refusal(prompt.refuse)
-        for button in prompt.buttons:
-            self._port.tap(button)
+        buttons = prompt.buttons
+        if buttons and prompt.target and not prompt.repeatable:
+            buttons = tuple(b for b in buttons if (prompt.target, b) not in self._cancelled)
+            if buttons:
+                self._cancelled.update((prompt.target, b) for b in buttons)
+                print(f"cancel {prompt.target}: {'+'.join(buttons)}"
+                      f"{f' held {prompt.hold_frames} fields' if prompt.hold_frames else ''}"
+                      f" at frame {self._port.frame}", file=sys.stderr)
+        for button in buttons:
+            # A screen whose own route needs a HELD button says so; a four-field edge into it would
+            # be a press that changed nothing and still looked like a test.
+            self._port.tap(button, prompt.hold_frames or 4)
 
     # WHICH button each screen wants is title_prompts' decision, not this driver's: tools/live_play.py
     # plays the same route over the live debug server, and a second copy of the menu sequence would be
@@ -387,7 +462,8 @@ class Navigator:
     def _wait_for_playing(self) -> None:
         spent = 0
         while spent < self._budget:
-            prompt = title_prompts.load_route_prompt(self._screen(), self._skip_transitions)
+            prompt = title_prompts.load_route_prompt(self._screen(), self._skip_transitions,
+                                                      self._skip_button)
             if prompt.reached:
                 return
             self._answer(prompt)
@@ -397,6 +473,52 @@ class Navigator:
             f"never reached GS_Playing within {self._budget} frames; "
             f"gamestate={self._port.gamestate()} load_stage={self._port.word(G_LOAD_STAGE)}"
         )
+
+
+def quit_to_home(port: Port, budget: int = 4000) -> None:
+    """Pause the game and take its own Quit route, which is the only way into GS_ExitLevel.
+
+    This is the route the return-home glide needs to be observable at all: nothing else enters
+    gamestate 10, so without it that arm's "recovered route" is a claim no run can check. The
+    decision is made from the guest's own menu words (title_prompts.pause_quit_prompt), never from a
+    fixed count of taps, and a homeworld is refused BY NAME because there Quit opens a confirm screen
+    instead of leaving the level -- a route that walked into it would sit pressing Start at a prompt
+    it cannot answer.
+    """
+    level = port.word(G_LEVEL_ID)
+    if level % 10 == 0:
+        raise Refusal(
+            f"--quit-home needs a sub-level: level {level} is a homeworld, where the pause menu's "
+            f"Quit opens a confirm screen instead of calling the exit-level entry (func_8002C618). "
+            f"Cross a portal first (--seek-portal) or teleport onto a gate (--gate-teleport)"
+        )
+    port.tap("start")
+    spent = 0
+    while spent < budget:
+        state = port.gamestate()
+        if state == GS_EXIT_LEVEL:
+            print(f"reached GS_ExitLevel at frame {port.frame}", file=sys.stderr)
+            return
+        if state == GS_FLIGHT_RESULTS:
+            # A flight level's Quit is a different arm: `func_8002E12C` sends it to GS_FlightResults
+            # and sets its own flag rather than calling the exit-level entry, so there is no glide to
+            # reach from here. Said by name instead of left to spin out the budget.
+            raise Refusal(
+                f"--quit-home reached GS_FlightResults in level {level}: a flight level's Quit is the "
+                f"results screen, not the return-home glide (func_8002E12C's g_IsFlightLevel arm)"
+            )
+        option, submenu = port.pause_menu()
+        prompt = title_prompts.pause_quit_prompt(state, option, submenu)
+        if prompt.refuse:
+            raise Refusal(prompt.refuse)
+        for button in prompt.buttons:
+            print(f"quit-home: gamestate {state} option {option} submenu {submenu} -> {button}",
+                  file=sys.stderr)
+            port.tap(button)
+        port.run(Navigator.STEP)
+        spent += Navigator.STEP
+    raise Refusal(f"the pause menu never handed off to GS_ExitLevel within {budget} fields; "
+                  f"last gamestate={port.gamestate()}")
 
 
 def environment(disc: str | None, settings: Path | None = None) -> dict[str, str]:
@@ -469,8 +591,16 @@ def main() -> int:
     parser.add_argument(
         "--skip-transitions",
         action="store_true",
-        help="press Start on the level-transition tally and the level flyby while driving in, exercising the port's "
-        "cancellation of those screens",
+        help="press Start or Cross on every presentation on the boot->gameplay route that the game "
+        "itself can be asked to end: the intro cutscene (a HELD press, which is the only shape its "
+        "own route reads), the level-transition tally, and the level flyby",
+    )
+    parser.add_argument(
+        "--skip-button",
+        choices=["start", "cross"],
+        default="start",
+        help="which button --skip-transitions presses. Retail accepts either on all three screens, "
+        "so the Cross half of the claim needs its own runs",
     )
     parser.add_argument(
         "--press-while",
@@ -485,7 +615,22 @@ def main() -> int:
         "Exactly one edge per spec, never a second: gamestate 0 is both the boot logo and the "
         "arrival state, and a live run that re-fired there pressed Start in gameplay and opened the "
         "pause menu. The states are "
-        + ", ".join(f"{n}={s}" for s, n in sorted(pre_arrival_press.GAMESTATE_NAMES.items()))
+        + ", ".join(f"{n}={s}" for s, n in sorted(press_conditions.GAMESTATE_NAMES.items()))
+        + ".",
+    )
+    parser.add_argument(
+        "--press-after",
+        action="append",
+        default=[],
+        metavar="GAMESTATE:BUTTON[:FRAMES]",
+        help="tap a button on the first occasion the guest is observed in that gamestate AT ANY TIME, "
+        "including after GS_Playing. This is the only way to touch the presentation screens that sit "
+        "between two levels -- the level-transition tally (1), the entrance sweep (9), the return-home "
+        "glide (10) -- because --press-while stops applying at arrival and --hold/--tap/--after are "
+        "frame counts, and the port enters a level transition on a portal the run walks into rather "
+        "than at a field anyone can predict. Same one-edge rule; the states a button cannot skip "
+        "(GS_Playing, the pause menu, the inventory) are refused by name. The states are "
+        + ", ".join(f"{n}={s}" for s, n in sorted(press_conditions.GAMESTATE_NAMES.items()))
         + ".",
     )
     parser.add_argument("--hold", action="append", default=[], help="button held after arrival")
@@ -541,6 +686,19 @@ def main() -> int:
         "fields it spent. A scene route that did not reach its target writes NO file, so the "
         "reach corpus can require one rather than parse a sentence out of a log",
     )
+    parser.add_argument(
+        "--quit-home",
+        action="store_true",
+        help="after the route, pause the game and take the guest's own Quit entry, which is the only "
+        "way into GS_ExitLevel (the return-home glide). Refused in a homeworld by name, where Quit "
+        "opens a confirm screen instead",
+    )
+    parser.add_argument(
+        "--quit-budget",
+        type=int,
+        default=4000,
+        help="fields --quit-home may spend answering the pause menu before refusing",
+    )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     parser.add_argument(
         "--dumpram",
@@ -587,12 +745,17 @@ def main() -> int:
         env[name] = value
 
     try:
-        presses = pre_arrival_press.parse_all(args.press_while)
-    except pre_arrival_press.Refusal as refusal:
+        presses = press_conditions.parse_all(args.press_while)
+    except press_conditions.Refusal as refusal:
         parser.error(str(refusal))
-    port = Port(ROOT / args.executable, ROOT / args.binary, ROOT / args.log, env)
     try:
-        Navigator(port, skip_transitions=args.skip_transitions, presses=presses).reach_gameplay()
+        post_presses = press_conditions.parse_post_all(args.press_after)
+    except press_conditions.Refusal as refusal:
+        parser.error(str(refusal))
+    port = Port(ROOT / args.executable, ROOT / args.binary, ROOT / args.log, env, post_presses)
+    try:
+        Navigator(port, skip_transitions=args.skip_transitions, presses=presses,
+                  skip_button=args.skip_button).reach_gameplay()
         print(f"reached GS_Playing at frame {port.frame}", file=sys.stderr)
         # What the pre-arrival presses did, reported at arrival. A condition that scanned the whole
         # approach and matched nothing is named, because "the press never happened" and "the screen
@@ -600,6 +763,9 @@ def main() -> int:
         # The script is not cleared here -- it is simply never applied again, because _advance() is
         # unreachable once reach_gameplay() has returned.
         print(presses.report(), file=sys.stderr)
+        # The post-arrival script is still live from here: the run is about to walk a level, and the
+        # tally, the entrance sweep and the glide are all reached from inside gameplay.
+        print(post_presses.report(), file=sys.stderr)
         port.mark_arrival()
         if args.settle:
             port.run(args.settle)
@@ -645,6 +811,8 @@ def main() -> int:
             Seeker(port, "portal", portal_targets(port.words), arrived=0,
                    stop=lambda: port.word(G_LEVEL_ID) != entering,
                    stop_is=f"left level {entering}").walk()
+        if args.quit_home:
+            quit_to_home(port, budget=args.quit_budget)
         for button in args.hold:
             port.press(button)
         if args.hold:
@@ -669,11 +837,17 @@ def main() -> int:
         print(f"drive.py REFUSED: {refusal}", file=sys.stderr)
         print(f"  {port.census_line()}", file=sys.stderr)
         print(f"  {presses.report()}", file=sys.stderr)
+        print(f"  {post_presses.report()}", file=sys.stderr)
         print(f"  run log: {args.log}", file=sys.stderr)
         port.end()
         return 2
     code = port.end()
     print(port.census_line(), file=sys.stderr)
+    # Both pad scripts are reported at the END as well as at arrival, because the post-arrival one
+    # has only just had its chance to fire: a run that walked into a portal after arrival is exactly
+    # where the tally, the sweep and the glide appear, and a report printed before the walk would
+    # always say "never matched".
+    print(post_presses.report(), file=sys.stderr)
     print(f"run log: {args.log} (exit {code})", file=sys.stderr)
     return code
 

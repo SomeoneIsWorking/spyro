@@ -380,16 +380,6 @@ if(BUILD_TESTING)
   # path would pass for a route that walks off the edge of the map and calls it a boss fight.
   add_test(NAME route_scenes_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/route_scenes.py --selftest)
-  # The pre-arrival pad script, which is the ONLY way a driven run can press anything before it
-  # reaches GS_Playing -- boot, the logos, the attract fly-in and every transition screen. Gated
-  # because the failure it has to not have is the quiet one: a condition that silently never matches
-  # looks exactly like a screen the game never reached. So its selftest covers a screen that IS up
-  # (one edge out of forty samples), a screen that is NOT (scanned and matched nothing, reported as
-  # such with the sample count), a re-visit (still ONE edge -- gamestate 0 is both the boot logo and
-  # the arrival state, and a live run that re-fired there pressed Start in gameplay and opened the
-  # pause menu), and every malformed spec refused by name rather than left looking armed.
-  add_test(NAME pre_arrival_press_selftest
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/pre_arrival_press.py --selftest)
   # The widened-capture margin census (issue 0152). Gated for the same reason as the probes above:
   # its whole job is to say whether a widening revealed anything, and a margin counter that can only
   # return 0 measures a widening perfectly while reporting that nothing appeared. The selftest
@@ -402,6 +392,36 @@ if(BUILD_TESTING)
   # that cannot fail.
   add_test(NAME hud_anchor_census_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/hud_anchor_census.py --selftest)
+  # The pad script, which is the ONLY way a driven run can press anything on a screen it did not
+  # reach with a frame count: --press-while for everything up to GS_Playing, --press-after for the
+  # presentation screens that only exist after it (the level-transition tally, the entrance sweep,
+  # the return-home glide). Gated because the failure it has to not have is the quiet one: a
+  # condition that silently never matches looks exactly like a screen the game never reached. So its
+  # selftest covers a screen that IS up (one edge out of forty samples), a screen that is NOT
+  # (scanned and matched nothing, reported as such with the sample count), a re-visit (still ONE edge
+  # -- gamestate 0 is both the boot logo and the arrival state, and a live run that re-fired there
+  # pressed Start in gameplay and opened the pause menu), the post-arrival refusals that keep the
+  # second phase off those three states for the same measured reason, and every malformed spec
+  # refused by name rather than left looking armed.
+  add_test(NAME press_conditions_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/press_conditions.py --selftest)
+  # The post-skip RAM comparison. Gated because its whole value is being able to say "these two runs
+  # reached DIFFERENT guest state", and a comparison instrument that cannot report a difference is
+  # indistinguishable from one that never looked. Its selftest therefore plants a difference in a
+  # clock AND in a hand-off field and requires both to be reported and classified, compares a capture
+  # against itself and requires every field equal, and refuses a missing and a truncated capture --
+  # a short file would make every address read as zero and every field look equal.
+  add_test(NAME ram_compare_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/ram_compare.py --selftest)
+  # The menu policy the two drivers share. Gated because a driver that presses the wrong button does
+  # not fail -- it walks into another menu, or opens the pause menu during gameplay, and the run still
+  # reaches GS_Playing and looks fine. Its selftest pins each decision and, more importantly, the
+  # negatives: the destructive card prompts are never answered, the cutscene is untouched unless
+  # --skip-transitions is on, a tally that has already ended is not a screen to cancel, the title
+  # menu is not the flyby card even though both are gamestate 13, and the options submenu is backed
+  # out with triangle because that is where a fixed Down-count ends up.
+  add_test(NAME title_prompts_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_prompts.py --selftest)
   # The four instruments the tick-41 divergence rests on. Each one's answer is only worth reading if
   # the instrument can be shown to produce the OTHER answer, which is what these selftests are for —
   # and three of the four exist because the instrument was caught being wrong first:

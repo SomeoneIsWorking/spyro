@@ -174,8 +174,8 @@ both limits are stated by the tool.
 
 `docs/findings/start-skip-map.md` recorded that `tools/drive.py` applies `--hold`, `--tap` and
 `--after` only AFTER arrival, so no driven run could press anything during boot, the logos or the
-intro. That is now `tools/pre_arrival_press.py` and `drive.py --press-while GAMESTATE:BUTTON[:FRAMES]`,
-gated by `pre_arrival_press_selftest`. It is condition-driven rather than a frame count, because the
+intro. That is now `tools/press_conditions.py` and `drive.py --press-while GAMESTATE:BUTTON[:FRAMES]`,
+gated by `press_conditions_selftest`. It is condition-driven rather than a frame count, because the
 boot/attract sequence is timing dependent — field 400 is a different screen on every run.
 
 The rule is **one edge per condition, ever**, and that was measured rather than chosen. The first

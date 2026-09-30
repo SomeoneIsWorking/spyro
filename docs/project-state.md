@@ -233,13 +233,58 @@ non-audio boot/state divergence, and complete visual/oracle parity remains open.
 and level-transition tally shortcuts wrote guest timer/state values directly. They are removed, and
 `titles/spyro1/core/spyro1_transition_skip.*` now owns cancellation properly: a Start or Cross press
 performs exactly the terminal transition the screen's own guest owner performs and nothing else.
-Two screens are covered. The level-transition tally (stage 1) clears `g_LevelTransHudActive`, which
+Three screens are covered. The level-transition tally (stage 1) clears `g_LevelTransHudActive`, which
 is the whole of `func_8002DA74`'s ending. The return-home glide (stage 10, `func_8002E084`)
 DISPATCHES the guest's own `0x8002C664` — the same call the sequence makes on its second counter
 wrap — rather than transcribing its ten globals, so there is no hand-written second copy to drift.
-Six focused tests cover the classification, including that the glide is not gated on the tally flag.
-Neither cancellation has yet been observed live: reaching stage 10 needs a portal entry from Artisans
-followed by pause-menu Quit. `tools/drive.py gameplay --gate-teleport 0:0 --seek-portal` now reads the
+The "THE ADVENTURE BEGINS" card (stage 13, `TSM_Demo`/`TSS_Active`/`TSD_Level`) dispatches the pair at
+`0x80033158`/`0x80033160`. Six focused tests cover the classification, including that the glide is not
+gated on the tally flag. **The two title-route screens are now MEASURED and the third is not.**
+Six legs ran against one build (`origin/main` 93b49f1) whose gate is **112 of 112 CTest tests**:
+
+| presentation | button | unskipped | skipped | fields |
+|---|---|---|---|---|
+| boot presentation hold | Start (and Cross) | 6360 | 6180 | **180** |
+| intro cutscene | Cross held 400 fields | 6360 | 3680 | **2,680** |
+| intro cutscene | Start held 400 fields | 6360 | 3680 | **2,680** |
+| "THE ADVENTURE BEGINS" card | Cross | 3680 | 2960 | **730** |
+| "THE ADVENTURE BEGINS" card | Start | 3680 | 3680 | **0 — the arm did not fire** |
+
+The unskipped baseline of 6360 matches the figure already recorded here, and the attribution is two
+independent derivations that agree (census samples: `cutscene` 295 -> 28 = 2,670 fields and
+`title_screen` 296 -> 223 = 730 fields, summing to the same 3,400 as the arrival-field difference).
+`tools/ram_compare.py` over a named 33-field list reads **every hand-off field equal** across the
+baseline and both skipped runs — gamestate, load stage, the three level ids, the transition flags,
+Spyro's position/state/health, both camera fields, the title-screen triple, cutscene index and layout
+— with the only differences classified `[clock/timing]`, which is what a skip is supposed to move.
+
+**The tally, the entrance sweep and the glide are STILL unobserved**, and every leg's census names
+them as never reached, because all six legs are title routes that stop at arrival. Their driver routes
+now exist; the legs that use them have not been run. The **Start half of the flyby arm is unproven**
+— Cross cancels it and logs `[transition] level flyby cancelled (1)`, Start does not fire it at all —
+and issue 0151's Finding 4 names the discriminator that would settle whether the edge is reaching the
+owner or the guest consumed it, rather than guessing. Two harness defects that the legs exposed are
+fixed and pinned: a prompt with no memory re-fired after its screen was gone (with Start that opened
+the pause menu, exit 2), and the save picker's navigation must stay free to repeat.
+
+**Every presentation is now inventoried** — all sixteen gamestates, what
+retail's own bytes accept on each, and where the port stands — in
+`docs/issues/0151-every-presentation-its-retail-button-and-the-route-that-ends-it.md`, and that
+inventory changed three answers: retail skips the **game-over spiral itself** on held Start
+(`0x8002F338 andi $v0,$v0,0x800` in `func_8002EDF0`, a route no `0x840` census could see, claim C007);
+the new game's pre-intro card has a **recovered terminal that cannot be dispatched**, so its absence
+is now a decision with two structural reasons rather than an assertion (claim C010); and a return-home cancellation is predicted by the guest's
+own counter chain to leave `D_800758B8` one step
+behind the natural route, which no in-skip write can fix and which is therefore stated rather than
+hidden (claim C011). Two harness gaps closed: `--press-while` could not touch anything after
+`GS_Playing`, so **no screen between two levels had ever been driven** — `tools/press_conditions.py`
+now owns a post-arrival phase applied from the driver's own sampler, with `GS_Playing` and both menus
+refused by name — and `tools/ram_compare.py` is new, comparing two `--dumpram` captures over a named
+hand-off field list so "the skip landed on the same state" is a measurement rather than a log line.
+The route that reaches stage 10 at last exists: a portal entry from Artisans followed by pause-menu
+Quit, and `drive.py --quit-home` now walks the guest's own quit route from the pause menu's
+selected-entry word, refusing a homeworld by name because there Quit opens a confirm screen instead.
+`tools/drive.py gameplay --gate-teleport 0:0 --seek-portal` now reads the
 six `g_Portals` records, teleports onto a gate's own path node through the port's gate diagnostic and
 walks the rest, hopping and detouring when steering alone stalls. That route now CROSSES the portal:
 the cyclorama refusals of issue 0106 are gone, and the CdControlF mis-binding behind them is fixed

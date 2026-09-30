@@ -1,7 +1,22 @@
 # Start-to-skip map
 
-This is the evidence boundary for making logos, loading screens, and scripted sequences skippable.
-It deliberately does not equate "Start is down" with "jump to the next state": Start is also the
+**THE FULL INVENTORY IS `docs/issues/0151`.** This file remains the evidence boundary for the
+mechanism — what a cancellation is allowed to do, and which guest route each screen's press reaches.
+Issue 0151 carries all sixteen gamestates, what retail's own bytes say each one accepts, and where the
+port stands per screen. Read that one for "is this screen skippable"; read this one for "what does the
+press do when it lands".
+
+**A METHOD CORRECTION that came out of building that inventory, because it invalidates a scan-shaped
+claim in this file.** The census this document relies on — "the Start/Cross mask this map establishes
+for the title", `andi rt, rs, 0x840` — finds **Start or Cross** and nothing else. The game-over spiral
+is skipped by retail on held **Start alone**: `func_8002EDF0` at `0x8002F32C`/`0x8002F330` loads
+`g_Pad.m_Held` and `0x8002F338 andi $v0, $v0, 0x800` is the whole test, after which it calls
+`0x8002F344 jal func_8003FDC8`, sets `D_80075940 = 2` and zeroes `g_GameOverTicks`. A census that looks
+for one mask reports "no skip" for a screen the game skips with a button. **The mask you scan for
+decides what you find**, in both directions — this is the same lesson as the dead-tap rows in the
+workspace map, arriving from the other side.
+
+This deliberately does not equate "Start is down" with "jump to the next state": Start is also the
 gameplay pause button, and several screens perform required I/O while their artwork is displayed.
 
 ## Boot logos and loading
@@ -63,6 +78,40 @@ the conclusion drawn from it, are unchanged.
 Repeated synthetic Start pulses are not a shipping skip mechanism: once the sequence hands off to
 gameplay, another pulse opens the pause screen. A shipping implementation must consume one host edge
 inside a positively identified skippable state and release it before the next state reads input.
+
+## The card before the intro (`TSD_Cutscene`), recovered and not cancellable
+
+This is the 384-tick card a NEW GAME flies before the intro cutscene, reached from
+`overlays/titlescreen.c:479` (`m_Mode = TSM_Loading`, `m_State = 5`, `m_DemoType = 0`). Its terminal is
+recovered from the image, and it is the one transition whose terminal **cannot** be dispatched:
+
+```
+0x8003300C  lw    $v0, 0x5864($v0)      ; g_LoadStage < 7 -> jal 0x80014564 (LoadCutscene)
+0x80033024  lw    $v0, -0x7280($v0)    ; m_Tick (0x80078D80) < 0x180 (384) -> not yet
+0x80033038  addiu $v0, $zero, 7 ; bne g_LoadStage, 7 -> not yet
+0x8003304C  ...   $sp+0x20 = {0, 0, 0x200, 0x1E0}      the RECT, built on the GUEST STACK
+0x80033070  jal   0x8005F8F8           ; ClearImage(&rc, 0, 0, 0)
+0x80033078  jal   0x8005F764           ; DrawSync(0)
+0x80033098  jal   0x8005B6F8           ; AllocateBuffers(1)
+0x800330A8  jal   0x80014564           ; LoadCutscene  } while (g_LoadStage < 10) {
+0x800330B0  jal   0x8002BBE0           ; CDMusicUpdate }
+0x800330D0  jal   0x8002D338           ; StartCutscenePlayback
+0x800330D8  sw    $v0 -> 0x8007579C     ; g_StateSwitch = 1
+0x800330E4  j     0x80033190           ; THE FUNCTION'S OWN EPILOGUE
+```
+
+Two independent reasons, both structural rather than "the decomp does not say":
+
+1. The block ends by branching to the enclosing function's epilogue, so entering it mid-function runs
+   the block and then reloads `$ra` from the guest stack — the same clobber `docs/issues/0138`
+   measured for stage 9's terminal. No prefix of this block is dispatchable.
+2. `ClearImage` is handed a `RECT` that lives on the guest stack at `$sp+0x20`, and this game has no
+   dispatchable full-screen clear: all twelve `ClearImage` call sites in `external/spyro-1` build the
+   RECT inline, so there is no guest function to call and no address to pass.
+
+The load loop is required I/O and is not the obstacle — running it is the point. What would unblock
+this screen is named in `docs/issues/0151` so it is not re-derived: a framework entry point that can
+run a mid-function guest block with a synthesised frame, or a guest-owned full-screen clear.
 
 ## Level-transition tally
 
@@ -171,10 +220,28 @@ Each of these has a named natural terminal writer but no exercised route, so non
   whose consumers compare it against 7 or 8 and **never** 9. So "no guest acceleration route" is now
   a measurement over the whole overlay corpus rather than a scope limit. Recovered, measured and
   written up in `docs/issues/0138`, extended in `docs/issues/0141`.
-- `GS_ExitLevel = 10` (`func_8002E084`): terminates through its own counter chain into
-  `func_8002C664` (`0x8002C664`), which is a complete recovered route — a scoped original call to it
-  is the shape a cancellation should take, once the state can be reached.
-- `GS_Dragon = 8`: blocked earlier than input; it has no native producer at all (issue 0103).
+- `GS_ExitLevel = 10` (`func_8002E084`, 42 instructions, no pad read): terminates through its own
+  counter chain into `func_8002C664` (`0x8002C664`), which is a complete recovered route — a scoped
+  original call to it is the shape a cancellation should take, and the port takes it. **Its one
+  divergence is derived from the guest's own counter chain, not from a run** (the run that would show
+  it is queued — see `docs/issues/0151`): the chain zeroes `D_8007568C` and increments `D_800758B8`
+  twice before the call, so the natural route leaves `D_800758B8 == 2` and a cancellation fired at an
+  arbitrary point of the chain leaves it at 0 or 1. `D_800758B8` is the pause menu's frame counter
+  (read by `func_8001A40C`, the gamestate 2/3 draw) and the gamestate 10 draw's case selector
+  (`func_8001C694`); nothing else writes it during the glide. See `docs/issues/0151`.
+- `GS_Dragon = 8`: blocked earlier than input; it has no native producer at all (issue 0103). Its own
+  update does read the pad — `0x80030CD4 andi $v0, $v0, 0x40` on `g_Pad.m_Down`, i.e. **Cross** — but
+  that advances the cutscene's own dialogue script, it is not a skip.
+- `GS_GameOver = 5`: **retail skips this one itself, on held Start**, and no document here said so
+  until `docs/issues/0151`. `func_8002EDF0` at `0x8002F338` tests `g_Pad.m_Held & 0x800` once
+  `g_GameOverTicks >= 0x169` and `g_LoadStage >= 0xB`, then calls `0x8002F344 jal func_8003FDC8`, sets
+  `D_80075940 = 2` and zeroes the tick counter. Guest-owned, so no native arm; the port's obligation
+  is only that the held button arrives.
+- `GS_Fairy = 11`: reads `g_Pad.m_Down` at four sites — `0x4000` (Down) once and `0x40` (Cross)
+  three times — all of them the fairy's own script and menu navigation.
+- `GS_Balloonist = 12`: **reads no pad word at all** — 0 of `func_800324D8`'s 338 instructions form
+  `g_Pad`, and its terminal is `.L800329CC`'s `jalr $v0` through the level-supplied pointer
+  `D_8007574C`, which is not an address in the resident image. No route, and no way to invent one.
 - `GS_Cutscene = 14`: CORRECTED 2026-09-14 — this state is NOT without a cancellation. The intro
   cutscene (`g_CutsceneIdx == 1`, "In the World of Dragons") is skipped BY THE GUEST while Start or
   Cross is HELD: `gamestates/update.c:GamestateCutsceneUpdate` shortens the layout's duration once
@@ -207,12 +274,23 @@ the full 7800 fields), and the boot-skip routes already shipped rely on that sam
 Any future skip verification for a pre-gameplay state therefore needs a pre-arrival input path; the
 drive's arrival-gated route cannot express it, and that is a harness gap rather than a title defect.
 
-**CLOSED 2026-09-28.** `tools/pre_arrival_press.py` and `drive.py --press-while GAMESTATE:BUTTON
-[:FRAMES]`, gated by `pre_arrival_press_selftest`. It is condition-driven, not a frame count, because
-the boot/attract sequence is timing dependent and field 400 is a different screen on every run. One
-edge per spec, never a second: gamestate 0 is both the boot logo and the arrival state, and the first
-version of the rule (one edge per contiguous run) fired a second Start at the `GS_Playing` hand-off
-in a live run and the guest opened `GS_PauseMenu`. Measured legs, same disc and settings, one product
+**CLOSED 2026-09-28 for everything up to `GS_Playing`.** `tools/press_conditions.py` and
+`drive.py --press-while GAMESTATE:BUTTON[:FRAMES]`, gated by `press_conditions_selftest`. It is
+condition-driven, not a frame count, because the boot/attract sequence is timing dependent and field
+400 is a different screen on every run. One edge per spec, never a second: gamestate 0 is both the
+boot logo and the arrival state, and the first version of the rule (one edge per contiguous run) fired
+a second Start at the `GS_Playing` hand-off in a live run and the guest opened `GS_PauseMenu`.
+
+**CLOSED 2026-09-30 for everything AFTER it, which is the mirror image of the same gap.**
+`--press-while` is applied only from `Navigator._advance()`, and `reach_gameplay()` returns before it
+can run again — so the three screens that exist *between two levels* (the tally, the entrance sweep,
+the return-home glide) could not be pressed by any driver at all, which is why all three arms had unit
+tests and no observation. `PressConditions` was renamed to `press_conditions.py` and now owns two
+phases: `PressConditions` (pre-arrival, unchanged) and `PostArrivalPressConditions`
+(`--press-after GAMESTATE:BUTTON[:FRAMES]`), applied from `Port.run()`'s own sampler so it is live
+while the run walks a level. The post-arrival set refuses `GS_Playing`, `GS_PauseMenu` and
+`GS_InventoryMenu` **by name at parse time**, because the pre-arrival set's guarantee was structural
+and this one is not. Measured legs, same disc and settings, one product
 instance at a time:
 
 | run | presses | arrival | port's own log | census |

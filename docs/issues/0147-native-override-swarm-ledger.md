@@ -7,7 +7,7 @@ symptom: Spyro 1 still runs most guest code through Lightrec. Owning leaf functi
   tools/native_override_gate.py, which ends with psxport's override differential on the gameplay route.
 tags: native,override,swarm,differential
 created: 2026-09-29
-updated: 2026-09-29
+updated: 2026-10-01
 ---
 
 ## The gate
@@ -138,6 +138,32 @@ psyq-libspu-8005cc58) were re-gated across the six-route corpus. Five match ever
 `reset_game_progress_for_new_game` (`0x80012604`) is NOT landed: no route calls the installed override
 (0 sampled on all six; the only entry into the address is the scoped guest call
 `initialise_artisans_level` makes), so there is nothing to compare. It needs a new-game route.
+
+## Round c (2026-10-01): the five held back by b1r, re-gated across the six-route corpus
+
+The orphaned `mismatch5` worktree held the code for all five b1r overrides. Rebased on `f92ae0f`
+with `2ab7088`'s `$ra` rule in tree, all five were registered together and the six routes
+(`artisans-walk`, `pause-menu`, `gem-seek`, `portal-level`, `skip-transitions`, `attract-demo`) were
+run with the differential armed on every registered override (90 of them):
+
+| guest | name | sampled | match | mismatch | first difference |
+|---|---|---|---|---|---|
+| `0x8004E3C8` | `moby_collision_walk` | 282 | 282 | **0** | LANDED; re-run alone on the final binary: 227 of 227, 0 mismatches across all 86 owned overrides |
+| `0x80055A78` | `assign_active_sound_slot` | 173 | 149 | 24 | call 256 (attract-demo): register `v1`, original `0x2`, native `0x100` |
+| `0x8002A6FC` | `propagate_environment_light` | 168 | 17 | 151 | call 1 (every level route): ram `0x801631DA`, original `02`, native `01` |
+| `0x800499C0` | `update_flame_burst` | 242 | 239 | 3 | call 4160 (attract-demo): register `v0`, original `0`, native `0x1D`; 8 registers and 56 bytes differ |
+| `0x80054988` | `update_hud_collectables` | 154 | 120 | 34 | call 192 (attract-demo): ram `0x80077FAD`, original `B0`, native `A0` |
+
+`moby_collision_walk` is the one b1r mismatch that is now clean, and it makes no nested guest call,
+so `2ab7088` does not apply to it. The other four are NOT landed. `propagate_environment_light`
+mismatches on essentially every call of every level route, so it is wrong, not marginal. The
+sources, registered, are on the local branch `overrides-held` (`d14bfdb`) as the base for a fix
+round; nothing on `main` references them.
+
+The attract-demo route exited 139 in both corpus runs of this session (before and after registering
+these five) on a native render refusal, `actor producer 0x8001F798 refused its atomic recipe` at
+frame 21158. That is the render side, not a differential result, and it was not re-run on a clean
+`main` build, so whether it predates this round is unverified.
 
 ## The four scenes the corpus was missing (2026-09-30)
 

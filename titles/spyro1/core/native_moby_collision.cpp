@@ -11,6 +11,9 @@
 namespace spyro1::native {
 namespace {
 
+// kModelSoundTables is the shape table the moby shape walks (`lui 0x8007 ; addiu 0x6378`);
+// kRegisterSpillArea is the save area this body and func_8004AE38 spill their callee-saved
+// registers into.
 using spyro::guest::kModelSoundTables;
 using spyro::guest::kRegisterSpillArea;
 
@@ -43,10 +46,8 @@ constexpr std::uint32_t kGteGpf = 0x4B90003Du;
 // g_MobyCollisionChain: the cell table the candidate list indexes with the position's 13-bit cell
 // coordinates (`lui 0x8007 ; addiu 0x5778`).
 constexpr std::uint32_t kMobyCollisionChain = 0x80075778u;
-// g_Models: the shape table the moby shape walks (`lui 0x8007 ; addiu 0x6378`).
 // The candidate list the body assembles in scratch expansion RAM before walking it.
 constexpr std::uint32_t kCandidateList = 0x1F800000u;
-// D_80077DD8: the save area this body and func_8004AE38 spill their callee-saved registers into.
 // The cell-edge bit that decides whether the neighbouring cells join the candidate list, and the
 // bounds that turn a wrapping neighbour into the -1 which drops it.
 constexpr std::uint32_t kCellEdge = 0x1000u;

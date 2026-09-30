@@ -17,6 +17,7 @@
 #include "native_level_globals_table.h"
 #include "native_level_initialization.h"
 #include "native_moby_allocator.h"
+#include "native_moby_collision.h"
 #include "native_moby_helpers.h"
 #include "native_moby_lists.h"
 #include "native_moby_transform.h"
@@ -93,6 +94,7 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   native::registerGlowSparklePoolOverrides(game.core);
   native::registerLevelGlobalsTableOverrides(game.core);
   native::registerMobyAllocatorOverrides(game.core);
+  native::registerMobyCollisionOverrides(game.core);
   native::registerLevelInitializationOverrides(game.core);
   native::registerMobyHelperOverrides(game.core);
   native::registerMobyListOverrides(game.core);

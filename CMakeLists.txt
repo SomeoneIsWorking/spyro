@@ -241,6 +241,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_glow_sparkle_pools.cpp
   titles/spyro1/core/native_level_globals_table.cpp
   titles/spyro1/core/native_moby_allocator.cpp
+  titles/spyro1/core/native_moby_collision.cpp
   titles/spyro1/core/native_level_initialization.cpp
   titles/spyro1/core/native_moby_helpers.cpp
   titles/spyro1/core/native_moby_lists.cpp

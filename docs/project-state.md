@@ -34,15 +34,18 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S016 | Android CI produces an APK with ARM64 dynarec execution and authored touch controls | missing | S008, S018 | G004 |
 | S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
-| S019 | Widescreen renders additional horizontal scene coverage without stretching the original image | partial | S005 | G003 |
+| S019 | Widescreen renders additional horizontal scene coverage without stretching the original image: every horizontal cull or screen-rect limit the title owns (world sectors, Mobys, particles, glows, shadows, sky, per-object draw-distance or rect rejects) is overridden natively so the margins show what the view would, while state gameplay reads stays at native width | partial — projection widened and guest state proven aspect-invariant (issue 0152); the per-owner cull audit and a margin census (objects drawn at x < 0 or x > 512 at 16:9, nonzero, against a 4:3 run) are missing | S005 | G003 |
+| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | missing — only `hud_text_builder.cpp` exists; no anchoring policy or measurement | S019 | G003 |
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; the gap is LEVEL CHOICE, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
 | S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | missing | — | G001 |
 | S024 | Spyro 2 reaches representative gameplay through native/Lightrec execution | missing — the boot prefix and the display bootstrap run in guest code, and the module load at `0x80013810` wedges at the loader's CD completion poll — measured at resume `0x80013788`, spending `CdSync(1,0)` at `0x8001372C` waiting for a controller response the framework's synchronous stock `CdRead` never raises (`cd_ready_delivered + declined = 0` against a real disc fill); the required change is named in issue 0092 section 3 | S006, S008 | G001, G002 |
 | S025 | Spyro 3 reaches representative gameplay through native/Lightrec execution | missing | S008, S023 | G001, G002 |
-| S026 | Spyro 2 widescreen renders additional horizontal scene coverage without stretching | missing | S024 | G003 |
-| S027 | Spyro 3 widescreen renders additional horizontal scene coverage without stretching | missing | S025 | G003 |
+| S026 | Spyro 2 widescreen renders additional horizontal scene coverage without stretching, with every title-owned horizontal cull or screen-rect limit overridden natively and gameplay-read state kept at native width | missing | S024 | G003 |
+| S031 | Spyro 2 widescreen anchors the UI: edge HUD elements at the widened edges or safe area, centred elements centred, nothing stretched | missing | S026 | G003 |
+| S027 | Spyro 3 widescreen renders additional horizontal scene coverage without stretching, with every title-owned horizontal cull or screen-rect limit overridden natively and gameplay-read state kept at native width | missing | S025 | G003 |
+| S032 | Spyro 3 widescreen anchors the UI: edge HUD elements at the widened edges or safe area, centred elements centred, nothing stretched | missing | S027 | G003 |
 | S028 | Spyro 2 presents interpolated 60fps from captured source geometry | missing | S024 | G003 |
 | S029 | Spyro 3 presents interpolated 60fps from captured source geometry | missing | S025 | G003 |
 

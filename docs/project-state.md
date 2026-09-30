@@ -773,6 +773,40 @@ comparison discriminator, not full scene parity; the remaining actor/depth diffe
 phase-sensitive shadow-arm comparison, the residual `g_LevelTicks` offset, and the unmeasured
 per-host frame-time budget keep S011 missing.
 
+**Four routes for exactly those four states now EXIST, have been RUN, and all four REFUSED
+(2026-09-30)** — none reached its target, so none is coverage. Issue
+[0147](issues/0147-native-override-swarm-ledger.md) chose what to own natively
+by what ONE gameplay route reached and gated each owned function on that same route, so a function
+the route never called was neither a candidate nor gated — the six-route corpus fixed the
+single-route problem but all six stop in a homeworld or an ordinary level. `tools/route_scenes.py`
+adds a flight level, a boss level, a death and respawn, and the in-game save, each reached only with
+pad edges chosen from the guest's own words and each proving its state on words the product itself
+wrote (`g_IsFlightLevel`, `g_LevelId` with the guest's own `g_LevelIndex` derivation, `g_Gamestate`
+at the death and at the fairy cutscene, and `g_FairyCutscene.m_MenuDialoguePage` reaching the one
+page `MemCardWriteFile` is called from). Each route writes a proof FILE and only after it reached its
+target, so `tools/reach_corpus.py` fails by name rather than reporting a scene that never happened;
+in the real run it printed `NO PROOF FILE: the scene did not reach its target` for all four.
+
+**Measured, all four refusing.** `flight-level` stalled 5,279 from Sunny Flight's portal, `boss-level`
+**2,228** from Toasty's (twice, identically), `death-respawn` swept eight compass sectors for 7,200
+fields and the lowest Z reached was **6,399 against a 1,024 death plane** — the hub is bounded — and
+`save-fairy` abandoned all four fairies, the nearest **740** away, with the cutscene never opening.
+
+**The corpus union grew 352/547 (64.4%) to 367/547 (67.1%), and the +15 is NOT these states.**
+`death-respawn` reached 332/547, the most of any route, purely by walking ground the other routes
+missed on its way to a refusal. A wider union is not a wider set of states.
+
+**The one route that does get into a level is `portal-level`**, which reports `left level 10 after
+576 field(s)` with `level_transition` sampled and 3 images loaded — and its first seek line is
+`portal to level 14 at (134462, 83968, 5347)`, so **Toasty's portal is the nearest one from the
+spawn**. That is why `boss-level`'s 2,228 is not yet written off as "the walker cannot climb": the
+existing route reaches that same portal at 556. The two walks differ only in target set, stop
+predicate and budget, and run-down is the next step.
+**This does not move S011**: representative conformance is still output parity, the residual
+`g_LevelTicks` phase offset, and an unmeasured per-host frame-time budget, and a wider set of routes
+is evidence about which functions are candidates for ownership, not evidence that the game matches a
+console. It does remove one reason a candidate set was narrow.
+
 The user-reported crash after THE ADVENTURE BEGINS is reproduced and its first cause is closed.
 Nine earlier agent observations missed it because they all drove with `tools/drive.py`, which takes
 its own route into `GS_Playing` and stops; launching the product through the player environment with

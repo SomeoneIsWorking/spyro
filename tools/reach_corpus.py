@@ -32,6 +32,7 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,6 +56,31 @@ class Route:
 
 
 DRIVE = ("tools/drive.py", "gameplay")
+
+
+def scene(name: str) -> tuple[str, ...]:
+    """A scene route: drive.py's own scene driver, and where it writes what it proved.
+
+    The proof file is not a convenience. A scene route that never reached its state writes NO file,
+    so the corpus can require one and fail by name instead of reading a log sentence and hoping the
+    run got there.
+    """
+    return ("tools/drive.py", "gameplay", "--scene", name, "--scene-proof",
+            f"{{out}}/{name}.proof.json")
+
+
+SCENES = ("flight-level", "boss-level", "death-respawn", "save-fairy")
+# What each of those scenes is, for the gap line. The names are the ROUTE names, so a reader can
+# match the line to `--routes`. The gap itself is COMPUTED from the proofs the routes wrote, not
+# from this table: a scene with no route and a scene whose route failed look identical in a hand-
+# kept list, and telling those apart is the whole reason a scene writes a proof file.
+SCENE_DESCRIPTIONS = {
+    "flight-level": "a flight level",
+    "boss-level": "a boss fight",
+    "death-respawn": "death and continue",
+    "save-fairy": "the in-game save screen",
+}
+
 ROUTES = (
     Route(
         "attract-demo",
@@ -85,6 +111,14 @@ ROUTES = (
         "Start on the level flyby and tally (the port's cancellation route)",
         DRIVE + ("--skip-transitions", "--seek-portal"),
     ),
+    Route("flight-level", "Sunny Flight, a flight level, through its homeworld portal",
+          scene("flight-level")),
+    Route("boss-level", "Toasty, a boss level, through its homeworld portal",
+          scene("boss-level")),
+    Route("death-respawn", "Spyro walked off the island into the guest's own death plane",
+          scene("death-respawn")),
+    Route("save-fairy", "the fairy's in-game save, through to the memory-card write",
+          scene("save-fairy")),
 )
 # Overrides whose ORIGINAL body cannot run inside the product, so the differential cannot shadow them.
 # Measured 2026-09-29: arming any one of these alone aborts boot at libetc VSync 0x8005DBC4, which the
@@ -94,15 +128,6 @@ UNSHADOWABLE = {
     "cd_retry_step": "original polls libetc VSync (fatal in the product)",
     "cd_stream_read": "original polls libetc VSync (fatal in the product)",
 }
-# Scenes the corpus must cover and no route reaches yet. Printed on every run so the gap stays visible.
-MISSING_SCENES = (
-    "a flight level",
-    "a boss fight",
-    "death and continue",
-    "the save screen after a level",
-)
-
-
 def jal_targets(exe: bytes) -> set[int]:
     """Every `jal` target inside the PS-X EXE's own text: the statically called functions."""
     if exe[:8] != b"PS-X EXE":
@@ -154,13 +179,17 @@ def route_named(name: str) -> Route:
 
 
 def route_invocation(
-    route: Route, executable: str, log: Path, env_flags: dict[str, str]
+    route: Route, executable: str, log: Path, env_flags: dict[str, str], out: Path
 ) -> tuple[list[str], dict[str, str] | None]:
     """The argv and environment that run `route` with `env_flags` reaching the product.
 
     drive.py forwards product variables with --env; demo_run.py passes its own environment through.
+    `{out}` in a route command is where that route's own artefacts go, so a scene route's proof
+    lands beside the reports it is judged with instead of in a fixed name that two routes would
+    share.
     """
-    command = [*route.command, "--executable", executable, "--log", str(log)]
+    command = [part.replace("{out}", str(out)) for part in route.command]
+    command += ["--executable", executable, "--log", str(log)]
     if route.command[0] == "tools/drive.py":
         for key, value in env_flags.items():
             command += ["--env", f"{key}={value}"]
@@ -172,7 +201,7 @@ def run_route(
     route: Route, out: Path, overrides: dict[str, int], executable: str
 ) -> int:
     reach, diff = out / f"{route.name}.reach.json", out / f"{route.name}.diff.json"
-    for stale in (reach, diff):
+    for stale in (reach, diff, out / f"{route.name}.proof.json"):
         stale.unlink(missing_ok=True)
     command, environment = route_invocation(
         route,
@@ -185,6 +214,7 @@ def run_route(
             ),
             "PSXPORT_OVERRIDE_DIFF_REPORT": str(diff),
         },
+        out,
     )
     with open(out / f"{route.name}.out", "w") as sink:
         code = subprocess.run(
@@ -198,11 +228,37 @@ def run_route(
     return code
 
 
+def read_proof(out: Path, name: str) -> dict | None:
+    """What a scene route proved, or None when it proved nothing.
+
+    The file is written by the scene only after it reached its target (tools/drive.py), so its
+    ABSENCE is the failure signal and there is no half-written state to interpret. A file that is
+    present but unreadable, or that names a different scene, is a refusal rather than a pass: a
+    stale proof from a previous run is exactly the kind of clean-looking artefact that survives a
+    route that stopped working.
+    """
+    path = out / f"{name}.proof.json"
+    if not path.exists():
+        return None
+    try:
+        proof = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as refusal:
+        raise ValueError(f"{path.name} is present but unreadable: {refusal}") from refusal
+    if proof.get("scene") != name or not proof.get("target"):
+        raise ValueError(
+            f"{path.name} names scene {proof.get('scene')!r} and target {proof.get('target')!r}, "
+            f"not {name!r}"
+        )
+    return proof
+
+
 def summarize(
     routes: list[Route], out: Path, entries: set[int], overrides: dict[str, int]
 ) -> int:
     failures = 0
     union: set[int] = set()
+    reached_each: dict[str, set[int]] = {}
+    proofs: dict[str, dict] = {}
     samples: dict[str, list[int]] = {
         name: [0, 0, 0] for name in overrides
     }  # sampled, match, mismatch
@@ -230,13 +286,9 @@ def summarize(
             )
             failures += 1
         union |= reached
+        reached_each[route.name] = reached
         for address in pcs & set(by_address):
             reached_by_owned[by_address[address]].append(route.name)
-        overlays = overlay_images(report)
-        print(
-            f"{route.name:18} {len(reached):5}/{len(entries)} functions   overlays: {len(overlays)} image(s), "
-            f"{sum(overlays.values())} distinct entry pc(s), no denominator   [{route.scene}]{' (partial: last flush before the timeout kill)' if partial else ''}"
-        )
         if diff_path.exists():
             for key in json.loads(diff_path.read_text())["keys"]:
                 if key["name"] in samples:
@@ -244,11 +296,46 @@ def summarize(
                     tally[0] += key["sampled"]
                     tally[1] += key["match"]
                     tally[2] += key["mismatch"]
+        overlays = overlay_images(report)
+        try:
+            proof = read_proof(out, route.name)
+        except ValueError as refusal:
+            print(f"FAIL {route.name}: {refusal}")
+            failures += 1
+            proof = None
+        if proof is not None:
+            proofs[route.name] = proof
+        print(
+            f"{route.name:18} {len(reached):5}/{len(entries)} functions   overlays: {len(overlays)} image(s), "
+            f"{sum(overlays.values())} distinct entry pc(s), no denominator   [{route.scene}]"
+            f"{' (partial: last flush before the timeout kill)' if partial else ''}"
+        )
+        if proof is not None:
+            print(
+                f"{'':18} proved in {proof['frames']} field(s): {proof['target']}"
+                + (f"  [{proof['detail']}]" if proof.get("detail") else "")
+            )
+    # What each route contributes that NOTHING ELSE in this run reaches. A union is a sum, so
+    # without this a new route that only re-walks the hub looks like the same coverage.
+    for route in routes:
+        others: set[int] = set()
+        for name, reached in reached_each.items():
+            if name != route.name:
+                others |= reached
+        added = reached_each.get(route.name, set()) - others
+        verdict = f"+{len(added)} function(s) no other route in this run reaches"
+        if route.name not in proofs and route.name in SCENES:
+            verdict = "NO PROOF FILE: the scene did not reach its target"
+            failures += 1
+        print(f"{route.name:18} {verdict}")
     print(
         f"{'UNION':18} {len(union):5}/{len(entries)} functions ({100.0 * len(union) / len(entries):.1f}%)"
     )
-    for scene in MISSING_SCENES:
-        print(f"MISSING route: {scene}")
+    for name in SCENES:
+        if name in proofs:
+            print(f"covered scene: {name} — {proofs[name]['target']}")
+        else:
+            print(f"MISSING route: {name} — {SCENE_DESCRIPTIONS[name]}")
     print(f"owned overrides: {len(overrides)}")
     for name, (sampled, match, mismatch) in sorted(samples.items()):
         routes_hit = ",".join(reached_by_owned[name]) or "-"
@@ -262,6 +349,41 @@ def summarize(
             f"  {verdict:8} {name:44} 0x{overrides[name]:08X} sampled {sampled:4} match {match:4} "
             f"mismatch {mismatch}   reached on: {routes_hit}"
         )
+    return failures
+
+
+def _selftest_proof_reader(directory: Path) -> int:
+    """The proof reader, on every answer it can give.
+
+    Three, and the third is the one that matters: absent (the failure signal), present, and a file
+    left behind by a different scene. Without the last two, a proof from an earlier corpus run is
+    indistinguishable from this run's, which is the whole reason the proof is a file rather than a
+    sentence in a log.
+    """
+    failures = 0
+    if read_proof(directory, "boss-level") is not None:
+        failures += 1
+        print("FAIL read_proof invented an absent proof")
+    (directory / "boss-level.proof.json").write_text(
+        json.dumps({"scene": "boss-level", "target": "g_LevelId=14", "frames": 4200})
+    )
+    if (read_proof(directory, "boss-level") or {}).get("frames") != 4200:
+        failures += 1
+        print("FAIL read_proof did not read a present proof")
+    for label, text in (
+        ("a proof left by another scene",
+         json.dumps({"scene": "flight-level", "target": "g_IsFlightLevel=1", "frames": 1})),
+        ("an unreadable proof", "{ not json"),
+    ):
+        (directory / "boss-level.proof.json").write_text(text)
+        try:
+            read_proof(directory, "boss-level")
+        except ValueError as refusal:
+            print(f"  refuses {label}: {refusal}")
+        else:
+            failures += 1
+            print(f"FAIL read_proof accepted {label}")
+    (directory / "boss-level.proof.json").unlink()
     return failures
 
 
@@ -298,7 +420,22 @@ def selftest() -> int:
     if REGISTRATION.findall(source) != [("80017700", "copy3")]:
         failures += 1
         print("FAIL registration parse")
-    print(f"selftest: {4 - failures} of 4 cases")
+    # The scene routes the corpus judges on, and the route table that names them. A scene with no
+    # ROUTE and a scene whose route failed are otherwise the same MISSING line.
+    if set(SCENES) != set(SCENE_DESCRIPTIONS):
+        failures += 1
+        print("FAIL the scene list and the scene descriptions disagree")
+    if sorted(name for name, r in ((r.name, r) for r in ROUTES) if r.name in SCENES) != sorted(SCENES):
+        failures += 1
+        print("FAIL a scene has no route in ROUTES")
+    for route in ROUTES:
+        if route.name in SCENES and "{out}" not in " ".join(route.command):
+            failures += 1
+            print(f"FAIL scene route {route.name} does not say where to write its proof")
+    with tempfile.TemporaryDirectory(prefix="reach-corpus-selftest") as scratch:
+        directory = Path(scratch)
+        failures += _selftest_proof_reader(directory)
+    print(f"selftest: {5 - failures} of 5 cases")
     return 1 if failures else 0
 
 

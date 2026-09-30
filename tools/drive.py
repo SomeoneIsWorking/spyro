@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import re
@@ -40,7 +41,8 @@ from pathlib import Path
 
 import guest_globals
 import pre_arrival_press
-import spyro1_steering
+import route_scenes
+from repl_walk import Seeker
 from spyro1_steering import Refusal as SteeringRefusal
 from spyro1_steering import moby_class_targets, portal_targets
 
@@ -295,65 +297,6 @@ class Port:
 
 
 
-class Seeker:
-    """Walk the product to one of a set of world positions, steering from the guest's own camera.
-
-    Holding one direction cannot reach anything: the pad is camera-relative, and Artisans' portals
-    sit tens of thousands of units away on a bearing the start position does not face. A fixed
-    input list cannot reach them either, for the same reason every fixed route in this file was
-    replaced.
-
-    The route policy and the geometry are `spyro1_steering.Walk`, shared with the oracle's
-    level-entry checkpoint so both walk one route. This class is only the part that is specific to
-    driving the product's REPL: press, run a fixed number of FIELDS, release.
-    """
-
-    STEP = 24  # fields per steering decision; a whole walk cycle, short enough to correct a wall
-
-    def __init__(self, port: "Port", what: str, targets, budget: int = 6000,
-                 arrived: int | None = None, stop=None, stop_is: str = ""):
-        self._port = port
-        self._walk = spyro1_steering.Walk(what, list(targets), arrived=arrived)
-        self._budget = budget
-        # A destination that must make something HAPPEN — a portal entry, not a portal visit — gives
-        # its own predicate, and the walk keeps closing the gap until that predicate holds. Ending
-        # at a proximity radius would report "reached" for a walk that never entered anything.
-        self._stop = stop
-        self._stop_is = stop_is or "the destination"
-
-    def walk(self) -> int:
-        """Returns the view-space distance actually reached, or refuses by name."""
-        # Printed per target, not just counted: a centre in the wrong units or read from the wrong
-        # field looks exactly like an unreachable destination once the walk starts.
-        for target in self._walk.remaining:
-            print(f"seek: {target.what} at {target.position}", file=sys.stderr)
-        spent = 0
-        while spent < self._budget:
-            if self._stop is not None and self._stop():
-                print(f"seek: {self._stop_is} after {spent} field(s), "
-                      f"{self._walk.closest} from the nearest {self._walk.what}", file=sys.stderr)
-                return self._walk.closest or 0
-            decision = self._walk.next(spyro1_steering.camera(self._port.words))
-            if decision is None:
-                print(f"seek: reached {self._walk.what} at {self._walk.closest}", file=sys.stderr)
-                return self._walk.closest
-            print(f"seek: {decision.describe()}", file=sys.stderr)
-            for button in decision.buttons:
-                self._port.press(button)
-            if decision.hop:
-                self._port.tap("cross", 8)
-            self._port.run(self.STEP)
-            for button in decision.buttons:
-                self._port.release(button)
-            spent += self.STEP
-        if self._stop is not None:
-            raise Refusal(
-                f"walked to within {self._walk.closest} of a {self._walk.what} over {spent} "
-                f"field(s), but {self._stop_is} never happened: being next to one is not entering it"
-            )
-        raise self._walk.exhausted(spent)
-
-
 class Navigator:
     """Boot -> title -> save picker -> a loaded, playable level, decided from guest state."""
 
@@ -579,6 +522,23 @@ def main() -> int:
         help="walk to the nearest level portal instead, which is how a homeworld route reaches a "
         "level; mutually exclusive with --seek-class",
     )
+    parser.add_argument(
+        "--scene",
+        default="",
+        choices=sorted(route_scenes.SCENES),
+        help="drive one named scene (tools/route_scenes.py) instead of the holds/taps below: a "
+        "flight level, a boss fight, a death and respawn, or the in-game save. A scene reads the "
+        "guest's own words to steer and to decide it arrived, and refuses by name when it did not, "
+        "so it is mutually exclusive with --seek-class/--seek-portal/--hold/--tap",
+    )
+    parser.add_argument(
+        "--scene-proof",
+        default="",
+        metavar="PATH",
+        help="write what the scene proved here as JSON: the target, the guest words it read and the "
+        "fields it spent. A scene route that did not reach its target writes NO file, so the "
+        "reach corpus can require one rather than parse a sentence out of a log",
+    )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     parser.add_argument(
         "--dumpram",
@@ -650,6 +610,27 @@ def main() -> int:
             port.run(args.settle or 1)
         if args.seek_class >= 0 and args.seek_portal:
             parser.error("--seek-class and --seek-portal name two different destinations")
+        if args.scene and (args.seek_class >= 0 or args.seek_portal or args.hold or args.tap):
+            parser.error(
+                "--scene decides its own inputs from guest state, so it cannot be combined with "
+                "--seek-class, --seek-portal, --hold or --tap"
+            )
+        if args.scene:
+            proof = route_scenes.run_scene(args.scene, port)
+            print(f"scene {proof.scene}: proved {proof.target} in {proof.frames} field(s)",
+                  file=sys.stderr)
+            if proof.detail:
+                print(f"scene {proof.scene}: {proof.detail}", file=sys.stderr)
+            if args.scene_proof:
+                target = ROOT / args.scene_proof
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(proof.as_json(), indent=2) + "\n")
+            port.run(1)
+            if not args.shot and not args.dumpram and not args.preseq:
+                code = port.end()
+                print(port.census_line(), file=sys.stderr)
+                print(f"run log: {args.log} (exit {code})", file=sys.stderr)
+                return code
         if args.seek_class >= 0:
             Seeker(
                 port,

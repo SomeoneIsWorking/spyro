@@ -356,6 +356,14 @@ if(BUILD_TESTING)
   # that is quietly wrong still reaches destinations, by detouring; only a fixture catches it.
   add_test(NAME spyro1_steering_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/spyro1_steering.py --selftest)
+  # The four scene routes the reach corpus judges on (docs/issues/0147): a flight level, a boss, a
+  # death and respawn, and the in-game save. Gated for the failure they most need to not have --
+  # reporting a scene they never reached. So every selftest case is a REFUSAL: a homeworld with no
+  # flight or boss portal, a level with no fairy, a bounded island where nothing dies, and a guest
+  # that is still at GS_Playing after every one of those. A module whose gate only proved the happy
+  # path would pass for a route that walks off the edge of the map and calls it a boss fight.
+  add_test(NAME route_scenes_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/route_scenes.py --selftest)
   # The pre-arrival pad script, which is the ONLY way a driven run can press anything before it
   # reaches GS_Playing -- boot, the logos, the attract fly-in and every transition screen. Gated
   # because the failure it has to not have is the quiet one: a condition that silently never matches
@@ -523,7 +531,8 @@ if(BUILD_TESTING)
       # Override constants must be addresses the retail code computes (docs/issues/0148): the
       # selftest pins a sign-extended table accepted and its unsigned-immediate twin refused.
       override_constants
-      # The route corpus's jal-target denominator, image split and registration parse.
+      # The route corpus's jal-target denominator, image split, registration parse and the scene
+      # proof reader (absent / present / stale / unreadable).
       reach_corpus
       # The per-FIELD route trace and the first divergence between two builds' runs of one route.
       # Its selftest is the negative set a "these two runs agree" claim needs: a log with no field

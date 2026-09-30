@@ -134,12 +134,16 @@ def camera(words: Words) -> View:
     return View(matrix, tuple(signed(observed[10 + i]) for i in range(3)))
 
 
-def portal_targets(words: Words) -> list[Target]:
+def portal_targets(words: Words, level: int | None = None) -> list[Target]:
     """Centres of this level's portals, which are a loaded table rather than Mobys.
 
     A homeworld's portals are the only way into a level. g_Portals holds up to six pointers and
     g_PortalCount says how many are live; each Portal carries its own centre after the skybox
     pointer, point count, unknown vector and world sector.
+
+    `level` selects one destination by the level id the Portal itself carries, which is how a
+    route asks for a flight or a boss portal instead of walking to whichever is nearest. It is a
+    filter on guest state, not a hardcoded waypoint: an empty result is a fact about the level.
     """
     count = words(guest_globals.kPortalCount, 1)[0]
     if not 0 <= count <= PORTAL_SLOTS:
@@ -152,9 +156,10 @@ def portal_targets(words: Words) -> list[Target]:
                 f"g_Portals[{index}] holds 0x{portal:08X}, which is not a RAM address, so the "
                 "portal table was read before the level finished loading"
             )
-        level = signed(words(portal + PORTAL_LEVEL, 1)[0])
+        destination = signed(words(portal + PORTAL_LEVEL, 1)[0])
         center = tuple(signed(v) for v in words(portal + PORTAL_CENTER, 3))
-        found.append(Target(f"portal to level {level}", center))
+        if level is None or destination == level:
+            found.append(Target(f"portal to level {destination}", center))
     return found
 
 
@@ -276,6 +281,19 @@ class Walk:
         )
 
 
+# A reader that answers "one portal, and it leads to level 11" for every word but the count and the
+# table. The level filter is only meaningful if it can return that portal and refuse to invent a
+# different one, so both answers are asked of the same reader.
+def _one_port_to_level_11(address: int, count: int) -> list[int]:
+    if address == guest_globals.kPortalCount:
+        return [1]
+    if address == guest_globals.kPortals:
+        return [0x80100000]
+    if address == 0x80100000 + 0x1C:
+        return [11]
+    return [0] * count
+
+
 def _selftest() -> int:
     """Both answers: a camera that must produce a known bearing, and readers that must refuse."""
     identity = View(((0x1000, 0, 0), (0, 0x1000, 0), (0, 0, 0x1000)), (0, 0, 0))
@@ -293,6 +311,9 @@ def _selftest() -> int:
     assert sector(45.0) == ("up", "right"), sector(45.0)
     assert identity.bearing((0, 0, 0))[0] == 0
     print(f"  straight ahead {straight}, screen-right {right}")
+
+    assert portal_targets(_one_port_to_level_11, level=11), "the level filter lost its own portal"
+    assert not portal_targets(_one_port_to_level_11, level=15), "the level filter invented a portal"
 
     for label, failing in {
         "an empty target set": lambda: identity.nearest([]),

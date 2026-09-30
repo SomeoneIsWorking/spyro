@@ -1,32 +1,40 @@
-// Spyro 2's boot driver: one finite guest call, one delivered field per guest display wait, and
+// Spyro 3's boot driver: one finite guest call, one delivered field per guest display wait, and
 // exactly one presented field per product step.
 //
 // The guest is real MIPS reached through real JIT execution, and that is forced by the framework as
 // well as being the point. A NATIVE body that asks for a frame-boundary exit is refused --
 // `invokeNativeFunction` requires a completed call and aborts with "required a completed guest
 // call, but execution exited as frame-boundary" -- because only a leaf the guest REACHED BY `jal`
-// gets a continuation to resume at. The first version of this file used native bodies and hit
-// exactly that. Each synthetic body below is therefore instructions: a `jal` to a counting leaf,
-// one `jal 0x80058EDC` per display wait, then `jr $ra`.
+// gets a continuation to resume at. Each synthetic body below is therefore instructions: a `jal` to
+// a counting leaf, one `jal 0x8005956C` per display wait, then `jr $ra`.
+//
+// This file is the twin of `test_spyro2_boot_driver.cpp` and shares its contract, because the two
+// titles run through the SAME title-neutral owners (`game/core/field_owner.*` and
+// `game/core/spyro_guest_call.*`) with different constants. That is deliberate: a second copy of
+// the resume and delivery contract would be a second thing to keep in step, and the per-title facts
+// -- the boot prefix, the two frame leaves, the VSync address and the counter it reports -- are the
+// only things that differ, and each is quoted from SCUS_944.67's own bytes below.
 //
 // The positive case pins the three claims the boot rests on. The negatives are the ones a green run
 // cannot distinguish from a working one:
 //
 //   * a guest call entered with `$r[31]` inside guest RAM is REFUSED at begin(). The executor ends
-//   a
-//     call whose PC equals its return address, so such a call stops in the middle of itself and
+//     a call whose PC equals its return address, so such a call stops in the middle of itself and
 //     reports a return the boot prefix never made.
-//   * a negative VSync argument is answered from the counter the title measured, that counter is
-//     the framework's DERIVED root counter 1 rather than a word the host owns, and a write to it is
-//     discarded -- all three are asserted, because the alternative is documenting a counter nobody
-//     advances.
-//   * a field delivery that arrives while one is in flight is REFUSED, so a field cannot be
-//     double-delivered through a re-entrant path.
+//   * a negative VSync argument is answered from the counter this title's executable names, that
+//     counter is the framework's DERIVED root counter 1 rather than a word the host owns, and a
+//     write to it is discarded.
+//   * a field delivery that arrives while one is in flight is REFUSED.
 //   * a boot prefix that answers every display wait with another display wait is bounded by field
-//     count and the run ends by name, on the same code path a wedged boot takes.
+//     count, and one that POLLS and never asks for a field is bounded by step count. They are
+//     different failures and the second one is structurally invisible to the first.
+//   * every address the runtime's measured plan declares lies inside one of the plan's own
+//     admission windows. A leaf outside them is REFUSED at registration with "no direct-runtime
+//     hardware-service window admits 0x...", which in a run with a disc attached reads as a boot
+//     that stops for an unrelated reason.
 //
-// The addresses are the same constants spyro2_frame_driver.cpp names, so a driver that entered a
-// different one fails here rather than only in a run with a disc attached.
+// The addresses are the same constants spyro3_frame_driver.cpp and spyro3_runtime.cpp name, so a
+// driver or a plan that entered a different one fails here rather than only in a run with a disc.
 
 #include "config_vars.h"
 #include "core.h"
@@ -37,9 +45,10 @@
 #include "game.h"
 #include "lightrec_executor.h"
 #include "native_dispatch.h"
+#include "platform_hle.h"
 #include "runtime_run.h"
-#include "spyro2_frame_driver.h"
-#include "spyro2_runtime.h"
+#include "spyro3_frame_driver.h"
+#include "spyro3_runtime.h"
 #include "spyro_context.h"
 #include "spyro_guest_call.h"
 #include "testutil.h"
@@ -52,15 +61,16 @@
 
 namespace {
 
-// The addresses the driver enters, matching spyro2_frame_driver.cpp.
-constexpr std::uint32_t kBootPrefix = 0x80011E9Cu;
-constexpr std::uint32_t kFrameUpdate = 0x8001B140u;
-constexpr std::uint32_t kFrameDraw = 0x800156FCu;
-constexpr std::uint32_t kVSync = 0x80058EDCu;
+// The addresses the driver enters, matching spyro3_frame_driver.cpp.
+constexpr std::uint32_t kBootPrefix = 0x8002AB38u;
+constexpr std::uint32_t kFrameUpdate = 0x80055400u;
+constexpr std::uint32_t kFrameDraw = 0x8001E638u;
+constexpr std::uint32_t kVSync = 0x8005956Cu;
 
-// The counter the title's libetc VSync reports for a negative argument, measured from the
-// executable's own counter pointer at 0x80066454. It is the framework's ROOT COUNTER 1, an
-// HBlank-clocked timer derived from delivered display time, with no writable state.
+// The counter the title's libetc VSync reports for a negative argument. It is NOT chosen here: the
+// executable's own initialised data at 0x80069F2C holds 0x1F801110 (the mode-1 counter pointer
+// VSync polls at 0x80059578), and 0x80069F28 holds 0x1F801814. It is the framework's ROOT COUNTER
+// 1, an HBlank-clocked timer derived from delivered display time, with no writable state.
 constexpr std::uint32_t kVBlankCounter = 0x1F801110u;
 
 constexpr std::uint32_t kBodies = 0x80020000u;
@@ -127,10 +137,9 @@ std::uint32_t lw(std::uint32_t rt, std::uint32_t base, std::int32_t off) {
 // A body that counts its own visit, takes `waits` display waits, and returns.
 //
 // The frame is not decoration. A `jal` leaves its OWN address+8 in `$r[31]`, so a body with a bare
-// `jr ra` and no saved frame returns to itself and spins there forever -- which the first version
-// of this body did, and it looked exactly like a driver that never retires its call. The shape here
-// is the retail one (`addiu $sp,$sp,-0x18 ; sw $ra,0x14($sp)` ... `lw $ra,0x14($sp)`), because that
-// is also what proves `GuestCall`'s captured return address is the one the guest ends at.
+// `jr ra` and no saved frame returns to itself and spins there forever. The shape here is the
+// retail one (`addiu $sp,$sp,-0x18 ; sw $ra,0x14($sp)` ... `lw $ra,0x14($sp)`), which is also what
+// proves `GuestCall`'s captured return address is the one the guest ends at.
 std::vector<std::uint32_t> body(std::uint32_t counterLeaf, std::uint32_t waits) {
   std::vector<std::uint32_t> words{
       addiu(29u, 29u, -0x18), // addiu $sp,$sp,-0x18
@@ -158,12 +167,12 @@ struct BodySpec {
 };
 
 constexpr BodySpec kBodiesSpec[] = {
-    {kBootPrefix, kBootBody, kCountBoot, "synthetic-spyro2-count-boot", 1},
-    {kFrameUpdate, kUpdateBody, kCountUpdate, "synthetic-spyro2-count-update", 0},
-    {kFrameDraw, kDrawBody, kCountDraw, "synthetic-spyro2-count-draw", 1},
+    {kBootPrefix, kBootBody, kCountBoot, "synthetic-spyro3-count-boot", 1},
+    {kFrameUpdate, kUpdateBody, kCountUpdate, "synthetic-spyro3-count-update", 0},
+    {kFrameDraw, kDrawBody, kCountDraw, "synthetic-spyro3-count-draw", 1},
     // A boot prefix that never returns: far more waits than the bound the test sets.
-    {kEndlessEntry, kEndlessBody, kCountEndless, "synthetic-spyro2-count-endless", 40},
-    {kSpinningEntry, kSpinningBody, 0u, "synthetic-spyro2-spin", 0u},
+    {kEndlessEntry, kEndlessBody, kCountEndless, "synthetic-spyro3-count-endless", 40},
+    {kSpinningEntry, kSpinningBody, 0u, "synthetic-spyro3-spin", 0u},
 };
 
 void countLeaf(Core *core) {
@@ -180,7 +189,7 @@ void countLeaf(Core *core) {
 
 // The libetc leaf, as the framework's own boundary: a negative argument is a QUERY and answers the
 // counter, anything else is a wait and leaves through the typed frame-boundary exit. The library
-// body at 0x80058EDC never runs in the product, so it does not run here either.
+// body at 0x8005956C never runs in the product, so it does not run here either.
 void vsyncLeaf(Core *core) {
   if (static_cast<std::int32_t>(core->r[4]) < 0) {
     ++gVBlankQueries;
@@ -195,15 +204,14 @@ void vsyncLeaf(Core *core) {
 // rather than fixture body code on purpose: the frame driver's own constructor reaches
 // `spyro_context(core)` to publish its field owner, and members are initialized before the
 // fixture's body runs, so a context published in the body is too late and the driver aborts.
-std::unique_ptr<Game> newGame(SpyroContext &context, spyro2::Spyro2Runtime &runtime) {
+std::unique_ptr<Game> newGame(SpyroContext &context, spyro3::Spyro3Runtime &runtime) {
   std::unique_ptr<Game> game = std::make_unique<Game>();
   game->core.gameCtx = &context;
   game->runtime = &runtime;
   game->gpu_dev.s_gpu_on = 0; // exercise the real Core presentation backend without a window
   // The synthetic bodies push a real frame, so they need a real stack. A Core starts with `$sp` at
   // 0, and `addiu $sp,$sp,-0x18` then gives 0xFFFFFFE8 -- which Lightrec correctly rejects as an
-  // invalid access. The product's own entry gets this from the executable header (`loadPsxExeImage`
-  // writes `image.stackPointer` into `$r[29]`/`$r[30]`), so the fixture sets the same pair.
+  // invalid access. The product's own entry gets this from the executable header.
   game->core.r[29] = 0x801FFF00u;
   game->core.r[30] = 0x801FFF00u;
   return game;
@@ -227,14 +235,10 @@ public:
       core.mem_w32(spec.entry + 4u, kNop);
     }
     // The image is activated AFTER the code words are written, and that order is the contract, not
-    // a convenience. A guest write into resident code runs the framework's central executable
-    // invalidation, which removes the written bytes from the image's residency; activate first and
-    // the `j` above deletes the very range the dispatch is about to resolve, and the run fails with
-    // "in no loaded code image" while the catalog still reports one active image. The product's
-    // order is the same one: `loadPsxExeImage` copies the text, publishes the write, then
-    // activates.
+    // a convenience: a guest write into resident code runs the framework's central executable
+    // invalidation, which removes the written bytes from the image's residency.
     const auto image =
-        core.imageCatalog().activate("synthetic-spyro2", {kImageLo, kImageHi}, 0x53503220u);
+        core.imageCatalog().activate("synthetic-spyro3", {kImageLo, kImageHi}, 0x53503320u);
     const auto resolved = core.imageCatalog().resolve(kBootPrefix);
     if (!resolved.has_value() || *resolved != image) {
       std::fprintf(
@@ -248,7 +252,7 @@ public:
           core.imageCatalog().activeCount());
       std::abort();
     }
-    if (!core.nativeDispatcher().install({{image, kVSync}, "synthetic-spyro2-vsync", vsyncLeaf})) {
+    if (!core.nativeDispatcher().install({{image, kVSync}, "synthetic-spyro3-vsync", vsyncLeaf})) {
       return false;
     }
     for (const BodySpec &spec : kBodiesSpec) {
@@ -260,22 +264,22 @@ public:
     return true;
   }
 
-  // Point the boot prefix at the body that never returns, for the bounded-boot case.
-  // A boot prefix that spins without asking for a field. See the case that uses it.
-  void useSpinningBoot() {
-    game->core.mem_w32(kBootPrefix, jump(kSpinningEntry, kJumpOpcodes));
-  }
-
+  // A boot prefix that answers every display wait with another display wait.
   void useEndlessBoot() {
     Core &core = game->core;
     core.mem_w32(kBootPrefix, jump(kEndlessEntry, kJumpOpcodes));
     core.mem_w32(kBootPrefix + 4u, kNop);
   }
 
-  spyro2::Spyro2Runtime runtime;
+  // A boot prefix that spins without asking for a field. See the case that uses it.
+  void useSpinningBoot() {
+    game->core.mem_w32(kBootPrefix, jump(kSpinningEntry, kJumpOpcodes));
+  }
+
+  spyro3::Spyro3Runtime runtime;
   SpyroContext context;
   std::unique_ptr<Game> game;
-  spyro2::Spyro2FrameDriver driver;
+  spyro3::Spyro3FrameDriver driver;
 };
 
 // The per-turn budget in a fixture Core is small, so a body takes several turns to retire. The
@@ -283,12 +287,6 @@ public:
 // assuming one of each -- the contract under test is one presented field per step and one delivered
 // field per guest wait, both of which are totals.
 constexpr std::uint32_t kStepCap = 64;
-
-void stepUntilBootComplete(spyro2::Spyro2FrameDriver &driver, Core &core) {
-  for (std::uint32_t step = 0; step < kStepCap && !driver.bootComplete(); ++step) {
-    driver.stepFrame(core, step);
-  }
-}
 
 bool advanceUntilReturned(spyro::GuestCall &call, std::uint32_t turnCap) {
   for (std::uint32_t turn = 0; turn < turnCap; ++turn) {
@@ -337,7 +335,7 @@ void test_boot_presents_one_field_per_guest_wait() {
   CHECK_EQ(fixture.driver.fields().presents(), stepsTaken);
   // The counter the guest's VSync reports is derived from delivered display time, so it must have
   // MOVED with the fields. Asserting it EQUALS the field count is the assertion that caught an
-  // earlier false claim in the product: the register is HBlank-clocked, so it is a scanline count.
+  // earlier false claim in this lineage: the register is HBlank-clocked, so it is a scanline count.
   CHECK(core.mem_r32(kVBlankCounter) > 0u);
   CHECK(core.lightrecExecutor().counters().executedBlocks > 0u);
 
@@ -359,7 +357,7 @@ void test_guest_call_refuses_a_return_address_inside_guest_ram() {
   BootFixture fixture;
   CHECK(fixture.install());
   Core &core = fixture.game->core;
-  spyro::GuestCall call(core, "synthetic-spyro2-call");
+  spyro::GuestCall call(core, "synthetic-spyro3-call");
 
   core.r[31] = kBootPrefix; // a guest address: an "early return" that is not a return
   call.begin(kBootPrefix);
@@ -371,7 +369,7 @@ void test_guest_call_refuses_a_return_address_inside_guest_ram() {
   CHECK_EQ(gVisitBoot, 0u); // nothing ran
 
   // The same call with a host return address is finite, and it does run. One turn is not enough for
-  // a body with two display waits, so this asserts the call stays active ACROSS a boundary rather
+  // a body with one display wait, so this asserts the call stays active ACROSS a boundary rather
   // than claiming a return it has not made.
   core.r[31] = 0x00000001u;
   call.begin(kBootPrefix);
@@ -396,8 +394,8 @@ void test_boot_prefix_that_never_returns_is_bounded() {
   fixture.useEndlessBoot();
   Core &core = fixture.game->core;
   // A low bound, so the refusal is observed on the SAME code path a wedged boot takes. The default
-  // is 64 fields and the body waits 96 times, so either number would eventually fire; lowering it
-  // means the case does not have to deliver 64 fields to prove the bound exists.
+  // is 64 fields and the body waits 40 times, so lowering it means the case does not have to
+  // deliver 64 fields to prove the bound exists.
   fixture.driver.setBootStepFieldBound(4u);
   fixture.driver.initialize(core);
 
@@ -423,9 +421,9 @@ void test_boot_prefix_that_never_returns_is_bounded() {
 
 // A boot prefix that never returns AND never asks for a field -- the second way the prefix can
 // hang, and the one the field bound structurally cannot see, because it is enforced where a field
-// is DELIVERED. Spyro 2's module loader has this shape in the retail image: it polls the status
-// word at 0x800682E8 and never reaches a display wait again, so the run would keep stepping until
-// the process's own frame cap and report a run length instead of a diagnosis.
+// is DELIVERED. Spyro 3's module loader polls a status word and reaches no further display wait on
+// the path this port can serve, so the run would keep stepping until the process's own frame cap
+// and report a run length instead of a diagnosis.
 void test_boot_prefix_that_polls_without_asking_for_a_field_is_bounded() {
   resetCounters();
   BootFixture fixture;
@@ -467,6 +465,7 @@ public:
   }
 
   void onField(Core &core, bool startEdge) override {
+    (void)core;
     (void)startEdge;
     ++seen_;
     if (owner_ != nullptr && nestedMade_ == nullptr) {
@@ -502,13 +501,13 @@ void test_reentrant_field_delivery_is_refused() {
   psx::config::cv_nopace.set(psx::config::Layer::Runtime, true);
   psx::config::cv_repl.set(psx::config::Layer::Runtime, false);
   SpyroContext context;
-  spyro2::Spyro2Runtime runtime;
+  spyro3::Spyro3Runtime runtime;
   std::unique_ptr<Game> game = newGame(context, runtime);
 
   ReentrantObserver observer;
   spyro::FieldOwner owner(*game,
                           spyro::FieldOwnerFacts{
-                              .titleName = "Spyro 2 (observer case)",
+                              .titleName = "Spyro 3 (observer case)",
                               .handlerStackTop = 0x8000E000u,
                               .handlerStackBytes = 8192u,
                               .fieldsPerLogicFrame = 1,
@@ -530,7 +529,7 @@ void test_negative_vsync_query_answers_the_derived_counter() {
   // model, which dereferences `core.game`. A bare Core answers the query with a null dereference
   // instead of a value, which reads as a crash in the leaf rather than as the missing owner.
   SpyroContext context;
-  spyro2::Spyro2Runtime runtime;
+  spyro3::Spyro3Runtime runtime;
   std::unique_ptr<Game> game = newGame(context, runtime);
   Core &core = game->core;
   // Before any display time, the counter answers 0 rather than a plausible field number: the query
@@ -561,6 +560,106 @@ void test_negative_vsync_query_answers_the_derived_counter() {
   CHECK(!core.executionControl().consume().has_value()); // consumed exactly once
 }
 
+// The measured plan is the one place a wrong guest address becomes invisible until a run with a
+// disc attached: every leaf is refused at registration with "no direct-runtime hardware-service
+// window admits 0x...", which reads there as a boot that stopped for an unrelated reason. Each
+// address the plan declares must therefore lie inside one of the plan's OWN windows, and the plan
+// must actually declare one -- a plan with a VSync address of 0 is refused earlier still, by
+// `requireNativeFrameLoopContract`, with a message about a retail busy-wait.
+void test_every_declared_leaf_lies_inside_a_declared_window() {
+  const spyro3::Spyro3Runtime runtime;
+  const PlatformHlePlan *plan = runtime.platformHlePlan();
+  CHECK(plan != nullptr);
+  if (plan == nullptr) {
+    return;
+  }
+  CHECK_EQ(plan->vsyncAddress, kVSync);
+  CHECK(plan->vsyncAddress != 0u);
+  CHECK_EQ(plan->vsyncQueryCounterAddress, kVBlankCounter);
+
+  struct Declared {
+    const char *name;
+    std::uint32_t address;
+  };
+  // A zero address means "not located", and the framework installs nothing for it. Listing only the
+  // ones this title claims is the point: the check is over the CLAIM, not over the array.
+  const Declared declared[] = {
+      {"setGeomOffset", plan->setGeomOffset},
+      {"setGeomScreen", plan->setGeomScreen},
+      {"cdRead", plan->cdReadAddress},
+      {"cdReadSync", plan->cdReadSyncAddress},
+      {"cdCommand", plan->cdCommandAddress},
+      {"cdSync", plan->cdSyncAddress},
+      {"cdSearchFile", plan->cdSearchFileAddress},
+      {"drawSync", plan->drawSyncAddress},
+      {"vsync", plan->vsyncAddress},
+  };
+  for (const Declared &leaf : declared) {
+    if (leaf.address == 0u) {
+      continue;
+    }
+    bool admitted = false;
+    for (int slot = 0; slot < kPlatformHleWindowCapacity; ++slot) {
+      if (plan->windowHi[slot] != 0u && leaf.address >= plan->windowLo[slot] &&
+          leaf.address < plan->windowHi[slot]) {
+        admitted = true;
+        break;
+      }
+    }
+    if (!admitted) {
+      std::fprintf(stderr,
+                   "REFUSED: measured leaf %s 0x%08X lies outside every window the plan declares\n",
+                   leaf.name,
+                   leaf.address);
+    }
+    CHECK(admitted);
+  }
+  for (int index = 0; index < plan->bindingCount; ++index) {
+    const std::uint32_t address = plan->bindings[index].addr;
+    bool admitted = false;
+    for (int slot = 0; slot < kPlatformHleWindowCapacity; ++slot) {
+      if (plan->windowHi[slot] != 0u && address >= plan->windowLo[slot] &&
+          address < plan->windowHi[slot]) {
+        admitted = true;
+        break;
+      }
+    }
+    if (!admitted) {
+      std::fprintf(stderr,
+                   "REFUSED: measured binding %d at 0x%08X lies outside every window\n",
+                   index,
+                   address);
+    }
+    CHECK(admitted);
+    CHECK(plan->bindings[index].fn != nullptr);
+  }
+  CHECK(plan->bindingCount >= 1);
+  CHECK(plan->bindingCount <= PlatformHlePlan::kMaxBindings);
+}
+
+// The negative half of the same claim: a window that is not there cannot admit anything, and a
+// window that is present but does not reach the leaf must be reported as such. Without this, a case
+// that passed for the wrong reason -- an all-zero plan with no leaves at all -- would look green.
+void test_a_window_that_does_not_reach_a_leaf_admits_nothing() {
+  PlatformHlePlan plan{};
+  plan.vsyncAddress = kVSync;
+  plan.windowLo[0] = 0x80000000u;
+  plan.windowHi[0] = kVSync; // half-open: the leaf itself is NOT inside
+  const auto admitted = [&plan](std::uint32_t address) {
+    for (int slot = 0; slot < kPlatformHleWindowCapacity; ++slot) {
+      if (plan.windowHi[slot] != 0u && address >= plan.windowLo[slot] &&
+          address < plan.windowHi[slot]) {
+        return true;
+      }
+    }
+    return false;
+  };
+  CHECK(!admitted(kVSync));
+  CHECK(!admitted(0u)); // a zero high disables the slot entirely
+  plan.windowHi[0] = kVSync + 4u;
+  CHECK(admitted(kVSync));
+}
+
 } // namespace
 
 int main() {
@@ -570,5 +669,7 @@ int main() {
   RUN(boot_prefix_that_polls_without_asking_for_a_field_is_bounded);
   RUN(reentrant_field_delivery_is_refused);
   RUN(negative_vsync_query_answers_the_derived_counter);
+  RUN(every_declared_leaf_lies_inside_a_declared_window);
+  RUN(a_window_that_does_not_reach_a_leaf_admits_nothing);
   return pt_summary();
 }

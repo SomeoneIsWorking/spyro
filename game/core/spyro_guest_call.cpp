@@ -1,4 +1,4 @@
-#include "spyro2_guest_call.h"
+#include "spyro_guest_call.h"
 
 #include "core.h"
 #include "execution_exit.h"
@@ -7,7 +7,7 @@
 
 #include <lucent/log.h>
 
-namespace spyro2 {
+namespace spyro {
 namespace {
 
 constexpr std::uint32_t kGuestRamLow = 0x80000000u;
@@ -94,4 +94,4 @@ GuestCall::Result GuestCall::advance(std::uint32_t maxTurns) {
   return result;
 }
 
-} // namespace spyro2
+} // namespace spyro

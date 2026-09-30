@@ -2,7 +2,7 @@
 
 #include "field_owner.h"
 #include "game_runtime.h"
-#include "spyro2_guest_call.h"
+#include "spyro_guest_call.h"
 
 #include <cstdint>
 
@@ -76,15 +76,17 @@ private:
   // it is enforced HERE rather than in the step: a guest that answers every display wait with
   // another display wait never returns, so a bound checked after this loop would never be reached.
   CallProgress runCall(Core &core,
-                       GuestCall &call,
+                       spyro::GuestCall &call,
                        std::uint32_t maxTurns,
                        const char *site,
                        std::uint64_t fieldBound);
   void deliverField(Core &core, const char *site, bool present);
-  void reportStop(Core &core, const GuestCall &call, const GuestCall::Result &result) const;
+  void reportStop(Core &core,
+                  const spyro::GuestCall &call,
+                  const spyro::GuestCall::Result &result) const;
 
   spyro::FieldOwner fields_;
-  GuestCall call_;
+  spyro::GuestCall call_;
   Phase phase_ = Phase::Boot;
   bool initialized_ = false;
   bool bootStalled_ = false;

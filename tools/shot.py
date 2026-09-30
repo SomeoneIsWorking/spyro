@@ -52,6 +52,13 @@ TITLES = {
         "image": "scratch/assets/spyro2/SCUS_944.25",
         "double_buffered": False,
     },
+    "spyro3": {
+        "disc_var": "PSXPORT_SPYRO3_DISC",
+        "image": "scratch/assets/spyro3/SCUS_944.67",
+        # No cadence has been measured for SCUS_944.67: no frame of this title has been presented
+        # yet, so this is asked for by the frame the caller wants rather than silently nudged.
+        "double_buffered": False,
+    },
 }
 
 

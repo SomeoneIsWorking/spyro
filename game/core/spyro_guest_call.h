@@ -6,9 +6,15 @@
 
 class Core;
 
-namespace spyro2 {
+namespace spyro {
 
-// One finite guest call, resumed across product steps.
+// The filename is deliberately NOT `guest_call.h`: psxport owns `runtime/cpu/guest_call.h`, and
+// `game/core` precedes the framework's CPU include directory on the compile line, so a same-named
+// header here silently shadows the framework's `dispatchGuestToReturn2` and `ExecutionBudget`.
+//
+// One finite guest call, resumed across product steps. Lineage-shared: nothing here is a title
+// fact, so Spyro 2's and Spyro 3's frame drivers own the same resume contract rather than each
+// carrying a copy of it.
 //
 // A PSX guest call is not a host call: it legitimately outlives one host turn, it can stop at
 // a display-field boundary the host owns, and it returns through an address captured BEFORE the
@@ -73,4 +79,4 @@ private:
   std::uint64_t cycles_ = 0;
 };
 
-} // namespace spyro2
+} // namespace spyro

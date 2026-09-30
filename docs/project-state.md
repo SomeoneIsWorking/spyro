@@ -39,7 +39,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; the gap is LEVEL CHOICE, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
-| S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | missing | — | G001 |
+| S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial — every S023 fact is now confirmed against `SCUS_944.67`'s own crt0 and library bytes (entry `0x80059444`, bss `0x8006C4F4..0x800742D0`, stack top `0x8006C3E4` with bias `-8`, GP `0x8006C3B0`, game main `0x8001200C`, libetc VSync `0x8005956C` on counter `0x1F801110`, `SetGeomOffset 0x8005D35C`, `CdInit 0x8005DB1C`/`CdRead 0x8005D96C`/`CdSync 0x8005E074`/`CdCommand 0x8005E0BC`/`CdReadyCallback 0x8005DB08`), and the boot prefix `0x8002AB38` now **executes** through Lightrec on a real disc: 484 fields, 481 product steps, 481 presentation fences, 23,373,822 executed blocks, 135,585,657 instructions, 429 translated blocks, 0 faults, 0 interpreter fallback; it stops at a named PC `0x800504F0` inside the CD loader — spinning at `0x80050650`/`0x80050658` for a read completion the framework's synchronous stock `CdRead` never raises, so the guest's own `CdReadyCallback` at `0x80050504` is never dispatched and its byte counter `0x8006E484` never reaches `0x8006E488`; required framework change in issue 0153 §3. Guest libetc VSync `0x8005956C` **provably never executed**: 6 of 6 of its store instructions, 0 executions across 135,585,657 JIT instructions, against a control store that did execute in the same run. Still `partial`, not `verified`: `game main 0x8001200C` is never dispatched, so nothing past the module load is observed | S008 | G001 |
 | S024 | Spyro 2 reaches representative gameplay through native/Lightrec execution | missing — the boot prefix and the display bootstrap run in guest code, and the module load at `0x80013810` wedges at the loader's CD completion poll — measured at resume `0x80013788`, spending `CdSync(1,0)` at `0x8001372C` waiting for a controller response the framework's synchronous stock `CdRead` never raises (`cd_ready_delivered + declined = 0` against a real disc fill); the required change is named in issue 0092 section 3 | S006, S008 | G001, G002 |
 | S025 | Spyro 3 reaches representative gameplay through native/Lightrec execution | missing | S008, S023 | G001, G002 |
 | S026 | Spyro 2 widescreen renders additional horizontal scene coverage without stretching: margin objects drawn from object memory past every title-owned horizontal cull, margin-only objects animated port-side, guest memory untouched | missing | S024 | G003 |
@@ -1907,9 +1907,9 @@ Related goal: G002.
 
 ### S023-S029 — Spyro 2 and Spyro 3
 
-**Status: missing, and deliberately not started.** Goal G001 is three products, so these rows exist
-to keep the inventory honest about what the repository does not yet do. Nothing below is evidence of
-work in progress.
+**Status: S023 `partial` (measured 2026-09-30), the rest still `missing`.** Spyro 3 is no longer
+unexecuted — its boot prefix runs — but it stops inside the loader and never reaches game main, so
+no gameplay claim is made for it.
 
 Both titles are held behind Spyro 1 by the single-title rule in `CLAUDE.md`: "Finish Spyro 1 before
 continuing title-specific Spyro 2 or Spyro 3 implementation." Spyro 1 has not finished — S011
@@ -1917,16 +1917,33 @@ continuing title-specific Spyro 2 or Spyro 3 implementation." Spyro 1 has not fi
 is `missing`, and S020's in-between present still replays unreconstructed producers. Starting a
 second title now would split the one maintainer across two incomplete ports.
 
-What exists for each is only binary facts, and they are recorded rather than verified by execution:
+What exists for Spyro 3 is no longer analysis only. Every address in its row below is confirmed
+against the image's own instruction bytes, and its boot prefix now runs:
 
 | | identity | entry | game main | libetc VSync | measured boundary |
 |---|---|---|---|---|---|
 | Spyro 2 | `SCUS_944.25` | `0x8005478C` | `0x80011ADC` | `0x80058EDC` | three black display fields, then stops at `0x80011B1C` (S006) |
-| Spyro 3 | `SCUS_944.67` | `0x80059444` | `0x8001200C` | `0x8005956C` | none — disc provenance and product execution are both unverified |
+| Spyro 3 | `SCUS_944.67` | `0x80059444` | `0x8001200C` | `0x8005956C` | **runs:** the boot prefix `0x8002AB38` executes to resume `0x800504F0`, 484 fields / 481 presentation fences / 23,373,822 blocks / 0 fallbacks, stopped by the framework CD-completion gap at the loader's `CdRead` (issue 0153) |
+
+**A note on the `libetc VSync` column, because it is the one fact that is easy to state wrongly.**
+The function-reach report lists `0x8005956C` among the addresses reached, and that is **not**
+evidence the guest VSync body ran: `lightrec_executor.cpp`'s `blockBoundary` calls
+`reach->observe(guestPc)` *before* it asks `classifyGuestHostDispatch`, so the recorder sees every
+address the executor examined, including the ones it then handed to a native owner and refused to
+translate. A reach entry is evidence of **dispatch**, not execution.
+
+The measurement that does settle it is a store observer armed on all six store instructions inside
+the VSync body, plus `0x80050620` as a control that is provably on this boot path: **6 of 6 VSync
+stores recorded zero executions across 135,585,657 JIT instructions, while the control executed.**
+One run, one instrument, both classes. Issue 0153 §4 carries the full arming.
 
 Spyro 3 is the weaker of the two: its addresses come from executable analysis, and no run of any kind
 has been recorded against it. S022 in this document was a detail section with no row in the table
 until 2026-09-19, and Spyro 3 had neither; both are inventory defects rather than lost work.
+
+**SUPERSEDED 2026-09-30** for Spyro 3: disc provenance is verified (`[disc] opened …Spyro - Year of
+the Dragon (USA).chd (31742 hunks, 8 frames/hunk)`) and the boot prefix executes through Lightrec,
+repeated exactly across two independently armed runs. See S023 and issue 0153.
 
 The widescreen and 60fps rows are listed separately per title because they are separately observable
 against the baseline and will not come for free from Spyro 1. Spyro 1's interpolation is built out of

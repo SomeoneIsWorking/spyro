@@ -71,6 +71,8 @@ add_custom_target(spyro_title_catalog DEPENDS ${SPYRO_CATALOG_HEADER})
 set(SPYRO_RUNTIME_SOURCES
   game/core/archive_transfer.cpp
   game/core/content_identity.cpp
+  game/core/image_publication.cpp
+  game/core/stock_read_publication.cpp
   game/core/cd_queue.cpp
   game/core/field_owner.cpp
   game/core/spyro_guest_call.cpp
@@ -331,6 +333,15 @@ if(BUILD_TESTING)
     ${PSXPORT_DIR}/tests game/core titles/spyro3/core)
   target_link_libraries(test_spyro3_boot_driver PRIVATE spyro_runtime)
   add_test(NAME spyro3_boot_driver COMMAND test_spyro3_boot_driver)
+  # Spyro 2 and 3 stream code modules through the framework's stock CdRead and call into them: the
+  # landing is published as a resident image (game/core/stock_read_publication.*), driven end to end
+  # through the shipping read, both title runtimes, the image catalog, and Lightrec.
+  add_executable(test_stock_read_publication
+    tests/test_stock_read_publication.cpp)
+  target_include_directories(test_stock_read_publication PRIVATE
+    ${PSXPORT_DIR}/tests game/core titles/spyro2/core titles/spyro3/core)
+  target_link_libraries(test_stock_read_publication PRIVATE spyro_runtime)
+  add_test(NAME stock_read_publication COMMAND test_stock_read_publication)
   add_executable(test_title_selection
     tests/test_title_selection.cpp)
   target_include_directories(test_title_selection PRIVATE game/core)

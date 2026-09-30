@@ -6,6 +6,7 @@
 #include "game.h"
 #include "spyro3_frame_driver.h"
 #include "spyro_context.h"
+#include "stock_read_publication.h"
 
 #include <cstdlib>
 #include <lucent/log.h>
@@ -249,6 +250,11 @@ void Spyro3Runtime::pacePresentation(Core &core, int fields, int parts) {
   // The field owner has already delivered this simulated time, including the guest vblank work
   // that came with it, so presentation only has to wait out the host deadline.
   gpu_wait_presented_fields(&core, fields, parts);
+}
+
+void Spyro3Runtime::stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) {
+  // The loader streams its code modules through the stock read and then calls into them.
+  spyro::publishStockReadLanding(core, landing);
 }
 
 bool Spyro3Runtime::guestVramIsPicture(const Game &) const {

@@ -1,15 +1,13 @@
 #include "archive_transfer.h"
 
-#include "content_identity.h"
 #include "core.h"
 #include "disc.h"
 #include "execution_control.h"
 #include "game.h"
-#include "image_identity.h"
+#include "image_publication.h"
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <limits>
 #include <string>
 #include <utility>
@@ -74,21 +72,15 @@ archive_transfer::Decision ArchiveTransfer::read(Core &core,
     offset += count;
   }
   if (!bytes.empty()) {
-    const auto digest = sha256(bytes);
-    if (digest.empty()) {
+    const auto content = image_publication::digest(bytes);
+    if (!content) {
       return refuse(core, request, "SHA-256 calculation failed");
-    }
-    std::uint64_t digestPrefix = 0;
-    const auto parsed = std::from_chars(digest.data(), digest.data() + 16, digestPrefix, 16);
-    if (parsed.ec != std::errc{}) {
-      return refuse(core, request, "invalid SHA-256 digest");
     }
     for (std::uint32_t offset = 0; offset < request.length; ++offset) {
       // The canonical memory writer owns executable invalidation and diagnostic write guards.
       core.mem_w8(request.destination + offset, bytes[offset]);
     }
-    core.imageCatalog().activate(
-        "WAD SHA-256 " + digest, {destination, destination + request.length}, digestPrefix);
+    image_publication::activate(core, "WAD", {destination, destination + request.length}, *content);
   }
   const auto decision = archive_transfer::decide(request.length, request.length);
   completionPending_ = deferred && decision.completionPending();

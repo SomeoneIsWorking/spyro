@@ -19,6 +19,7 @@ public:
   void registerOverrides(Game &game) override;
   void bootInit(Core &core) override;
   bool guestVramIsPicture(const Game &game) const override;
+  void stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) override;
 
   const PlatformHlePlan *platformHlePlan() const override;
   const char *discEnvVar() const override;

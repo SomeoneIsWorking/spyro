@@ -16,11 +16,10 @@ worktree. A change passes only when all of these hold, in this order:
      PSXPORT_OVERRIDE_DIFF armed for the named override samples at least one comparable call, and every sampled call matches the guest
      body it replaces (psxport tools/port/override_differential_gate.py).
 
-The gate takes no machine-wide slot of its own: its caller admits the whole gate once, the way a swarm
-job with heavy_gate does, or `heavy.py --kind build -- <this gate>` by hand. A nested admission from
-inside an admitted gate would queue behind requests waiting on the gate's own reservation. Its
-peak is the -j 4 build plus one route run (a 300-frame drive peaks near 190 MB with the differential
-armed, and psxport issue 0141 caps one shadowed call's journals at 32 MiB).
+The gate never calls heavy.py: a swarm runner already registers the gate as a unit, and the
+machine-wide pressure guard is the only memory countermeasure. Its peak is one build plus one
+route run (a 300-frame drive peaks near 190 MB with the differential armed, and psxport issue 0141
+caps one shadowed call's journals at 32 MiB).
 
 Usage (from the job worktree):
     uv run --frozen python tools/native_override_gate.py <override-name>... [--route NAME] [--light]
@@ -190,7 +189,7 @@ def step(
     ).returncode
     if code in hang_codes:
         raise GateFailure(
-            f"{name} exceeded {ROUTE_TIMEOUT_SECONDS} s after admission; a native override that never returns hangs its route"
+            f"{name} exceeded {ROUTE_TIMEOUT_SECONDS} s; a native override that never returns hangs its route"
         )
     if code:
         raise GateFailure(f"{name} failed")

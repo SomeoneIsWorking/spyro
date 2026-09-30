@@ -355,21 +355,15 @@ def run_differential(
     )
 
 
-def heavy_tool(framework: Path) -> str:
-    """The machine-wide slot wrapper: on PATH, else the workspace's re-harness copy.
-
-    A swarm worker's shell does not carry the operator's PATH, so the workspace copy is what makes
-    the gate runnable from inside a job exactly as the swarm itself runs it.
-    """
+def heavy_tool() -> str:
+    """The machine-wide slot wrapper, which the workspace installs on PATH."""
     on_path = shutil.which("heavy.py")
-    if on_path:
-        return on_path
-    workspace = framework.parent.parent / "shared/re-harness/tools/heavy.py"
-    if workspace.is_file():
-        return str(workspace)
-    raise GateFailure(
-        f"heavy.py is neither on PATH nor at {workspace}; the gameplay run must take a machine-wide run slot"
-    )
+    if on_path is None:
+        raise GateFailure(
+            "heavy.py is not on PATH (re-harness tools/install_skills.py installs it); the route run "
+            "must take a machine-wide slot"
+        )
+    return on_path
 
 
 def names_for_addresses(addresses: str) -> list[str]:
@@ -393,7 +387,7 @@ def gate(names: list[str], route: str, light: bool) -> None:
     framework = (checkout / "external/psxport").resolve()
     if not (framework / "cmake/psxport.cmake").is_file():
         raise GateFailure(f"framework: {framework} is not a psxport checkout")
-    heavy = heavy_tool(framework)
+    heavy = heavy_tool()
     cpp = check_scope()
     link_provisioned_inputs(checkout)
     populate_submodules(checkout)

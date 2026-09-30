@@ -58,7 +58,12 @@ public:
   // is not making progress, not a slow one. It is a member of this class rather than a file
   // constant so the enforcement site and the number are the same declaration, and the number is in
   // the refusal so nobody has to guess which bound fired.
-  static constexpr std::uint64_t kDefaultBootStepFieldLimit = 64;
+  // MEASURED 2026-10-01: the retail boot prefix, once its loaded module is published as an image
+  // (game/core/stock_read_publication.*), returns after 133 fields in 43 steps. The first version
+  // of this bound was 64, a guess made while the boot stopped at the module load, and it ended a
+  // healthy boot mid-fade. 1024 is the nearest power of two above the measured count with margin; a
+  // boot that needs more is a different boot and should move this number with a new measurement.
+  static constexpr std::uint64_t kDefaultBootStepFieldLimit = 1024;
   // The other way a boot prefix can fail to return is to never ASK for a field at all: a guest
   // polling a CD status word spends every turn inside one `advance` and only ever exhausts the
   // turn budget. The field bound above is checked where a field is delivered, so it never fires

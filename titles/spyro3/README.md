@@ -10,7 +10,7 @@ claim, not a placeholder: the loader chain is guest code.
 
 ## The boot is the guest's
 
-`Spyro3FrameDriver` enters the retail boot prefix `0x8002AB38` and runs it. There is no
+the shared `spyro::BootPrefixFrameDriver` (over `spyro3_boot_facts.h`) enters the retail boot prefix `0x8002AB38` and runs it. There is no
 hand-transcribed display bootstrap and no hand-owned field sequence.
 
 | | |

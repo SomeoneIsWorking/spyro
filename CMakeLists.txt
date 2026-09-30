@@ -74,6 +74,7 @@ set(SPYRO_RUNTIME_SOURCES
   game/core/image_publication.cpp
   game/core/stock_read_publication.cpp
   game/core/cd_queue.cpp
+  game/core/boot_prefix_frame_driver.cpp
   game/core/field_owner.cpp
   game/core/spyro_guest_call.cpp
   game/core/guest_execution.cpp
@@ -253,7 +254,6 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_player_physics.cpp
   titles/spyro1/core/native_random_range.cpp
   titles/spyro1/core/native_shaded_moby_queue.cpp
-  titles/spyro2/core/spyro2_frame_driver.cpp
   titles/spyro1/core/native_shared_models.cpp
   titles/spyro1/core/native_spu_registers.cpp
   titles/spyro1/core/native_spu_voice_pitch.cpp
@@ -264,7 +264,6 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_spu_transfer_mode.cpp
   titles/spyro1/core/native_spu_common_attr.cpp
   titles/spyro2/core/spyro2_runtime.cpp
-  titles/spyro3/core/spyro3_frame_driver.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 
 add_library(spyro_runtime STATIC ${SPYRO_RUNTIME_SOURCES})
@@ -316,25 +315,23 @@ if(BUILD_TESTING)
   add_executable(test_guest_execution tests/test_guest_execution.cpp)
   target_link_libraries(test_guest_execution PRIVATE spyro_runtime)
   add_test(NAME guest_execution COMMAND test_guest_execution)
-  # Spyro 2's boot driver: the finite guest call, one delivered field per guest display wait, one
-  # presented field per step, and the refusals that keep a wedged or misentered call from reading as
-  # progress. Registered explicitly rather than through the list above because it is the only case
-  # that drives the Spyro 2 driver end to end.
-  add_executable(test_spyro2_boot_driver
-    tests/test_spyro2_boot_driver.cpp)
-  target_include_directories(test_spyro2_boot_driver PRIVATE
+  # The shared boot-prefix frame driver, over synthetic facts: the finite guest call, one delivered
+  # field per guest display wait, one presented field per step, and the refusals that keep a wedged
+  # or misentered call from reading as progress.
+  add_executable(test_boot_prefix_frame_driver
+    tests/test_boot_prefix_frame_driver.cpp)
+  target_include_directories(test_boot_prefix_frame_driver PRIVATE
     ${PSXPORT_DIR}/tests game/core titles/spyro2/core)
-  target_link_libraries(test_spyro2_boot_driver PRIVATE spyro_runtime)
-  add_test(NAME spyro2_boot_driver COMMAND test_spyro2_boot_driver)
-  # Spyro 3's boot driver: the same title-neutral resume and delivery contract through Spyro 3's own
-  # measured constants, plus the plan self-consistency check that keeps a wrong guest address from
-  # only showing up in a run with a disc attached.
-  add_executable(test_spyro3_boot_driver
-    tests/test_spyro3_boot_driver.cpp)
-  target_include_directories(test_spyro3_boot_driver PRIVATE
-    ${PSXPORT_DIR}/tests game/core titles/spyro3/core)
-  target_link_libraries(test_spyro3_boot_driver PRIVATE spyro_runtime)
-  add_test(NAME spyro3_boot_driver COMMAND test_spyro3_boot_driver)
+  target_link_libraries(test_boot_prefix_frame_driver PRIVATE spyro_runtime)
+  add_test(NAME boot_prefix_frame_driver COMMAND test_boot_prefix_frame_driver)
+  # Each title's measured boot-prefix facts and the runtime plan that has to agree with them, so a
+  # wrong guest address fails here rather than only in a run with a disc attached.
+  add_executable(test_boot_prefix_facts
+    tests/test_boot_prefix_facts.cpp)
+  target_include_directories(test_boot_prefix_facts PRIVATE
+    ${PSXPORT_DIR}/tests game/core titles/spyro2/core titles/spyro3/core)
+  target_link_libraries(test_boot_prefix_facts PRIVATE spyro_runtime)
+  add_test(NAME boot_prefix_facts COMMAND test_boot_prefix_facts)
   # Spyro 2 and 3 stream code modules through the framework's stock CdRead and call into them: the
   # landing is published as a resident image (game/core/stock_read_publication.*), driven end to end
   # through the shipping read, both title runtimes, the image catalog, and Lightrec.

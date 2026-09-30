@@ -15,7 +15,7 @@ seam. That is a measured claim, not a placeholder — the loader chain is guest 
 ## The boot is the guest's
 
 The retired finite display bootstrap — three hand-owned fields and a deliberate stop at boot-prefix
-leaf `0x80011B1C` — is **deleted**, not extended. `Spyro2FrameDriver` enters the retail boot prefix
+leaf `0x80011B1C` — is **deleted**, not extended. the shared `spyro::BootPrefixFrameDriver` (over `spyro2_boot_facts.h`) enters the retail boot prefix
 `0x80011E9C` and runs it:
 
 | | |

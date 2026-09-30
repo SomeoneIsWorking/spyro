@@ -1,33 +1,39 @@
-// Spyro 2's boot driver: one finite guest call, one delivered field per guest display wait, and
-// exactly one presented field per product step.
+// The shared boot-prefix frame driver: one finite guest call, one delivered field per guest display
+// wait, and exactly one presented field per product step. Both Spyro 2 and Spyro 3 compose this
+// owner with their own `BootPrefixFacts`, so this file drives it over SYNTHETIC facts and leaves
+// each title's measured addresses to `test_boot_prefix_facts.cpp`.
 //
 // The guest is real MIPS reached through real JIT execution, and that is forced by the framework as
 // well as being the point. A NATIVE body that asks for a frame-boundary exit is refused --
 // `invokeNativeFunction` requires a completed call and aborts with "required a completed guest
 // call, but execution exited as frame-boundary" -- because only a leaf the guest REACHED BY `jal`
-// gets a continuation to resume at. The first version of this file used native bodies and hit
-// exactly that. Each synthetic body below is therefore instructions: a `jal` to a counting leaf,
-// one `jal 0x80058EDC` per display wait, then `jr $ra`.
+// gets a continuation to resume at. Each synthetic body below is therefore instructions: a `jal` to
+// a counting leaf, one `jal` to the libetc VSync address per display wait, then `jr $ra`.
 //
-// The positive case pins the three claims the boot rests on. The negatives are the ones a green run
+// The positive case pins the claims the boot rests on. The negatives are the ones a green run
 // cannot distinguish from a working one:
 //
 //   * a guest call entered with `$r[31]` inside guest RAM is REFUSED at begin(). The executor ends
 //   a
 //     call whose PC equals its return address, so such a call stops in the middle of itself and
 //     reports a return the boot prefix never made.
-//   * a negative VSync argument is answered from the counter the title measured, that counter is
-//     the framework's DERIVED root counter 1 rather than a word the host owns, and a write to it is
-//     discarded -- all three are asserted, because the alternative is documenting a counter nobody
-//     advances.
+//   * a negative VSync argument is answered from the framework's DERIVED root counter 1 rather than
+//   a
+//     word the host owns, and a write to it is discarded -- both asserted, because the alternative
+//     is documenting a counter nobody advances.
 //   * a field delivery that arrives while one is in flight is REFUSED, so a field cannot be
 //     double-delivered through a re-entrant path.
 //   * a boot prefix that answers every display wait with another display wait is bounded by field
 //     count and the run ends by name, on the same code path a wedged boot takes.
+//   * a boot prefix that POLLS and never asks for a field is bounded by step count. They are
+//     different failures and the second one is structurally invisible to the first.
+//   * a limit the facts declare is the bound the driver enforces, and a title-supplied limit
+//     replaces the shared default rather than being ignored.
 //
-// The addresses are the same constants spyro2_frame_driver.cpp names, so a driver that entered a
-// different one fails here rather than only in a run with a disc attached.
+// `Spyro2Runtime` is on the Game only because a Game needs some `GameRuntime`; the driver reads
+// nothing title-specific from it.
 
+#include "boot_prefix_frame_driver.h"
 #include "config_vars.h"
 #include "core.h"
 #include "execution_control.h"
@@ -38,7 +44,6 @@
 #include "lightrec_executor.h"
 #include "native_dispatch.h"
 #include "runtime_run.h"
-#include "spyro2_frame_driver.h"
 #include "spyro2_runtime.h"
 #include "spyro_context.h"
 #include "spyro_guest_call.h"
@@ -52,16 +57,39 @@
 
 namespace {
 
-// The addresses the driver enters, matching spyro2_frame_driver.cpp.
-constexpr std::uint32_t kBootPrefix = 0x80011E9Cu;
-constexpr std::uint32_t kFrameUpdate = 0x8001B140u;
-constexpr std::uint32_t kFrameDraw = 0x800156FCu;
-constexpr std::uint32_t kVSync = 0x80058EDCu;
+// The addresses the driver enters. They are synthetic: each lies in the one image the fixture
+// activates, which is all the driver needs of them.
+constexpr std::uint32_t kBootPrefix = 0x80021000u;
+constexpr std::uint32_t kFrameUpdate = 0x80021100u;
+constexpr std::uint32_t kFrameDraw = 0x80021200u;
+constexpr std::uint32_t kVSync = 0x80021300u;
 
-// The counter the title's libetc VSync reports for a negative argument, measured from the
-// executable's own counter pointer at 0x80066454. It is the framework's ROOT COUNTER 1, an
+// What a title's libetc VSync reports for a negative argument: the framework's ROOT COUNTER 1, an
 // HBlank-clocked timer derived from delivered display time, with no writable state.
 constexpr std::uint32_t kVBlankCounter = 0x1F801110u;
+
+constexpr spyro::BootPrefixFacts kFacts{
+    .titleName = "Synthetic title",
+    .callName = "synthetic-boot-prefix-step",
+    .bootPrefix = kBootPrefix,
+    .frameUpdate = kFrameUpdate,
+    .frameDraw = kFrameDraw,
+    .field =
+        {
+            .titleName = "Synthetic title",
+            .handlerStackTop = 0x8000E000u,
+            .handlerStackBytes = 8192u,
+            .fieldsPerLogicFrame = 2,
+        },
+};
+
+// The facts with the two boot bounds replaced, which is how a title states a limit of its own.
+constexpr spyro::BootPrefixFacts withLimits(std::uint64_t fieldLimit, std::uint64_t stepLimit) {
+  spyro::BootPrefixFacts facts = kFacts;
+  facts.bootStepFieldLimit = fieldLimit;
+  facts.bootStepLimit = stepLimit;
+  return facts;
+}
 
 constexpr std::uint32_t kBodies = 0x80020000u;
 constexpr std::uint32_t kBootBody = kBodies + 0x000u;
@@ -158,12 +186,12 @@ struct BodySpec {
 };
 
 constexpr BodySpec kBodiesSpec[] = {
-    {kBootPrefix, kBootBody, kCountBoot, "synthetic-spyro2-count-boot", 1},
-    {kFrameUpdate, kUpdateBody, kCountUpdate, "synthetic-spyro2-count-update", 0},
-    {kFrameDraw, kDrawBody, kCountDraw, "synthetic-spyro2-count-draw", 1},
+    {kBootPrefix, kBootBody, kCountBoot, "synthetic-boot-prefix-count-boot", 1},
+    {kFrameUpdate, kUpdateBody, kCountUpdate, "synthetic-boot-prefix-count-update", 0},
+    {kFrameDraw, kDrawBody, kCountDraw, "synthetic-boot-prefix-count-draw", 1},
     // A boot prefix that never returns: far more waits than the bound the test sets.
-    {kEndlessEntry, kEndlessBody, kCountEndless, "synthetic-spyro2-count-endless", 40},
-    {kSpinningEntry, kSpinningBody, 0u, "synthetic-spyro2-spin", 0u},
+    {kEndlessEntry, kEndlessBody, kCountEndless, "synthetic-boot-prefix-count-endless", 40},
+    {kSpinningEntry, kSpinningBody, 0u, "synthetic-boot-prefix-spin", 0u},
 };
 
 void countLeaf(Core *core) {
@@ -211,7 +239,8 @@ std::unique_ptr<Game> newGame(SpyroContext &context, spyro2::Spyro2Runtime &runt
 
 class BootFixture {
 public:
-  BootFixture() : game(newGame(context, runtime)), driver(*game) {}
+  explicit BootFixture(const spyro::BootPrefixFacts &facts = kFacts)
+      : game(newGame(context, runtime)), driver(*game, facts) {}
 
   bool install() {
     Core &core = game->core;
@@ -234,7 +263,7 @@ public:
     // order is the same one: `loadPsxExeImage` copies the text, publishes the write, then
     // activates.
     const auto image =
-        core.imageCatalog().activate("synthetic-spyro2", {kImageLo, kImageHi}, 0x53503220u);
+        core.imageCatalog().activate("synthetic-boot-prefix", {kImageLo, kImageHi}, 0x53503220u);
     const auto resolved = core.imageCatalog().resolve(kBootPrefix);
     if (!resolved.has_value() || *resolved != image) {
       std::fprintf(
@@ -248,7 +277,8 @@ public:
           core.imageCatalog().activeCount());
       std::abort();
     }
-    if (!core.nativeDispatcher().install({{image, kVSync}, "synthetic-spyro2-vsync", vsyncLeaf})) {
+    if (!core.nativeDispatcher().install(
+            {{image, kVSync}, "synthetic-boot-prefix-vsync", vsyncLeaf})) {
       return false;
     }
     for (const BodySpec &spec : kBodiesSpec) {
@@ -275,7 +305,7 @@ public:
   spyro2::Spyro2Runtime runtime;
   SpyroContext context;
   std::unique_ptr<Game> game;
-  spyro2::Spyro2FrameDriver driver;
+  spyro::BootPrefixFrameDriver driver;
 };
 
 // The per-turn budget in a fixture Core is small, so a body takes several turns to retire. The
@@ -284,7 +314,7 @@ public:
 // field per guest wait, both of which are totals.
 constexpr std::uint32_t kStepCap = 64;
 
-void stepUntilBootComplete(spyro2::Spyro2FrameDriver &driver, Core &core) {
+void stepUntilBootComplete(spyro::BootPrefixFrameDriver &driver, Core &core) {
   for (std::uint32_t step = 0; step < kStepCap && !driver.bootComplete(); ++step) {
     driver.stepFrame(core, step);
   }
@@ -315,7 +345,7 @@ void test_boot_presents_one_field_per_guest_wait() {
   BootFixture fixture;
   CHECK(fixture.install());
   Core &core = fixture.game->core;
-  fixture.driver.initialize(core);
+  fixture.driver.initialize();
   CHECK(!fixture.driver.bootComplete());
 
   const std::uint64_t stepsTaken = [&] {
@@ -359,7 +389,7 @@ void test_guest_call_refuses_a_return_address_inside_guest_ram() {
   BootFixture fixture;
   CHECK(fixture.install());
   Core &core = fixture.game->core;
-  spyro::GuestCall call(core, "synthetic-spyro2-call");
+  spyro::GuestCall call(core, "synthetic-boot-prefix-call");
 
   core.r[31] = kBootPrefix; // a guest address: an "early return" that is not a return
   call.begin(kBootPrefix);
@@ -391,15 +421,15 @@ void test_guest_call_refuses_a_return_address_inside_guest_ram() {
 
 void test_boot_prefix_that_never_returns_is_bounded() {
   resetCounters();
-  BootFixture fixture;
+  // A low bound, so the refusal is observed on the SAME code path a wedged boot takes. The body
+  // waits 40 times and the shared default is far above that, so lowering it means the case does not
+  // have to deliver the default's worth of fields to prove the bound exists -- and that the limit a
+  // title's facts declare is the one enforced.
+  BootFixture fixture(withLimits(4u, spyro::kDefaultBootStepLimit));
   CHECK(fixture.install());
   fixture.useEndlessBoot();
   Core &core = fixture.game->core;
-  // A low bound, so the refusal is observed on the SAME code path a wedged boot takes. The default
-  // is 64 fields and the body waits 96 times, so either number would eventually fire; lowering it
-  // means the case does not have to deliver 64 fields to prove the bound exists.
-  fixture.driver.setBootStepFieldBound(4u);
-  fixture.driver.initialize(core);
+  fixture.driver.initialize();
 
   // The bound is enforced where the waits are delivered, so it fires within the first step. The
   // step cap here is the test's own: a driver that never stalls would otherwise spin this loop
@@ -423,19 +453,18 @@ void test_boot_prefix_that_never_returns_is_bounded() {
 
 // A boot prefix that never returns AND never asks for a field -- the second way the prefix can
 // hang, and the one the field bound structurally cannot see, because it is enforced where a field
-// is DELIVERED. Spyro 2's module loader has this shape in the retail image: it polls the status
-// word at 0x800682E8 and never reaches a display wait again, so the run would keep stepping until
-// the process's own frame cap and report a run length instead of a diagnosis.
+// is DELIVERED. Both titles' module loaders have this shape in the retail image: they poll a status
+// word and reach no further display wait, so the run would keep stepping until the process's own
+// frame cap and report a run length instead of a diagnosis.
 void test_boot_prefix_that_polls_without_asking_for_a_field_is_bounded() {
   resetCounters();
-  BootFixture fixture;
+  // The FIELD bound is deliberately left at its default: the body delivers none, so a driver that
+  // only checked it would never stall.
+  BootFixture fixture(withLimits(spyro::kDefaultBootStepFieldLimit, 3u));
   CHECK(fixture.install());
   fixture.useSpinningBoot();
   Core &core = fixture.game->core;
-  // The FIELD bound is deliberately left at its default and lowered far below anything this body
-  // could deliver: it delivers none, so a driver that only checked it would never stall.
-  fixture.driver.setBootStepBound(3u);
-  fixture.driver.initialize(core);
+  fixture.driver.initialize();
 
   for (std::uint32_t step = 0; step < 16u && !fixture.driver.bootStalled(); ++step) {
     fixture.driver.stepFrame(core, step);
@@ -508,7 +537,7 @@ void test_reentrant_field_delivery_is_refused() {
   ReentrantObserver observer;
   spyro::FieldOwner owner(*game,
                           spyro::FieldOwnerFacts{
-                              .titleName = "Spyro 2 (observer case)",
+                              .titleName = "Synthetic title (observer case)",
                               .handlerStackTop = 0x8000E000u,
                               .handlerStackBytes = 8192u,
                               .fieldsPerLogicFrame = 1,

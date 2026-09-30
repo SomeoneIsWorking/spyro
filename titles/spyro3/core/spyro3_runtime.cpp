@@ -1,10 +1,11 @@
 #include "spyro3_runtime.h"
 
+#include "boot_prefix_frame_driver.h"
 #include "cd_stock_read_completion.h"
 #include "core.h"
 #include "frame_pacer.h"
 #include "game.h"
-#include "spyro3_frame_driver.h"
+#include "spyro3_boot_facts.h"
 #include "spyro_context.h"
 #include "stock_read_publication.h"
 
@@ -227,11 +228,11 @@ void Spyro3Runtime::registerOverrides(Game &) {
 }
 
 void Spyro3Runtime::bootInit(Core &core) {
-  frameDriver(core).initialize(core);
+  spyro::bootPrefixFrameDriver(core).initialize();
 }
 
 std::unique_ptr<FrameDriver> Spyro3Runtime::createFrameDriver(Game &game) {
-  return std::make_unique<Spyro3FrameDriver>(game);
+  return std::make_unique<spyro::BootPrefixFrameDriver>(game, kBootPrefixFacts);
 }
 
 const PlatformHlePlan *Spyro3Runtime::platformHlePlan() const {

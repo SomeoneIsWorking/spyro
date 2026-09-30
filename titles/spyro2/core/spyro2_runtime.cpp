@@ -1,12 +1,13 @@
 #include "spyro2_runtime.h"
 
+#include "boot_prefix_frame_driver.h"
 #include "cd_control.h"
 #include "cd_stock_read_completion.h"
 #include "core.h"
 #include "frame_pacer.h"
 #include "game.h"
 #include "guest_cd_stream_callback_layout.h"
-#include "spyro2_frame_driver.h"
+#include "spyro2_boot_facts.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
 #include "stock_read_publication.h"
@@ -39,7 +40,7 @@ constexpr std::uint32_t kVSync = 0x80058EDCu;
 // delivered display time (`io_peripherals.cpp` serves 0x1F801110 from `Timing::hSyncCounter`,
 // and the register has no writable state). So the host does not advance a word here and the
 // field owner owns no counter for it: adding one would have been a write to a register that
-// discards it, documented as though it counted fields. `tests/test_spyro2_boot_driver.cpp` is
+// discards it, documented as though it counted fields. `tests/test_boot_prefix_frame_driver.cpp` is
 // what caught that -- a case asserting the counter equalled the field count read 263 after ONE
 // field, which is 263 scanlines, and is the hSync counter doing exactly its own job.
 constexpr std::uint32_t kVSyncQueryCounter = 0x1F801110u;
@@ -204,11 +205,11 @@ void Spyro2Runtime::registerOverrides(Game &) {
 }
 
 void Spyro2Runtime::bootInit(Core &core) {
-  frameDriver(core).initialize(core);
+  spyro::bootPrefixFrameDriver(core).initialize();
 }
 
 std::unique_ptr<FrameDriver> Spyro2Runtime::createFrameDriver(Game &game) {
-  return std::make_unique<Spyro2FrameDriver>(game);
+  return std::make_unique<spyro::BootPrefixFrameDriver>(game, kBootPrefixFacts);
 }
 
 const PlatformHlePlan *Spyro2Runtime::platformHlePlan() const {

@@ -155,3 +155,81 @@ and can be checked per level in one run. It also corrects a detail the recorded 
 that the Artisans live corpus *could* have contained a blended channel but happened not to. It
 cannot: all 24 of Artisans' environment animations have blend factor 0, and both colour channels are
 unauthored there.
+
+## What the gameplay run DOES establish, and why it is not this issue's answer (2026-09-29, issue 0157)
+
+A 3,222-logic-frame gameplay run through the Artisans courtyard with the interpolation census
+attached reports `fieldenv`-equivalent activity as part of the **world** category: 2,730,615 of
+2,739,182 captured world items rebuilt from two states, across 31,702 of 31,814 world records
+interpolated, **0 refused**. So the world layer's temporal path is exercised heavily on gameplay and
+is not the hole.
+
+That is a different claim from this one. The world layer interpolating 31,702 records says the
+corpus and the blend are working; it says nothing about whether the **BLENDED environment-animation
+form** — the one-byte-selected GTE `INTPL` path at `0x80025C00` — was selected, because Artisans
+authors 24 environment animations whose keyframes all carry factor `0`. A level can be in the world
+bucket and contribute nothing to this issue.
+
+**The route this issue needs is unchanged and is now stated as a route, not a search:** level entry
+52, or entry 18 as the smaller case, being a level-data entry known to author at least one nonzero
+factor (`docs/findings/level-blend-factor-census.md`, 26 of 35 entries do). Selected slot 0 is
+factor `0` across all 739 animations, so the route has to reach a level *and* let its own animation
+select a nonzero slot — the authored data is necessary and not sufficient. The live assertion remains
+`blended=N, N>0` read through `tools/probe_blended_anim.py`, and **no run has produced it.**
+
+
+## The live route was driven, and it answers both questions with denominators (2026-09-30)
+
+`tools/probe_blended_anim.py --live --seek-portal --watch-frames 900` observed **7,580 frames one
+at a time**, censused **3 distinct animation-set pointer tuples**, and took **40 RAM captures —
+0 refused on the pointer cross-check, 0 produced no file**. The tool reports its own coverage:
+"40 of 7580 frames captured (0.5%); the rest are the SAME pointer tuple already censused, not
+unobserved frames."
+
+| frames | animation-set pointers | authored counts ch0..ch3 | read / NOT READ | REACHABLE nonzero |
+|---|---|---|---|---|
+| 6,318 | all four null | 0/0/0/0 | 0/0 | 0 |
+| 755 | `0x80167494 0x8016D3E0 0x801632E8 0x8016D3D8` (level 10) | 12/0/12/0 | 0/12 | 0 |
+| 507 | `0x80173638 0x80173650 0x80173630 0x80173648` (level 11) | **0/0/0/0** | 0/0 | 0 |
+
+**Verdict, verbatim from the tool:** `0 REACHABLE nonzero blend factors across 3 censused distinct
+pointer tuple(s).`
+
+Three things follow, and only the first is the expected answer.
+
+**1. The tool found a nonzero factor byte and correctly refused to call it reachable.** At frame
+6352, level 10's channels 0 and 2 both read **`blend factors 0x12`** — 18, nonzero, and exactly the
+weight the static census lists in its factor histogram. The same frame reports
+`REACHABLE nonzero 0`, because that record is not one the product's decode admits. **This is the
+both-directions check doing its job on live data**: a census that only counted nonzero bytes would
+have reported "the blended form is live", and a census that only counted reachable entries would
+never have shown that the authored data is present at all.
+
+**2. The portal route crosses, and the level it reaches authors nothing.** `--seek-portal` walked
+360 fields and gave up **618 view-space units** from the nearest portal, having closed from 4268 to
+312 before its own detours pushed it back out to 1010 — the walk cannot climb to a portal, which is
+what `--gate-teleport`'s help text warns. `--gate-teleport 2:0` does cross, producing
+`level_transition=42` and `entrance_animation=7` in the run's own gamestate census, and the pointer
+tuple changes to level 11's. **Level 11 then reports authored count 0 on all four channels** — it
+carries no environment-animation run at all, consistent with the static census listing entry 11
+among the entries that "carried none" (the small code overlays). So the neighbouring homeworld is
+not a substitute route.
+
+**3. The earlier 0-animations captures were a timing artifact, and the tool said so.** The dump
+taken during the entrance animation censused "0 authored environment animations"; that is reported
+as **NOT READ**, never as factor 0, which is the distinction the tool's own refused-entry case
+exists to protect.
+
+**The product's own per-frame counter agrees and is not a dead tap.** With
+`PSXPORT_DEBUG=fieldenv` in level 10: 100 observed frames, 7 with environment activity, **11
+channels, `direct=11`, `blended=0`**. The counter fires, `direct` tracks it one-for-one, and
+`blended` is genuinely zero — consistent with all 24 of Artisans' records carrying byte 1 = `0x02`,
+so `0x8002A730 bgtz` skips every one and `animation[2]` never moves off 0. A `blended=0` that
+reads as a clean measurement of absence is the exact shape of the ten dead taps already recorded in
+the workspace map, so the counter being shown live is the part worth having.
+
+**What is still NOT established:** `blended=N` with `N>0` on any live frame. The route that can
+produce it is now named more precisely than before — it is not a *neighbouring homeworld*, since
+level 11 authors nothing, and it is not a *walk*, since the walk cannot climb. It is **entry 52
+(or entry 18 as the smallest case)**, whose records carry flag byte `0x00` so the index byte moves
+every frame, reached by whatever route enters a qualifying level. No such route has been driven.

@@ -294,6 +294,15 @@ class Port:
         Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)
         self._send(f"dumpram {path}")
 
+    def repl_command(self, line: str) -> None:
+        """Send one line to the product's own REPL and let it answer.
+
+        The dispatch is the product's: each owner declines the commands it does not answer, so this
+        tool never has to know which owner exists or what any of them prints. That is what keeps a
+        diagnostic owner the one place its output is shaped.
+        """
+        self._send(line)
+
     def preseq(self, count: int, directory: str) -> None:
         """Dump the next `count` PRESENTED frames, so a per-present question has a denominator.
 
@@ -699,6 +708,16 @@ def main() -> int:
         default=4000,
         help="fields --quit-home may spend answering the pause menu before refusing",
     )
+    parser.add_argument(
+        "--repl",
+        action="append",
+        default=[],
+        metavar="COMMAND",
+        help="send one raw line to the product's REPL at the END of the route, just before the run "
+        "ends, and let the product answer it. The dispatch is the product's: each REPL owner answers "
+        "for its own commands and declines the rest, so a diagnostic owner can be read without this "
+        "tool knowing what it prints.",
+    )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     parser.add_argument(
         "--dumpram",
@@ -832,6 +851,9 @@ def main() -> int:
         if args.dumpram:
             port.dumpram(args.dumpram)
         if args.shot or args.dumpram:
+            port.run(1)
+        for command in args.repl:
+            port.repl_command(command)
             port.run(1)
     except Refusal as refusal:
         print(f"drive.py REFUSED: {refusal}", file=sys.stderr)

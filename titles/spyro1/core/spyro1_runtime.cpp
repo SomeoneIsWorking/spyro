@@ -5,6 +5,7 @@
 #include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
+#include "interp_census.h"
 #include "native_audio_key_state.h"
 #include "native_camera.h"
 #include "native_collision_shade.h"
@@ -203,8 +204,11 @@ const GuestPadBufferLayout *Spyro1Runtime::guestPadBufferLayout() const {
   return &layout;
 }
 
+// Each owner answers only for its own commands and declines the rest, so this is a dispatch over
+// independent owners rather than a router that has to know what every one of them accepts.
 bool Spyro1Runtime::replCommand(Core &core, const char *command, const char *line) {
-  return spyro::gate_debug::replCommand(&core, command, line);
+  return spyro::gate_debug::replCommand(&core, command, line) ||
+         spyro::interp_census::replCommand(core, command, line);
 }
 
 } // namespace spyro1

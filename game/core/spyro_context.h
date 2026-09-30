@@ -6,6 +6,7 @@
 #include "field_owner.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
+#include "interp_census.h"
 #include "margin_object_census.h"
 #include "moby_shadow_list.h"
 #include "presentation_owner.h"
@@ -53,6 +54,10 @@ struct SpyroContext {
   spyro::field_2d_overlay::Frame overlayFrame{};
   spyro::field_2d_overlay::History overlayTemporal{};
   SpyroTemporalSceneAdmission temporalAdmission{};
+  // What the interpolated present rebuilt, per draw category. It belongs to the frame's context
+  // rather than to a file-scope object so two Cores in one process cannot share one route's
+  // counters.
+  spyro::interp_census::Census interpCensus{};
   SpyroPresentationOwner presentationOwner{};
 };
 

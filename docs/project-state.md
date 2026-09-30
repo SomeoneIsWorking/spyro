@@ -36,7 +36,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image: every horizontal cull or screen-rect limit the title owns (world sectors, Mobys, particles, glows, shadows, sky, per-object draw-distance or rect rejects) is overridden natively so the margins show what the view would: the native renderer draws margin objects from object memory and animates margin-only objects port-side, and guest memory is untouched so behaviour is unchanged (the `+0x51` byte `0x80051FEC` admits Mobys on stays native) | partial — projection widened and the drawn answer separated from the guest answer (issue 0152); the per-owner cull audit, port-side animation of margin Mobys, and a margin census (objects drawn at x < 0 or x > 512 at 16:9, animated, against a 4:3 run, with 0 bytes of RAM difference) are missing | S005 | G003 |
 | S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | partial — one owner (`game/render/ui_anchor.*`, layout classes in `hud_layout.h`), draw-side only. MEASURED on the running product at 16:9: the pause panel and its border and the stage-13 title/menu elements move by exactly the 86 px margin with unchanged widths and a 4:3 identity, AND the gem/dragon/lives HUD Mobys are now drawn (screen-space path, `0x80022D1C`) and anchored: the census exercises `left-edge=2, centred=15, right-edge=2`, PASS. Their colours equal retail's packet colours for the faces shared with it (see S030 detail). NOT MEASURED: the treasure-row and life-orb sprites (zero entries on every reachable route), the key counter, the completed-gem text; pause/tally captions now draw but are not compared against retail. See S030 detail | S019 | G003 |
-| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; the gap is LEVEL CHOICE, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
+| S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — verified on real gameplay 2026-09-29: 0 of 2,097,152 guest RAM bytes differ for fps60 alone, 0 of 7 consecutive presented pairs bit-identical, camera 2,447/3,213 and world 31,702/31,814 records interpolated (issue 0157). The gap is LEVEL CHOICE for the BLENDED environment form, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
 | S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial — every S023 fact is now confirmed against `SCUS_944.67`'s own crt0 and library bytes (entry `0x80059444`, bss `0x8006C4F4..0x800742D0`, stack top `0x8006C3E4` with bias `-8`, GP `0x8006C3B0`, game main `0x8001200C`, libetc VSync `0x8005956C` on counter `0x1F801110`, `SetGeomOffset 0x8005D35C`, `CdInit 0x8005DB1C`/`CdRead 0x8005D96C`/`CdSync 0x8005E074`/`CdCommand 0x8005E0BC`/`CdReadyCallback 0x8005DB08`), and the boot prefix `0x8002AB38` now **executes** through Lightrec on a real disc: 484 fields, 481 product steps, 481 presentation fences, 23,373,822 executed blocks, 135,585,657 instructions, 429 translated blocks, 0 faults, 0 interpreter fallback; that run stopped at `0x800504F0` inside the CD loader for a read completion the stock `CdRead` never raised (psxport `28682cde` fixed it), then at the loaded module's entry `0x80074DEC` for want of a published image (issue 0156 fixed it); the boot prefix now RETURNS after 336 steps and 546 fields, with 13 loader reads published as images. Guest libetc VSync `0x8005956C` **provably never executed**: 6 of 6 of its store instructions, 0 executions across 135,585,657 JIT instructions, against a control store that did execute in the same run. Still `partial`, not `verified`: `game main 0x8001200C` is never dispatched (the port drives the retail per-frame update `0x80055400` and draw `0x8001E638` directly), and the first main-loop draw faults (S025) | S008 | G001 |
@@ -187,6 +187,41 @@ refusals**, and a 7,348-frame census of live RAM found level 10 (Artisans) autho
 animations — 12 LowPoly, 12 HighPoly, **no colour animations at all** — with **all 24 keyframes carrying
 factor 0**. Boot/attract and level 11 author none. Each slot is preceded by its own authored count, so the
 denominator is exact.
+
+**MEASURED ON GAMEPLAY 2026-09-29 (issue 0157): the interpolated present is now verified against real
+gameplay, and the four things it was missing all have numbers.** Driven to the Artisans courtyard with
+`tools/drive.py gameplay --hold RIGHT --hold-frames 400`, 3,221 logic frames, the new per-category
+census (`interpcensus`, `game/render/interp_census.*`) reports:
+
+| category | captured items | reconstructed | latest-only | why |
+|---|---|---|---|---|
+| camera | 3,213 | 2,447 | 766 | `camera-mismatch` — no interval admitted between the two captured cameras |
+| actors | 1,107,967 | 1,113,318 | 0 (clamped) | 18,375 records: 18,190 interpolated, 41 no-predecessor, 144 incompatible |
+| world | 2,739,182 | 2,730,615 | 8,567 | 31,814 records: 31,702 interpolated, 112 no-predecessor, 0 refused |
+| particles | 14,244 | 0 | 14,244 | `no-temporal-source` — the effect producers retain no corpus |
+| hud | 140,915 | 14 | 140,901 | the 2D overlay's corpus held **14 records in the whole run** |
+
+**RAM parity is exact for the variable that matters: `narrow_only_control` (4:3, fps60=1) against
+`fps60_control` (4:3, fps60=0) differs in 0 of 2,097,152 bytes.** Interpolation writes no guest
+state. The nine bytes the naive shipping-vs-control comparison showed were attributable to the ASPECT
+alone, not to interpolation; they were the widened sector table and one animation channel, and issue
+0152 removed them.
+
+**The in-between frame is a new picture, not a repeat.** Eight consecutive presented frames captured
+with `--preseq` at 684x240 differ in every pair: 487, 1400, 620, 886, 606, 1455, 826 changed pixels
+(0.297%-0.886%), **0 of 7 bit-identical**. Note what the 30 fps leg does NOT show: it presents
+`presented_interpolated=0`, one present per guest update, so there is no duplicate pair to find
+there. The legs differ in presents-per-update (1.997 vs 1.000), not in a repeated frame, and the
+acceptance wording expecting a 30 fps duplicate describes a product this one does not ship.
+
+**Actors read `latest_only=0` because the reconstruction emits 5,351 MORE items than were captured** —
+a redrawn mesh re-emits its whole face list per endpoint. The clamp is deliberate and tested; a
+negative shortfall would read as a category drawing the next real frame early.
+
+**S020's remaining gap is still LEVEL CHOICE.** Nothing here touched the BLENDED environment-animation
+form: that is `fieldenv blended=N`, and it needs a level whose selected keyframe carries a nonzero
+factor — **entry 52, or entry 18 as the smallest case** — which no current route reaches. The census
+above bounds what interpolation cannot reach on its own and is the reference for that run.
 
 **So S020 is `partial` because of LEVEL COVERAGE, not missing capability**, and the smallest change is a
 route to a level authoring a nonzero factor byte; nothing else can create one without writing guest bytes,

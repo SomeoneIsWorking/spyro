@@ -13,6 +13,8 @@
 #include "fx_actor_draw.h"
 #include "fx_paired_actor.h"
 #include "game.h"
+#include "instance_pairing.h"
+#include "interp_census.h"
 #include "painter_object_layer.h"
 #include "render_queue.h"
 #include "secondary_actor_emit.h"
@@ -26,6 +28,28 @@
 
 namespace {
 
+// The census owner lives in the `spyro` project namespace, and this scene composes owners from
+// several of them. A namespace ALIAS rather than a `using`, because Clang rejects a
+// using-declaration that names a namespace, and rather than a repeated `spyro::` prefix on eleven
+// call sites.
+namespace interp_census = spyro::interp_census;
+
+// A layer's own pairing walk in the census owner's terms. This is a field-for-field translation and
+// nothing else: the owner is `instance_pairing::walk`, and its invariant is that `interpolated +
+// noPredecessor + incompatible + refused == records` whenever the layer ran. Reporting a layer's
+// records as interpolated without the other three would be reporting the walk's own definition of
+// success rather than its measurement, so all four travel together.
+interp_census::LayerCensus censusOf(const spyro::instance_pairing::Census &census) {
+  return {
+      .records = census.actors,
+      .interpolated = census.interpolated,
+      .noPredecessor = census.unpaired(),
+      .incompatible = census.incompatible,
+      .samplerRefused = census.refused,
+      .ran = true,
+  };
+}
+
 bool producerItem(const RqItem &item, uint32_t producer) {
   return item.layer == RQ_WORLD && item.has_xyf && item.painter_object == producer;
 }
@@ -36,7 +60,12 @@ bool producerItem(const RqItem &item, uint32_t producer) {
 // the argument. An admitted source that then refuses presentation is a contradiction — admission
 // replayed this exact call — so it terminates rather than presenting a frame missing one layer.
 template <class History>
-void reconstructLayer(Core &core, const History &history, float t, const char *channel) {
+void reconstructLayer(Core &core,
+                      const History &history,
+                      float t,
+                      const char *channel,
+                      interp_census::Category category,
+                      bool account) {
   if (!history.eligible()) {
     return;
   }
@@ -44,6 +73,9 @@ void reconstructLayer(Core &core, const History &history, float t, const char *c
   const auto status = core.game && core.game->rqRedirect
                           ? history.emit(core, *core.game->rqRedirect, t, census)
                           : spyro::actor_stage::Temporal::NoEndpoints;
+  if (account) {
+    spyro_context(core).interpCensus.recordLayer(category, censusOf(census));
+  }
   if (!spyro::actor_stage::completed(status)) {
     lucent::error(channel,
                   "FATAL: admitted source refused presentation t={} status={}",
@@ -58,7 +90,10 @@ void reconstructLayer(Core &core, const History &history, float t, const char *c
 // reconstructLayer: an admitted source that then refuses presentation is a contradiction, because
 // admission replayed this exact call, so it terminates rather than presenting a frame missing a
 // layer.
-void reconstructOverlay(Core &core, const spyro::field_2d_overlay::History &history, float t) {
+void reconstructOverlay(Core &core,
+                        const spyro::field_2d_overlay::History &history,
+                        float t,
+                        bool account) {
   if (!history.eligible()) {
     return;
   }
@@ -67,6 +102,9 @@ void reconstructOverlay(Core &core, const spyro::field_2d_overlay::History &hist
       core.game && core.game->rqRedirect
           ? history.emit(core, *core.game->rqRedirect, static_cast<double>(t), census)
           : spyro::actor_stage::Temporal::NoEndpoints;
+  if (account) {
+    spyro_context(core).interpCensus.recordLayer(interp_census::Category::Hud, censusOf(census));
+  }
   if (!spyro::actor_stage::completed(status)) {
     lucent::error("field2dtemporal",
                   "FATAL: admitted 2D overlay refused presentation t={} status={}",
@@ -156,9 +194,21 @@ public:
   }
 
   void reconstruct(Core &core, float t) override {
+    auto &census = spyro_context(core).interpCensus;
+    const bool inBetween = census.isInBetween(t);
     const auto &context = spyro_context(core);
     if (context.pairedActor.temporal_eligible) {
       spyro_paired_actor_fps60_world_pass(&core, t);
+    }
+    // THE CAMERA ROW. One camera sample per in-between present, and it is compatible exactly when
+    // the world source admitted this interval, because `worldTemporal::compatible` is what compares
+    // the two endpoints' camera and frame provenance and the joint camera check below is part of
+    // the same admission. A paired present with the world source absent is the one case the world's
+    // answer does not cover, so it reports the joint mismatch rather than borrowing a pass.
+    if (inBetween) {
+      census.cameraSample(context.worldTemporal.eligible(),
+                          context.worldTemporal.eligible() ? interp_census::Reason::None
+                                                           : interp_census::Reason::CameraMismatch);
     }
     if (context.worldTemporal.eligible() &&
         (!core.game || !core.game->rqRedirect ||
@@ -166,14 +216,43 @@ public:
       lucent::error("worldtemporal", "FATAL: admitted world source refused presentation t={}", t);
       std::abort();
     }
-    reconstructLayer(core, context.actorTemporal, t, "actortemporal");
-    reconstructLayer(core, context.secondaryActorTemporal, t, "secondarytemporal");
-    reconstructLayer(core, context.shadedQueueTemporal, t, "shadedtemporal");
-    reconstructLayer(core, context.terrainTemporal, t, "terraintemporal");
-    reconstructOverlay(core, context.overlayTemporal, t);
+    reconstructLayer(core,
+                     context.actorTemporal,
+                     t,
+                     "actortemporal",
+                     interp_census::Category::Actors,
+                     inBetween);
+    reconstructLayer(core,
+                     context.secondaryActorTemporal,
+                     t,
+                     "secondarytemporal",
+                     interp_census::Category::Actors,
+                     inBetween);
+    reconstructLayer(core,
+                     context.shadedQueueTemporal,
+                     t,
+                     "shadedtemporal",
+                     interp_census::Category::World,
+                     inBetween);
+    reconstructLayer(core,
+                     context.terrainTemporal,
+                     t,
+                     "terraintemporal",
+                     interp_census::Category::World,
+                     inBetween);
+    reconstructOverlay(core, context.overlayTemporal, t, inBetween);
+    // LAST, after every layer above has published into the redirect queue. The presenter's sink is
+    // emptied before this call, so the queue is the reconstruction's own output only at its end —
+    // walking it at the start counted zero reconstructed items while the run was in fact emitting
+    // millions, which is the "confident answer about the wrong subject" this census exists to
+    // avoid.
+    census.reconstruct(core, t);
   }
 
   void rotate(Core &core) override {
+    // One logic frame closes here: both of its presents have run, so the reconstructed items and
+    // every layer's record census are all in. The next frame's admission opens the next one.
+    spyro_context(core).interpCensus.endLogicFrame();
     spyro_paired_actor_fps60_rotate(&core);
     spyro_context(core).worldTemporal.rotate();
     spyro_context(core).actorTemporal.rotate();
@@ -337,6 +416,9 @@ void spyro_temporal_scene_begin(
 
 void spyro_temporal_scene_prepare(Core &core) {
   auto &context = spyro_context(core);
+  // The denominator, taken after every producer has submitted: one walk of the captured queue,
+  // partitioned by the category its publisher belongs to.
+  context.interpCensus.beginLogicFrame(core);
   auto &paired = context.pairedActor;
   paired.temporal_eligible = false;
   context.worldTemporal.admit(false);

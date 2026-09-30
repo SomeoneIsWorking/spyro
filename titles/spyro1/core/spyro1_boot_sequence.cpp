@@ -179,11 +179,24 @@ void BootSequence::leaveSecondPresentationHold() {
   phase_ = Phase::FadeSecondOut;
 }
 
+void BootSequence::observePress() {
+  // The last two fades and the finalisation are past every hold, so a press there has nothing left
+  // to end and is not carried.
+  if (phase_ == Phase::FadeSecondOut || phase_ == Phase::Finalize || phase_ == Phase::Complete) {
+    return;
+  }
+  pressLatch_.observe(fields_.presentationSkipPressed());
+}
+
 bool BootSequence::step(Core &core) {
   if (!initialized_) {
     lucent::error("boot-native", "boot step called before initialization");
     std::abort();
   }
+
+  // Every step follows exactly one delivered field, so the edge is read once per field here and the
+  // hold phases consume the latch rather than re-reading the live edge.
+  observePress();
 
   // A FrameDriver step is one presented product frame. The retail boot has zero-field transition
   // work between its visible fields (asset loads and final setup); fold those transitions into the
@@ -205,7 +218,7 @@ bool BootSequence::step(Core &core) {
       phase_ = Phase::HoldFirst;
       break;
     case Phase::HoldFirst:
-      if (fields_.presentationSkipPressed()) {
+      if (pressLatch_.take()) {
         lucent::info("boot-native", "Start/Cross ends Spyro 1's first presentation hold");
         leaveFirstPresentationHold(core);
         break;
@@ -243,7 +256,7 @@ bool BootSequence::step(Core &core) {
       phase_ = Phase::HoldSecond;
       break;
     case Phase::HoldSecond:
-      if (fields_.presentationSkipPressed()) {
+      if (pressLatch_.take()) {
         lucent::info("boot-native", "Start/Cross ends Spyro 1's second presentation hold");
         leaveSecondPresentationHold();
         break;

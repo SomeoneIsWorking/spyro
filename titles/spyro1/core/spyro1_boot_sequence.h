@@ -1,5 +1,7 @@
 #pragma once
 
+#include "spyro1_press_latch.h"
+
 #include <cstdint>
 
 class Core;
@@ -40,6 +42,7 @@ private:
   void finalize(Core &core);
   void leaveFirstPresentationHold(Core &core);
   void leaveSecondPresentationHold();
+  void observePress();
 
   FieldScheduler &fields_;
   Phase phase_ = Phase::FadeFirstIn;
@@ -49,6 +52,10 @@ private:
   std::uint32_t assetBase_ = 0;
   std::uint32_t logoSource_ = 0;
   std::uint32_t logoDestination_ = 0;
+  // A Start/Cross edge seen in a fade or in the stage 3->10 loader, held until a hold phase can act
+  // on it. The fades and the loader still run to their own ends; only the hold's exit is taken
+  // early.
+  PressLatch pressLatch_;
   int iteration_ = 0;
   bool initialized_ = false;
 };

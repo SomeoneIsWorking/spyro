@@ -2117,8 +2117,12 @@ Related goals: G003.
 Missing. Censused statically in `docs/issues/0155`: 31 CD read issuer sites (11 blocking, 20
 streaming), no loading screen exists, and the port's CD overrides already remove storage latency.
 Gap: per-operation payload and terminal-state comparison against retail, measurement of residual
-per-stage and XA-gate latency, and the logo-hold press latch (the flyby card and tally are authored
-and stay, cancellable), with the absence of loading presentation captured.
+per-stage and XA-gate latency, with the absence of loading presentation captured. The logo-hold
+press latch is done (2026-10-01): a Start/Cross press made in any boot fade or in the stage 3->10
+loader is honoured at the next hold through the existing hold-skip route, measured as the first hold
+202 -> 0 fields (first-fade press) and the second hold 198 -> 0 fields (loader press) with the fade
+and load-state field counts unchanged (`docs/issues/0155`, "Latch measured"; `press_latch` in CTest).
+The flyby card and tally are authored and stay, cancellable.
 
 ### S034 — Spyro 2 loading removal
 

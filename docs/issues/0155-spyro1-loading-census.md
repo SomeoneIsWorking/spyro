@@ -281,7 +281,7 @@ Not re-derived. Confirmed from the image in this session (every line an address 
 
 Two additions 0151 lacks, both for the logos:
 
-* **A press during a fade or during the 3->10 loader is dropped.** `BootSequence::step` reads
+* **A press during a fade or during the 3->10 loader is dropped. [FIXED 2026-10-01, see "Latch measured" below.]** `BootSequence::step` reads
   `fields_.presentationSkipPressed()` (a per-field edge, `FieldOwner::presentationSkipPressed` ->
   `pad.pressedButton(kPadStart|kPadCross)`) only in `HoldFirst` and `HoldSecond`. A press during
   `FadeFirstIn`, `FadeFirstOut`, `FadeSecondIn`, `AdvanceLoadState` or `FadeSecondOut` is neither
@@ -316,8 +316,8 @@ completion point (`cd_retry_step`) stays identical.
 (`BootSequence`), already in place. Retail has no route, so this is the "purpose-built skip that
 establishes the same lifecycle" case: a press takes the cleanup `0x80016914` and the fade-out the
 expiry takes (`leaveFirstPresentationHold`, `leaveSecondPresentationHold`). Gap to close: make the
-press latch. The smallest change is one member on `BootSequence` (`skipLatched_`, set by any
-Start/Cross edge seen in a fade or loader phase, consumed by the next hold phase) so a tap during a
+press latch. The smallest change is one member on `BootSequence` (a `PressLatch`, set by any
+Start/Cross edge seen in a fade or loader phase, consumed by the next hold phase; DONE, see "Latch measured") so a tap during a
 fade-in is honoured at the first opportunity instead of lost. It must not advance `fields_`, and it
 must not skip `AdvanceLoadState`; the loader still has to reach stage 10 (row 3), which is what makes
 the second skip lawful. The alternative - cancelling mid-fade - would have to call the fade's
@@ -429,10 +429,46 @@ argument), the decompilation-side names, the port's override behaviour and the b
 * what the ten overlay `LoadLevel` callers and the 29 overlay `g_LoadStage` writers sequence
   (read one overlay's three sites; the rest are structural matches only);
 * the credits-end fade (row 20's neighbour, `0x800333DC`);
-* that a Start tap in a boot fade is lost (code reading; needs one run).
+* ~~that a Start tap in a boot fade is lost (code reading; needs one run)~~ - measured, see "Latch
+  measured".
 
-**Not done:** libmcrd addresses other than Exist/Accept; per-overlay classification; any run (the
+**Not done (as of the census):** libmcrd addresses other than Exist/Accept; per-overlay classification; any run (the
 gate was in use by another agent); re-authentication of `scratch/wad_census/WAD.WAD`.
+
+## Latch measured (2026-10-01)
+
+`PressLatch` (`titles/spyro1/core/spyro1_press_latch.h`, one member of `BootSequence`) holds the
+per-field Start/Cross edge from the field it was pressed in to the next hold phase, which takes it
+once through `leaveFirstPresentationHold` / `leaveSecondPresentationHold`. It is read once per step
+(each step follows one delivered field), advances no field, skips neither fade nor loader, and writes
+no guest word. A press in the last fade or finalisation, past every hold, is not carried. Unit test:
+`tests/test_press_latch.cpp` (`press_latch` in CTest), with the negative (no press, no skip), a press
+on the first, last and loader fields, one press taken once, and two presses making two skips.
+
+Product proof, `tools/drive.py gameplay --debug pace`, offscreen, one instance at a time, fields counted
+from the `site=boot-*` field-delivery lines; the press is a forced Start edge at a named field
+(`PSXPORT_FORCE_BUTTONS`/`PSXPORT_FORCE_HOLD` with `..._AT`/`..._STOP_AT`). "old" is the pre-latch
+binary `build/bin/spyro_port` of 2026-09-29, "new" is this tree:
+
+| run | press at field | logo fields (fade) | first hold | load-state | second hold | reached GS_Playing |
+|---|---|---|---|---|---|---|
+| new, no press | none | 32 | 202 | 4 | 198 | frame 6360 |
+| old, press in first fade | 0 | 32 | **202 (press lost)** | 4 | 198 | see note |
+| new, press in first fade | 0 | 32 | **0** | 4 | 198 | frame 5320 |
+| old, press in the loader | 227 | 32 | 202 | 4 | **198 (press lost)** | frame 5520 |
+| new, press in the loader | 227 | 32 | 202 | 4 | **0** | frame 5320 |
+| new, press in the 2nd fade-in | 220 | 32 | 202 | 4 | **0** | frame 5320 |
+
+The 32 fade fields and the 4 load-state fields are unchanged in every leg, which is the evidence that
+the latch skips neither a fade nor the loader. The log prints the existing "Start/Cross ends ..."
+line for the hold that took the press. The old/first-fade leg did not reach GS_Playing because of a
+driver defect, not the product: `title_prompts` sent the PRESS START platform one Start per run, and
+with the logos skipped that screen is reached about 1000 fields earlier where it does not yet accept
+it, so it was never retried (`drive.py REFUSED` after 12000 fields on old and new binaries alike);
+the platform prompt is now repeatable and the same new-binary run reaches GS_Playing.
+
+Not measured: a Cross press (the edge is one mask, `kPadStart | kPadCross`, and the unit test is
+button-agnostic); a press on a real controller; retail's own logo duration under the oracle.
 
 ## 10. Method notes for whoever repeats this
 

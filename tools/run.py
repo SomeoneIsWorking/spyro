@@ -217,7 +217,7 @@ def git_output(psxport, *args):
 
 
 def sync_framework():
-    command([sys.executable, ROOT / "tools/psxport_sync.py", "--auto"])
+    command([sys.executable, ROOT / "tools/psxport_fetch.py", "--auto"])
     configured = os.environ.get("PSXPORT_DIR")
     psxport = Path(configured or ROOT / "external/psxport").resolve()
     if not (psxport / "cmake/psxport.cmake").is_file():

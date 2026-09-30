@@ -1,6 +1,5 @@
 #include "native_particle_alloc.h"
 
-#include "guest_call.h"
 #include "native_execution.h"
 
 #include <cstdint>
@@ -23,6 +22,7 @@ constexpr std::uint32_t kUnsetExtent = 0x7F7F7F7Fu;
 // Sony's rand(), the standard LCG game/core/native_rand.cpp owns, reached by the `jal` at
 // 0x80053598 in the full-allocation arm.
 constexpr std::uint32_t kSonyRand = 0x8006272Cu;
+constexpr std::uint32_t kSonyRandJal = 0x80053598u;
 
 // 0x80053570 — stamp a0's low byte as the type of the next free slot in the 256-slot particle pool
 // and leave g_ParticleAllocPtr on it. Two things are not what the shape suggests. The scan's
@@ -32,6 +32,9 @@ constexpr std::uint32_t kSonyRand = 0x8006272Cu;
 // the `lw` left in v0 — and it never writes g_ParticleAllocPtr back at all. v0 exits as the stamped
 // slot on that arm and as the loaded cursor on every other; v1 as 0x20 there and as the new cursor
 // everywhere else. at exits as g_ParticleAllocPtr, and as the bare lui high half once rand() ran.
+// That arm also exits through `a3`, which the body saved at 0x80053594 before the `jal`, so `$ra`
+// is left as the `jal` left it — 0x800535A0 — and the override has to leave it there too, because
+// the caller returns through the dispatcher's own continuation and never reads `$ra` back.
 void allocateParticleSlot(Core *c) {
   const std::uint32_t kind = c->r[4];
   const std::uint32_t limit = c->mem_r32(kParticlePool) + kPoolSpan;
@@ -39,7 +42,8 @@ void allocateParticleSlot(Core *c) {
   c->r[2] = cursor;
   c->r[1] = kPoolCursor;
   if (cursor == limit) {
-    psx::cpu::callGuestNow(*c, "allocate_particle_slot", kSonyRand, kind, limit, kind);
+    spyro::callGuestJumpedFrom(
+        *c, "allocate_particle_slot", kSonyRandJal, kSonyRand, kind, limit, kind);
     const std::uint32_t span = (c->r[2] & 0xFFu) + 1u;
     const std::uint32_t slot = limit - span * kSlotStride;
     c->lo = span * kSlotStride;

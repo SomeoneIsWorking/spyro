@@ -567,6 +567,14 @@ if(BUILD_TESTING)
       # Override constants must be addresses the retail code computes (docs/issues/0148): the
       # selftest pins a sign-extended table accepted and its unsigned-immediate twin refused.
       override_constants
+      # A nested guest call runs with the `$ra` the guest's own `jal` left, so the address an
+      # override writes at a call site is the `jal` it stands for (docs/issues/0150). The gate
+      # re-derives every such site and its callee from the provisioned executable; its selftest is
+      # the negative set a "the sites are retail's" claim needs — a `jal`'s return address where
+      # the `jal` belongs, the callee of a different `jal`, a site from another function, one wrong
+      # row in a three-pass table and a table whose row count disagrees with its declaration are
+      # all refused, while an address named in a comment is prose.
+      override_call_sites
       # The route corpus's jal-target denominator, image split, registration parse and the scene
       # proof reader (absent / present / stale / unreadable).
       reach_corpus

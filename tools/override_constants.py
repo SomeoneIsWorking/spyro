@@ -104,9 +104,12 @@ def computed_addresses(image: Image, entry: int) -> set[int]:
         elif op in LOADS_STORES and rs in high:
             produced.add((high[rs] + simm(word)) & 0xFFFFFFFF)
         elif op == JAL:
-            # A callee is the J-type target; the return address is the instruction after the slot.
+            # A callee is the J-type target, the return address is the instruction after the slot,
+            # and the call site itself is the instruction: an override that re-establishes the
+            # `$ra` a nested call runs with names the `jal` it stands for (docs/issues/0150).
             produced.add(((pc + 4) & 0xF0000000) | ((word & 0x03FFFFFF) << 2))
             produced.add(pc + 8)
+            produced.add(pc)
         if op in BRANCHES or op == REGIMM:
             furthest = max(furthest, pc + 4 + simm(word) * 4)
         if op == SPECIAL and word & 0x3F == JR and rs == 31 and pc >= furthest:
@@ -185,6 +188,16 @@ def selftest() -> int:
             "return address after the jal accepted",
             "constexpr auto k = 0x80010020u;",
             [],
+        ),
+        (
+            "the jal call site itself accepted",
+            "constexpr auto k = 0x80010018u;",
+            [],
+        ),
+        (
+            "an address outside every computed window refused",
+            "constexpr auto k = 0x80012018u;",
+            [0x80012018],
         ),
         (
             "digit-separated literal still checked",

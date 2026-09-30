@@ -933,6 +933,19 @@ count measures how deep a run got. Issue
 [0150](issues/0150-two-overrides-differ-from-retail-on-the-attract-route.md) holds the two
 mismatching calls, which are a real pre-existing override finding and not a regression.
 
+Issue 0150 is now RESOLVED, and its cause was a rule rather than a transcription slip:
+`psx::cpu::dispatchGuest` runs a nested guest call with `core.r[31]` as the callee's return address,
+so every override that called `psx::cpu::callGuestNow` ran its callees with the OVERRIDE's caller
+address in `$ra`. Shadowing **every** attract-route call (not one sampled call) measured the real
+rates — 40 of 44,000 `allocate_particle_slot` calls and 28 of 6,894 `camera_collision_update` calls
+mismatched — and both differences are that one register, in the two places it is observable: the
+allocator exits with `$ra` where retail's `jal rand` at 0x80053598 left 0x800535A0, and
+`func_8004BE4C` spills `$ra` into the GLOBAL save area at 0x80077DD8, whose `+0x2C` word is the two
+bytes the judge reported. `spyro::callGuestJumpedFrom` now sets `$ra` to the address the guest's own
+`jal` leaves at each of the 29 call sites, and `tools/override_call_sites.py` re-derives every one of
+them and its callee from the provisioned executable. Nine other override modules still call
+`callGuestNow` directly; the gate counts their call sites (currently 0) rather than passing over them.
+
 The route's own measurement unit is one FIELD, with a `g_GameTick` barrier inside demo playback. That
 is not cosmetic: the framework's game-frame barrier cannot resolve inside a demo at all, because
 `PadDemoUpdate` assigns `g_UnprocessedFrames` and the main loop zeroes it in the same iteration while

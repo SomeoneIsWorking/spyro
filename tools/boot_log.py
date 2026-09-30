@@ -24,6 +24,15 @@ _RESUME = re.compile(r"delivered (?P<fields>\d+) field\(s\) in total .*ending th
 _STOP = re.compile(r"\] Spyro \d stopped: (?P<body>.*)")
 _STOP_PC = re.compile(r"at guest pc=(?P<pc>0x[0-9A-Fa-f]+) ra=(?P<ra>0x[0-9A-Fa-f]+)")
 _STOP_EXIT = re.compile(r"exit=(?P<exit>.*?) at guest pc=")
+_FIELD_BOUND = re.compile(
+    r"boot prefix delivered (?P<fields>\d+) field\(s\) in one call without returning and gave up on the guest "
+    r"at resume (?P<pc>0x[0-9A-Fa-f]+) \(bound (?P<bound>\d+)\)"
+)
+_BOOT_RETURNED = re.compile(r"boot prefix returned after (?P<steps>\d+) step\(s\) and (?P<fields>\d+) field\(s\)")
+_PUBLISHED = re.compile(
+    r"\[cd\] stock CdRead of (?P<sectors>\d+) sector\(s\) from LBA (?P<lba>\d+) published as image "
+    r"(?P<image>\d+) generation (?P<generation>\d+)"
+)
 _CD_READ = re.compile(r"\[cd\] CdRead (?P<sectors>\d+) sector\(s\) .* from LBA (?P<lba>\d+)")
 _QUEUED = re.compile(r"\[cdirq\] stock CdRead of \d+ sector\(s\) queued its data-ready completion")
 _DELIVERED = re.compile(r"\[cdirq\] CD data-ready -> callback")
@@ -32,7 +41,9 @@ _DECLINED = re.compile(r"\[cdirq\] CD data-ready owed, (?:DEFERRED|NOTHING DELIV
 
 @dataclass
 class BootReport:
-    end_kind: str | None = None  # "resume" (named, run complete) | "stop" (named, process aborted)
+    # "resume" (named, run complete) | "stop" (named, process aborted) | "cap" (run complete at the
+    # product-step cap, which is a run length and not a diagnosis of the guest)
+    end_kind: str | None = None
     end_pc: str | None = None
     end_detail: str = ""
     fields: int | None = None
@@ -50,6 +61,8 @@ class BootReport:
     completions_queued: int = 0
     deliveries: int = 0
     deferrals: int = 0
+    boot_returned: tuple[int, int] | None = None  # (steps, fields) the boot prefix took to return
+    published: list[tuple[int, int, int]] = field(default_factory=list)  # (LBA, sectors, generation)
 
     @property
     def end_named(self) -> bool:
@@ -92,6 +105,14 @@ def parse(log: str) -> BootReport:
             report.end_detail = "boot step bound reached while polling"
             if report.fields is None:
                 report.fields = int(m["fields"])
+        elif (m := _FIELD_BOUND.search(line)) is not None:
+            report.end_kind = "resume"
+            report.end_pc = m["pc"]
+            report.end_detail = f"boot field bound {m['bound']} reached inside one call"
+        elif (m := _BOOT_RETURNED.search(line)) is not None:
+            report.boot_returned = (int(m["steps"]), int(m["fields"]))
+        elif (m := _PUBLISHED.search(line)) is not None:
+            report.published.append((int(m["lba"]), int(m["sectors"]), int(m["generation"])))
         elif (m := _STOP.search(line)) is not None and report.end_kind != "resume":
             body = m["body"]
             report.end_kind = "stop"
@@ -111,6 +132,10 @@ def parse(log: str) -> BootReport:
             report.deliveries += 1
         elif _DECLINED.search(line) is not None:
             report.deferrals += 1
+    if report.end_kind is None and report.product_steps is not None and report.faults is not None:
+        # A run that completed its own accounting with no stop and no resume ended at the product-step cap.
+        report.end_kind = "cap"
+        report.end_detail = "the run reached its product-step cap with no fault and no stop"
     return report
 
 
@@ -123,10 +148,17 @@ def render(report: BootReport, *, title: str, fallback_budget: int | None) -> st
     lines = [f"boot run: {title}"]
     if report.end_kind == "resume":
         lines.append(f"  end: NAMED RESUME at {report.end_pc} — {report.end_detail} (run complete)")
+    elif report.end_kind == "cap":
+        lines.append(f"  end: PRODUCT-STEP CAP — {report.end_detail} (run complete)")
     elif report.end_kind == "stop":
         lines.append(f"  end: NAMED STOP at guest pc {report.end_pc} — {report.end_detail} (process aborted)")
     else:
         lines.append("  end: NOT IDENTIFIED — neither a named resume nor a named stop was found in the log")
+    if report.boot_returned is not None:
+        steps, fields = report.boot_returned
+        lines.append(f"  boot prefix:             returned after {steps:,} steps and {fields:,} fields")
+    else:
+        lines.append("  boot prefix:             did NOT return")
     lines += [
         f"  fields delivered:        {_value(report.fields, 'no field count in the log')}",
         f"  product steps:           {_value(report.product_steps, aborted)}",
@@ -149,6 +181,13 @@ def render(report: BootReport, *, title: str, fallback_budget: int | None) -> st
             "not product evidence"
         )
     reads = len(report.reads)
+    if report.published:
+        lines.append(
+            f"  images published:        {len(report.published)} of {reads} reads "
+            f"(LBA, sectors, generation: {', '.join(f'{l}/{n}/g{g}' for l, n, g in report.published)})"
+        )
+    else:
+        lines.append("  images published:        NONE seen — no read was published as a code image")
     lines.append(
         f"  CD: reads issued {reads} ({', '.join(f'{s}x@LBA{l}' for s, l in report.reads) or 'none'}); "
         f"completions queued {report.completions_queued}; cd_ready delivered {report.deliveries}; "

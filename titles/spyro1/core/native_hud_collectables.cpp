@@ -76,16 +76,37 @@ constexpr std::uint32_t kRestartCounter = 0xFFFFFFD8u;
 constexpr std::uint32_t kGemCollectTarget = 0x8006F438u;
 constexpr std::uint32_t kModuloNine = 0x38E38E39u;
 
-// The two guest helpers the body still reaches. Each is a `jal` operand of the body rather than an
+// The guest helpers the body still reaches. Each is a `jal` operand of the body rather than an
 // address it assembles from a lui, so tools/override_constants.py re-derives it from that `jal`
 // itself.
-constexpr std::uint32_t kPlayId = 0x80054400u;      // `jal` at 0x80054D1C and every playing row
-constexpr std::uint32_t kFadeId = 0x8005445Cu;      // `jal` at 0x800554A8
-constexpr std::uint32_t kSetSubState = 0x800544A8u; // `jal` at 0x80055098
-constexpr std::uint32_t kStepCounter = 0x800542E4u; // `jal` at 0x80055084
+constexpr std::uint32_t kPlayId = 0x80054400u;
+constexpr std::uint32_t kFadeId = 0x8005445Cu;
+constexpr std::uint32_t kSetSubState = 0x800544A8u;
+constexpr std::uint32_t kStepCounter = 0x800542E4u;
+
+// The `jal` each nested call stands for (issue 0150): the callee runs with the `$ra` that `jal`
+// leaves, and tools/override_call_sites.py re-derives every site and its callee from the
+// executable. Several machines share one `jal`: the gem machine's playing and fading states both
+// reach 0x80054D1C, the dragon's reach 0x80054E98, the life's 0x8005517C, the egg's fades
+// 0x800554A8 and the key's 0x80055704, each through a `j` with the arguments already set.
+constexpr std::uint32_t kGemPlayJal = 0x80054D1Cu;
+constexpr std::uint32_t kDragonPlayJal = 0x80054E98u;
+constexpr std::uint32_t kLifePlayJal = 0x8005517Cu;
+constexpr std::uint32_t kKeyPlayJal = 0x80055704u;
+constexpr std::uint32_t kEggFadeJal = 0x800554A8u;
+constexpr std::uint32_t kGemStepJal = 0x80054BE0u;
+constexpr std::uint32_t kGemSetJal = 0x80054BF0u;
+constexpr std::uint32_t kLifeStepJal = 0x80055084u;
+constexpr std::uint32_t kLifeSetJal = 0x80055098u;
+// The two `jalr`s through the level's runtime entry return to their own pc + 8.
+constexpr std::uint32_t kEggRuntimeReturn = 0x800553F4u;
+constexpr std::uint32_t kKeyRuntimeReturn = 0x80055610u;
+// The body lowers $sp by 0x38, which its egg machine's argument block (0x10($sp)) sits inside.
+constexpr std::uint32_t kFrameBytes = 0x38u;
+constexpr std::uint32_t kRuntimeBlockOffset = 0x10u;
 
 // The guest registers this body carries across its own call sites: $a3, which the delta-time global
-// supplies until the gem or life catch-up zeroes it, and $s0..$s2, which the retail epilogue
+// supplies until a callee leaves something else there, and $s0..$s2, which the retail epilogue
 // reloads from the stack, so their entry values are what the differential compares.
 struct Hud {
   Core *c;
@@ -95,21 +116,19 @@ struct Hud {
   std::uint32_t s2;
 };
 
-// One retail call site: the three saved registers go in beside the four argument registers, because
-// a callee reading one sees exactly what the retail body left there. The callee's own v0/v1 come
-// back in c->r[2]/c->r[3], and every path out of a call reaches the body's tail, which recomputes
-// both before the epilogue. That register install is why this is a helper and not a bare
-// callGuestNow at each of the sixteen sites.
-void callWithGuestSavedRegisters(const Hud &hud,
-                                 std::uint32_t entry,
-                                 std::uint32_t a0,
-                                 std::uint32_t a1,
-                                 std::uint32_t a2,
-                                 std::uint32_t a3) {
+// A callee reading $s0..$s2 sees exactly what the retail body left there, so they are installed
+// before each call. The callee's own $v0/$v1 come back in c->r[2]/c->r[3], and every path out of a
+// call reaches the body's tail, which recomputes both before the epilogue.
+void installSavedRegisters(const Hud &hud) {
   hud.c->r[16] = hud.s0;
   hud.c->r[17] = hud.s1;
   hud.c->r[18] = hud.s2;
-  psx::cpu::callGuestNow(*hud.c, "update_hud_collectables", entry, a0, a1, a2, a3);
+}
+
+// $a3 is caller-saved and only some call sites set it, so a call that passes it through hands the
+// NEXT such call whatever the previous callee left in it, not the delta time it entered with.
+void takeLeftoverArgument(Hud &hud) {
+  hud.a3 = hud.c->r[7];
 }
 
 // g_LevelGemCount[the level now resident], read fresh at each of the guest's own read points.
@@ -202,7 +221,10 @@ void stepGemDisplay(Hud &hud) {
     // slot runs on the taken path too — so the store at 0x80054AD4 is sub+1, not the 0x0D that
     // 0x80054A7C formed. The id lookup that follows indexes the sub this frame read.
     c->mem_w8(kGemSubState, sub + 1u);
-    callWithGuestSavedRegisters(hud, kPlayId, 0u, 5u, sparkId(c, sub), hud.a3);
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(
+        *c, "update_hud_collectables", kGemPlayJal, kPlayId, 0u, 5u, sparkId(c, sub), hud.a3);
+    takeLeftoverArgument(hud);
     return;
   }
   if (state == 2u) {
@@ -224,36 +246,56 @@ void stepGemDisplay(Hud &hud) {
     // on a path the attract route really takes.
     c->mem_w32(kGemCounter, 0u);
     const std::uint32_t sub = c->mem_r8(kGemSubState);
-    // `0x80054B7C slti $v0,$v0,3` is a SIGNED compare against an UNSIGNED `subu` difference, and
-    // the sub-state test masks 0x1F rather than testing the byte, so a sub-state of 0x20 satisfies
-    // it. Both must hold for the wide rewind; either failing gives the narrow one.
-    if (static_cast<std::int32_t>(levelGemCount(hud) - c->mem_r32(kTally)) < 3 &&
+    // `0x80054B7C slti $v0,$v0,3 ; bnez $v0,0x80054BB0` takes the NARROW rewind when the signed
+    // difference is BELOW three, so the wide one needs a difference of three or more AND a
+    // sub-state whose low five bits are clear (`andi $v0,$v1,0x1f ; bnez` at 0x80054B94): a
+    // sub-state of 0x20 satisfies that test. Either failing gives the narrow one.
+    if (static_cast<std::int32_t>(levelGemCount(hud) - c->mem_r32(kTally)) >= 3 &&
         (sub & 0x1Fu) == 0u) {
       c->mem_w8(kGemSubState, sub - 0x20u);
     } else {
       c->mem_w8(kGemSubState, sub - 0x10u);
     }
-    // 0x80054BDC zeroes $a3 for both calls, so the delta the tally steps by is zero here.
-    callWithGuestSavedRegisters(hud, kStepCounter, 0u, 4u, c->mem_r32(kTally) + 1u, 0u);
-    callWithGuestSavedRegisters(hud, kSetSubState, 0u, 4u, c->mem_r8(kGemSubState), 0u);
-    // 0x80054BF8. The tally is recomputed from the level's gem count and the sub-state's own two
-    // constants: 0xC0 credits one gem when the sub-state is parked on 0xC0, and 0xC9 gates the
-    // whole thing — a difference of 0xC9 or more stores the `slti $v0,$v1,0x15` result, which is
-    // necessarily zero at that magnitude, so the tally empties.
+    // `0x80054BD0 ..BD4` leaves $s0 on the tally's address for the rest of the body, and 0x80054BDC
+    // zeroes $a3 for the first call only; the second receives whatever the first left there.
+    hud.s0 = kTally;
+    hud.a3 = 0u;
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(*c,
+                               "update_hud_collectables",
+                               kGemStepJal,
+                               kStepCounter,
+                               0u,
+                               4u,
+                               c->mem_r32(kTally) + 1u,
+                               hud.a3);
+    takeLeftoverArgument(hud);
+    spyro::callGuestJumpedFrom(*c,
+                               "update_hud_collectables",
+                               kGemSetJal,
+                               kSetSubState,
+                               0u,
+                               4u,
+                               c->mem_r8(kGemSubState),
+                               hud.a3);
+    takeLeftoverArgument(hud);
+    // 0x80054BF8. The tally steps by the distance still to cover: a difference of 0xC9 or more
+    // adds eight (the `addiu $v0,$a0,8` in the `j 0x80054C4C` delay slot), from 0x15 up adds one,
+    // and below that it adds one only while the sub-state is parked on 0xC0 and is left alone
+    // otherwise — `0x80054C34 addiu $v0,$zero,0xC0` is the `beqz`'s delay slot and only feeds the
+    // compare, so 0xC0 is never stored.
     const std::uint32_t have = c->mem_r32(kTally);
     const std::int32_t difference = static_cast<std::int32_t>(levelGemCount(hud) - have);
-    std::uint32_t stored = 0u;
-    if (difference < 0xC9) {
-      stored = c->mem_r8(kGemSubState) == 0xC0u ? have + 1u : 0xC0u;
-    } else {
-      stored = difference < 0x15 ? 1u : 0u;
+    if (difference >= 0xC9) {
+      c->mem_w32(kTally, have + 8u);
+    } else if (difference >= 0x15 || c->mem_r8(kGemSubState) == 0xC0u) {
+      c->mem_w32(kTally, have + 1u);
     }
-    c->mem_w32(kTally, stored);
     // 0x80054C50: the level's own halfword target, and only an exact match with the tally AND a
     // sub-state of zero parks the display on 4.
     const std::uint32_t target =
         static_cast<std::uint32_t>(c->mem_r16s(kGemCollectTarget + 2u * c->mem_r32(kLevelIndex)));
-    if (stored == target && c->mem_r8(kGemSubState) == 0u) {
+    if (c->mem_r32(kTally) == target && c->mem_r8(kGemSubState) == 0u) {
       c->mem_w8(kGemDisplay, 4u);
     }
     return;
@@ -274,7 +316,10 @@ void stepGemDisplay(Hud &hud) {
     // `0x80054CEC bnez $v0,0x80054CFC` carries `addiu $v0,$v0,-1`, so the byte stored back at
     // 0x80054D04 and the index the lookup forms at 0x80054D08 are both sub-1.
     c->mem_w8(kGemSubState, sub - 1u);
-    callWithGuestSavedRegisters(hud, kPlayId, 0u, 5u, fadeId(c, sub - 1u), hud.a3);
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(
+        *c, "update_hud_collectables", kGemPlayJal, kPlayId, 0u, 5u, fadeId(c, sub - 1u), hud.a3);
+    takeLeftoverArgument(hud);
     return;
   }
   if (state == 4u) {
@@ -312,7 +357,10 @@ void stepDragonDisplay(Hud &hud) {
       return;
     }
     c->mem_w8(kDragonSubState, sub + 1u);
-    callWithGuestSavedRegisters(hud, kPlayId, 5u, 3u, sparkId(c, sub), hud.a3);
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(
+        *c, "update_hud_collectables", kDragonPlayJal, kPlayId, 5u, 3u, sparkId(c, sub), hud.a3);
+    takeLeftoverArgument(hud);
     return;
   }
   if (state == 2u) {
@@ -334,7 +382,10 @@ void stepDragonDisplay(Hud &hud) {
     return;
   }
   c->mem_w8(kDragonSubState, sub - 1u);
-  callWithGuestSavedRegisters(hud, kPlayId, 5u, 3u, fadeId(c, sub - 1u), hud.a3);
+  installSavedRegisters(hud);
+  spyro::callGuestJumpedFrom(
+      *c, "update_hud_collectables", kDragonPlayJal, kPlayId, 5u, 3u, fadeId(c, sub - 1u), hud.a3);
+  takeLeftoverArgument(hud);
 }
 
 // 0x80054F90 — the life machine's catch-up: the sub-state steps down by 0x10, the guest's step
@@ -345,8 +396,25 @@ void stepLifeIndex(Hud &hud) {
   hud.a3 = 0u;
   c->mem_w32(kLifeCounter, 0u);
   c->mem_w8(kLifeSubState, c->mem_r8(kLifeSubState) - 0x10u);
-  callWithGuestSavedRegisters(hud, kStepCounter, 8u, 2u, c->mem_r32(kLifeIndex) + 1u, hud.a3);
-  callWithGuestSavedRegisters(hud, kSetSubState, 8u, 2u, c->mem_r8(kLifeSubState), hud.a3);
+  installSavedRegisters(hud);
+  spyro::callGuestJumpedFrom(*c,
+                             "update_hud_collectables",
+                             kLifeStepJal,
+                             kStepCounter,
+                             8u,
+                             2u,
+                             c->mem_r32(kLifeIndex) + 1u,
+                             hud.a3);
+  takeLeftoverArgument(hud);
+  spyro::callGuestJumpedFrom(*c,
+                             "update_hud_collectables",
+                             kLifeSetJal,
+                             kSetSubState,
+                             8u,
+                             2u,
+                             c->mem_r8(kLifeSubState),
+                             hud.a3);
+  takeLeftoverArgument(hud);
   if (c->mem_r8(kLifeSubState) == 0xC0u) {
     c->mem_w32(kLifeIndex, c->mem_r32(kLifeIndex) + 1u);
   }
@@ -381,7 +449,10 @@ void stepLifeDisplay(Hud &hud) {
       return;
     }
     c->mem_w8(kLifeSubState, sub + 1u);
-    callWithGuestSavedRegisters(hud, kPlayId, 8u, 3u, sparkId(c, sub), hud.a3);
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(
+        *c, "update_hud_collectables", kLifePlayJal, kPlayId, 8u, 3u, sparkId(c, sub), hud.a3);
+    takeLeftoverArgument(hud);
     return;
   }
   if (state == 2u) {
@@ -418,7 +489,10 @@ void stepLifeDisplay(Hud &hud) {
     return;
   }
   c->mem_w8(kLifeSubState, sub - 1u);
-  callWithGuestSavedRegisters(hud, kPlayId, 8u, 3u, fadeId(c, sub - 1u), hud.a3);
+  installSavedRegisters(hud);
+  spyro::callGuestJumpedFrom(
+      *c, "update_hud_collectables", kLifePlayJal, kPlayId, 8u, 3u, fadeId(c, sub - 1u), hud.a3);
+  takeLeftoverArgument(hud);
 }
 
 // 0x80055184 — the life machine's sprite rectangles. One 8-byte rectangle per orb, laid out from an
@@ -451,24 +525,29 @@ void rebuildLifeOrbRects(Hud &hud) {
 
 // 0x800553AC — the one call in the body that goes through a pointer the level loaded rather than a
 // fixed address. It takes a mode, a tag, a pointer to a three-word block and a zero; the block's
-// first word is the count scaled by 324 less 2500, and its third word is NOT the 0x1000 the body
-// stores there first — the `jalr` delay slot overwrites it with the callee's own return value, so
-// the block is written, called, and then finished with the result.
+// first word is the count scaled by 324 less 2500, its second is 0x3F0 and its third is 0x1000,
+// which is stored in the `jalr`'s delay slot and so is in place BEFORE the callee runs and is never
+// written again. The block lives in the body's own frame, so the call runs with $sp lowered (the
+// caller has done that for the whole body) and returns to the `jalr`'s pc + 8.
 void callRuntimeWithCount(Hud &hud) {
   Core *c = hud.c;
-  const std::uint32_t block = c->r[29] - 0x38u + 0x10u;
+  const std::uint32_t block = c->r[29] + kRuntimeBlockOffset;
   c->mem_w32(block, c->mem_r32(kEggCount) * 324u - 2500u);
   c->mem_w32(block + 4u, 0x3F0u);
   c->mem_w32(block + 8u, 0x1000u);
-  callWithGuestSavedRegisters(hud, c->mem_r32(kRuntimeEntry), 0x10u, 0x4Du, block, 0u);
-  c->mem_w32(block + 8u, c->r[2]);
+  installSavedRegisters(hud);
+  c->r[31] = kEggRuntimeReturn;
+  psx::cpu::callGuestNow(
+      *c, "update_hud_collectables", c->mem_r32(kRuntimeEntry), 0x10u, 0x4Du, block, 0u);
+  takeLeftoverArgument(hud);
 }
 
-// 0x8005533C — the egg machine's counting state. Its whole decision is on the LOW BYTE of the
-// counter, not the word: a byte of one runs the runtime call, a byte under nine just steps the
-// counter, and anything else steps the COUNT and clears the counter. With the count already at the
-// level target the machine instead counts twenty ticks, and with the count behind and the key flag
-// set it clears the counter and steps it straight to one.
+// 0x8005533C — the egg machine's counting state. With the count behind the level target its whole
+// decision is on the counter WORD, compared signed: a counter of exactly one runs the runtime call,
+// a counter below nine — every negative one included, `slti $v0,$v0,9` at 0x800553A8 — just steps
+// it, and anything else steps the COUNT and clears the counter. With the count already at the level
+// target the machine instead counts twenty ticks, and with the key flag set it clears the counter
+// and steps it straight to one.
 void stepEggCount(Hud &hud) {
   Core *c = hud.c;
   if (c->mem_r32(kEggCount) == c->mem_r32(kLevelTarget)) {
@@ -486,11 +565,11 @@ void stepEggCount(Hud &hud) {
     c->mem_w32(kEggCounter, 1u);
     return;
   }
-  const std::uint32_t counter = static_cast<std::uint32_t>(c->mem_r8(kEggCounter));
-  if (counter == 1u) {
+  const std::int32_t counter = static_cast<std::int32_t>(c->mem_r32(kEggCounter));
+  if (counter == 1) {
     callRuntimeWithCount(hud);
-  } else if (counter < 9u) {
-    c->mem_w32(kEggCounter, c->mem_r32(kEggCounter) + 1u);
+  } else if (counter < 9) {
+    c->mem_w32(kEggCounter, static_cast<std::uint32_t>(counter) + 1u);
     return;
   } else {
     c->mem_w32(kEggCount, c->mem_r32(kEggCount) + 1u);
@@ -524,7 +603,16 @@ void stepEggDisplay(Hud &hud) {
       return;
     }
     c->mem_w8(kEggSubState, sub + 1u);
-    callWithGuestSavedRegisters(hud, kFadeId, 0u, 0xCu, 0u - sparkId(c, sub), hud.a3);
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(*c,
+                               "update_hud_collectables",
+                               kEggFadeJal,
+                               kFadeId,
+                               0u,
+                               0xCu,
+                               0u - sparkId(c, sub),
+                               hud.a3);
+    takeLeftoverArgument(hud);
     return;
   }
   if (state == 2u) {
@@ -544,7 +632,16 @@ void stepEggDisplay(Hud &hud) {
     return;
   }
   c->mem_w8(kEggSubState, sub - 1u);
-  callWithGuestSavedRegisters(hud, kFadeId, 0u, 0xCu, 0u - fadeId(c, sub - 1u), hud.a3);
+  installSavedRegisters(hud);
+  spyro::callGuestJumpedFrom(*c,
+                             "update_hud_collectables",
+                             kEggFadeJal,
+                             kFadeId,
+                             0u,
+                             0xCu,
+                             0u - fadeId(c, sub - 1u),
+                             hud.a3);
+  takeLeftoverArgument(hud);
 }
 
 // 0x800555DC — the six runtime calls: one per target, the addresses a SIXTEEN-MEGABYTE step apart
@@ -561,11 +658,20 @@ void stepRuntimeTargets(Hud &hud) {
   hud.s2 = 0x8080u;
   hud.s0 = 0x00600000u;
   do {
-    callWithGuestSavedRegisters(
-        hud, c->mem_r32(kRuntimeEntry), 1u, 0xCu, kRuntimeArgs, hud.s0 + hud.s2);
+    // `addiu $s1,$s1,1` is the `jalr`'s delay slot, so the callee already sees the counter stepped.
     hud.s1 += 1u;
+    installSavedRegisters(hud);
+    c->r[31] = kKeyRuntimeReturn;
+    psx::cpu::callGuestNow(*c,
+                           "update_hud_collectables",
+                           c->mem_r32(kRuntimeEntry),
+                           1u,
+                           0xCu,
+                           kRuntimeArgs,
+                           hud.s0 + hud.s2);
+    takeLeftoverArgument(hud);
     hud.s0 += 0x01000000u;
-  } while (hud.s1 < 6u);
+  } while (static_cast<std::int32_t>(hud.s1) < 6);
 }
 
 // 0x800555AC — the key machine's counting state, in the halves the guest splits it into. A settled
@@ -585,11 +691,11 @@ void stepKeyCounter(Hud &hud, std::uint32_t total) {
     c->mem_w32(kKeyCounter, c->mem_r32(kKeyCounter) + 1u);
     return;
   }
-  const std::uint32_t counter = c->mem_r32(kKeyCounter);
-  if (counter == 0u) {
+  const std::int32_t counter = static_cast<std::int32_t>(c->mem_r32(kKeyCounter));
+  if (counter == 0) {
     stepRuntimeTargets(hud);
-  } else if (counter < 12u) {
-    c->mem_w32(kKeyCounter, counter + 1u);
+  } else if (counter < 12) {
+    c->mem_w32(kKeyCounter, static_cast<std::uint32_t>(counter) + 1u);
     return;
   } else {
     c->mem_w8(kTailCounter, 0x40u);
@@ -627,7 +733,16 @@ void stepKeyDisplay(Hud &hud) {
       return;
     }
     c->mem_w8(kKeySubState, sub + 1u);
-    callWithGuestSavedRegisters(hud, kPlayId, 0xBu, 1u, 0u - sparkId(c, sub), hud.a3);
+    installSavedRegisters(hud);
+    spyro::callGuestJumpedFrom(*c,
+                               "update_hud_collectables",
+                               kKeyPlayJal,
+                               kPlayId,
+                               0xBu,
+                               1u,
+                               0u - sparkId(c, sub),
+                               hud.a3);
+    takeLeftoverArgument(hud);
     return;
   }
   if (state == 2u) {
@@ -648,7 +763,16 @@ void stepKeyDisplay(Hud &hud) {
     return;
   }
   c->mem_w8(kKeySubState, sub - 1u);
-  callWithGuestSavedRegisters(hud, kPlayId, 0xBu, 1u, 0u - fadeId(c, sub - 1u), hud.a3);
+  installSavedRegisters(hud);
+  spyro::callGuestJumpedFrom(*c,
+                             "update_hud_collectables",
+                             kKeyPlayJal,
+                             kPlayId,
+                             0xBu,
+                             1u,
+                             0u - fadeId(c, sub - 1u),
+                             hud.a3);
+  takeLeftoverArgument(hud);
 }
 
 // 0x8005570C — the tail every path in the body reaches, so it alone decides the registers the
@@ -683,6 +807,8 @@ void advanceFrameStamp(Hud &hud) {
 // the life and egg machines. The saved registers are restored here because the retail epilogue
 // restores them from its own frame.
 void updateHudCollectables(Core *c) {
+  const spyro::PreservedReturnAddress returnAddress(*c);
+  const spyro::GuestFrameScope frame(*c, c->r[29] - kFrameBytes);
   const std::uint32_t s0 = c->r[16];
   const std::uint32_t s1 = c->r[17];
   const std::uint32_t s2 = c->r[18];

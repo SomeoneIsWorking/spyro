@@ -1,5 +1,6 @@
 #include "spyro3_runtime.h"
 
+#include "cd_stock_read_completion.h"
 #include "core.h"
 #include "frame_pacer.h"
 #include "game.h"
@@ -152,6 +153,9 @@ void cdInitSuccess(Core *core) {
   core->mem_w32(kCdInitFlag, 0u);
   core->mem_w32(kCdSyncCallbackPointer, kCdInitSyncCallback);
   core->mem_w32(kCdReadyCallbackSlot, kCdInitStreamCallback);
+  // Retail CdInit also opens the CD-ROM interrupt line in I_MASK; this body replaces it, so it owes
+  // the same effect, or the completion a stock read queues is never deliverable (framework owner).
+  psx::cd::armCdInterrupt(*core);
   // 0x8005DB38 leaves $v0 = 1 on the success edge and 0x8005DB98 returns 0 on the failure edge, so
   // success is reported the way the guest's own body reports it.
   core->r[2] = 1u;
@@ -191,6 +195,11 @@ const PlatformHlePlan Spyro3Runtime::platformHlePlan_{
 const GuestCdStreamCallbackLayout Spyro3Runtime::cdStreamCallbackLayout_{
     .readyCallbackPointer = kCdReadyCallbackPointer,
     .owner = GuestCdStreamCallbackLayout::DeliveryOwner::GuestInterrupt,
+    // The per-sector reader (0x80050504) ends a read when `$a0 & 0xFF == 2` (libcd's completion
+    // code) and otherwise starts the next one, so it is delivered 2, once per stock CdRead (psxport
+    // issue 0143).
+    .readyStatus = 2,
+    .stockReadRaisesCompletion = true,
 };
 
 Spyro3Runtime::Spyro3Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro3) {}

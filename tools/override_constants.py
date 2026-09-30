@@ -14,6 +14,9 @@ THE RULE. For every override module under game/core/ and titles/spyro1/core/, ev
 (0x80xxxxxx, excluding the registered entry points themselves) must lie within ACCESS_WINDOW bytes above
 an address that some `lui` (alone, or with an `addiu`/`ori`/load/store) inside one of that module's overridden
 functions computes. The functions are decoded straight from the provisioned retail executable.
+A callee a native override calls is the target of a `jal` inside the overridden body, and the
+address after that `jal`'s delay slot is its return address; both are accepted the same way. Every
+spelling of a literal is checked (digit separators, any suffix), and comments are ignored.
 
 Usage:
     uv run --frozen python tools/override_constants.py [module.cpp ...]
@@ -36,7 +39,12 @@ ACCESS_WINDOW = (
     0x80  # a constant may name a field a short distance past the computed base
 )
 MAX_FUNCTION_BYTES = 0x2000
-CONSTANT = re.compile(r"0x(80[0-9A-Fa-f]{6})u")
+# Every spelling of a guest address literal: any case, digit separators, with or without a suffix.
+CONSTANT = re.compile(r"\b0[xX]((?:[0-9A-Fa-f]'?){8})[uUlL]*\b")
+GUEST_BASE = 0x80000000
+COMMENT = re.compile(
+    r"//[^\n]*|/\*.*?\*/", re.DOTALL
+)  # an address named in prose is not a constant
 REGISTRATION = re.compile(r"installNativeOverride\(\s*core,\s*0x([0-9A-Fa-f]{8})u")
 LOADS_STORES = {
     0x20,
@@ -54,7 +62,7 @@ LOADS_STORES = {
     0x32,
     0x3A,
 }
-JR, SPECIAL, REGIMM = 0x08, 0x00, 0x01
+JR, SPECIAL, REGIMM, JAL = 0x08, 0x00, 0x01, 0x03
 BRANCHES = {0x04, 0x05, 0x06, 0x07}
 
 
@@ -95,6 +103,10 @@ def computed_addresses(image: Image, entry: int) -> set[int]:
             produced.add(high[rs] | (word & 0xFFFF))
         elif op in LOADS_STORES and rs in high:
             produced.add((high[rs] + simm(word)) & 0xFFFFFFFF)
+        elif op == JAL:
+            # A callee is the J-type target; the return address is the instruction after the slot.
+            produced.add(((pc + 4) & 0xF0000000) | ((word & 0x03FFFFFF) << 2))
+            produced.add(pc + 8)
         if op in BRANCHES or op == REGIMM:
             furthest = max(furthest, pc + 4 + simm(word) * 4)
         if op == SPECIAL and word & 0x3F == JR and rs == 31 and pc >= furthest:
@@ -110,7 +122,9 @@ def unexplained(source: str, image: Image) -> tuple[list[int], int, int]:
     produced: set[int] = set()
     for entry in entries:
         produced |= computed_addresses(image, entry)
-    constants = {int(value, 16) for value in CONSTANT.findall(source)} - entries
+    code = COMMENT.sub(" ", source)
+    literals = {int(value.replace("'", ""), 16) for value in CONSTANT.findall(code)}
+    constants = {k for k in literals if k & 0xFF000000 == GUEST_BASE} - entries
     bad = sorted(
         k
         for k in constants
@@ -148,6 +162,9 @@ def selftest() -> int:
         | (3 << 21)
         | (4 << 16)
         | 0x8AD0,  # lw a0, -0x7530(v1) -> 0x80078AD0
+        (0x03 << 26)
+        | ((0x80017908 >> 2) & 0x03FFFFFF),  # jal 0x80017908 (at 0x80010010)
+        0,
         0x03E00008,  # jr ra
         0,
     ]
@@ -163,6 +180,23 @@ def selftest() -> int:
             [0x8007C470],
         ),
         ("field past a computed base accepted", "constexpr auto k = 0x80078AD4u;", []),
+        ("callee named by the jal accepted", "constexpr auto k = 0x80017908u;", []),
+        (
+            "return address after the jal accepted",
+            "constexpr auto k = 0x80010020u;",
+            [],
+        ),
+        (
+            "digit-separated literal still checked",
+            "constexpr auto k = 0x8007'C470u;",
+            [0x8007C470],
+        ),
+        (
+            "suffixless literal still checked",
+            "constexpr auto k = 0x8007C470;",
+            [0x8007C470],
+        ),
+        ("an address in a comment is prose", "// the table at 0x8007C470\n", []),
     ]
     failures = 0
     for label, constant, expected in cases:

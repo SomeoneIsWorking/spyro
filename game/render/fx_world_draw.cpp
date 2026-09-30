@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "game.h"
+#include "margin_object_census.h"
 #include "producer_scope.h"
 #include "spyro_context.h"
 #include "world_scene_builder.h"
@@ -30,6 +31,10 @@ bool spyro_world_submit(Core *core, int32_t selection) {
   }
   auto source = spyro::world_scene::capture(core, selection);
   const auto recipe = spyro::world_scene::build(source);
+  // The sector producer's drawn reach, accumulated into the run's per-class census. The world
+  // builder has no Core by design, so it hands the span back on the recipe and the Core owner
+  // drains it here (issue 0154).
+  spyro_context(*core).marginCensus.merge(spyro::margin_object_census::Class::kSector, recipe.span);
   const auto plan =
       spyro::world_scene_submitter::prepare(core, core->game->rq, kProducerKey, recipe);
   if (plan.status != spyro::world_scene_submitter::Status::Ready &&

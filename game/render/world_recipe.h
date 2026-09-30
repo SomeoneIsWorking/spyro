@@ -1,5 +1,6 @@
 #pragma once
 
+#include "margin_object_census.h"
 #include "sector_visibility.h"
 
 #include <array>
@@ -77,6 +78,10 @@ struct Recipe {
   uint32_t candidates = 0;
   uint32_t rejected = 0;
   uint32_t nextPaintGroup = 0;
+  // Screen-space reach of the faces this recipe actually appended. Carried here rather than taken
+  // from a Core because this builder deliberately has none; whoever owns a Core drains it into the
+  // run's Recorder (issue 0154).
+  margin_object_census::SpanBucket span{};
 };
 
 uint8_t clipCode(int16_t sx, int16_t sy, int clipRight = 512);

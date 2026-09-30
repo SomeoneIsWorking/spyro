@@ -6,6 +6,7 @@
 #include "field_owner.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
+#include "margin_object_census.h"
 #include "moby_shadow_list.h"
 #include "presentation_owner.h"
 #include "runtime_run.h"
@@ -37,6 +38,10 @@ struct SpyroContext {
   // appended by the same three passes at the same points as that list's cursor, and read by the
   // shadow producer in its place, so margin Mobys cast shadows without entering guest RAM.
   spyro::moby_shadow_list::List drawnMobyShadows{};
+  // Per-class count of objects drawn past the guest's own 512-column window, accumulated across the
+  // run. Diagnostic, not state: nothing in the shipping path reads it, and the 4:3 control run
+  // answers the same question with the same denominators (issue 0154).
+  spyro::margin_object_census::Recorder marginCensus{};
   spyro::actor_temporal::History actorTemporal{};
   spyro::secondary_actor_temporal::History secondaryActorTemporal{};
   spyro::field_shaded_queue_temporal::History shadedQueueTemporal{};

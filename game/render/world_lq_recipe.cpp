@@ -160,6 +160,12 @@ bool appendFace(const world_chunk_codec::LowChunk &chunk,
     ++out.rejected;
     return true;
   }
+  // Past the reject, so this face IS appended and drawn. Its span is the answer to "did the
+  // widening reach this producer", measured on what was drawn rather than on what changed colour.
+  out.span.addVertices(
+      face.vertices.begin(), face.vertices.begin() + count, [](const auto &vertex) {
+        return vertex.sx;
+      });
 
   const uint32_t flags = source.vertexWord & 0xffu;
   const int32_t firstArea =

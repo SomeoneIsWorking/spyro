@@ -1,6 +1,7 @@
 #include "cyclorama_mask_recipe.h"
 
 #include "core.h"
+#include "wide_screen_space.h"
 
 #include <algorithm>
 #include <array>
@@ -97,9 +98,17 @@ Recipe build(Core *core, const cyclorama_portal_mesh::PortalFrame &frame) {
     return refuse(std::move(out), Status::InvalidClipRegion, "edge_capacity");
   }
 
+  // The mask is the screen-space quad the portal clip region is cut out of, so it must span the
+  // whole DRAWN width or the region never covers the widened margin. This was a literal 512 and is
+  // now the one shared drawn edge, so a 16:9 frame's mask reaches 684 exactly as its geometry does.
+  // The vertical extent is untouched: 240 lines is the authored sky box in both aspects.
+  const int drawnRight = wide_screen_space::drawClipRight(core);
+  if (drawnRight <= 0 || drawnRight > INT16_MAX) {
+    return refuse(std::move(out), Status::InvalidClipRegion, "mask_width");
+  }
   const std::array<std::array<std::array<int32_t, 2>, 3>, 2> source = {{
-      {{{0, 0}, {512, 0}, {512, 240}}},
-      {{{0, 0}, {512, 240}, {0, 240}}},
+      {{{0, 0}, {drawnRight, 0}, {drawnRight, 240}}},
+      {{{0, 0}, {drawnRight, 240}, {0, 240}}},
   }};
   const uint32_t color = frame.status == cyclorama_portal_mesh::Status::NearFamilyUnsupported
                              ? core->mem_r32(frame.asset + 0x10u)

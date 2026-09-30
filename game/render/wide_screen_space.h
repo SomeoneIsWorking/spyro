@@ -32,8 +32,18 @@ int32_t horizontalCenter(Core *core);
 inline constexpr int kGuestClipRight = 512;
 
 // The horizontal window this port DRAWS into: the wide engine's width when it is on, else the
-// guest's own. Was duplicated in both particle submitters.
+// guest's own. Was duplicated in both particle submitters, and later in the cyclorama and world
+// builders as four open-coded `gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512`
+// expressions that each had to remember their own `core->game != nullptr` guard — one of them did
+// not, and a Core with no Game took the process down. The guard belongs here, once, because
+// `gpu_vk_wide_engine` itself dereferences `c->game` without checking it.
 int drawClipRight(Core *core);
+
+// The right edge (inclusive) of the draw area a producer submits into: the guest's own GP0 area
+// edge `guestAreaRight`, pushed out to the last drawn column when the wide engine is on. Never
+// narrows it, and leaves it untouched at 4:3. This was open-coded in eight submitters as
+// `max(da_x1, wide ? w - 1 : da_x1)`, each restating the same widening.
+int drawAreaRight(Core *core, int guestAreaRight);
 
 // Projection parameters for a particle. `ofx` is the only field the wide engine changes; `ofy`
 // and `h` come from the frame's own projection either way.

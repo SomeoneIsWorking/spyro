@@ -6,6 +6,7 @@
 #include "gpu_vk.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "wide_screen_space.h"
 
 #include <algorithm>
 
@@ -96,9 +97,7 @@ std::optional<DrawState> captureDrawState(Core &core) {
                    .offsetY = gpu.s_off_y,
                    .areaLeft = gpu.s_da_x0,
                    .areaTop = gpu.s_da_y0,
-                   .areaRight = gpu_vk_wide_engine(&core)
-                                    ? std::max(gpu.s_da_x1, gpu_vk_wide_engine_w(&core) - 1)
-                                    : gpu.s_da_x1,
+                   .areaRight = wide_screen_space::drawAreaRight(&core, gpu.s_da_x1),
                    .areaBottom = gpu.s_da_y1,
                    .windowMaskX = gpu.s_tw_mx,
                    .windowMaskY = gpu.s_tw_my,

@@ -6,6 +6,7 @@
 #include "producer_scope.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "wide_screen_space.h"
 
 #include <algorithm>
 
@@ -47,8 +48,7 @@ void submit(Core *core,
     return;
   }
   const GpuState gpu = core->game->gpu;
-  const int drawRight = std::max(
-      gpu.s_da_x1, gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) - 1 : gpu.s_da_x1);
+  const int drawRight = wide_screen_space::drawAreaRight(core, gpu.s_da_x1);
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "sparkle");
   RenderQueue::PainterObjectScope painter(queue, kProducerKey);
   for (const auto &line : recipe.lines) {

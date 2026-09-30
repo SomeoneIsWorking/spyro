@@ -7,6 +7,8 @@
 
 #include <vector>
 
+#include "wide_screen_space.h"
+
 namespace spyro::terrain_scene {
 namespace {
 
@@ -184,9 +186,8 @@ Capture capture(Core &core,
   // The projection the guest set, widened at the one place that owns the extra horizontal area: the
   // screen centre moves with the wider viewport and the right clip edge moves with it.
   const bool wide = gpu_vk_wide_engine(&core);
-  const int wideWidth = wide ? gpu_vk_wide_engine_w(&core) : 0;
-  out.input.rightClip = wide ? wideWidth : wide::kNativeClipWidth;
-  out.input.projection = {.ofx = wide ? (int32_t)((uint32_t)(wideWidth / 2) << 16)
+  out.input.rightClip = wide_screen_space::drawClipRight(&core);
+  out.input.projection = {.ofx = wide ? (int32_t)((uint32_t)(out.input.rightClip / 2) << 16)
                                       : (int32_t)gte_read_ctrl(24),
                           .ofy = (int32_t)gte_read_ctrl(25),
                           .h = (uint16_t)gte_read_ctrl(26)};

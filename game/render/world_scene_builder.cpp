@@ -18,6 +18,8 @@
 #include <string_view>
 #include <utility>
 
+#include "wide_screen_space.h"
+
 namespace spyro::world_scene {
 namespace {
 
@@ -44,7 +46,7 @@ Status refusalStatus(std::string_view why) {
 }
 
 int renderWidth(Core *core) {
-  return gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : wide::kNativeClipWidth;
+  return wide_screen_space::drawClipRight(core);
 }
 
 ProjectionParams projection(Core *core, int clipRight) {

@@ -210,6 +210,14 @@ bool appendFace(Recipe &out, Face face, const char *&why) {
     why = "high_ot_bin";
     return false;
   }
+  // Past the rejects, so this face IS appended and drawn. Same measure as the low-detail pass: the
+  // span of what was drawn, so the two detail levels are comparable on one axis. Every high-detail
+  // face reaches the recipe through here, which is what makes this the one point worth recording
+  // rather than four call sites.
+  out.span.addVertices(
+      face.vertices.begin(), face.vertices.begin() + face.vertexCount, [](const auto &vertex) {
+        return vertex.sx;
+      });
   if (!world_recipe::appendLinked(out, face, kFaceLimit)) {
     why = "face_capacity";
     return false;

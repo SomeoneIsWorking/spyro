@@ -9,10 +9,12 @@
 #include "field_particles_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "margin_object_census.h"
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "spyro_context.h"
 #include "wide_screen_space.h"
 #include "world_chunk_codec.h"
 #include "world_projection_math.h"
@@ -148,6 +150,9 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     }
     const int xs[2] = {projected.sx, projected.sx + 1};
     const int ys[2] = {projected.sy, projected.sy};
+    // Past `answer.drawn`, so this particle is on screen. Its span is the per-class answer.
+    spyro_context(*core).marginCensus.record(
+        spyro::margin_object_census::Class::kParticle, xs[0], xs[1]);
     const unsigned char rs[2] = {point.r, point.r};
     const unsigned char gs[2] = {point.g, point.g};
     const unsigned char bs[2] = {point.b, point.b};
@@ -184,6 +189,10 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
             cameraY - line.y1, cameraZ - line.z1, line.x1 - cameraX));
     const int xs[2] = {first.sx, second.sx};
     const int ys[2] = {first.sy, second.sy};
+    // A type-1 line is clipped and depth-sorted on its FIRST endpoint alone, so the span that says
+    // how far the widening reached is the span the guest itself would have drawn.
+    spyro_context(*core).marginCensus.record(
+        spyro::margin_object_census::Class::kParticle, xs[0], xs[1]);
     const unsigned char rs[2] = {line.r0, line.r1};
     const unsigned char gs[2] = {line.g0, line.g1};
     const unsigned char bs[2] = {line.b0, line.b1};

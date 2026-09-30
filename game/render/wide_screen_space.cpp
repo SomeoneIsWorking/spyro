@@ -1,9 +1,21 @@
 #include "wide_screen_space.h"
 
 #include "core.h"
+#include "game.h"
 #include "gpu_vk.h"
 
+#include <algorithm>
+
 namespace spyro::wide_screen_space {
+namespace {
+
+// `gpu_vk_wide_engine` dereferences `c->game` without checking it, so the guard lives here once.
+bool wideEngineOn(Core *core) {
+  return core != nullptr && core->game != nullptr && gpu_vk_wide_engine(core);
+}
+
+} // namespace
+
 int32_t horizontalCenter(Core *core) {
   // The framework already answers this, for both aspects: gpu_vk_wide_engine_ofx is the render
   // width for the selected aspect divided by two, and that width collapses to the guest's own
@@ -14,10 +26,15 @@ int32_t horizontalCenter(Core *core) {
 }
 
 int drawClipRight(Core *core) {
-  if (gpu_vk_wide_engine(core)) {
-    return gpu_vk_wide_engine_w(core);
-  }
-  return kGuestClipRight;
+  // No Core, or a Core with no Game, is the 4:3 answer: there is no wide engine to ask. Callers
+  // building a frame from a bare Core (every recipe unit test does) get the guest's own window
+  // rather than a null dereference inside the framework's wide-engine query.
+  return wideEngineOn(core) ? gpu_vk_wide_engine_w(core) : kGuestClipRight;
+}
+
+int drawAreaRight(Core *core, int guestAreaRight) {
+  return wideEngineOn(core) ? std::max(guestAreaRight, gpu_vk_wide_engine_w(core) - 1)
+                            : guestAreaRight;
 }
 
 psxport::native_projection::ProjectionParams projection(Core *core) {

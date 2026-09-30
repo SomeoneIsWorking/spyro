@@ -17,6 +17,8 @@
 #include <tuple>
 #include <utility>
 
+#include "wide_screen_space.h"
+
 namespace spyro::cyclorama_portal_mesh {
 
 using spyro::guest::kCamera;
@@ -360,8 +362,7 @@ PortalFrame prepareFrame(
   frame.distance = vectorMagnitude(ram, scaled) << frame.distanceShift;
   std::tie(frame.cullMatrix, frame.projectionMatrix) = portalMatrices(ram, nextYaw, nextPitch);
   const FixedAffine cameraMatrix = world_projection_math::decodeMatrix(ram, kCamera);
-  const int screenRight =
-      core->game != nullptr && gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
+  const int screenRight = wide_screen_space::drawClipRight(core);
   if (screenRight <= 0 || screenRight > INT16_MAX) {
     return refuse(std::move(frame), Status::InvalidClipRegion, "screen_width");
   }
@@ -522,8 +523,7 @@ Recipe build(Core *core, const PortalFrame &frame) {
       !ram.contains(objectTable, out.assetObjects * 4u)) {
     return refuse(std::move(out), Status::InvalidAsset, "object_table");
   }
-  const int clipRight =
-      core->game != nullptr && gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) : 512;
+  const int clipRight = wide_screen_space::drawClipRight(core);
   const ProjectionParams projection = projectionParams(core, clipRight);
   for (uint32_t objectIndex = 0; objectIndex < out.assetObjects; ++objectIndex) {
     const uint32_t object = ram.r32(objectTable + objectIndex * 4u);

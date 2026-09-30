@@ -5,6 +5,7 @@
 #include "gpu_vk.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "wide_screen_space.h"
 
 #include <algorithm>
 
@@ -47,10 +48,7 @@ void submit(Core *core,
     return;
   }
   const GpuState gpu = core->game->gpu;
-  int drawRight = gpu.s_da_x1;
-  if (gpu_vk_wide_engine(core)) {
-    drawRight = std::max(drawRight, gpu_vk_wide_engine_w(core) - 1);
-  }
+  const int drawRight = wide_screen_space::drawAreaRight(core, gpu.s_da_x1);
   RenderQueue::PainterObjectScope painter(queue, producerKey);
   for (const auto &face : recipe.faces) {
     core->rsub.diag.beginObject(face.actor);

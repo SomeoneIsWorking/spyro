@@ -124,10 +124,12 @@ void commit(Core *c, const Frame &frame);
 // limit. The depth is a positive quantity, so the sign belongs on the limit rather than on the
 // depth; negating it instead makes the pair unsatisfiable and silently stages no shadow at all.
 // The limit is a parameter because the three passes use different ones: 0x8001F158 and 0x800208FC
-// both stage against 0x1200, while 0x80022A2C passes its own comparison — see the note at the
-// shaded call site, which is deliberately left as retail wrote it.
+// both stage against 0x1200, while the shaded pass at 0x80022A2C stages against 0x1100. Both
+// constants are read from retail's own words, which emit the same `addi $r,$v1,-N; bgez` idiom and
+// differ only in N; see the byte listing at the shaded call site and issue 0154.
 bool stages_shadow(int32_t shadowWord, int32_t viewZ, int32_t limit);
 inline constexpr int32_t kShadowStagingDepth = 0x1200;
+inline constexpr int32_t kShadedShadowStagingDepth = 0x1100;
 
 // Builds the regular-actor semantic records directly from the level Moby array, camera, model
 // table, and animation state. It replaces 0x800521C0 + 0x8001F158 without running either guest body

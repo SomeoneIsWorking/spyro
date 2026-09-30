@@ -3,8 +3,11 @@
 #include "core.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "margin_object_census.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "spyro_context.h"
+#include "wide_screen_space.h"
 
 #include <algorithm>
 #include <utility>
@@ -109,10 +112,7 @@ void submit(Core *core,
     return;
   }
   const GpuState gpu = core->game->gpu;
-  int drawRight = gpu.s_da_x1;
-  if (gpu_vk_wide_engine(core)) {
-    drawRight = std::max(drawRight, gpu_vk_wide_engine_w(core) - 1);
-  }
+  const int drawRight = wide_screen_space::drawAreaRight(core, gpu.s_da_x1);
   RenderQueue::PainterObjectScope painter(queue, producerKey);
   for (const auto &replayFace : plan.replay) {
     const auto &face = faces[replayFace.faceIndex];
@@ -140,6 +140,12 @@ void submit(Core *core,
     // which is what gives every downstream consumer — the objid overlay, the depth-contest
     // diagnostics, the actor-scene oracle — per-instance identity instead of one anonymous blob.
     core->rsub.diag.beginObject(face.moby);
+    // Every Moby face this port draws — regular and secondary layers alike — is emitted here with
+    // its final screen x in `xs`, and the draw area's right edge is `drawRight`, which is the
+    // widened edge. So this is the one point where the drawn span of a Moby is known, and it is
+    // what makes the per-class answer a measurement rather than an inference (issue 0154).
+    spyro_context(*core).marginCensus.addVertices(
+        margin_object_census::Class::kMoby, xs, xs + count);
     const PainterReplayOrder replayOrder =
         layer == Layer::Regular
             ? scene_painter_order::actor(

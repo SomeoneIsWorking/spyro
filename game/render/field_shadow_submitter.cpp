@@ -4,9 +4,12 @@
 #include "field_shadow_recipe.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "margin_object_census.h"
 #include "producer_scope.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "spyro_context.h"
+#include "wide_screen_space.h"
 
 #include <algorithm>
 
@@ -59,45 +62,47 @@ void submit(Core *core,
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
       depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
     }
-    queue.emitOrQueue(
-        core,
-        1,
-        RQ_WORLD,
-        RQ_OM_DEPTH,
-        3,
-        1,
-        0,
-        xs,
-        ys,
-        screenX,
-        screenY,
-        us,
-        vs,
-        red,
-        green,
-        blue,
-        depth,
-        3,
-        0,
-        0,
-        0,
-        0,
-        gpu.s_tw_mx,
-        gpu.s_tw_my,
-        gpu.s_tw_ox,
-        gpu.s_tw_oy,
-        gpu.s_da_x0,
-        gpu.s_da_y0,
-        std::max(gpu.s_da_x1,
-                 gpu_vk_wide_engine(core) ? gpu_vk_wide_engine_w(core) - 1 : gpu.s_da_x1),
-        gpu.s_da_y1,
-        2,
-        nullptr,
-        -1,
-        0.0f,
-        1,
-        1,
-        scene_painter_order::spyroShadow(face.otBin, face.fanOrdinal));
+    // Past the recipe, so this shadow face is drawn. Its span is the per-class answer for shadows,
+    // and it is only reachable at all once the shaded pass's 0x1100 near bound stages the Moby —
+    // which is the point issue 0154 had to establish against retail before widening could count it.
+    spyro_context(*core).marginCensus.addVertices(margin_object_census::Class::kShadow, xs, xs + 3);
+    queue.emitOrQueue(core,
+                      1,
+                      RQ_WORLD,
+                      RQ_OM_DEPTH,
+                      3,
+                      1,
+                      0,
+                      xs,
+                      ys,
+                      screenX,
+                      screenY,
+                      us,
+                      vs,
+                      red,
+                      green,
+                      blue,
+                      depth,
+                      3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      gpu.s_tw_mx,
+                      gpu.s_tw_my,
+                      gpu.s_tw_ox,
+                      gpu.s_tw_oy,
+                      gpu.s_da_x0,
+                      gpu.s_da_y0,
+                      wide_screen_space::drawAreaRight(core, gpu.s_da_x1),
+                      gpu.s_da_y1,
+                      2,
+                      nullptr,
+                      -1,
+                      0.0f,
+                      1,
+                      1,
+                      scene_painter_order::spyroShadow(face.otBin, face.fanOrdinal));
   }
 }
 

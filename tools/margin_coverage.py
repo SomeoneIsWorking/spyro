@@ -166,6 +166,78 @@ def census(ppm_path: Path, native: int, anchor: str) -> Census:
                   len(distinct_all), drawn_pixels)
 
 
+CLASS_ORDER = ("sector", "moby", "particle", "glow", "shadow")
+
+
+class ClassTally:
+    """One class's answer, parsed out of a run's census report."""
+
+    def __init__(self, name: str, drawn: int, outside: int, min_x, max_x):
+        self.name, self.drawn, self.outside = name, drawn, outside
+        self.min_x, self.max_x = min_x, max_x
+
+    @property
+    def ever_drawn(self) -> bool:
+        return self.drawn > 0
+
+    def line(self) -> str:
+        reach = f"[{self.min_x},{self.max_x}]" if self.ever_drawn else "never drawn"
+        return (f"{self.name:<9} drawn={self.drawn:<9} outside={self.outside:<9} reach={reach}")
+
+
+def read_class_census(path: Path) -> dict[str, ClassTally]:
+    """Parse the per-class census report a run writes.
+
+    Refuses rather than answering with a zero for a report that names fewer classes than the
+    closed set: an absent class is then distinguishable from a class the widening never reached,
+    which is the whole reason the report enumerates all of them.
+    """
+    text = path.read_text()
+    if "margin-census" not in text:
+        raise Refusal(f"{path}: not a margin-census report (no 'margin-census' header)")
+    tallies: dict[str, ClassTally] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or not parts[0].isalpha():
+            continue
+        name = parts[0]
+        if name not in CLASS_ORDER:
+            continue
+        drawn = int(parts[1].split("=")[1])
+        outside = int(parts[2].split("=")[1])
+        reach = parts[3].split("=")[1]
+        if reach == "never":
+            tallies[name] = ClassTally(name, drawn, outside, None, None)
+        else:
+            lo, hi = reach.strip("[]").split(",")
+            tallies[name] = ClassTally(name, drawn, outside, int(lo), int(hi))
+    missing = [c for c in CLASS_ORDER if c not in tallies]
+    if missing:
+        raise Refusal(f"{path}: report names {len(tallies)}/{len(CLASS_ORDER)} classes, "
+                      f"missing {','.join(missing)} — a partial report cannot answer the question")
+    return tallies
+
+
+def compare_class_census(control: dict[str, ClassTally],
+                         widened: dict[str, ClassTally]) -> list[str]:
+    """The 4:3 run is the CONTROL. A class that widens must move; a class that does not is named."""
+    lines = [f"  {'class':<9} {'control(4:3) drawn/outside':<26} {'widened(16:9) drawn/outside':<28} verdict"]
+    for name in CLASS_ORDER:
+        c, w = control[name], widened[name]
+        if not w.ever_drawn:
+            verdict = "NEVER DRAWN — this class never reached the screen in either run"
+        elif w.outside == 0 and c.outside == 0:
+            verdict = "no object left the guest window at either aspect"
+        elif w.outside > c.outside:
+            verdict = f"WIDENED (+{w.outside - c.outside} objects past 512)"
+        elif w.outside == c.outside:
+            verdict = "unchanged — the widening did not reach this class"
+        else:
+            verdict = f"NARROWED (-{c.outside - w.outside}) — investigate"
+        lines.append(f"  {name:<9} {c.drawn:>9}/{c.outside:<16} {w.drawn:>9}/{w.outside:<16} {verdict}")
+    return lines
+
+
 def _write_ppm(path: Path, width: int, height: int, paint) -> None:
     buf = bytearray(width * height * 3)
     paint(buf, width, height)
@@ -269,10 +341,88 @@ def _selftest() -> int:
         except (Refusal, OSError):
             pass
 
+        # 5. THE PER-CLASS CENSUS, both answers. The pixel census above cannot see a class whose
+        #    objects were redrawn without a single pixel changing colour, so the per-class path
+        #    needs its own RED case as well as its GREEN one.
+        def report(rows) -> str:
+            out = "[margin-census] objects drawn past the guest's 512-column window\n"
+            for row in rows:
+                out += f"  {row}\n"
+            return out
+
+        all_classes = [f"{n:<9} drawn=0       outside=0       reach=never drawn" for n in CLASS_ORDER]
+        (tmp / "census_green.txt").write_text(report([
+            f"{n:<9} drawn={d:<8} outside={o:<8} reach=[{lo},{hi}]"
+            for n, d, o, lo, hi in (
+                ("sector", 40000, 120, -12, 683),
+                ("moby", 9000, 310, -40, 700),
+                ("particle", 300, 18, 505, 690),
+                ("glow", 40, 6, 520, 672),
+                ("shadow", 700, 25, 498, 681),
+            )
+        ]))
+        (tmp / "census_control.txt").write_text(report([
+            f"{n:<9} drawn={d:<8} outside={o:<8} reach=[{lo},{hi}]"
+            for n, d, o, lo, hi in (
+                ("sector", 40000, 0, 3, 511),
+                ("moby", 9000, 0, 2, 511),
+                ("particle", 300, 0, 300, 511),
+                ("glow", 40, 0, 300, 511),
+                ("shadow", 700, 0, 300, 511),
+            )
+        ]))
+        widened = read_class_census(tmp / "census_green.txt")
+        control = read_class_census(tmp / "census_control.txt")
+        check(set(widened) == set(CLASS_ORDER),
+              f"the census read {len(widened)} classes, expected {len(CLASS_ORDER)}")
+        check(widened["moby"].outside == 310, f"moby outside read {widened['moby'].outside}")
+        check(widened["sector"].min_x == -12, f"sector min_x read {widened['sector'].min_x}")
+        check(widened["sector"].max_x == 683, f"sector max_x read {widened['sector'].max_x}")
+        verdicts = "\n".join(compare_class_census(control, widened))
+        check(verdicts.count("WIDENED") == 5,
+              f"the matched pair reported {verdicts.count('WIDENED')} widened classes, expected 5")
+
+        # 5b. RED — a 16:9 run whose classes all report outside=0. Every class ran, so this is not
+        #     a missing-report case: the widening simply never reached a producer. The tool must
+        #     say so rather than reporting a healthy picture.
+        (tmp / "census_zero.txt").write_text(report([
+            f"{n:<9} drawn={d:<8} outside=0       reach=[{lo},{hi}]"
+            for n, d, lo, hi in (("sector", 40000, 0, 511), ("moby", 9000, 1, 511),
+                                 ("particle", 300, 200, 511), ("glow", 40, 300, 511),
+                                 ("shadow", 700, 300, 511))
+        ]))
+        zero = read_class_census(tmp / "census_zero.txt")
+        zero_verdicts = "\n".join(compare_class_census(control, zero))
+        check("WIDENED" not in zero_verdicts,
+              "a run with no object past 512 was scored as reaching its producers")
+        check(zero_verdicts.count("no object left the guest window") == 5,
+              f"a zero-outside run reported "
+              f"{zero_verdicts.count('no object left the guest window')} inert classes, expected 5")
+
+        # 5c. RED — a report naming only some of the closed class set is a REFUSAL, not a partial
+        #     answer. Reading it as "the missing classes drew nothing" would invent a measurement.
+        (tmp / "census_partial.txt").write_text(report([
+            f"{n:<9} drawn=10        outside=2        reach=[500,600]" for n in ("sector", "moby")
+        ]))
+        try:
+            read_class_census(tmp / "census_partial.txt")
+            failures.append("a report naming 2 of 5 classes was read instead of refused")
+        except Refusal:
+            pass
+        (tmp / "census_empty.txt").write_text(report(all_classes))
+        empty = read_class_census(tmp / "census_empty.txt")
+        check(all(not empty[n].ever_drawn for n in CLASS_ORDER),
+              "a never-drawn report claimed a class had drawn")
+        try:
+            read_class_census(tmp / "narrow.ppm")
+            failures.append("a PPM was read as a census report instead of refused")
+        except (Refusal, OSError, UnicodeDecodeError):
+            pass
+
     for f in failures:
         print(f"FAIL margin_coverage selftest: {f}", file=sys.stderr)
     print(f"margin_coverage selftest: {'PASS' if not failures else 'FAIL'} "
-          f"(8 cases, {len(failures)} failed)")
+          f"(13 cases, {len(failures)} failed)")
     return 1 if failures else 0
 
 
@@ -284,10 +434,37 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--anchor", choices=("left", "centre"), default="left",
                     help="where the widening places the guest's box; Spyro's owner is `left`")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--class-census", nargs=2, type=Path, metavar=("CONTROL", "WIDENED"),
+                    help="the 4:3 control report and the 16:9 report from a matched pair of runs")
     args = ap.parse_args(argv)
 
     if args.selftest:
         return _selftest()
+
+    if args.class_census:
+        control_path, widened_path = args.class_census
+        try:
+            control = read_class_census(control_path)
+            widened = read_class_census(widened_path)
+        except (Refusal, OSError) as exc:
+            print(f"  REFUSED: {exc}", file=sys.stderr)
+            return 2
+        print(f"margin_coverage: per-class drawn reach, control={control_path.name} "
+              f"widened={widened_path.name}, {len(CLASS_ORDER)} classes")
+        for line in compare_class_census(control, widened):
+            print(line)
+        reached = [n for n in CLASS_ORDER if widened[n].ever_drawn and widened[n].outside > 0]
+        never = [n for n in CLASS_ORDER if not widened[n].ever_drawn]
+        print(f"  classes with objects drawn past 512 at 16:9: {len(reached)}/{len(CLASS_ORDER)}"
+              f"{' [' + ','.join(reached) + ']' if reached else ''}")
+        if never:
+            print(f"  classes that never drew at either aspect: {','.join(never)}")
+        if not reached:
+            print("  VERDICT: REFUSED as a proof of widening — no class drew an object past 512",
+                  file=sys.stderr)
+            return 1
+        return 0
+
     if not args.captures:
         print("margin_coverage.py: no capture given; scanned 0 captures", file=sys.stderr)
         return 2

@@ -5,8 +5,10 @@
 #include "game.h"
 #include "host_turn.h"
 #include "hw_bind.h"
+#include "margin_object_census.h"
 #include "psx_exe_image.h"
 #include "runtime_run.h"
+#include "spyro_context.h"
 #include "spyro_game.h"
 #include "spyro_runtime.h"
 #include "store_observe.h" // store_observe_attach — PSXPORT_STORE_OBSERVE on a title-owned spine
@@ -99,5 +101,8 @@ int main(int argc, char **argv) {
   }
   psx::cpu::shutdownHostTurn();
   spyro::reportRuntimeRun(core, completedSteps);
+  // The per-class drawn-reach census, written at the end of the run so the tally covers every
+  // field the process ran. A run without PSXPORT_MARGIN_CENSUS writes nothing (issue 0154).
+  spyro::margin_object_census::writeReportIfRequested(spyro_context(core).marginCensus);
   return 0;
 }

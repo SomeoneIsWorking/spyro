@@ -3,9 +3,11 @@
 #include "core.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "margin_object_census.h"
 #include "producer_scope.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "spyro_context.h"
 
 #include <algorithm>
 
@@ -60,6 +62,10 @@ void submit(Core *core, RenderQueue &queue, const glow_recipe::Recipe &recipe, c
       screenY[v] = vertex.screenY + (float)gpu.s_off_y;
       depth[v] = core->rsub.projParams.pzToOrd(vertex.viewZ);
     }
+    // Past the recipe's own offscreen reject, so this glow face is drawn. `xs` is its final screen
+    // span, which is the per-class answer for glows (issue 0154).
+    spyro_context(*core).marginCensus.addVertices(
+        margin_object_census::Class::kGlow, xs, xs + face.vertices.size());
     // Only the centre carries the record's colour. The ring is black, which is what makes the halo
     // fall off; writing the colour to all three would paint a flat triangle.
     red[0] = (unsigned char)(face.colour & 0xffu);

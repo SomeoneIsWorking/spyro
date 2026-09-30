@@ -217,7 +217,16 @@ moves. Fidelity improves; widescreen is not involved.
 The decisive point is that the store is aspect-invariant: `a43.ram` and `a169.ram` agree on every one
 of those bytes, which is why the acceptance diff is 0 rather than 9.
 
-## Deliberately NOT changed here
+## Deliberately NOT changed here — SUPERSEDED BY ISSUE 0154, AND WRONG
+
+> **This section was wrong and is retained only so the correction is findable.** It claimed that
+> `0x80022A2C` stages no shadow, and reverted a correct fix on that basis. The claim was read off
+> this project's own prose comment rather than off the image, which makes it circular. Retail's
+> bytes are `bgez $a0,skip` / `addi $a0,$v1,-0x1100` / `bgez $a0,skip` at `0x80022C2C`-`0x80022C34`,
+> the same idiom the regular pass emits at `0x8001F344`/`0x8001F350` with `0x1200` instead. `$v1` is
+> a positive GTE depth (`mfc2 $v1,$k1,0` at `0x80022BD8`), so both are near bounds: the shaded pass
+> stages when `viewZ < 0x1100`. Issue 0154 restores it as `kShadedShadowStagingDepth` and replaces
+> the negative test with a positive one. The original text follows.
 
 `0x80022A2C` (`0x80022C30`) computes `addi $a0,$v1,-0x1100` and branches `bgez` past the shadow append.
 View depth is positive, so the pair is unsatisfiable and the shaded pass stages **no** shadow — a real

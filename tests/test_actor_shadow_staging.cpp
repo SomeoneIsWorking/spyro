@@ -7,6 +7,7 @@
 #include "testutil.h"
 
 using spyro::actor_scene::classify_view;
+using spyro::actor_scene::kShadedShadowStagingDepth;
 using spyro::actor_scene::kShadowStagingDepth;
 using spyro::actor_scene::stages_shadow;
 
@@ -29,18 +30,31 @@ void test_staging_limit_is_a_near_bound_not_a_far_one() {
   CHECK(stages_shadow(-1, 1, kShadowStagingDepth));
 }
 
-// 0x80022A2C (0x80022C30 `addi $a0,$v1,-0x1100; bgez`) passes a NEGATED limit, and view depth is
-// positive, so that pair is unsatisfiable and the shaded pass stages nothing. That is a real
-// fidelity defect against retail — but it is not a widescreen one, because it holds at 4:3 too, and
-// this change must be a no-op at the native aspect. So the limit is carried through verbatim and
-// pinned here, as a NEGATIVE case: a build that quietly "fixes" the sign starts staging shadows the
-// 4:3 frame never had, which is exactly the kind of scope creep the shaded-call comment forbids.
-void test_shaded_pass_keeps_the_negated_limit_it_always_had() {
-  CHECK(!stages_shadow(-1, 0, -0x1100));
-  CHECK(!stages_shadow(-1, 0x7fffffff, -0x1100));
-  // The regular and secondary passes are unaffected by that, and still stage against 0x1200.
-  CHECK(stages_shadow(-1, 0, kShadowStagingDepth));
-  CHECK(!stages_shadow(-1, kShadowStagingDepth, kShadowStagingDepth));
+// The shaded pass at 0x80022A2C emits the SAME idiom as the regular pass and differs only in the
+// constant, so it stages against a near bound of 0x1100:
+//
+//   regular  0x8001F34C  addi $t3,$v1,-0x1200 ; 0x8001F350 bgez $t3,skip -> stage iff viewZ <
+//   0x1200 shaded   0x80022C30  addi $a0,$v1,-0x1100 ; 0x80022C34 bgez $a0,skip -> stage iff viewZ
+//   < 0x1100
+//
+// These bytes were read from a RAM dump of the loaded executable. An earlier revision of this file
+// asserted the shaded pair was unsatisfiable and pinned that claim as a negative case; that was
+// taken from this project's own prose instead of the image and the disassembly refutes it. The
+// constant is 0x1100, positive, and the shaded pass stages shadows.
+void test_shaded_pass_stages_against_its_own_nearer_limit() {
+  CHECK(stages_shadow(-1, 0, kShadedShadowStagingDepth));
+  CHECK(stages_shadow(-1, kShadedShadowStagingDepth - 1, kShadedShadowStagingDepth));
+  CHECK(!stages_shadow(-1, kShadedShadowStagingDepth, kShadedShadowStagingDepth));
+  CHECK(!stages_shadow(-1, kShadedShadowStagingDepth + 1, kShadedShadowStagingDepth));
+  // The far bound still requires a negative m_ShadowDistance, as 0x80022C2C's own `bgez $a0` does.
+  CHECK(!stages_shadow(0, 0, kShadedShadowStagingDepth));
+  CHECK(!stages_shadow(0x7FFFFFFF, 0, kShadedShadowStagingDepth));
+  // The shaded limit is NEARER than the regular one, so every depth the regular pass stages the
+  // shaded pass also stages. A build that swaps the two constants still passes the cases above, so
+  // the ordering is pinned explicitly.
+  CHECK(kShadedShadowStagingDepth < kShadowStagingDepth);
+  CHECK(stages_shadow(-1, kShadedShadowStagingDepth, kShadowStagingDepth));
+  CHECK(!stages_shadow(-1, kShadedShadowStagingDepth, kShadedShadowStagingDepth));
 }
 
 // One view, two answers. With a zero model radius the horizontal plane is 4*512*|x| < 3*W*z, so at
@@ -73,7 +87,7 @@ int main() {
   RUN(near_moby_with_a_shadow_stages);
   RUN(shadowless_moby_never_stages);
   RUN(staging_limit_is_a_near_bound_not_a_far_one);
-  RUN(shaded_pass_keeps_the_negated_limit_it_always_had);
+  RUN(shaded_pass_stages_against_its_own_nearer_limit);
   RUN(classify_view_splits_guest_and_drawn_at_both_edges);
   return pt_summary();
 }

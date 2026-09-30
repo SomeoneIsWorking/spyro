@@ -207,18 +207,26 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
       return reset(frame, Status::InvalidMesh);
     }
     // 0x80022C2C..0x80022C44 appends the shadow after the horizontal plane and before the vertical
-    // one, when m_ShadowDistance is negative and the view depth passes the staging limit.
+    // one, when m_ShadowDistance is negative and the view depth is nearer than the staging limit.
     //
-    // THE SIGN IS RETAIL'S OWN AND IS DELIBERATELY PRESERVED. 0x80022C30 computes
-    // `addi $a0,$v1,-0x1100` and branches `bgez` past the append, and view[2] is a positive depth,
-    // so this pair is unsatisfiable and this pass stages NO shadow — at 4:3 as much as at 16:9.
-    // That is a real fidelity defect against retail, but it is not a widescreen one: it is visible
-    // at the native aspect, where this change must be a no-op. Fixing it is a separate finding, so
-    // the negated limit is passed through verbatim rather than quietly corrected here.
+    // THE LIMIT IS 0x1100, AND THAT IS READ FROM RETAIL'S OWN WORDS, NOT INFERRED. The two passes
+    // emit the identical idiom, and differ only in the constant:
+    //
+    //   regular  0x8001F344  bgez $t3, skip        ; 0x8001F34C addi $t3,$v1,-0x1200
+    //                                      0x8001F350  bgez $t3, skip   -> stage iff viewZ < 0x1200
+    //   shaded   0x80022C2C  bgez $a0, skip        ; 0x80022C30  addi $a0,$v1,-0x1100
+    //                                      0x80022C34  bgez $a0, skip   -> stage iff viewZ < 0x1100
+    //
+    // `$v1` is a positive GTE depth — `mfc2 $v1, $k1, 0` at 0x80022BD8, and the far bounds around
+    // it are `sub $a1, $v1, $a0; bgez` (skip when the difference is >= 0), which only reads as a
+    // far bound if the depth is positive. So both pairs are NEAR bounds and the shaded pass stages
+    // shadows. An earlier revision of this file claimed the pair was unsatisfiable and that the
+    // shaded pass staged nothing; that was read off this project's own prose comment rather than
+    // off the bytes, and the disassembly above refutes it. Issue 0154.
     const moby_shadow_list::Entry shadow{
         .moby = actor, .radius = (uint32_t)(int8_t)core->mem_r8(mesh->address + 2u)};
-    const bool stages =
-        actor_scene::stages_shadow((int32_t)core->mem_r32(actor + 0x1cu), view[2], -0x1100);
+    const bool stages = actor_scene::stages_shadow(
+        (int32_t)core->mem_r32(actor + 0x1cu), view[2], actor_scene::kShadedShadowStagingDepth);
     if (stages && first.guest) {
       if (!actor_recipe_capture::physical_span(
               frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {

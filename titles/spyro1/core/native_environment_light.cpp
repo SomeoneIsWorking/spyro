@@ -93,12 +93,11 @@ std::uint32_t signedShift(std::uint32_t value, unsigned amount) {
 // skips it entirely; otherwise the tick byte is charged against the frame delta in $a0, a node with
 // ticks left is decremented and skipped, and a node whose tick is already spent walks its chain.
 //
-// THE STARTING DELTA IS THE WHOLE CHARGE, NOT WHAT IS LEFT OF IT. `0x8002A734 addi $t4,$t8,0` is
-// the `bgtz $v1,0x8002A718` DELAY SLOT, so $t4 is reloaded with the caller's $a0 on BOTH paths of
-// that branch — including the one that leaves the node alone — and the walk always starts from
-// `$a0` itself. The `neg $t4,$v0` at 0x8002A740 is the dead half of that: the next pass overwrites
-// it before anything reads it. A body that walks with `-left` starts every chain from a different
-// number, and the chain's own `sub $v0,$v0,$t4` turns that into a different exit byte.
+// THE WALK STARTS FROM THE LEFTOVER, NOT FROM THE CHARGE. `0x8002A734 addi $t4,$t8,0` is the
+// `bgtz $v1,0x8002A718` delay slot, so $t4 is reloaded with the caller's $a0 on both paths of that
+// branch, but `0x8002A740 neg $t4,$v0` is the delay slot of `blez $v0,0x8002A74C`, and a delay slot
+// runs on the taken branch too: a node whose tick is spent walks its chain with
+// $t4 = charge - tick, and every `sub $v0,$v0,$t4` in the chain is against that.
 //
 // v0 and v1 are set on BOTH exits: the body loads the flag byte AND the tick byte before it tests
 // the flag, so a node skipped by bit 1 still leaves v0 holding its untouched tick rather than
@@ -119,11 +118,6 @@ bool nodeIsDue(Core *c,
   }
   const std::int32_t left = static_cast<std::int32_t>(tick) - static_cast<std::int32_t>(charge);
   tail.v0 = static_cast<std::uint32_t>(left);
-  // 0x8002A86C `addiu $t4,$t8,0` is the delay slot of the flag test and loads the CHARGE, but
-  // 0x8002A878 `neg $t4,$v0` is the delay slot of 0x8002A874 `blez $v0` and OVERWRITES it on the
-  // way in: a delay slot runs on taken branches too. The walk therefore starts from the leftover
-  // (charge - tick), not from the charge. Walking with the full charge shifts every chain's
-  // `sub $v0,$v0,$t4` and lands the blended colours one byte off.
   const std::int32_t leftover = 0 - left;
   if (left > 0) {
     c->mem_w8(node + 3u, static_cast<std::uint8_t>(left));
@@ -166,8 +160,8 @@ ByteChain walkByteChain(Core *c,
                         std::uint32_t delta,
                         Tail &tail) {
   const std::uint32_t base = node + 0x8u;
-  std::uint32_t entry = base + (index << 2) + (flags & 0x1u);
-  std::uint32_t next = c->mem_r8(entry + 1u);
+  std::uint32_t next = c->mem_r8(base + (index << 2) + (flags & 0x1u) + 1u);
+  std::uint32_t entry = base + (next << 2);
   std::int32_t sum = 0;
   for (;;) {
     const std::uint32_t value = c->mem_r8(entry);
@@ -199,11 +193,9 @@ ByteChain walkByteChain(Core *c,
 
 // The 8-byte-record chain, walked by the other five lists (the four moby taggers and the vertex
 // colour one). The whole value byte reaches node+1 (there is no `& 3` here), node+3 takes the step
-// byte whole, and the fields sit at +0/+1/+2 where the 4-byte chain's are +0/+1/+3. Unlike the
-// 4-byte walk this one is NOT exercised by the Artisans route — no node of the five lists comes due
-// there — so its base and its three field offsets are the listing's, unconfirmed by the
-// differential, and a route that reaches a due node in one of those lists is what would settle
-// them.
+// byte whole, and the fields sit at +0/+1/+2 where the 4-byte chain's are +0/+1/+3. Like the
+// 4-byte walk, the first entry is found from the node's own index and flag bit, and every entry
+// after it is rebuilt from the next index the previous one named.
 struct RecordChain {
   std::uint32_t stop;
   std::uint32_t next;
@@ -217,8 +209,8 @@ RecordChain walkRecordChain(Core *c,
                             std::uint32_t delta,
                             Tail &tail) {
   const std::uint32_t base = node + 0xCu;
-  std::uint32_t entry = base + (index << 3) + (flags & 0x1u);
-  std::uint32_t next = c->mem_r8(entry + 2u);
+  std::uint32_t next = c->mem_r8(base + (index << 3) + (flags & 0x1u) + 2u);
+  std::uint32_t entry = base + (next << 3);
   for (;;) {
     const std::uint32_t value = c->mem_r8(entry);
     const std::uint32_t raw = c->mem_r8(entry + 1u);

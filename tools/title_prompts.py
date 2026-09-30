@@ -105,7 +105,7 @@ def title_menu_prompt(screen: Screen) -> Prompt:
         return Prompt(reached=True)
     if screen.gamestate == GS_TITLE_SCREEN and screen.title.mode == TSM_INIT \
             and screen.title.sub_state == PRESS_START_PLATFORM:
-        return Prompt(("start",), target="press_start_platform")
+        return Prompt(("start",), target="press_start_platform", repeatable=True)
     if screen.gamestate == GS_TITLE_SCREEN and screen.title.mode == TSM_MENU \
             and screen.title.sub_state in ANSWERABLE_MENU_PROMPTS:
         # One press per MENU SCREEN, named by its sub-state: the front end walks through several in a
@@ -228,7 +228,7 @@ def _selftest() -> int:
     # --- boot -> the save picker -------------------------------------------------
     init3 = Screen(gamestate=GS_TITLE_SCREEN, title=TitleState(TSM_INIT, 0, 0, 0, 3, 0))
     check("the PRESS START platform asks for start", title_menu_prompt(init3),
-          Prompt(("start",), target="press_start_platform"))
+          Prompt(("start",), target="press_start_platform", repeatable=True))
     # Every other TSM_Init substate is the fly-in, a fade, or the demo hand-off. Pressing there
     # either does nothing or cancels the attract sequence, so the prompt is empty -- and the driver
     # then just keeps sampling, which is the correct behaviour on a screen it must not touch.

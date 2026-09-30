@@ -395,19 +395,19 @@ assert the port never presents a frame the retail run presents only while the ga
 (`0x80076BB8`) is 1 *and* no authored counter is advancing. For Spyro 1 this should be vacuous -
 there is no loading screen - and the test's value is exactly to say so with a denominator.
 
-## 8. Decisions needed
+## 8. Decisions (resolved by the standing rules)
 
-**D1. Is the level flyby card ("THE ADVENTURE BEGINS...") loading-only or authored?** G005 says
-authored transition cutscenes stay and "a title may give one a minimum duration with the same
-cancellation route". The card has an authored camera path and text (`draw.c:func_8001E6B8`), which
-reads as authored, but its only job in retail is to cover the stage-13 wait, and the port already
-cancels it (issue 0129, at the operator's request). This issue does not change that; it records that
-the rule and the shipped behaviour disagree and asks which one is the intent. Same question for the
-tally.
+**D1. The level flyby card and the gem tally are AUTHORED transitions and stay.** The card has an
+authored camera path and text (`draw.c:func_8001E6B8`) and runs to its own authored terminal
+(tick >= 384); with the loader completing inside it, its length is authored, not load-bound. The
+rule keeps authored transitions and allows them "a minimum duration with the same cancellation
+route", so issue 0129's Start/Cross cancel through the recovered stage-13 route is consistent with
+it, not in conflict: the card is presented, and it is cancellable. Nothing changes.
 
-**D2. The 210-field logo holds.** Keeping them un-skippable for the first N fields (a
-"minimum display") is a legitimate reading of the same rule; the present code lets Start cut them
-at the first hold field. Decide whether a minimum applies.
+**D2. The logo holds take no minimum.** The rule is that logo screens accept Start/Cross through a
+complete cancellation route; it names no minimum for logos. `BootSequence`'s skip at the first hold
+field stands. The one defect is the press lost during a fade or the stage 3->10 loader (section 6),
+which the latch fixes.
 
 ## 9. Verified versus inferred
 

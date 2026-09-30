@@ -1941,8 +1941,8 @@ Related goals: G001, G002, G003.
 Missing. Censused statically in `docs/issues/0155`: 31 CD read issuer sites (11 blocking, 20
 streaming), no loading screen exists, and the port's CD overrides already remove storage latency.
 Gap: per-operation payload and terminal-state comparison against retail, measurement of residual
-per-stage and XA-gate latency, the logo-hold press latch, and the flyby/tally classification
-decision, with the absence of loading presentation captured.
+per-stage and XA-gate latency, and the logo-hold press latch (the flyby card and tally are authored
+and stay, cancellable), with the absence of loading presentation captured.
 
 ### S034 — Spyro 2 loading removal
 

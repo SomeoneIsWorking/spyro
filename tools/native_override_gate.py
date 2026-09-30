@@ -328,10 +328,12 @@ def run_differential(
         f"{route_name} run",
         [
             heavy,
-            # STOPGAP: back to --kind run once psxport issue 0141 bounds the differential's journal;
-            # until then a runaway override can take gigabytes, so at most two route runs at once.
             "--kind",
-            "build",
+            "run",
+            # A 300-frame gameplay drive peaks near 190 MB with the differential armed, and psxport
+            # issue 0141 caps one shadowed call's journals at 32 MiB, so a runaway override stays bounded.
+            "--mem-mib",
+            "512",
             "--",
             sys.executable,
             *(ROOT / part if part.startswith("tools/") else part for part in command),

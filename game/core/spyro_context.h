@@ -3,6 +3,7 @@
 #include "actor_temporal.h"
 #include "archive_transfer.h"
 #include "field_2d_overlay.h"
+#include "field_owner.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
 #include "presentation_owner.h"
@@ -19,6 +20,11 @@ class Core;
 struct SpyroContext {
   spyro::ArchiveTransfer archiveTransfer{};
   spyro::RuntimeRun run{};
+  // The selected title's field owner, published by its frame driver. Non-owning: the driver
+  // holds it and is installed into the Game before the first host turn can arrive, so the
+  // back-pointer is valid for the whole process and is how a host turn with only a Core
+  // reaches "a field happened".
+  spyro::FieldOwner *fieldOwner = nullptr;
   SpyroPairedActorFrameState pairedActor{};
   spyro::world_temporal::History worldTemporal{};
   spyro::actor_temporal::History actorTemporal{};

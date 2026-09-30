@@ -33,13 +33,35 @@ import zlib
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def disc_path():
-    d = os.environ.get("PSXPORT_SPYRO_DISC", "")
+# ONE REGISTRY, NOT A SECOND SCRIPT. A capture that is written per title has two copies of the
+# launch, the env and the disc lookup, and the copies drift -- which is how a "screenshot" ends up
+# being one run's picture filed under another's name. `title` selects the identity; everything after
+# it is shared.
+#
+# `double_buffered` is measured per title, not assumed: Spyro 1 submits its primitives on odd frames
+# and zero on even ones, and this port's Spyro 2 boot has no such cadence measured yet, so its
+# captures must be asked for by the frame the caller wants rather than silently nudged.
+TITLES = {
+    "spyro1": {
+        "disc_var": "PSXPORT_SPYRO_DISC",
+        "image": "scratch/assets/spyro1/SCUS_942.28",
+        "double_buffered": True,
+    },
+    "spyro2": {
+        "disc_var": "PSXPORT_SPYRO2_DISC",
+        "image": "scratch/assets/spyro2/SCUS_944.25",
+        "double_buffered": False,
+    },
+}
+
+
+def disc_path(disc_var):
+    d = os.environ.get(disc_var, "")
     if not d:
         env = os.path.join(REPO, ".env")
         if os.path.exists(env):
             for line in open(env):
-                m = re.match(r"\s*PSXPORT_SPYRO_DISC\s*=\s*(.+)", line)
+                m = re.match(r"\s*" + disc_var + r"\s*=\s*(.+)", line)
                 if m:
                     d = m.group(1).strip()
                     break
@@ -101,25 +123,31 @@ def main():
                          "the left part of a wider picture, which reads as a shifted, cropped, broken "
                          "render. That nearly got recorded as a renderer fault; it was this crop.")
     ap.add_argument("--secs", type=int, default=240)
+    ap.add_argument("--title", choices=sorted(TITLES), default="spyro1",
+                    help="which title's identity to launch and capture")
     a = ap.parse_args()
 
+    title = TITLES[a.title]
     frame = a.frame
-    if frame % 2 == 0:
+    if title["double_buffered"] and frame % 2 == 0:
         frame += 1
-        print(f"frame {a.frame} is EVEN and submits no primitives in this port — using {frame}",
+        print(f"frame {a.frame} is EVEN and submits no primitives in {a.title} — using {frame}",
               file=sys.stderr)
 
-    disc = disc_path()
+    disc = disc_path(title["disc_var"])
     if not disc or not os.path.exists(disc):
-        sys.exit("no disc image (set PSXPORT_SPYRO_DISC or .env)")
+        sys.exit(f"no disc image (set {title['disc_var']} or .env)")
     out = os.path.join(REPO, "scratch", "screenshots")
+    if not os.path.exists(os.path.join(REPO, title["image"])):
+        sys.exit(f"{title['image']}: not provisioned; run the title's provisioner first, so this "
+                 f"captures no picture at all rather than a stale one")
     os.makedirs(out, exist_ok=True)
     vram = os.path.join(out, f"vram_f{frame}.png")
 
     # PSXPORT_NOPACE: drive to the requested frame as fast as the host can — headless is paced like
     # a windowed run now (they are one program), so "fast" has to be ASKED for.
     env = dict(os.environ, PSXPORT_REPL="1", PSXPORT_VK_HEADLESS="1", PSXPORT_NOAUDIO="1",
-               PSXPORT_NOPACE="1", PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", PSXPORT_SPYRO_DISC=disc)
+               PSXPORT_NOPACE="1", PSXPORT_WATCHDOG="0", PSXPORT_ASSET_DIR="external/psxport", **{title["disc_var"]: disc})
     pre_mtime = os.path.getmtime(vram) if os.path.exists(vram) else None
     # `end`, not `quit`: quit merely DETACHES the REPL and leaves the game running, so the capture
     # had to be SIGKILLed by `timeout` and the run-end reporters never printed — the log then could
@@ -136,7 +164,7 @@ def main():
     logpath = os.path.join(logdir, f"shot-f{frame}.log")
     with open(logpath, "w") as logf:
         subprocess.run(["timeout", "-s", "KILL", str(a.secs),
-                        "./scratch/bin/spyro_port", "scratch/bin/spyro/SCUS_942.28"],
+                        "build/bin/spyro_port", title["image"]],
                        cwd=REPO, env=env, input=script, text=True,
                        stdout=logf, stderr=subprocess.STDOUT)
     if not os.path.exists(vram):
@@ -171,7 +199,13 @@ def main():
     crop = [rows[y][0:fbw * ch] for y in range(y0, min(y0 + 240, h))]
     png = os.path.join(out, f"f{frame}.png")
     write_png(png, fbw, len(crop), ch, crop)
-    print(f"{os.path.relpath(png, REPO)}   (buffer at y={y0}; {top} vs {bot} distinct colours)")
+    # The non-black share, with its denominator. A picture of nothing is a legitimate result and
+    # the reader has to be able to see that from the file alone rather than from this process's
+    # exit code, which is 0 either way.
+    lit = sum(1 for line in crop for x in range(fbw) if line[x * ch:x * ch + 3] != b"\x00\x00\x00")
+    total = max(1, fbw * len(crop))
+    print(f"{os.path.relpath(png, REPO)}   (buffer at y={y0}; {top} vs {bot} distinct colours; "
+          f"{100.0 * lit / total:.2f}% non-black of {fbw}x{len(crop)} = {total} px)")
     print(f"    run log: {os.path.relpath(logpath, REPO)}   "
           f"— read it to see WHICH bodies ran; a picture alone cannot tell you", file=sys.stderr)
     return 0

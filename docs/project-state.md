@@ -21,7 +21,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S003 | Stage-13 title mode 2 presents the three-slot save screen natively | verified | S002 | G003 |
 | S004 | Spyro 1 boot and gameplay advance under a title-owned frame/field scheduler without guest VSync | partial | S001 | G002, G003 |
 | S005 | Spyro 1 exposes native rendering and presentation settings through title-owned capability policy | partial | S002, S004 | G003 |
-| S006 | Spyro 2 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial | — | G001 |
+| S006 | Spyro 2 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | partial — the finite three-field bootstrap and its `0x80011B1C` stop are DELETED; the retail boot prefix `0x80011E9C` now executes through Lightrec (484 fields, 481 product steps, 23,373,821 executed blocks, 135,585,691 instructions, 0 faults, exit 0), a wedged boot is ended BY NAME through `RuntimeRun::requestEnd()` at resume `0x80013788` rather than by a frame cap (480 boot steps and 64 boot fields are separate bounds, because a boot that POLLS rather than waits can never reach the field bound), and the stop itself is still the loader's CD completion, and zero interpreter fallback is still refused by a Lightrec self-modifying-block false positive at `0x8005FFFC` (issue 0092) | — | G001 |
 | S007 | Spyro 1 accepts held digital input and moves the player after the New Game field handoff | partial | S004 | G001, G003 |
 | S008 | psxport executes remaining Spyro guest code through a per-Core Lightrec runtime with bounded, accounted fallback | partial | — | G002, G004 |
 | S009 | Spyro 1 reaches both stage-13 800/900 discriminators through Lightrec and native frame ownership | verified | S004, S008 | G001, G002 |
@@ -39,7 +39,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
 | S023 | Spyro 3 has identity-derived executable facts and a title-local native boot owner through the pre-display boundary | missing | — | G001 |
-| S024 | Spyro 2 reaches representative gameplay through native/Lightrec execution | missing | S006, S008 | G001, G002 |
+| S024 | Spyro 2 reaches representative gameplay through native/Lightrec execution | missing — the boot prefix and the display bootstrap run in guest code, and the module load at `0x80013810` wedges at the loader's CD completion poll — measured at resume `0x80013788`, spending `CdSync(1,0)` at `0x8001372C` waiting for a controller response the framework's synchronous stock `CdRead` never raises (`cd_ready_delivered + declined = 0` against a real disc fill); the required change is named in issue 0092 section 3 | S006, S008 | G001, G002 |
 | S025 | Spyro 3 reaches representative gameplay through native/Lightrec execution | missing | S008, S023 | G001, G002 |
 | S026 | Spyro 2 widescreen renders additional horizontal scene coverage without stretching | missing | S024 | G003 |
 | S027 | Spyro 3 widescreen renders additional horizontal scene coverage without stretching | missing | S025 | G003 |
@@ -828,6 +828,24 @@ input at all, so the title screen times out into `TSM_Demo`/`TSD_DemoLevel` and 
 `g_DemoLevelIds[0]` -- level 11, exactly the level the failed portal walk was trying to enter
 (docs/issues/0114). Because the demo then replays a RECORDED input stream from the level's own data,
 no steering is needed and the two cores cannot drift apart the way a camera-relative route does.
+
+**The same no-input route is now also a TWO-BUILDS comparison**, which is the question a mismatch
+count cannot answer. `tools/route_trace.py` reads the two channels the product already prints -- one
+`[pace]` line per delivered field carrying the field index, the delivery site and the title's 60 Hz
+counter, and one `[skipmap]` line per guest state change -- and compares two runs of the route
+field by field; `route_trace.py ramdiff` compares two `PSXPORT_GRAMDUMP` captures word by word. Its
+control is the same binary run twice, and that control is what makes a zero mean something: two runs
+of one binary agree on every delivered field and on all 524,288 guest words at present 10,000. Used
+on the Spyro 2 boot branch's move of Spyro 1's field delivery into `game/core/field_owner.*`, it
+measured **0 of 524,288 guest words differing at present 10,000, identical traces over 35,734
+delivered fields, and two identical log strings as the whole diff of a 53,663-line run** — the shared
+owner preserves Spyro 1 exactly. It also showed why the route corpus's mismatch count was read as a
+regression: on this route `camera_collision_update` call 3328 and `allocate_particle_slot` call 39,680
+differ from retail **on `7d7f2eb` as well**, and a run that ends early never samples them, so the
+count measures how deep a run got. Issue
+[0149](issues/0149-shared-field-owner-measured-against-spyro-1-s-own.md) holds the measurement and
+[0150](issues/0150-two-overrides-differ-from-retail-on-the-attract-route.md) holds the two
+mismatching calls, which are a real pre-existing override finding and not a regression.
 
 The route's own measurement unit is one FIELD, with a `g_GameTick` barrier inside demo playback. That
 is not cosmetic: the framework's game-frame barrier cannot resolve inside a demo at all, because

@@ -98,6 +98,11 @@ public:
   FieldFixture() : fields(*game) {
     game->core.gameCtx = &context;
     game->runtime = &runtime;
+    // The shared field owner publishes itself explicitly, and this fixture publishes the context in
+    // its body -- AFTER the scheduler member was constructed. The owner therefore cannot reach the
+    // context from its constructor without making every fixture's member order a hidden
+    // precondition, so it publishes here instead.
+    fields.publish();
     // Exercise the actual Core presentation backend without creating a graphics device/window.
     game->gpu_dev.s_gpu_on = 0;
   }

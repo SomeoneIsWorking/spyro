@@ -25,6 +25,20 @@ file(WRITE "${CMAKE_BINARY_DIR}/psxport_resolved.txt"
      "dir = ${PSXPORT_DIR}\ncommit = ${PSXPORT_REVISION}\n")
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+# ONE LOCKED PYTHON ENVIRONMENT. Every maintainer tool and test below runs on the project's own
+# `uv` environment, never on whatever interpreter is first in PATH. Two tests were failing with
+# `ModuleNotFoundError: No module named 'capstone'` because `find_package(Python3)` resolved a
+# user-level interpreter while the dependency lives in ./.venv -- and the fix is not to install
+# anything globally, it is to run the tools on the environment that declares them.
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/.venv/bin/python3")
+  message(FATAL_ERROR
+          "no project Python environment at ${CMAKE_SOURCE_DIR}/.venv; create it with "
+          "`uv sync --frozen` rather than installing tools into a system interpreter")
+endif()
+set(Python3_EXECUTABLE "${CMAKE_SOURCE_DIR}/.venv/bin/python3"
+    CACHE FILEPATH "Project interpreter" FORCE)
+
 find_package(ZLIB REQUIRED)
 find_package(zstd CONFIG QUIET)
 if(NOT TARGET zstd::libzstd_shared)
@@ -58,6 +72,7 @@ set(SPYRO_RUNTIME_SOURCES
   game/core/archive_transfer.cpp
   game/core/content_identity.cpp
   game/core/cd_queue.cpp
+  game/core/field_owner.cpp
   game/core/guest_execution.cpp
   game/core/native_angle.cpp
   game/core/guest_magnitude.cpp
@@ -223,7 +238,8 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_player_physics.cpp
   titles/spyro1/core/native_random_range.cpp
   titles/spyro1/core/native_shaded_moby_queue.cpp
-  titles/spyro2/core/spyro2_gpu_sync.cpp
+  titles/spyro2/core/spyro2_frame_driver.cpp
+  titles/spyro2/core/spyro2_guest_call.cpp
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 
@@ -276,6 +292,16 @@ if(BUILD_TESTING)
   add_executable(test_guest_execution tests/test_guest_execution.cpp)
   target_link_libraries(test_guest_execution PRIVATE spyro_runtime)
   add_test(NAME guest_execution COMMAND test_guest_execution)
+  # Spyro 2's boot driver: the finite guest call, one delivered field per guest display wait, one
+  # presented field per step, and the refusals that keep a wedged or misentered call from reading as
+  # progress. Registered explicitly rather than through the list above because it is the only case
+  # that drives the Spyro 2 driver end to end.
+  add_executable(test_spyro2_boot_driver
+    tests/test_spyro2_boot_driver.cpp)
+  target_include_directories(test_spyro2_boot_driver PRIVATE
+    ${PSXPORT_DIR}/tests game/core titles/spyro2/core)
+  target_link_libraries(test_spyro2_boot_driver PRIVATE spyro_runtime)
+  add_test(NAME spyro2_boot_driver COMMAND test_spyro2_boot_driver)
   add_executable(test_title_selection
     tests/test_title_selection.cpp)
   target_include_directories(test_title_selection PRIVATE game/core)
@@ -458,7 +484,22 @@ if(BUILD_TESTING)
       # selftest pins a sign-extended table accepted and its unsigned-immediate twin refused.
       override_constants
       # The route corpus's jal-target denominator, image split and registration parse.
-      reach_corpus)
+      reach_corpus
+      # The per-FIELD route trace and the first divergence between two builds' runs of one route.
+      # Its selftest is the negative set a "these two runs agree" claim needs: a log with no field
+      # lines, a field index that skips and a state line that moves backwards are all REFUSED
+      # instead of reading as an empty trace, and a truncated second log is reported as truncated
+      # rather than as agreement over the prefix.
+      route_trace
+      # The GUEST WORD reader. Its selftest is the negative set that matters for a reachability
+      # claim: an `ori`-built base, a base invalidated by a call, a base that survives a COP2 (GTE)
+      # instruction and an undefined SPECIAL encoding must all be REFUSED, because this class of
+      # report reads as a clean measurement of access when it is really a measurement of nothing.
+      # The third negative is the defect this tool had: it carried a constant across a GTE block
+      # and reported `sll` and `bltz` sites as stores over a guest word. Two positives guard the
+      # fix -- a fresh base after every barrier, and two stores through one base, which a probe
+      # that treated a store as a register clobber would report once.
+      probe_guest_word)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

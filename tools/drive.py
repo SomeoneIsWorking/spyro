@@ -421,15 +421,17 @@ def environment(disc: str | None, settings: Path | None = None) -> dict[str, str
     return env
 
 
-def disc_path() -> str | None:
-    value = os.environ.get("PSXPORT_SPYRO_DISC")
+def disc_path(variable: str = "PSXPORT_SPYRO_DISC") -> str | None:
+    """The disc named by `variable` in the environment, else in the repository's `.env`. The default is
+    Spyro 1's; `boot_run.py` asks for the Spyro 2 and 3 variables through the same reader."""
+    value = os.environ.get(variable)
     if value:
         return value
     env_file = ROOT / ".env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             key, separator, rest = line.partition("=")
-            if separator and key.strip() == "PSXPORT_SPYRO_DISC":
+            if separator and key.strip() == variable:
                 return rest.strip()
     return None
 

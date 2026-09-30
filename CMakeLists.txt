@@ -350,6 +350,10 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/source_policy.py --selftest)
   # The agent drivers read their guest addresses out of game/core/guest_globals.h. If that parser
   # ever silently stops matching the header's form, every driver would fall back to nothing at all.
+  # The Spyro 2/3 boot report. Its cases are pairs: a completed run and an aborted one (the aborted run's
+  # totals must read NOT MEASURED, never 0), a matching CD count and a mismatching one, and the refusals.
+  add_test(NAME boot_run_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/boot_run.py --selftest)
   add_test(NAME guest_globals_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/guest_globals.py --selftest)
   # The route both the interactive driver and the oracle's level checkpoint walk. A steering table

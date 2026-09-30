@@ -165,25 +165,46 @@ def gate_environment(framework: Path) -> dict[str, str]:
     return env
 
 
+def descendants(pid: int) -> list[int]:
+    """Every live descendant of `pid`, read from /proc (children before their children)."""
+    children: dict[int, list[int]] = {}
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+        except OSError:
+            continue
+        children.setdefault(int(fields[1]), []).append(int(stat.parent.name))
+    found: list[int] = []
+    pending = [pid]
+    while pending:
+        for child in children.get(pending.pop(), []):
+            found.append(child)
+            pending.append(child)
+    return found
+
+
 def step(
     name: str,
     args: list[object],
     env: dict[str, str] | None = None,
     timeout: float | None = None,
 ) -> None:
-    """Run one gate step in its own process group; a timeout kills the whole group.
+    """Run one gate step; a timeout kills the step's whole process tree.
 
-    A route run's product is a grandchild (heavy.py -> driver -> product), so killing only the
-    direct child would orphan the game, which is how one runaway gate held 7 GB for 16 minutes.
+    The step stays in the caller's process group, so a swarm's group kill of a timed-out worker
+    still reaches it. A route run's product is a grandchild (heavy.py -> driver -> product), so the
+    timeout kills every descendant, not only the direct child.
     """
     print(f"[gate] {name}: {' '.join(map(str, args))}", flush=True)
-    process = subprocess.Popen(
-        [str(a) for a in args], cwd=ROOT, env=env, start_new_session=True
-    )
+    process = subprocess.Popen([str(a) for a in args], cwd=ROOT, env=env)
     try:
         code = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
+        for pid in [process.pid, *descendants(process.pid)]:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         process.wait()
         raise GateFailure(
             f"{name} exceeded {timeout:.0f} s; a native override that never returns hangs its route"

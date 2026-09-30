@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -42,6 +43,9 @@ BUILD = (
 )  # the maintainer build dir, which some probe selftests locate by name
 REPORT = ROOT / "scratch/override-gate/differential.json"
 CCACHE = shutil.which("ccache") is not None
+# A route takes minutes (the walk reaches gameplay at frame ~6,360 in about 15 s unpaced; the demo
+# route runs 420 s). Past this, the only explanation is an override that never returns.
+ROUTE_TIMEOUT_SECONDS = 900
 
 
 class GateFailure(RuntimeError):
@@ -161,11 +165,30 @@ def gate_environment(framework: Path) -> dict[str, str]:
     return env
 
 
-def step(name: str, args: list[object], env: dict[str, str] | None = None) -> None:
+def step(
+    name: str,
+    args: list[object],
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> None:
+    """Run one gate step in its own process group; a timeout kills the whole group.
+
+    A route run's product is a grandchild (heavy.py -> driver -> product), so killing only the
+    direct child would orphan the game, which is how one runaway gate held 7 GB for 16 minutes.
+    """
     print(f"[gate] {name}: {' '.join(map(str, args))}", flush=True)
-    if subprocess.run(
-        [str(a) for a in args], cwd=ROOT, env=env, check=False
-    ).returncode:
+    process = subprocess.Popen(
+        [str(a) for a in args], cwd=ROOT, env=env, start_new_session=True
+    )
+    try:
+        code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        raise GateFailure(
+            f"{name} exceeded {timeout:.0f} s; a native override that never returns hangs its route"
+        ) from None
+    if code:
         raise GateFailure(f"{name} failed")
 
 
@@ -284,8 +307,10 @@ def run_differential(
         f"{route_name} run",
         [
             heavy,
+            # STOPGAP: back to --kind run once psxport issue 0141 bounds the differential's journal;
+            # until then a runaway override can take gigabytes, so at most two route runs at once.
             "--kind",
-            "run",
+            "build",
             "--",
             sys.executable,
             *(ROOT / part if part.startswith("tools/") else part for part in command),
@@ -293,6 +318,7 @@ def run_differential(
             checkout / "scratch/assets/spyro1/SCUS_942.28",
         ],
         env={**env, **(route_env or {})},
+        timeout=ROUTE_TIMEOUT_SECONDS,
     )
     step(
         "override differential",

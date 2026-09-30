@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -44,8 +43,12 @@ BUILD = (
 REPORT = ROOT / "scratch/override-gate/differential.json"
 CCACHE = shutil.which("ccache") is not None
 # A route takes minutes (the walk reaches gameplay at frame ~6,360 in about 15 s unpaced; the demo
-# route runs 420 s). Past this, the only explanation is an override that never returns.
+# route runs 420 s). Past this, the only explanation is an override that never returns. The deadline
+# is enforced INSIDE heavy.py's admission (coreutils timeout, which signals the route's whole process
+# group), so time spent queued for a run slot behind a swarm's gates never counts against it.
 ROUTE_TIMEOUT_SECONDS = 900
+# coreutils timeout's exit status when the deadline fired (124) or its --kill-after SIGKILL did (137).
+DEADLINE_EXIT_CODES = (124, 137)
 
 
 class GateFailure(RuntimeError):
@@ -165,50 +168,25 @@ def gate_environment(framework: Path) -> dict[str, str]:
     return env
 
 
-def descendants(pid: int) -> list[int]:
-    """Every live descendant of `pid`, read from /proc (children before their children)."""
-    children: dict[int, list[int]] = {}
-    for stat in Path("/proc").glob("[0-9]*/stat"):
-        try:
-            fields = stat.read_text().rsplit(")", 1)[1].split()
-        except OSError:
-            continue
-        children.setdefault(int(fields[1]), []).append(int(stat.parent.name))
-    found: list[int] = []
-    pending = [pid]
-    while pending:
-        for child in children.get(pending.pop(), []):
-            found.append(child)
-            pending.append(child)
-    return found
-
-
 def step(
     name: str,
     args: list[object],
     env: dict[str, str] | None = None,
-    timeout: float | None = None,
+    hang_codes: tuple[int, ...] = (),
 ) -> None:
-    """Run one gate step; a timeout kills the step's whole process tree.
+    """Run one gate step; an exit status in `hang_codes` means the step's own deadline fired.
 
     The step stays in the caller's process group, so a swarm's group kill of a timed-out worker
-    still reaches it. A route run's product is a grandchild (heavy.py -> driver -> product), so the
-    timeout kills every descendant, not only the direct child.
+    still reaches it.
     """
     print(f"[gate] {name}: {' '.join(map(str, args))}", flush=True)
-    process = subprocess.Popen([str(a) for a in args], cwd=ROOT, env=env)
-    try:
-        code = process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        for pid in [process.pid, *descendants(process.pid)]:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        process.wait()
+    code = subprocess.run(
+        [str(a) for a in args], cwd=ROOT, env=env, check=False
+    ).returncode
+    if code in hang_codes:
         raise GateFailure(
-            f"{name} exceeded {timeout:.0f} s; a native override that never returns hangs its route"
-        ) from None
+            f"{name} exceeded {ROUTE_TIMEOUT_SECONDS} s after admission; a native override that never returns hangs its route"
+        )
     if code:
         raise GateFailure(f"{name} failed")
 
@@ -335,13 +313,16 @@ def run_differential(
             "--mem-mib",
             "512",
             "--",
+            "timeout",
+            "--kill-after=10",
+            str(ROUTE_TIMEOUT_SECONDS),
             sys.executable,
             *(ROOT / part if part.startswith("tools/") else part for part in command),
             "--binary",
             checkout / "scratch/assets/spyro1/SCUS_942.28",
         ],
         env={**env, **(route_env or {})},
-        timeout=ROUTE_TIMEOUT_SECONDS,
+        hang_codes=DEADLINE_EXIT_CODES,
     )
     step(
         "override differential",

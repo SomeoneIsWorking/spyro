@@ -65,6 +65,13 @@ def git(args, cwd):
     return done.stdout.strip(), done.returncode
 
 
+def git_failure(args, cwd):
+    """git's own error text for a command that just failed, so a refusal can quote it instead of
+    hiding it behind a paraphrase."""
+    done = subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True)
+    return (done.stderr or done.stdout).strip() or f"exit status {done.returncode}, no output"
+
+
 def is_framework(path):
     return os.path.isfile(os.path.join(path, "cmake", "psxport.cmake"))
 
@@ -140,10 +147,43 @@ def pin_worktree_usable(repo, path, sha):
         return False, f"it belongs to another repository ({common or 'unknown'})"
     out, rc = git(["status", "--porcelain", "--untracked-files=all"], path)
     if rc != 0:
-        return False, "its state cannot be read"
+        return False, f"its state cannot be read: {git_failure(['status', '--porcelain'], path)}"
     if out:
         return False, f"it has {len(out.splitlines())} uncommitted change(s): {out.splitlines()[0]}"
     return True, "clean at the pinned commit"
+
+
+def submodule_gitdirs(root):
+    """Every initialised submodule working tree under `root` (nested ones too) as (worktree, gitdir),
+    read from each one's `.git` gitfile and never by running git inside it: that is exactly the command
+    that fails while `core.worktree` is stale."""
+    for parent, sub in SUBMODULES:
+        work = os.path.join(root, parent, sub)
+        gitfile = os.path.join(work, ".git")
+        if not os.path.isfile(gitfile):
+            continue
+        with open(gitfile, encoding="utf-8") as handle:
+            text = handle.read().strip()
+        if text.startswith("gitdir:"):
+            yield work, os.path.normpath(os.path.join(work, text[len("gitdir:"):].strip()))
+
+
+def repair_published_links(repo, target):
+    """Re-point the git metadata that still names the STAGING path at the published one.
+
+    The rename moves the directory and nothing else. Git recorded the staging path in the worktree's
+    admin `gitdir` link (`git worktree repair` rewrites that) and in each submodule's `core.worktree`
+    (relative to its module gitdir, so it must be recomputed). The submodules' own gitfiles are relative
+    to the moved tree and need no change. Returns an error text, or None."""
+    _, rc = git(["worktree", "repair", target], repo)
+    if rc != 0:
+        return f"git worktree repair failed: {git_failure(['worktree', 'repair', target], repo)}"
+    for work, gitdir in submodule_gitdirs(target):
+        value = os.path.relpath(work, gitdir)
+        _, rc = git(["config", "--file", os.path.join(gitdir, "config"), "core.worktree", value], repo)
+        if rc != 0:
+            return f"could not re-point core.worktree of {work}"
+    return None
 
 
 def ensure_pin_worktree(repo, sha, with_submodules=True):
@@ -175,6 +215,16 @@ def ensure_pin_worktree(repo, sha, with_submodules=True):
             # Two titles pinned to the same commit, fetching at the same time: both saw the path free,
             # and the loser's rename fails rather than merging two trees. That is a refusal, not a crash.
             return None, f"another actor published it first ({error.strerror or error})"
+        broken = repair_published_links(repo, target)
+        if broken is None:
+            usable, why = pin_worktree_usable(repo, target, sha)
+            broken = None if usable else why
+        if broken is not None:
+            # This tool's own pristine creation, unusable: remove it so the next run builds afresh
+            # rather than refusing forever on a tree nobody has touched.
+            git(["worktree", "remove", "--force", target], repo)
+            shutil.rmtree(target, ignore_errors=True)
+            return None, f"the new pinned worktree was unusable after publication ({broken})"
         return target, "created"
     finally:
         if os.path.isdir(staging):        # only ever this tool's own staging path; a rename consumed it

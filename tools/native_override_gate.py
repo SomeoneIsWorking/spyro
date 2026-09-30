@@ -411,7 +411,14 @@ def gate(names: list[str], route: str, light: bool) -> None:
             ],
             env,
         )
-    run_differential(names, route, heavy, framework, checkout, env)
+    run_differential(
+        names=names,
+        heavy=heavy,
+        route_name=route,
+        framework=framework,
+        checkout=checkout,
+        base_env=env,
+    )
     print(f"[gate] PASS: {', '.join(names)}")
 
 

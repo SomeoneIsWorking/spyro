@@ -5,7 +5,7 @@ status: open
 symptom: the finite three-field display bootstrap is gone; the retail boot prefix 0x80011E9C executes through Lightrec and wedges in the guest's chained per-sector CD reader with no completion delivered
 tags: spyro2,boot,loader,re,ownership,cd,lightrec
 created: 2026-08-28
-updated: 2026-09-30
+updated: 2026-10-01
 ---
 
 ## Answer
@@ -248,3 +248,6 @@ check the site's own bytes before believing the site.**
   instructions were produced with a raised fallback budget
   (`PSXPORT_LIGHTREC_FALLBACK_BLOCK_LIMIT=2000`, 37 fallback blocks, all `self_modifying_code`, all
   from the one site in section 4). The shipping default's run is the 12-block refusal in section 4.
+
+### Note (2026-10-01)
+2026-10-01: the loaded module's ambiguous identity at 0x80077374 was a missing image publication, fixed in issue 0156; the boot prefix now returns (43 steps / 133 fields).

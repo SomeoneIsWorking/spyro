@@ -5,7 +5,7 @@ status: open
 symptom: Spyro 3 had identity facts and an explicit unimplemented boundary — SCUS_944.67 was never executed; it now enters its own retail boot prefix 0x8002AB38 and runs it through Lightrec
 tags: spyro3,boot,loader,re,ownership,cd,lightrec
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-01
 ---
 
 ## Answer
@@ -493,3 +493,6 @@ the real fault was a colliding *filename*, which is why it is written down here.
 
 **Fix:** the shared owner is `game/core/spyro_guest_call.{h,cpp}`, and the reason is stated in the
 header so the name cannot be re-collided. No framework file was touched.
+
+### Note (2026-10-01)
+2026-10-01: the module entry 0x80074DEC stop was a missing image publication, fixed in issue 0156; the boot prefix returns (336 steps / 546 fields) and the first main-loop draw faults at 0x8001C4EC (scratchpad 0x1F800400).

@@ -32,7 +32,9 @@ SHARED_CANDIDATES = (
     Path(os.environ["RE_HARNESS_DIR"]) / "tools" / "source_boundary.py"
     if os.environ.get("RE_HARNESS_DIR")
     else Path("__missing_re_harness_override__"),
-    ROOT.parents[1] / "shared" / "re-harness" / "tools" / "source_boundary.py",
+    # Every ancestor's workspace, nearest first: a title checkout is ~/repo/psx/<title>, but a
+    # worktree of it is ~/repo/psx/<title>/scratch/wt/<branch>, where a fixed parents[1] missed.
+    *(parent / "shared" / "re-harness" / "tools" / "source_boundary.py" for parent in ROOT.parents),
     Path.home() / ".codex" / "bin" / "source_boundary.py",
     Path.home() / ".claude" / "bin" / "source_boundary.py",
 )

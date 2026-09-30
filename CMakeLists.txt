@@ -224,15 +224,19 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/spyro1_transition_skip.cpp
   titles/spyro1/core/spyro1_runtime.cpp
   titles/spyro1/core/native_sound_position.cpp
+  titles/spyro1/core/native_audio_key_state.cpp
   titles/spyro1/core/native_camera.cpp
+  titles/spyro1/core/native_collision_shade.cpp
   titles/spyro1/core/native_cutscene.cpp
   titles/spyro1/core/native_draw_setup.cpp
   titles/spyro1/core/native_effect_state.cpp
   titles/spyro1/core/native_gamepad.cpp
   titles/spyro1/core/native_glow_sparkle_pools.cpp
   titles/spyro1/core/native_level_globals_table.cpp
+  titles/spyro1/core/native_moby_allocator.cpp
   titles/spyro1/core/native_moby_helpers.cpp
   titles/spyro1/core/native_moby_lists.cpp
+  titles/spyro1/core/native_moby_transform.cpp
   titles/spyro1/core/native_particle_alloc.cpp
   titles/spyro1/core/native_pause_menu.cpp
   titles/spyro1/core/native_pixel_fade.cpp
@@ -242,6 +246,13 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_shaded_moby_queue.cpp
   titles/spyro2/core/spyro2_frame_driver.cpp
   titles/spyro2/core/spyro2_guest_call.cpp
+  titles/spyro1/core/native_shared_models.cpp
+  titles/spyro1/core/native_spu_registers.cpp
+  titles/spyro1/core/native_spu_voice_pitch.cpp
+  titles/spyro1/core/native_spu_state.cpp
+  titles/spyro1/core/native_spu_callbacks.cpp
+  titles/spyro1/core/native_spu_voice_attributes.cpp
+  titles/spyro1/core/native_spu_key_status.cpp
   titles/spyro2/core/spyro2_runtime.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 

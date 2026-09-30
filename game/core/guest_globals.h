@@ -64,6 +64,13 @@ inline constexpr std::uint32_t kTitlescreenState = 0x80078D78u;
 // g_LevelMobys (moby.h): pointer to the level's Moby array.
 inline constexpr std::uint32_t kLevelMobys = 0x80075828u;
 
+// D_8006CBF8 and D_8006CC78: the sin and cos tables Sin (0x80016C58) and Cos (0x80016CB0) index
+// with a 12-bit angle, 0x80 bytes of 16-bit entries each, a quarter turn apart. The ground-probe
+// pass reads the same pair as signed steps; a moby orientation reads them as the 4.12 fixed-point
+// halves it composes a rotation matrix from.
+inline constexpr std::uint32_t kSinTable = 0x8006CBF8u;
+inline constexpr std::uint32_t kCosTable = 0x8006CC78u;
+
 // D_800770C8. Offsets 0xC/0x10/0x14 hold the one light colour func_80020F34's per-face colour
 // program splays across all three rows of the GTE light-colour matrix.
 inline constexpr std::uint32_t kLightColorTable = 0x800770C8u;

@@ -10,8 +10,10 @@ namespace spyro1::native {
 
 namespace {
 
+using spyro::guest::kCosTable;
 using spyro::guest::kPlayerControlFlags;
 using spyro::guest::kPlayerState;
+using spyro::guest::kSinTable;
 using spyro::guest::kSpyro;
 
 // g_Spyro's own fields this module reads and writes: the previous position, the physics velocity
@@ -34,14 +36,13 @@ constexpr std::uint32_t kBodyRotationMatrix = kPackedRotationBytes + 0x28u;
 constexpr std::uint32_t kHeadLookRotationBytes = kSpyro + 0x10u;
 constexpr std::uint32_t kCombinedRotationMatrix = kPackedRotationBytes + 0x1BCu;
 
-// The four ground probes read a direction pair each, 0x80 bytes apart. The loop takes the X word
-// from one table and the Y word from the other with a single index, and the tail then indexes the
-// same two tables by the direction the probe mask selects.
+// The four ground probes read a direction pair each, 0x80 bytes apart, from the sin and cos tables
+// guest_globals.h names. The loop takes the X word from one table and the Y word from the other
+// with a single index, and the tail then indexes the same two tables by the direction the probe
+// mask selects.
 constexpr std::uint32_t kProbeX = 0x8006CCB8u;
 constexpr std::uint32_t kProbeY = 0x8006CC38u;
 constexpr std::uint32_t kProbeMaskTable = 0x8006C714u;
-constexpr std::uint32_t kSteerX = 0x8006CC78u;
-constexpr std::uint32_t kSteerY = 0x8006CBF8u;
 constexpr std::uint32_t kProbeCount = 4u;
 constexpr std::uint32_t kProbeStride = 0x80u;
 constexpr std::uint32_t kProbeAngle = 0x20u;
@@ -219,7 +220,7 @@ void steerTowardSupportedGround(Core *c) {
     setSegmentCallRegisters(*c,
                             SegmentCallRegisters{kProbeAngle + probe * kProbeAngleStep,
                                                  probe,
-                                                 kSteerY,
+                                                 kSinTable,
                                                  kProbeX + offset,
                                                  far,
                                                  supported,
@@ -242,8 +243,8 @@ void steerTowardSupportedGround(Core *c) {
     return;
   }
   const std::uint32_t slot = static_cast<std::uint32_t>(direction) * 2u;
-  const std::int32_t pushX = tableStep(c->mem_r16(kSteerX + slot));
-  const std::int32_t pushY = tableStep(c->mem_r16(kSteerY + slot));
+  const std::int32_t pushX = tableStep(c->mem_r16(kCosTable + slot));
+  const std::int32_t pushY = tableStep(c->mem_r16(kSinTable + slot));
   const std::int32_t accelX = static_cast<std::int32_t>(c->mem_r32(kPlayerAccelerationX)) + pushX;
   c->mem_w32(kPlayerAccelerationX, static_cast<std::uint32_t>(accelX));
   const std::int32_t accelY = static_cast<std::int32_t>(c->mem_r32(kPlayerAccelerationY)) + pushY;

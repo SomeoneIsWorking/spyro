@@ -90,6 +90,69 @@ void cameraShoulderRotationInput(Core *c) {
   }
 }
 
+// g_Camera.m_Sphere's FIRST row, which is kCameraSphereRows below: the leaf below converts these
+// three words, m_Coords, in the same azimuth/elevation/radius order that row's angle fields use.
+constexpr std::uint32_t kCameraSphereAzimuth = 0x80076E48u;
+constexpr std::uint32_t kCameraSphereElevation = 0x80076E4Cu;
+constexpr std::uint32_t kCameraSphereRadius = 0x80076E50u;
+
+constexpr std::uint32_t kCosine = 0x80016CB0u; // `jal` at 0x80034228 and 0x80034238
+constexpr std::uint32_t kSine = 0x80016C58u;   // `jal` at 0x80034280 and 0x800342B8
+
+constexpr char kCameraSphericalToCartesian[] = "camera_spherical_to_cartesian";
+
+// The guest's `mult` / `mflo` / `sra 12`: a SIGNED 64-bit product whose LOW word alone is shifted
+// back down, with hi and lo left holding what the last multiply put there.
+std::uint32_t fixedMultiply(Core *c, std::uint32_t value, std::uint32_t factor) {
+  const std::int64_t product = static_cast<std::int64_t>(static_cast<std::int32_t>(value)) *
+                               static_cast<std::int64_t>(static_cast<std::int32_t>(factor));
+  const std::uint32_t low = static_cast<std::uint32_t>(product & 0xFFFFFFFFu);
+  c->lo = low;
+  c->hi = static_cast<std::uint32_t>(static_cast<std::uint64_t>(product) >> 32);
+  return static_cast<std::uint32_t>(static_cast<std::int32_t>(low) >> 12);
+}
+
+// ── 0x80034204 — write the cartesian point the camera's first spherical row names, into the
+//     Vector3D at a0: x = r*cos(e)*cos(a), y = -(r*cos(e))*sin(a), z = r*sin(e).
+// All three inputs are RELOADED from RAM immediately before the instruction that consumes them —
+// the body caches nothing, so the x and y terms each recompute radius*cos(e) from a fresh radius
+// load and their own `cos(elevation)` call — and the five trigonometry calls are five separate
+// calls in a fixed order: cos(e), cos(a), cos(e), sin(a), sin(e). The delay slots are why the order
+// matters, since $s0 takes the FIRST call's v0 at the second `jal`. The y term also negates the
+// ALREADY SHIFTED radius*cos(e) with `negu`, not the 64-bit product.
+//
+// v0 exits holding z, the last value the body computed, and v1 the radius word the final `lw`
+// loaded — the y term's negated product is overwritten by it and never survives to the exit.
+void sphericalToCartesian(Core *c) {
+  const std::uint32_t out = c->r[4];
+
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalToCartesian, kCosine, c->mem_r32(kCameraSphereElevation));
+  const std::uint32_t xCosElevation = c->r[2];
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalToCartesian, kCosine, c->mem_r32(kCameraSphereAzimuth));
+  const std::uint32_t cosAzimuth = c->r[2];
+  const std::uint32_t xScaledRadius =
+      fixedMultiply(c, c->mem_r32(kCameraSphereRadius), xCosElevation);
+  c->mem_w32(out, fixedMultiply(c, xScaledRadius, cosAzimuth));
+
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalToCartesian, kCosine, c->mem_r32(kCameraSphereElevation));
+  const std::uint32_t yCosElevation = c->r[2];
+  psx::cpu::callGuestNow(*c, kCameraSphericalToCartesian, kSine, c->mem_r32(kCameraSphereAzimuth));
+  const std::uint32_t sinAzimuth = c->r[2];
+  const std::uint32_t yScaledRadius =
+      fixedMultiply(c, c->mem_r32(kCameraSphereRadius), yCosElevation);
+  c->mem_w32(out + 4u, fixedMultiply(c, 0u - yScaledRadius, sinAzimuth));
+
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalToCartesian, kSine, c->mem_r32(kCameraSphereElevation));
+  const std::uint32_t sinElevation = c->r[2];
+  c->r[2] = fixedMultiply(c, c->mem_r32(kCameraSphereRadius), sinElevation);
+  c->mem_w32(out + 8u, c->r[2]);
+  c->r[3] = c->mem_r32(kCameraSphereRadius);
+}
+
 // The guest helpers the collision body calls, named for what the decompilation's own listing says
 // each one does (external/spyro-1/asm/math.s, asm/collision.s and src/camera.c). They are `jal`
 // targets rather than the `lui`-plus-immediate data addresses above, so
@@ -101,20 +164,55 @@ constexpr std::uint32_t kVecAdd = 0x80017758u;                       // `jal` at
 constexpr std::uint32_t kRayBetweenPointsIsClear = 0x80033E40u;      // `jal` at 0x8003475C
 constexpr std::uint32_t kUpdateSphericalCoords = 0x80033F08u;        // `jal` at 0x80034440
 constexpr std::uint32_t kResetCameraToSphericalPreset = 0x80034358u; // `jal` at 0x800347E4
+constexpr std::uint32_t kApplySphericalPreset = 0x80034198u;         // `jal` at 0x80034364
 constexpr std::uint32_t kSphericalToCartesian = 0x80034204u;         // `jal` at 0x80034414
+constexpr std::uint32_t kCameraRotationFromSphere = 0x800342F8u;     // `jal` at 0x80034450
 constexpr std::uint32_t kSphereCollisionCheck = 0x8004BE4Cu;         // `jal` at 0x80034604
 constexpr std::uint32_t kRotateVectorByCamera = 0x80017AA4u;         // `jal` at 0x80034B94
+constexpr std::uint32_t kVecScaleToLength = 0x800175B8u;             // `jal` at 0x80033E80
+constexpr std::uint32_t kSegmentHitsWorld = 0x8004AE38u;             // `jal` at 0x80033EB8
+
+// What each `jal` inside the ray test below wrote into $ra. The segment test spills $ra beside the
+// register file it spills to a global the collision and render paths read, so a host call that left
+// the caller's own $ra there would publish a return address retail never had; the vector helpers
+// only spill theirs into their own frames, and are given their own anyway.
+constexpr std::uint32_t kAfterVecSub = 0x80033E68u;         // the `jal` at 0x80033E60
+constexpr std::uint32_t kAfterVecMagnitude = 0x80033E74u;   // the `jal` at 0x80033E6C
+constexpr std::uint32_t kAfterVecScale = 0x80033E88u;       // the `jal` at 0x80033E80
+constexpr std::uint32_t kAfterVecCopyStart = 0x80033E98u;   // the `jal` at 0x80033E90
+constexpr std::uint32_t kAfterVecAdd = 0x80033EB4u;         // the `jal` at 0x80033EAC
+constexpr std::uint32_t kAfterSegmentTest = 0x80033EC0u;    // the `jal` at 0x80033EB8
+constexpr std::uint32_t kAfterVecCopyAdvance = 0x80033ED4u; // the `jal` at 0x80033ECC
+
+// The ray test's own 0x60-byte frame, holding its three working vectors at the retail's own
+// offsets, and the two numbers the walk is built from: a step of 1024 units, and one step per 1024
+// units of length. The frame has to be the retail's own because the segment test spills $sp, and
+// the two vector addresses it spills in $s1 and $s2 are those offsets.
+constexpr std::uint32_t kRayFrameBytes = 0x60u;
+constexpr std::uint32_t kRayStepVectorOffset = 0x10u;
+constexpr std::uint32_t kRayStartOffset = 0x20u;
+constexpr std::uint32_t kRayEndOffset = 0x30u;
+constexpr std::uint32_t kRayStepUnits = 0x400u;
+constexpr std::int32_t kRayStepShift = 10;
+
+constexpr char kRayBetweenPointsIsClearOwner[] = "ray_between_points_is_clear";
 
 // g_Camera (external/spyro-1/include/camera.h), base 0x80076DD0, and the three globals outside it
 // this body touches. Each is the `lui`+`addiu` pair the retail code builds.
-constexpr std::uint32_t kCameraPosition = 0x80076DF8u;    // m_Position
-constexpr std::uint32_t kCameraDestination = 0x80076E04u; // m_DestinationPosition
-constexpr std::uint32_t kCameraState = 0x80076E28u;       // m_State
-constexpr std::uint32_t kCameraSphereRows = 0x80076E48u;  // m_Sphere: five 0x18-byte rows
-constexpr std::uint32_t kCameraSimulation = 0x80076E60u;  // m_Simulation, the six-word snapshot
+//
+// m_LastSimulation is the six-word copy the preset reset reloads the row from, and unk_0xA8 is the
+// second six-word group it only ever zeroes; both are three angles plus their three offsets.
+constexpr std::uint32_t kCameraPosition = 0x80076DF8u;       // m_Position
+constexpr std::uint32_t kCameraDestination = 0x80076E04u;    // m_DestinationPosition
+constexpr std::uint32_t kCameraState = 0x80076E28u;          // m_State
+constexpr std::uint32_t kCameraLastSimulation = 0x80076E30u; // m_LastSimulation
+constexpr std::uint32_t kCameraSphereRows = 0x80076E48u;     // m_Sphere: five 0x18-byte rows
+constexpr std::uint32_t kCameraSimulation = 0x80076E60u;     // m_Simulation, the six-word snapshot
+constexpr std::uint32_t kCameraClearedGroup = 0x80076E78u;   // unk_0xA8, the six words zeroed
 constexpr std::uint32_t kCameraCollisionCounter = 0x80076E94u;    // unk_0xC4
 constexpr std::uint32_t kCameraOffCenterFrames = 0x80076E98u;     // m_SpyroOffCenterFrames
 constexpr std::uint32_t kCameraForcedToDestination = 0x80076E9Cu; // unk_0xCC
+constexpr std::uint32_t kCameraFocusPointer = 0x80076EA0u;        // m_Focus, loaded as an address
 constexpr std::uint32_t kCameraSphericalPreset = 0x80076EA8u;     // m_SphericalPreset
 constexpr std::uint32_t kCameraAzimuthChanged = 0x80076EB8u;      // unk_0xE8
 constexpr std::uint32_t kCollisionPoint = 0x80076B80u;            // g_CollisionPoint
@@ -124,12 +222,19 @@ constexpr std::uint32_t kCameraForceFlag = kGp + 0x454u;          // D_800756B8
 constexpr std::uint32_t kSphericalPresets = 0x8006CAB4u;          // D_8006CAB4[5]
 constexpr std::uint32_t kRowAngleOffsets = 0x8006C82Cu;           // D_8006C82C[5][3]
 
+// The pair the preset reset clears last. src/camera.c files both under the camera's screen shake
+// and names neither, so they are named for the order this body reaches them in.
+constexpr std::uint32_t kScreenShakeFirst = 0x800756DCu;  // D_800756DC
+constexpr std::uint32_t kScreenShakeSecond = 0x8007590Cu; // D_8007590C
+
 constexpr char kCameraCollisionUpdate[] = "camera_collision_update";
+constexpr char kCameraSphericalPresetReset[] = "camera_spherical_preset_reset";
 
 constexpr std::uint32_t kAngleMask = 0xFFFu;
 constexpr std::uint32_t kRowCount = 5u;
 constexpr std::uint32_t kRowStride = 0x18u;
 constexpr std::uint32_t kSavedSimulationWords = 6u;
+constexpr std::uint32_t kSphericalGroupWords = 6u;
 constexpr std::uint32_t kSphereProbeRadius = 0x100u;
 constexpr std::uint32_t kSpyroProbeDepth = 0x134u;
 constexpr std::uint32_t kColorFilterLimit = 0x7Fu;
@@ -152,7 +257,8 @@ constexpr std::int32_t kTinyVectorLimit = 0x20;
 // and its six-word snapshot at the retail's own offsets: that puts them ABOVE the frame pointer,
 // where no callee frame pushed below it can reach, and inside the ignored window.
 constexpr std::uint32_t kFrameBytes = 0x68u;
-constexpr std::uint32_t kLiveSavedCount = 7u; // $s0-$s6; $s7 the body never writes
+constexpr std::uint32_t kPresetFrameBytes = 0x20u; // the preset reset's own prologue
+constexpr std::uint32_t kLiveSavedCount = 7u;      // $s0-$s6; $s7 the body never writes
 constexpr std::uint32_t kStepVectorOffset = 0x10u;
 constexpr std::uint32_t kWalkVectorOffset = 0x20u;
 constexpr std::uint32_t kSnapshotOffset = 0x30u;
@@ -328,6 +434,80 @@ void settleOffCenterFrame(Core *c, std::uint32_t far, const CameraScratch &work)
   c->r[3] = kCameraOffCenterFrames;
   c->r[2] = c->mem_r32(kCameraOffCenterFrames) + 1u;
   c->mem_w32(c->r[3], c->r[2]);
+}
+
+// 0x80033E40 — is the straight line between two points clear of world geometry? The offset from the
+//     first point to the second is rescaled to a 1024-unit step, the number of steps is the
+//     ORIGINAL length shifted down ten, and each step is tested against the world: the first hit
+//     answers 0 and a clear line answers 1. v0 carries that 0 or 1 on every path — the hit path out
+//     of the delay slot of its own branch — and v1 carries whatever the last guest call left,
+//     because the body never writes it.
+//
+// The body keeps the step vector, the ray start and the ray end in its own 0x60-byte frame and
+// holds the first point, the ray start, the ray end and the step count in $s0-$s3, so the frame and
+// those four registers are reproduced at the retail's own offsets. The step count is read in the
+// delay slot of the rescale call, and $s0 is zeroed in the delay slot of the test that skips the
+// walk, so both are set before the call that would otherwise have run first.
+//
+// MEASURED on routes artisans-walk and portal-level (740 calls, 106 of them shadowed on
+// artisans-walk, all matching): every call returned CLEAR, with a step count of 1, 2 or 3. The
+// walk itself, the advance, the loop's back edge and the clear answer are therefore covered, and
+// the two exits no route here reaches are NOT: the hit answer, whose v0 = 0 comes out of the
+// delay slot of the branch that leaves the walk, and the zero-step answer, which skips the walk
+// entirely. Both are the two-instruction tails above, and the walk they leave is the one measured.
+void rayBetweenPointsIsClear(Core *c) {
+  const std::uint32_t first = c->r[4];
+  const std::uint32_t second = c->r[5];
+  const std::uint32_t entrySp = c->r[29];
+  const std::uint32_t entryRa = c->r[31];
+  const std::uint32_t entryS0 = c->r[16];
+  const std::uint32_t entryS1 = c->r[17];
+  const std::uint32_t entryS2 = c->r[18];
+  const std::uint32_t entryS3 = c->r[19];
+  const std::uint32_t frame = entrySp - kRayFrameBytes;
+  const std::uint32_t stepVector = frame + kRayStepVectorOffset;
+  const std::uint32_t rayStart = frame + kRayStartOffset;
+  const std::uint32_t rayEnd = frame + kRayEndOffset;
+  c->r[29] = frame;
+  c->r[31] = kAfterVecSub;
+  psx::cpu::callGuestNow(*c, kRayBetweenPointsIsClearOwner, kVecSub, stepVector, second, first);
+  c->r[31] = kAfterVecMagnitude;
+  psx::cpu::callGuestNow(*c, kRayBetweenPointsIsClearOwner, kVecMagnitude, stepVector, 1u);
+  const std::uint32_t magnitude = c->r[2];
+  c->r[31] = kAfterVecScale;
+  c->r[19] = static_cast<std::uint32_t>(static_cast<std::int32_t>(magnitude) >> kRayStepShift);
+  psx::cpu::callGuestNow(
+      *c, kRayBetweenPointsIsClearOwner, kVecScaleToLength, stepVector, magnitude, kRayStepUnits);
+  c->r[17] = rayStart;
+  c->r[31] = kAfterVecCopyStart;
+  psx::cpu::callGuestNow(*c, kRayBetweenPointsIsClearOwner, kVecCopy, rayStart, first);
+  c->r[16] = 0u;
+  const std::int32_t steps = static_cast<std::int32_t>(c->r[19]);
+  bool clear = true;
+  for (std::uint32_t step = 0; static_cast<std::int32_t>(step) < steps; ++step) {
+    c->r[18] = rayEnd;
+    c->r[31] = kAfterVecAdd;
+    psx::cpu::callGuestNow(
+        *c, kRayBetweenPointsIsClearOwner, kVecAdd, rayEnd, rayStart, stepVector);
+    c->r[16] = step;
+    c->r[29] = frame;
+    c->r[31] = kAfterSegmentTest;
+    psx::cpu::callGuestNow(
+        *c, kRayBetweenPointsIsClearOwner, kSegmentHitsWorld, rayStart, rayEnd, c->r[6], c->r[7]);
+    if (c->r[2] != 0u) {
+      clear = false;
+      break;
+    }
+    c->r[31] = kAfterVecCopyAdvance;
+    psx::cpu::callGuestNow(*c, kRayBetweenPointsIsClearOwner, kVecCopy, rayStart, rayEnd);
+  }
+  c->r[2] = clear ? 1u : 0u;
+  c->r[16] = entryS0;
+  c->r[17] = entryS1;
+  c->r[18] = entryS2;
+  c->r[19] = entryS3;
+  c->r[29] = entrySp;
+  c->r[31] = entryRa;
 }
 
 // 0x80034480 — the camera's collision resolution and spherical follow, run once a frame. It
@@ -553,6 +733,66 @@ void resolveCameraCollision(Core *c) {
   }
 }
 
+// 0x80034358 — snap the camera onto one of the five authored spherical presets, the address its
+// argument names. The preset is applied first with the caller's own $a0, which the retail body
+// never replaces before that `jal`; then the camera's first spherical row is reloaded from the
+// last simulation, the second six-word group and the two follow-up counters are cleared, the
+// destination is rebuilt from the row, offset by the focus, copied to the position and re-solved,
+// and the shake pair goes to zero. Nothing branches, so the order below is the disassembly's.
+//
+// $s0 and $s1 name the row and the destination across every call this body makes, and the prologue
+// lowers $sp by 0x20 before the first of them, so both are reproduced through the real registers:
+// the callees see the retail's saved-register file, which the fixed spill area at 0x80077DD8 turns
+// into ordinary RAM the differential compares. v0/v1 leave holding whatever the rotation update
+// leaves, and it is the last call, so neither register is assigned here.
+//
+// MEASURED on route artisans-walk: 1 of 1 sampled calls matching. The body has no branch at all,
+// so that one call exercises every store and every callee it makes — but it is one call, and the
+// preset fallback that reaches it is itself rare: resolveCameraCollision's own note records that
+// every sampled call of 0x80034480 leaves before the preset loop. Treat this as a straight-line
+// transcription checked once, not as a well-sampled differential.
+void resetCameraToSphericalPreset(Core *c) {
+  const SpilledRegisters entry(c, c->r[29]);
+  c->r[29] -= kPresetFrameBytes;
+  std::uint32_t &s0 = c->r[16];
+  std::uint32_t &s1 = c->r[17];
+
+  // The retail body's first `jal` has no argument setup at all, so the preset pointer the caller
+  // left in $a0 is still the operand and $a1-$a3 are whatever that caller passed. Both are handed
+  // over unchanged, because a callee that reads a register the body never wrote must see the
+  // caller's value rather than a zero this override invented.
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalPresetReset, kApplySphericalPreset, c->r[4], c->r[5], c->r[6], c->r[7]);
+  s0 = kCameraSphereRows;
+  s1 = kCameraDestination;
+  for (std::uint32_t word = 0; word < kSphericalGroupWords; ++word) {
+    c->mem_w32(kCameraClearedGroup + word * 4u, 0u);
+  }
+  c->mem_w32(kCameraCollisionCounter, 0u);
+  c->mem_w32(kCameraOffCenterFrames, 0u);
+  for (std::uint32_t word = 0; word < kSphericalGroupWords; ++word) {
+    c->mem_w32(kCameraSphereRows + word * 4u, c->mem_r32(kCameraLastSimulation + word * 4u));
+  }
+  psx::cpu::callGuestNow(*c, kCameraSphericalPresetReset, kSphericalToCartesian, s1);
+  psx::cpu::callGuestNow(
+      *c, kCameraSphericalPresetReset, kVecAdd, s1, s1, c->mem_r32(kCameraFocusPointer));
+  s0 = kCameraPosition;
+  psx::cpu::callGuestNow(*c, kCameraSphericalPresetReset, kVecCopy, s0, s1);
+  psx::cpu::callGuestNow(*c, kCameraSphericalPresetReset, kUpdateSphericalCoords, s0);
+  c->mem_w32(kCameraAzimuthChanged, c->r[2]);
+  // The rotation update reads no argument at all, so the three words handed over here are inert;
+  // $a0 is the one the retail body's last delay slot set, and $a1/$a2 are whatever the two calls
+  // above left behind. Naming them keeps this call's shape identical to the `jal` it replaces.
+  psx::cpu::callGuestNow(*c,
+                         kCameraSphericalPresetReset,
+                         kCameraRotationFromSphere,
+                         s0,
+                         s1,
+                         c->mem_r32(kCameraFocusPointer));
+  c->mem_w32(kScreenShakeFirst, 0u);
+  c->mem_w32(kScreenShakeSecond, 0u);
+}
+
 } // namespace
 
 void registerCameraOverrides(Core &core) {
@@ -561,7 +801,13 @@ void registerCameraOverrides(Core &core) {
   spyro::installNativeOverride(
       core, 0x80035F58u, "camera_shoulder_rotation_input", cameraShoulderRotationInput);
   spyro::installNativeOverride(
+      core, 0x80033E40u, "ray_between_points_is_clear", rayBetweenPointsIsClear);
+  spyro::installNativeOverride(
+      core, 0x80034204u, "camera_spherical_to_cartesian", sphericalToCartesian);
+  spyro::installNativeOverride(
       core, 0x80034480u, "camera_collision_update", resolveCameraCollision);
+  spyro::installNativeOverride(
+      core, 0x80034358u, "camera_spherical_preset_reset", resetCameraToSphericalPreset);
 }
 
 } // namespace spyro1::native

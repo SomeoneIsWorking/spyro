@@ -1938,10 +1938,11 @@ Related goals: G001, G002, G003.
 
 ### S033 — Spyro 1 loading removal
 
-Missing. No load operation has been censused or classified for Spyro 1. Gap: enumerate its load
-issuers and the wait and presentation each drives, then complete each through the title's own load
-mechanics without its loading-only wait, with payload and terminal state compared against retail
-and the absence of loading presentation captured.
+Missing. Censused statically in `docs/issues/0155`: 31 CD read issuer sites (11 blocking, 20
+streaming), no loading screen exists, and the port's CD overrides already remove storage latency.
+Gap: per-operation payload and terminal-state comparison against retail, measurement of residual
+per-stage and XA-gate latency, the logo-hold press latch, and the flyby/tally classification
+decision, with the absence of loading presentation captured.
 
 ### S034 — Spyro 2 loading removal
 

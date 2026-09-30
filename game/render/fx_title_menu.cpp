@@ -87,6 +87,7 @@
 #include "render_queue.h"
 #include "title_menu_recipe.h"
 #include "title_menu_state.h"
+#include "ui_anchor.h"
 #include <lucent/log.h>
 
 namespace {
@@ -143,6 +144,15 @@ constexpr int32_t kBannerXLeft = 0x6C;     // 108
 constexpr int32_t kBannerXRight = 0xFF;    // 255 — the mirrored copy
 constexpr uint32_t kAnimBannerFrom = 0x10; // mode 0 page 4 switches from slide-out to banner here
 
+// THE STAGE-13 MENU'S ANCHOR CLASS, and the guest's own evidence for it. Every element of this
+// screen is emitted through the one guest emitter with a fixed x out of a 384-wide authored space,
+// and that space is symmetric about its own middle: the banner is drawn once at 108 and once
+// MIRRORED at 255, a 148-wide sprite whose own comment says the two "meet in the middle" (so it
+// spans 108..256), and the two text columns sit at 128 and 256 — 64 apart either side of 192 =
+// 384/2. A layout built symmetrically about a centre is a centred layout, and that is the class. It
+// is not "it looked central in a capture".
+constexpr spyro::ui_anchor::Anchor kTitleMenuAnchor = spyro::ui_anchor::Anchor::Centred;
+
 // ── A typed lens over one sprite record ──────────────────────────────────────────────────────────
 struct SpriteRec {
   uint32_t tpage, clut;
@@ -198,7 +208,9 @@ bool SpyroRenderer::spriteEmit(int32_t x,
                                int32_t clipX0,
                                int32_t clipY0,
                                int32_t clipX1,
-                               int32_t clipY1) const {
+                               int32_t clipY1,
+                               const char *element,
+                               std::size_t index) const {
   Core *c = mC;
   const bool mirror = id < 0;
   const uint32_t sid = (uint32_t)(mirror ? -id : id);
@@ -221,10 +233,15 @@ bool SpyroRenderer::spriteEmit(int32_t x,
   const unsigned char b = (unsigned char)((styleWord >> 16) & 0xFFu);
   const uint32_t code = (styleWord >> 24) & 0xFFu;
 
-  int xs[4] = {x, x + s.w, x, x + s.w};
   int ys[4] = {y, y, y + s.h, y + s.h};
+  // The element is placed as a BOX through the one anchoring owner, so the sprite keeps its
+  // authored pixel size and only its origin moves. At 4:3 the offset is zero and these are the
+  // guest's own coordinates.
+  const spyro::ui_anchor::Placed placed = spyro::ui_anchor::placeAndReport(
+      {element, index}, kTitleMenuAnchor, x + drawOfsX, s.w, spyro::ui_anchor::frame(c));
+  const int placedX = placed.box.x;
+  const int xs[4] = {placedX, placedX + placed.box.width, placedX, placedX + placed.box.width};
   for (int i = 0; i < 4; i++) {
-    xs[i] += drawOfsX;
     ys[i] += drawOfsY;
   }
   // The mirror swaps the two U columns; V is untouched, which is why it is a horizontal flip.
@@ -243,6 +260,9 @@ bool SpyroRenderer::spriteEmit(int32_t x,
   // makes a 0-prim row indistinguishable from a producer that never ran. The name is a string
   // literal, as ProducerScope requires — it is stored by pointer, not copied.
   ProducerScope producer(&c->rsub.producerScope, kGuestSpriteEmitter, "titlefx:spriteEmit");
+  // The x above is FINAL: `ui_anchor` has already placed this element, so the queue's own centring
+  // rule must not be applied on top of it. At 4:3 the two are the same number.
+  RenderQueue::Space2dScope anchored(c->game->rq, RQ_2D_WIDE_FINAL);
   c->game->rq.push2dQuad(RQ_HUD,
                          /*order_2d_fg=*/1,
                          xs,
@@ -297,7 +317,9 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                             clipX0,
                             clipY0,
                             clipX1,
-                            clipY1)
+                            clipY1,
+                            "title-menu-item",
+                            i)
                      ? 1
                      : 0;
     }
@@ -348,18 +370,29 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                               clipX0,
                               clipY0,
                               clipX1,
-                              clipY1)
+                              clipY1,
+                              "title-logo",
+                              0)
                        ? 1
                        : 0;
       }
     }
   } else if (st.page == 3) {
     arm = Arm::kLogoHold;
-    emitted +=
-        spriteEmit(
-            kLogoX, 0, kIdLogo, kStyleNeutral, drawOfsX, drawOfsY, clipX0, clipY0, clipX1, clipY1)
-            ? 1
-            : 0;
+    emitted += spriteEmit(kLogoX,
+                          0,
+                          kIdLogo,
+                          kStyleNeutral,
+                          drawOfsX,
+                          drawOfsY,
+                          clipX0,
+                          clipY0,
+                          clipX1,
+                          clipY1,
+                          "title-logo",
+                          0)
+                   ? 1
+                   : 0;
     const uint32_t stripStyle =
         ((st.anim & kBlinkMask) < kBlinkHalf) ? kStyleBright : kStyleNeutral;
     emitted += spriteEmit(kStripX,
@@ -371,18 +404,29 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                           clipX0,
                           clipY0,
                           clipX1,
-                          clipY1)
+                          clipY1,
+                          "title-press-strip",
+                          0)
                    ? 1
                    : 0;
   } else if (st.page == 4) {
     if (st.anim < kAnimBannerFrom) {
       arm = Arm::kLogoSlideOut;
       const int32_t y = (int32_t)c->mem_r8(kEaseSlideOut + st.anim) - kLogoYBias;
-      emitted +=
-          spriteEmit(
-              kLogoX, y, kIdLogo, kStyleNeutral, drawOfsX, drawOfsY, clipX0, clipY0, clipX1, clipY1)
-              ? 1
-              : 0;
+      emitted += spriteEmit(kLogoX,
+                            y,
+                            kIdLogo,
+                            kStyleNeutral,
+                            drawOfsX,
+                            drawOfsY,
+                            clipX0,
+                            clipY0,
+                            clipX1,
+                            clipY1,
+                            "title-logo",
+                            0)
+                     ? 1
+                     : 0;
     } else {
       // The banner: the same 148-wide sprite drawn once and once MIRRORED, meeting in the middle.
       // The guest indexes 0x8006FA64 by the raw anim value with no bound of its own; this port
@@ -404,7 +448,9 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                               clipX0,
                               clipY0,
                               clipX1,
-                              clipY1)
+                              clipY1,
+                              "title-banner",
+                              0)
                        ? 1
                        : 0;
         emitted += spriteEmit(kBannerXRight,
@@ -416,7 +462,9 @@ bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
                               clipX0,
                               clipY0,
                               clipX1,
-                              clipY1)
+                              clipY1,
+                              "title-banner",
+                              1)
                        ? 1
                        : 0;
       }

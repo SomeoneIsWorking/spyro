@@ -1,6 +1,8 @@
 #include "field_collectables_recipe.h"
 #include "testutil.h"
 
+#include <string>
+
 namespace {
 
 using spyro::field_collectables_recipe::State;
@@ -48,6 +50,27 @@ void test_life_orb_and_egg_ft4_recipes() {
   CHECK_EQ(recipe.sprites[2].r, 0x80u);
 }
 
+// The anchor class travels with each sprite, because the sprite's own rect is what carries the
+// authored inset from the edge. The treasure row sits on the left and the life orbs ride the Spyro
+// head on the right (hud_layout.h), so the two families must NOT share a class: a recipe that
+// defaulted or merged them would silently re-centre one of them at 16:9.
+void test_sprites_carry_the_measured_anchor_and_their_element() {
+  State state{};
+  state.lifeDisplay = 1;
+  state.eggDisplay = 1;
+  state.lifeOrbCount = 1;
+  state.eggCount = 1;
+  state.rects[12] = {36, 234, 24, 16};
+  state.rects[0] = {36, 234, 24, 16};
+  const auto recipe = spyro::field_collectables_recipe::derive(state);
+  CHECK(recipe.status == Status::Ready);
+  CHECK_EQ(recipe.spriteCount, 2u);
+  CHECK(recipe.sprites[0].anchor == spyro::ui_anchor::Anchor::RightEdge);
+  CHECK(recipe.sprites[1].anchor == spyro::ui_anchor::Anchor::LeftEdge);
+  CHECK(std::string(recipe.sprites[0].element) == "life-orb");
+  CHECK(std::string(recipe.sprites[1].element) == "egg-gem");
+}
+
 void test_life_phase_uses_floor_of_fractional_step() {
   State state{};
   state.lifeDisplay = 1;
@@ -93,5 +116,6 @@ int main() {
   RUN(life_phase_uses_floor_of_fractional_step);
   RUN(disarmed_and_negative_counts_are_empty);
   RUN(completed_text_and_impossible_counts_are_classified_atomically);
+  RUN(sprites_carry_the_measured_anchor_and_their_element);
   return pt_summary();
 }

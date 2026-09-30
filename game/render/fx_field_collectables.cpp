@@ -4,9 +4,11 @@
 #include "field_collectables_recipe.h"
 #include "fx_field_collectables.h"
 #include "game.h"
+#include "hud_layout.h"
 #include "hud_text_builder.h"
 #include "producer_scope.h"
 #include "render_queue.h"
+#include "ui_anchor.h"
 
 #include <cstdint>
 #include <lucent/log.h>
@@ -20,8 +22,8 @@ using spyro::field_collectables_recipe::Status;
 
 constexpr uint32_t kProducerKey = 0x80019300u;
 constexpr uint32_t kFlightLevel = 0x80075690u;
-constexpr uint32_t kHud = 0x80077fa8u;
-constexpr uint32_t kHudSprites = kHud + 0x464u;
+constexpr uint32_t kHud = spyro::hud_layout::kHud;
+constexpr uint32_t kHudSprites = spyro::hud_layout::kSpriteRects;
 constexpr uint32_t kHudTiles = kHud + 0x564u;
 constexpr uint32_t kShadedMobyQueue = 0x800720f4u;
 constexpr uint32_t kShadedMobyCapacity = 256u;
@@ -121,11 +123,22 @@ void appendCompletedGemText(Core *core, uint32_t &queueEnd) {
 
 void emitSprite(Core *core,
                 RenderQueue &queue,
-                const spyro::field_collectables_recipe::Sprite &sprite) {
+                const spyro::field_collectables_recipe::Sprite &sprite,
+                std::size_t index) {
   const GpuState &gpu = core->game->gpu;
-  const int x0 = sprite.rect.x + gpu.s_off_x;
+  // The sprite's own RECT is the guest's authored layout, and the class it carries is derived from
+  // that same table (see field_collectables_recipe.cpp). Placing the box rather than its two
+  // endpoints is what makes the element a box: a quad emitted from a placed box cannot come out
+  // half-anchored, and at 4:3 the offset is zero so the emitted coordinates are the guest's own.
+  const spyro::ui_anchor::Placed placed =
+      spyro::ui_anchor::placeAndReport({sprite.element, index},
+                                       sprite.anchor,
+                                       sprite.rect.x + gpu.s_off_x,
+                                       sprite.rect.w,
+                                       spyro::ui_anchor::frame(core));
+  const int x0 = placed.box.x;
   const int y0 = sprite.rect.y + gpu.s_off_y;
-  const int x1 = x0 + sprite.rect.w, y1 = y0 + sprite.rect.h;
+  const int x1 = x0 + placed.box.width, y1 = y0 + sprite.rect.h;
   const int xs[4] = {x0, x1, x0, x1};
   const int ys[4] = {y0, y0, y1, y1};
   const int u0 = sprite.tile.u, v0 = sprite.tile.v;
@@ -205,8 +218,12 @@ bool spyro_field_collectables_submit(Core *core,
     return false;
   }
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "fieldhud:collectables");
-  for (uint32_t i = 0; i < recipe.spriteCount; ++i) {
-    emitSprite(core, queue, recipe.sprites[i]);
+  // The x this producer emits is FINAL: `ui_anchor` has already decided which class each element
+  // is, so the queue's own centring rule must not be applied on top of it. At 4:3 both are the
+  // identity.
+  RenderQueue::Space2dScope anchored(queue, RQ_2D_WIDE_FINAL);
+  for (std::size_t i = 0; i < recipe.spriteCount; ++i) {
+    emitSprite(core, queue, recipe.sprites[i], i);
   }
   return true;
 }

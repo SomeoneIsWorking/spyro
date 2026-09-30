@@ -35,7 +35,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image: every horizontal cull or screen-rect limit the title owns (world sectors, Mobys, particles, glows, shadows, sky, per-object draw-distance or rect rejects) is overridden natively so the margins show what the view would: the native renderer draws margin objects from object memory and animates margin-only objects port-side, and guest memory is untouched so behaviour is unchanged (the `+0x51` byte `0x80051FEC` admits Mobys on stays native) | partial — projection widened and the drawn answer separated from the guest answer (issue 0152); the per-owner cull audit, port-side animation of margin Mobys, and a margin census (objects drawn at x < 0 or x > 512 at 16:9, animated, against a 4:3 run, with 0 bytes of RAM difference) are missing | S005 | G003 |
-| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | missing — only `hud_text_builder.cpp` exists; no anchoring policy or measurement | S019 | G003 |
+| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | partial — one owner (`game/render/ui_anchor.*`, layout classes in `hud_layout.h`), draw-side only. MEASURED on the running product at 16:9: the pause panel and its border and the stage-13 title/menu elements (14 census elements, all centred) move by exactly the 86 px margin with unchanged widths and a 4:3 identity. NOT MEASURED: the left-edge and right-edge classes on the product — the gem/dragon/lives HUD Moby counters are culled before the anchoring hook on BOTH aspects, and the treasure-row and life-orb sprites have zero entries on every reachable route; tally/menu captions and the completed-gem text are unanchored. See S030 detail | S019 | G003 |
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; the gap is LEVEL CHOICE, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
@@ -1935,6 +1935,58 @@ named in S020 — and none of them transfers to another title's scene layout. Wh
 framework: the temporal presenter, the pairing walk, the projection stream and the measurement tools.
 
 Related goals: G001, G002, G003.
+
+### S030 — Spyro 1 widescreen UI anchoring
+
+**Status: partial.** Widescreen centres every 2D producer by default (`RQ_2D_AUTHORED_4_3`), which is right
+for a panel and wrong for an edge element: a gem counter authored 46 px from the left edge lands 132 px in.
+One owner now decides the class of each element, draw-side only (no guest write; 4:3 is the identity).
+
+**Owners.** `game/render/ui_anchor.*` is the ONE rule: `Anchor::{LeftEdge, Centred, RightEdge}` and the
+arithmetic (`offset`, `correction`, `place`), plus `placeAndReport` / `correctionAndReport`, which report
+the same number they return on the `uihud` debug channel. `game/render/hud_layout.h` is the guest's HUD
+block and the class of each part, read from the image's own tables (`g_HudMobyTargetPos` 0x8006E68C,
+`g_HudEggTargetRect` 0x8006E71C, `HudReset`): gem digits and chest x=46..174 LEFT, dragon x=230..292
+CENTRED, lives digits and Spyro head x=394..464 RIGHT, key x=430 RIGHT, treasure row x=36+27i LEFT, life
+orbs RIGHT (they are placed from `m_Mobys[10]`, the Spyro head, so they share its side). Producers:
+`fx_field_collectables.cpp` (sprites, box placement), `field_shaded_queue_submitter.cpp` (the twelve `g_Hud`
+Moby records, correction to the widened projection), `pause_menu_scene.cpp` (panel shift shared by its
+border), `fx_title_menu.cpp` (centred, symmetric about 384/2 and 512/2 in the guest's constants).
+
+**Measured on the product (16:9 `wide_only_control_settings.ini` against 4:3 `fps60_control_settings.ini`,
+`tools/hud_anchor_census.py`, headless `tools/drive.py` plus the front-end leg):** 14 elements, frames
+(512,512) and (512,684), all `centred`: 4:3 identity, no width changed, every one moved by exactly the
+86 px margin; the right pause-border column is at x=372 at 4:3 and x=458 at 16:9 (+86). The census also
+prints which classes were exercised: `left-edge=0, centred=14, right-edge=0`, and says the two edge classes
+are unmeasured on this route. Its negatives: `--selftest` runs six cases (anchored pair, anchored pair with
+projected HUD parts, a stretched centred element plus a mis-placed right edge, a wrong-sign correction, a
+refused element, a wide leg that is the 4:3 run) and each defect case FAILs; on real logs the 4:3 log as the
+wide leg FAILs ("not widened") and the pre-fix 16:9 pause log FAILs on its refused border segments.
+
+**A defect the product capture found and the first version of this work missed.** The pause border's five
+line records are vertical and horizontal edges; two have zero width and one negative, so the box placer
+refused them and left them at the 4:3 x while the panel moved: at 16:9 the border's left edge sat at x=140
+and the panel at x=226. The border now takes the panel's shift instead of being placed edge by edge. The
+census had printed PASS over that log because its refusal regex did not match the product's
+`[uihud:warn] REFUSED` prefix; it now matches, a refusal or an unwidened wide leg fails the census, and the
+selftest pins both.
+
+**Why the edge classes are unmeasured, and this is a separate defect.** With `PSXPORT_DEBUG=uihud` the
+attract demo (gem pickup, display state Open) drives the HUD: `field_shaded_queue_scene` receives all twelve
+`g_Hud` Moby records and computes camera-relative positions of about (-42566, 34768, 4558) against the WORLD
+camera, so `coarseVisible` rejects them; no gem, dragon or lives counter is drawn at 4:3 or 16:9, and the
+anchoring hook in `field_shaded_queue_submitter.cpp` is never reached. The retail HUD renders, so the
+native path is missing whatever the guest does to draw these records in screen space. Until that is fixed
+the `left-edge` and `right-edge` classes for Mobys, and `kLifeOrbAnchor`/`kTreasureRowAnchor` (zero entries
+on every reachable route), have unit tests only.
+
+**Not anchored:** the completed-gem text ("N/N", built in the HUD arena), the pause and tally captions
+(centred through the projection, consistent with their panel), the level-transition tally, and the
+non-centred text boxes. Screen fade and border are full-frame fills that take the live render width.
+
+Gate: `uv run --frozen python tools/verify.py` (Clang, Ninja, clang-format and clang-tidy over 272 translation units, registration of 82 test sources, `ctest` 117/117, pin check), built against the recorded framework pin `644ee5a6`.
+
+Related goals: G003.
 
 ### S033 — Spyro 1 loading removal
 

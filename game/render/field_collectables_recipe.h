@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui_anchor.h"
+
 #include <array>
 #include <cstdint>
 
@@ -30,6 +32,11 @@ struct Sprite {
   uint8_t r = 0x80u;
   uint8_t g = 0x80u;
   uint8_t b = 0x80u;
+  // How this element is anchored horizontally, and WHICH element it is for the census. The class
+  // travels with the sprite because the sprite's own rect is what carries the authored distance to
+  // the edge, so the two facts are the same fact and are derived together.
+  ui_anchor::Anchor anchor = ui_anchor::Anchor::Centred;
+  const char *element = "collectable";
 };
 
 struct State {

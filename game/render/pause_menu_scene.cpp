@@ -15,6 +15,7 @@
 #include "pause_menu_recipe.h"
 #include "producer_scope.h"
 #include "render_queue.h"
+#include "ui_anchor.h"
 
 #include <array>
 #include <lucent/log.h>
@@ -149,7 +150,36 @@ std::optional<std::uint8_t> readPanelColourByte(Core *core) {
       core->mem_r32(spyro::pause_menu::kPanelColourDefinitionPc));
 }
 
-void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe, std::uint8_t colourByte) {
+// THE PANEL'S ANCHOR CLASS, and where it comes from. `centred`, from the guest's own constants and
+// not from looking at a picture: the panel is 0x8C..0x174 on the main and confirm pages and
+// 0x54..0x1AC on the options page (0x8001A82C-0x8001A834, 0x8001A914-0x8001A920), and BOTH are
+// symmetric about 0x100 = 256 = half of the guest's own 512. Its five border segments are the edges
+// of that same box, so they carry the panel's class and not one of their own. The captions are
+// authored INSIDE that box and move with it, which is why they are centred too and why nothing here
+// is an edge element.
+constexpr spyro::ui_anchor::Anchor kPanelAnchor = spyro::ui_anchor::Anchor::Centred;
+
+// The ONE anchoring decision for the panel and its border. The border's five line records are the
+// edges of the panel's box, so they take the panel's shift rather than being placed one by one: a
+// vertical edge has zero width and is not a box the anchoring owner could place, and placing each
+// edge by its own extent would be placing a rectangle by its corners. At 4:3 the shift is zero and
+// every coordinate is the guest's own. A refused placement shifts nothing.
+std::int32_t panelShift(Core *core, const Recipe &recipe) {
+  const GpuState &gpu = core->game->gpu;
+  const auto authored = spyro::pause_menu::placePanel(recipe, {gpu.s_off_x, gpu.s_off_y});
+  return spyro::ui_anchor::placeAndReport({"pause-panel"},
+                                          kPanelAnchor,
+                                          authored.x0,
+                                          authored.x1 - authored.x0,
+                                          spyro::ui_anchor::frame(core))
+      .offset;
+}
+
+void submitPanel(Core *core,
+                 RenderQueue &queue,
+                 const Recipe &recipe,
+                 std::uint8_t colourByte,
+                 std::int32_t shift) {
   const std::uint32_t word = static_cast<std::uint32_t>(colourByte) |
                              (static_cast<std::uint32_t>(colourByte) << 8) |
                              (static_cast<std::uint32_t>(colourByte) << 16);
@@ -160,7 +190,9 @@ void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe, std::uint
   const unsigned char g = expand((word >> 5) & 0x1Fu);
   const unsigned char b = expand((word >> 10) & 0x1Fu);
   const GpuState gpu = core->game->gpu;
-  const auto panel = spyro::pause_menu::placePanel(recipe, {gpu.s_off_x, gpu.s_off_y});
+  auto panel = spyro::pause_menu::placePanel(recipe, {gpu.s_off_x, gpu.s_off_y});
+  panel.x0 += shift;
+  panel.x1 += shift;
   const int xs[4] = {panel.x0, panel.x1, panel.x0, panel.x1};
   const int ys[4] = {panel.y0, panel.y0, panel.y1, panel.y1};
   const int us[4] = {};
@@ -201,10 +233,16 @@ void submitPanel(Core *core, RenderQueue &queue, const Recipe &recipe, std::uint
                     gpu.s_tp_blend);
 }
 
-void submitBorder(Core *core, RenderQueue &queue, const Recipe &recipe, std::int32_t drawAreaX1) {
+void submitBorder(Core *core,
+                  RenderQueue &queue,
+                  const Recipe &recipe,
+                  std::int32_t drawAreaX1,
+                  std::int32_t shift) {
   const GpuState gpu = core->game->gpu;
   for (const Segment &authored : recipe.border) {
-    const Segment segment = spyro::pause_menu::placeSegment(authored, {gpu.s_off_x, gpu.s_off_y});
+    Segment segment = spyro::pause_menu::placeSegment(authored, {gpu.s_off_x, gpu.s_off_y});
+    segment.x0 += shift;
+    segment.x1 += shift;
     // NO endpoint-ordering test. A line is a line: the guest's box walks right-to-left on its
     // bottom edge and bottom-to-top on its left one, and an x0<x1 / y0<y1 guard here refused two of
     // the five edges while letting the other three through, which is how a box came out with one
@@ -347,10 +385,13 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
     core->mem_w32(kMenuMobyArenaCursor, mobyBase);
     core->mem_w32(kMenuOverlayPrimCursor, 0u);
     // The panel and the border are this handler's own 2D prims, authored in the game's own
-    // 512-wide space — a fixed panel, which is what RQ_2D_AUTHORED_4_3 means, so widescreen centres
-    // the panel instead of stretching it.
+    // 512-wide space. This producer has already placed them through `ui_anchor`, so the queue must
+    // NOT apply its own centring rule on top: RQ_2D_WIDE_FINAL means "this x is final", and the
+    // reason it is now final is that the anchoring owner — not the framework's uniform rule —
+    // decided which class each element is. At 4:3 both are the identity, so the 4:3 frame is the
+    // guest's own.
     ProducerScope producer(&core->rsub.producerScope, kProducerKey, "pause:menu");
-    RenderQueue::Space2dScope authored(core->game->rq, RQ_2D_AUTHORED_4_3);
+    RenderQueue::Space2dScope authored(core->game->rq, RQ_2D_WIDE_FINAL);
     const auto panelColour = readPanelColourByte(core);
     if (!panelColour) {
       lucent::error("render",
@@ -363,8 +404,9 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
                   "pause-menu panel colour: byte=0x{:02X} from guest 0x{:08X}",
                   *panelColour,
                   spyro::pause_menu::kPanelColourDefinitionPc);
-    submitPanel(core, core->game->rq, recipe, *panelColour);
-    submitBorder(core, core->game->rq, recipe, drawAreaX1);
+    const std::int32_t shift = panelShift(core, recipe);
+    submitPanel(core, core->game->rq, recipe, *panelColour, shift);
+    submitBorder(core, core->game->rq, recipe, drawAreaX1, shift);
     // The guest's AddPrim (0x800168DC) advances the prim cursor by each record it links: 6 words
     // for the GP0(0x2A) panel and 5 for each 0x8001844C line. Reproduced so the pool position the
     // next frame starts from is the one the guest would leave.

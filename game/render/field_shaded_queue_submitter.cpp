@@ -3,13 +3,51 @@
 #include "core.h"
 #include "game.h"
 #include "gpu_vk.h"
+#include "hud_layout.h"
 #include "render_queue.h"
 #include "scene_painter_order.h"
+#include "ui_anchor.h"
 #include "wide_screen_space.h"
 
 #include <algorithm>
 
 namespace spyro::field_shaded_queue_submitter {
+namespace {
+
+// The horizontal shift a face is DRAWN with, on top of the widened projection it already carries.
+//
+// The twelve `g_Hud` Mobys are screen-space HUD parts that the guest authored against 512 columns
+// and this path projects about the widened centre, which moves every one of them by the margin: a
+// gem counter authored 46 px from the left edge lands 132 px in. `hud_layout` says which side of
+// the frame each part belongs to and `ui_anchor` turns that into the correction, so the gem counter
+// goes back to the left edge, the lives to the right one and the dragon count stays centred. Every
+// other Moby (world actors, the glyphs a menu builds in the HUD arena, placed by their own
+// producers) is left exactly as projected. This is draw-side only: the Moby records are guest
+// memory and are never written. At 4:3 the correction is zero.
+class HudAnchor {
+public:
+  explicit HudAnchor(Core *core) : frame_(spyro::ui_anchor::frame(core)) {}
+
+  std::int32_t shiftFor(std::uint32_t actor) {
+    const auto part = spyro::hud_layout::mobyPart(actor);
+    if (!part) {
+      return 0;
+    }
+    if (actor != lastActor_) {
+      lastActor_ = actor;
+      lastShift_ =
+          spyro::ui_anchor::correctionAndReport({part->element, part->index}, part->anchor, frame_);
+    }
+    return lastShift_;
+  }
+
+private:
+  spyro::ui_anchor::Frame frame_;
+  std::uint32_t lastActor_ = 0;
+  std::int32_t lastShift_ = 0;
+};
+
+} // namespace
 
 Plan prepare(const RenderQueue &queue,
              uint32_t producerKey,
@@ -50,15 +88,17 @@ void submit(Core *core,
   const GpuState gpu = core->game->gpu;
   const int drawRight = wide_screen_space::drawAreaRight(core, gpu.s_da_x1);
   RenderQueue::PainterObjectScope painter(queue, producerKey);
+  HudAnchor hudAnchor(core);
   for (const auto &face : recipe.faces) {
     core->rsub.diag.beginObject(face.actor);
+    const std::int32_t anchorShift = hudAnchor.shiftFor(face.actor);
     int xs[4]{}, ys[4]{}, us[4]{}, vs[4]{};
     float screenX[4]{}, screenY[4]{}, depth[4]{};
     unsigned char red[4]{}, green[4]{}, blue[4]{};
     for (uint32_t i = 0; i < face.vertexCount; ++i) {
-      xs[i] = face.vertices[i].sx + gpu.s_off_x;
+      xs[i] = face.vertices[i].sx + gpu.s_off_x + anchorShift;
       ys[i] = face.vertices[i].sy + gpu.s_off_y;
-      screenX[i] = face.vertices[i].screenX + (float)gpu.s_off_x;
+      screenX[i] = face.vertices[i].screenX + (float)(gpu.s_off_x + anchorShift);
       screenY[i] = face.vertices[i].screenY + (float)gpu.s_off_y;
       depth[i] = core->rsub.projParams.pzToOrd(face.vertices[i].viewZ);
       red[i] = (uint8_t)face.rgb[i];

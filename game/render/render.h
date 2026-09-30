@@ -5,6 +5,7 @@
 // The framework installs the per-Core RenderMode; this title does not parse a second selector.
 #pragma once
 #include "fx_paired_actor.h"
+#include <cstddef>
 #include <cstdint>
 class Core;
 
@@ -116,7 +117,9 @@ private:
                   int32_t clipX0,
                   int32_t clipY0,
                   int32_t clipX1,
-                  int32_t clipY1) const;
+                  int32_t clipY1,
+                  const char *element,
+                  std::size_t index) const;
   // fx_sprite_queue.cpp — native screen-space class of RasterizeSpritePrimQueue 0x80022A2C.
   // Also owns stage-13/mode-3's text-actor construction and invokes its paired-actor pass.
   // False means one of those producers refused its current input.

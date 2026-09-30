@@ -1,14 +1,16 @@
 #include "field_collectables_recipe.h"
 
+#include "hud_layout.h"
+
 namespace spyro::field_collectables_recipe {
 namespace {
 
-constexpr uint32_t kHud = 0x80077fa8u;
-constexpr uint32_t kHudMobys = kHud + 0x44u;
-constexpr uint32_t kMobySize = 0x58u;
+constexpr const char *kEggElement = "egg-gem";
+constexpr const char *kLifeOrbElement = "life-orb";
 
 void appendMoby(Recipe &recipe, uint32_t index) {
-  recipe.shadedMobys[recipe.shadedCount++] = kHudMobys + index * kMobySize;
+  recipe.shadedMobys[recipe.shadedCount++] =
+      spyro::hud_layout::kMobys + index * spyro::hud_layout::kMobySize;
 }
 
 } // namespace
@@ -57,7 +59,9 @@ Recipe derive(const State &state) {
                                               .tile = state.tiles[0],
                                               .r = colour,
                                               .g = colour,
-                                              .b = colour};
+                                              .b = colour,
+                                              .anchor = spyro::hud_layout::kLifeOrbAnchor,
+                                              .element = kLifeOrbElement};
     }
   }
   if (state.eggDisplay != 0u) {
@@ -68,7 +72,9 @@ Recipe derive(const State &state) {
                                               .tile = state.tiles[tile],
                                               .r = 0x80u,
                                               .g = 0x80u,
-                                              .b = 0x80u};
+                                              .b = 0x80u,
+                                              .anchor = spyro::hud_layout::kTreasureRowAnchor,
+                                              .element = kEggElement};
     }
   }
   return recipe;

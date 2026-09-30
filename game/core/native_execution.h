@@ -42,6 +42,44 @@ void callGuestJumpedFrom(Core &core,
   psx::cpu::callGuestNow(core, owner, address, args...);
 }
 
+// An override that reaches its callees through callGuestJumpedFrom leaves `$ra` holding its last
+// `jal` address, but a retail body returns with the `$ra` it entered with (its epilogue reloads it
+// from its frame, or it never changed it), and the differential compares the register. Declared
+// first in an override, this puts the entry value back on every exit, including early returns.
+class PreservedReturnAddress {
+public:
+  explicit PreservedReturnAddress(Core &core) : core_(core), entry_(core.r[31]) {}
+  PreservedReturnAddress(const PreservedReturnAddress &) = delete;
+  PreservedReturnAddress &operator=(const PreservedReturnAddress &) = delete;
+  ~PreservedReturnAddress() {
+    core_.r[31] = entry_;
+  }
+
+private:
+  Core &core_;
+  std::uint32_t entry_;
+};
+
+// A retail body lowers $sp for its own frame, and a callee that reads its arguments or frame from
+// $sp, or spills below it, must see that lowered pointer — an override has no frame of its own, so
+// the frame pointer is presented for the length of the scope and the entry $sp put back after,
+// because the differential compares $sp at the return and both paths return with the caller's own.
+class GuestFrameScope {
+public:
+  GuestFrameScope(Core &core, std::uint32_t frame) : core_(core), entry_(core.r[29]) {
+    core_.r[29] = frame;
+  }
+  GuestFrameScope(const GuestFrameScope &) = delete;
+  GuestFrameScope &operator=(const GuestFrameScope &) = delete;
+  ~GuestFrameScope() {
+    core_.r[29] = entry_;
+  }
+
+private:
+  Core &core_;
+  std::uint32_t entry_;
+};
+
 inline bool dispatchGuestOrPropagate(Core &core, std::uint32_t address) {
   return psx::cpu::completeOrPropagate(
       core, psx::cpu::dispatchGuest(core, address, psx::cpu::ExecutionBudget::currentTurn(core)));

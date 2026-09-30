@@ -65,8 +65,6 @@ constexpr std::uint32_t kPresetFullScaleGain = 0x3CCCu;
 constexpr std::uint32_t kNoFreeSlot = 0xFFFFFFFFu;
 constexpr std::uint32_t kNoRecordKind = 0xFFFFFFFFu;
 constexpr std::uint32_t kSearchKeySentinel = 0x100u;
-constexpr std::uint32_t kSearchKeyProbeOffset =
-    0x1C00u; // `sll $v0,$a1,3 ; subu ; sll 2` at 0x80055BA0
 constexpr std::uint32_t kProbeBusy = 2u;
 constexpr std::uint32_t kProbeMode = 4u;
 constexpr std::uint32_t kLimitedProbeMode = 8u;
@@ -77,15 +75,32 @@ constexpr std::uint32_t kFrameSlotMaskWord = 0x10093u;
 // The guest callees, each named by the `jal` at the call site the comment gives. A callee is the
 // 26-bit field of that instruction rather than a `lui`+immediate pair, and
 // tools/override_constants.py re-derives it from the `jal` itself.
-constexpr std::uint32_t kProbeActiveSound = 0x80056DC4u; // `jal` at 0x80055AE0
-constexpr std::uint32_t kSubtractPosition = 0x8001778Cu; // `jal` at 0x80055B1C
-constexpr std::uint32_t kSetVectorLimit = 0x800176C8u;   // `jal` at 0x80055B28
-constexpr std::uint32_t kComputeSpan = 0x800171FCu;      // `jal` at 0x80055B34
-constexpr std::uint32_t kWrapIntoRange = 0x8006272Cu;    // `jal` at 0x80055D3C
-constexpr std::uint32_t kAngleToListener = 0x80016AB4u;  // `jal` at 0x800560C0
-constexpr std::uint32_t kAddListenerYaw = 0x80017908u;   // `jal` at 0x800560D8
-constexpr std::uint32_t kMarkSlotsChanged = 0x8005C7ACu; // `jal` at 0x8005613C
+constexpr std::uint32_t kProbeActiveSound = 0x80056DC4u;
+constexpr std::uint32_t kSubtractPosition = 0x8001778Cu;
+constexpr std::uint32_t kSetVectorLimit = 0x800176C8u;
+constexpr std::uint32_t kComputeSpan = 0x800171FCu;
+constexpr std::uint32_t kWrapIntoRange = 0x8006272Cu;
+constexpr std::uint32_t kAngleToListener = 0x80016AB4u;
+constexpr std::uint32_t kAddListenerYaw = 0x80017908u;
+constexpr std::uint32_t kMarkSlotsChanged = 0x8005C7ACu;
 constexpr std::uint32_t kPositionalStereoVolume = 0x80056C84u;
+
+// The `jal` each nested call stands for (issue 0150): the callee runs with the `$ra` that `jal`
+// leaves, and tools/override_call_sites.py re-derives every one of these and its callee from the
+// executable. The probe is called from two arms, one per mode, and the wrap from three, one per
+// record kind.
+constexpr std::uint32_t kProbeModeJal = 0x80055AE0u;
+constexpr std::uint32_t kProbeLimitedModeJal = 0x80055B00u;
+constexpr std::uint32_t kSubtractPositionJal = 0x80055B1Cu;
+constexpr std::uint32_t kSetVectorLimitJal = 0x80055B28u;
+constexpr std::uint32_t kComputeSpanJal = 0x80055B34u;
+constexpr std::uint32_t kWrapKindZeroJal = 0x80055D3Cu;
+constexpr std::uint32_t kWrapKindOneJal = 0x80055DA4u;
+constexpr std::uint32_t kWrapKindTwoJal = 0x80055E0Cu;
+constexpr std::uint32_t kAngleToListenerJal = 0x800560C0u;
+constexpr std::uint32_t kAddListenerYawJal = 0x800560D8u;
+constexpr std::uint32_t kPositionalStereoVolumeJal = 0x800560FCu;
+constexpr std::uint32_t kMarkSlotsChangedJal = 0x8005613Cu;
 
 // `mult` writes 64 bits and the low half is all the guest ever reads back, so a product is
 // truncated to 32 bits here exactly where `mflo` truncates it. The shift that follows the two gain
@@ -106,27 +121,10 @@ std::uint32_t lowHalfShift12(Core *c, std::uint32_t value, std::uint32_t factor)
 }
 
 // Every `jal` in this body leaves the guest's $sp at the FRAME pointer, and a callee that reads its
-// own frame — 0x80056C84 reads its fifth argument at entry $sp+0x10 — reads it from there. An
-// override does not get a frame of its own, so the entry $sp is presented as the frame pointer for
-// the length of the call and put back afterwards: the differential compares $sp at the RETURN, and
-// both paths return with the caller's own value. Getting this wrong costs a whole offset: a callee
-// reading $sp+0x10 then reads 0x90 above the arguments the body wrote, and the divergence shows up
-// only in device side effects, never in a register or a RAM byte.
-class GuestFrame {
-public:
-  explicit GuestFrame(Core *c, std::uint32_t frame) : c_(c), saved_(c->r[29]) {
-    c_->r[29] = frame;
-  }
-  ~GuestFrame() {
-    c_->r[29] = saved_;
-  }
-  GuestFrame(const GuestFrame &) = delete;
-  GuestFrame &operator=(const GuestFrame &) = delete;
-
-private:
-  Core *c_;
-  std::uint32_t saved_;
-};
+// own frame — 0x80056C84 reads its fifth argument at entry $sp+0x10 — reads it from there
+// (spyro::GuestFrameScope). Getting this wrong costs a whole offset: a callee reading $sp+0x10 then
+// reads 0x90 above the arguments the body wrote, and the divergence shows up only in device side
+// effects, never in a register or a RAM byte.
 
 // 0x80056C84 (func_80056C84) - stereo volume and pan for one positional sound: attenuates each
 // input channel by distance/max distance, pans it by the angle to the sound, clamps both channels
@@ -286,6 +284,7 @@ void stopMobySounds(Core *c) {
 // $s3 is the loop's voice counter *8, a multiple of 8, so both 0x8005C588 calls land on fixed
 // addresses 0x1F801C0E and 0x1F801C06 no matter which slot was chosen.
 void assignActiveSoundSlot(Core *c) {
+  const spyro::PreservedReturnAddress returnAddress(*c);
   const std::uint32_t soundId = c->r[4];
   const std::uint32_t moby = c->r[5];
   const std::uint32_t mode = c->r[6];
@@ -304,20 +303,48 @@ void assignActiveSoundSlot(Core *c) {
     // `addiu $v1, $zero, 2` sits AFTER the `jal` on BOTH mode paths (0x80055AE8 and 0x80055B08),
     // so it is the comparison's operand and never the callee's input: nothing writes $v1 before
     // 0x80056DC4 runs, and the test that follows is against the constant 2 either way.
-    const GuestFrame guestFrame(c, frame);
-    psx::cpu::callGuestNow(
-        *c, "assign_active_sound_slot", kProbeActiveSound, moby, soundId, mode, slotOut);
+    const spyro::GuestFrameScope guestFrame(*c, frame);
+    if (mode == kLimitedProbeMode) {
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kProbeLimitedModeJal,
+                                 kProbeActiveSound,
+                                 moby,
+                                 soundId,
+                                 mode,
+                                 slotOut);
+    } else {
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kProbeModeJal,
+                                 kProbeActiveSound,
+                                 moby,
+                                 soundId,
+                                 mode,
+                                 slotOut);
+    }
     v1 = kProbeBusy;
+    // BOTH rejections leave $v1 at the 2 the compare was built from: it is the instruction after
+    // each `jal`, and the exit at 0x800561C8 never writes it again. The callee has overwritten the
+    // register by now, so it is put back rather than left to whatever 0x80056DC4 returned with.
     if (c->r[2] == v1) {
       c->r[2] = 0;
+      c->r[3] = v1;
       return;
     }
     if (mode == kLimitedProbeMode) {
       const std::uint32_t scratch = frame + 0x58u;
-      psx::cpu::callGuestNow(
-          *c, "assign_active_sound_slot", kSubtractPosition, scratch, moby + 0x0Cu, kListenerX);
-      psx::cpu::callGuestNow(*c, "assign_active_sound_slot", kSetVectorLimit, scratch, 4u);
-      psx::cpu::callGuestNow(*c, "assign_active_sound_slot", kComputeSpan, scratch, 1u);
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kSubtractPositionJal,
+                                 kSubtractPosition,
+                                 scratch,
+                                 moby + 0x0Cu,
+                                 kListenerX);
+      spyro::callGuestJumpedFrom(
+          *c, "assign_active_sound_slot", kSetVectorLimitJal, kSetVectorLimit, scratch, 4u);
+      spyro::callGuestJumpedFrom(
+          *c, "assign_active_sound_slot", kComputeSpanJal, kComputeSpan, scratch, 1u);
       // `sll $fp, $v0, 4`: a shift, so it leaves HI/LO alone.
       span = c->r[2] << 4;
       const std::uint32_t size = c->mem_r8(moby + kMobySizeByte);
@@ -333,11 +360,14 @@ void assignActiveSoundSlot(Core *c) {
     }
   }
 
-  // The search key is $a1, and the ONLY place it survives to the exit is the no-free path: a slot
-  // found leaves the key dead, and every other exit overwrites $v1 before returning. It is 0x100
-  // before the scan and then the last slot whose key byte compares low, so it is the search key
-  // and never a comparison result.
-  std::uint32_t searchKey = kSearchKeySentinel;
+  // The scan also tracks the busy slot with the lowest key byte in $a1, which starts at the
+  // sentinel 0x100 — a slot index 256 strides past the pool, whose key byte the first comparison
+  // really reads — and the comparison is against THAT slot's key, addressed from the pool base
+  // (`lui $at,0x8007 ; addu $at,$at,$v0` at 0x80055BAC..0x80055BBC, $v0 = $a1 * 28), never from
+  // the current entry. $a1 is dead once a free slot is found; what the no-free exit leaves in $v1
+  // is the last comparison's 0 or 1 (`sltu $v1,$v1,$v0` at 0x80055BC8), not the tracked index.
+  std::uint32_t lowestKeySlot = kSearchKeySentinel;
+  std::uint32_t keyWasLower = 0u;
   std::uint32_t chosen = kNoFreeSlot;
   for (std::uint32_t slot = 0; slot < kActiveSoundCount; ++slot) {
     const std::uint32_t entry = kActiveSounds + slot * kActiveSoundStride;
@@ -345,20 +375,17 @@ void assignActiveSoundSlot(Core *c) {
       chosen = slot;
       break;
     }
-    // The key byte is compared against the SAME slot 0x100 slots further on, not against a running
-    // best: 0x80055BA0 computes `a1*28` with $a1 the constant 0x100, which is 0x1C00 — 256 slot
-    // strides — and adds it to the current entry's OWN offset. A body that instead tracks the best
-    // key so far agrees only until the first comparison succeeds, and then follows a different
-    // byte for the rest of the scan.
     const std::uint32_t here = c->mem_r8(entry + kSlotSearchKey);
-    const std::uint32_t other = c->mem_r8(entry + kSearchKeyProbeOffset + kSlotSearchKey);
-    if (here < other) {
-      searchKey = slot;
+    const std::uint32_t lowest =
+        c->mem_r8(kActiveSounds + lowestKeySlot * kActiveSoundStride + kSlotSearchKey);
+    keyWasLower = here < lowest ? 1u : 0u;
+    if (keyWasLower != 0u) {
+      lowestKeySlot = slot;
     }
   }
   if (chosen == kNoFreeSlot) {
     c->r[2] = 0;
-    c->r[3] = searchKey;
+    c->r[3] = keyWasLower;
     return;
   }
 
@@ -390,22 +417,45 @@ void assignActiveSoundSlot(Core *c) {
   // both the `div` and the `mult` have to be performed, because HI/LO are compared.
   //
   // KIND 0 IS THE ONLY ONE OF THE THREE THAT REWRITES THE LEVEL BEFORE THE WRAP, and it rewrites
-  // it by the record's own step, not by an index: 0x80055D28 `lhu $v1,0xe($a0) ; mult $v1,$v0 ;
-  // mflo $t0` where `slti $v0,$v1,2` at 0x80055CF8 left 1 in $v0, so the product is the step and
-  // `subu $v0,$a2,$t0` biases the level by exactly that. The shared block then divides the callee's
-  // return by the record's RANGE halfword at +0x0C — the same one the outer `beqz $a1` tested — and
-  // multiplies the REMAINDER by the step, so the level moves by remainder*step.
+  // it by half the range times the step: 0x80055D28 `lhu $v1,0xe($a0) ; mult $v1,$v0 ; mflo $t0`
+  // where $v0 is `srl $v0,$a1,1` at 0x80055D08 — the delay slot of the `beqz $v1` that takes the
+  // kind-0 arm, so it runs — and `subu $v0,$a2,$t0` biases the level by that product. (The
+  // `slti $v0,$v1,2` at 0x80055CF8 that leaves 1 in $v0 is overwritten by that delay slot before
+  // anything reads it.) The shared block then divides the callee's return by the record's RANGE
+  // halfword at +0x0C — the same one the outer `beqz $a1` tested — and multiplies the REMAINDER by
+  // the step, so the level moves by remainder*step.
   std::uint32_t recordKind = kNoRecordKind;
   if (range != 0u) {
     recordKind = c->mem_r32(record + kRecordKind);
     if (recordKind == 0u) {
-      const std::uint32_t reduced = level - step;
+      const std::uint32_t reduced = level - multiplyLow(c, step, range >> 1);
       c->mem_w16(frame + 0x2Cu, static_cast<std::uint16_t>(reduced));
-      psx::cpu::callGuestNow(
-          *c, "assign_active_sound_slot", kWrapIntoRange, reduced, range, level, 1u);
-    } else if (recordKind <= 2u) {
-      psx::cpu::callGuestNow(
-          *c, "assign_active_sound_slot", kWrapIntoRange, record, range, level, 1u);
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kWrapKindZeroJal,
+                                 kWrapIntoRange,
+                                 record,
+                                 range,
+                                 level,
+                                 1u);
+    } else if (recordKind == 1u) {
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kWrapKindOneJal,
+                                 kWrapIntoRange,
+                                 record,
+                                 range,
+                                 level,
+                                 1u);
+    } else if (recordKind == 2u) {
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kWrapKindTwoJal,
+                                 kWrapIntoRange,
+                                 record,
+                                 range,
+                                 level,
+                                 1u);
     }
     if (recordKind <= 2u) {
       cpu_div(c, c->r[2], range);
@@ -469,33 +519,45 @@ void assignActiveSoundSlot(Core *c) {
     // above.
     if (gated) {
       // $a2 is zeroed at 0x80056088 and $a3 holds the listener's x word across the two angle calls,
-      // so both are reproduced rather than left holding the level and range from above. The second
-      // and third calls take the MOBY POINTER's low byte in $a1 and $a2, not the first call's
-      // return: $v0 is loaded once at 0x800560A0 and nothing between the two `andi`s writes it.
+      // so both are reproduced rather than left holding the level and range from above.
       const std::uint32_t listenerX = c->mem_r32(kListenerX);
       tailArg2 = 0u;
       tailArg3 = listenerX;
-      psx::cpu::callGuestNow(*c,
-                             "assign_active_sound_slot",
-                             kAngleToListener,
-                             listenerX - c->mem_r32(moby + 0x0Cu),
-                             c->mem_r32(kListenerZ) - c->mem_r32(moby + 0x10u),
-                             0u,
-                             listenerX);
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kAngleToListenerJal,
+                                 kAngleToListener,
+                                 listenerX - c->mem_r32(moby + 0x0Cu),
+                                 c->mem_r32(kListenerZ) - c->mem_r32(moby + 0x10u),
+                                 0u,
+                                 listenerX);
+      // The first call's return value is the angle the second call takes in $a1 (`andi
+      // $a1,$v0,0xff` at 0x800560D0), and the second call's own return is what the third takes in
+      // $a2 (0x800560E8). $a2 and $a3 are not set again before the second `jal`, so it receives
+      // whatever the first left in them.
+      const std::uint32_t listenerAngle = c->r[2];
       const std::int32_t yaw = static_cast<std::int32_t>(c->mem_r16(kListenerYaw) << 16);
-      psx::cpu::callGuestNow(
-          *c, "assign_active_sound_slot", kAddListenerYaw, yaw >> 20, moby & 0xFFu, 0u, listenerX);
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kAddListenerYawJal,
+                                 kAddListenerYaw,
+                                 yaw >> 20,
+                                 listenerAngle & 0xFFu,
+                                 c->r[6],
+                                 c->r[7]);
+      const std::uint32_t panAngle = c->r[2];
       // The `jal`'s delay slot writes the slot's SpuVolume pair at 0x10($sp) BEFORE the call, and
       // 0x80056C84 reads it as its fifth argument, so it is written here and not left to the frame.
       c->mem_w32(frame + 0x10u, slotBase + kSlotVolumeLeft);
-      const GuestFrame stereoFrame(c, frame);
-      psx::cpu::callGuestNow(*c,
-                             "assign_active_sound_slot",
-                             kPositionalStereoVolume,
-                             frame + 0x20u,
-                             span,
-                             moby & 0xFFu,
-                             spanLimit);
+      const spyro::GuestFrameScope stereoFrame(*c, frame);
+      spyro::callGuestJumpedFrom(*c,
+                                 "assign_active_sound_slot",
+                                 kPositionalStereoVolumeJal,
+                                 kPositionalStereoVolume,
+                                 frame + 0x20u,
+                                 span,
+                                 panAngle & 0xFFu,
+                                 spanLimit);
       // $a1 is not reloaded after those three calls, so the tail's arguments are whatever they left
       // rather than the range and level assembled above them.
       tailArg1 = c->r[5];
@@ -514,14 +576,15 @@ void assignActiveSoundSlot(Core *c) {
   c->mem_w16(frame + 0x20u, static_cast<std::uint16_t>(scaledLeft));
   c->mem_w16(frame + 0x22u, static_cast<std::uint16_t>(scaledRight));
 
-  const GuestFrame tailFrame(c, frame);
-  psx::cpu::callGuestNow(*c,
-                         "assign_active_sound_slot",
-                         kMarkSlotsChanged,
-                         frame + 0x18u,
-                         tailArg1,
-                         tailArg2,
-                         tailArg3);
+  const spyro::GuestFrameScope tailFrame(*c, frame);
+  spyro::callGuestJumpedFrom(*c,
+                             "assign_active_sound_slot",
+                             kMarkSlotsChangedJal,
+                             kMarkSlotsChanged,
+                             frame + 0x18u,
+                             tailArg1,
+                             tailArg2,
+                             tailArg3);
   const std::uint32_t changed = c->mem_r32(kSlotChangedMask) | (1u << chosen);
   c->mem_w32(kSlotChangedMask, changed);
   c->r[3] = changed;

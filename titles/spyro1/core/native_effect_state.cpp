@@ -101,6 +101,9 @@ constexpr std::uint32_t kUpdateGroundShadow = 0x80049FACu;
 // The `jalr` at 0x80049BE0 returns to +0x228 and the one at 0x80049C58 to +0x2A0.
 constexpr std::uint32_t kEmitterReturns[2] = {kUpdateFlameBurst + 0x228u,
                                               kUpdateFlameBurst + 0x2A0u};
+// The word g_Camera+0x58 is compared against on the mode-2 arm: `lui $v1,0x8000` is the delay slot
+// of the `j` at 0x80049A38, which replaces the mode in $v1 before `ori $v1,$v1,9` at 0x80049DA8.
+constexpr std::uint32_t kExpectedCameraType = 0x80000009u;
 // The `jal` at 0x8004A118 returns to +0x174.
 constexpr std::uint32_t kSurfaceProbeReturn = kUpdateGroundShadow + 0x174u;
 
@@ -108,18 +111,38 @@ constexpr std::uint32_t kSurfaceProbeReturn = kUpdateGroundShadow + 0x174u;
 // field of that instruction rather than a `lui`+immediate pair, and tools/override_constants.py
 // re-derives it from the `jal` itself. The first seven are owned natively already; the two that
 // are not are reached only through this gate.
-constexpr std::uint32_t kVecNull = 0x800176F0u; // `jal` at 0x80049A08 and 0x80049DBC
-constexpr std::uint32_t kFill = 0x80016914u;    // `jal` at 0x80049B18 and 0x80049D24
-constexpr std::uint32_t kRand = 0x8006272Cu;    // `jal` at 0x80049AD0 and 0x80049CDC
-constexpr std::uint32_t kRotate = 0x80017048u;  // `jal` at 0x80049B88, VecRotateByMatrix
-constexpr std::uint32_t kVecAdd = 0x80017758u;  // `jal` at 0x80049B98
-constexpr std::uint32_t kVecCopy = 0x80017700u; // `jal` at 0x8004A004
-// `jal` at 0x80049BA8, VecRotateByLastMatrix
-constexpr std::uint32_t kRotateLast = 0x800170C0u;
-// `jal` at 0x8004A118, func_8004D5EC
-constexpr std::uint32_t kSurfaceProbe = 0x8004D5ECu;
-// `jal` at 0x80049DDC
+constexpr std::uint32_t kVecNull = 0x800176F0u;
+constexpr std::uint32_t kFill = 0x80016914u;
+constexpr std::uint32_t kRand = 0x8006272Cu;
+constexpr std::uint32_t kRotate = 0x80017048u; // VecRotateByMatrix
+constexpr std::uint32_t kVecAdd = 0x80017758u;
+constexpr std::uint32_t kVecCopy = 0x80017700u;
+constexpr std::uint32_t kRotateLast = 0x800170C0u;   // VecRotateByLastMatrix
+constexpr std::uint32_t kSurfaceProbe = 0x8004D5ECu; // func_8004D5EC
 constexpr std::uint32_t kSmoothHeadLook = 0x80049880u;
+
+// The `jal` each nested call in update_flame_burst stands for (issue 0150): the callee runs with
+// the `$ra` that `jal` leaves, and tools/override_call_sites.py re-derives every site and its
+// callee from the executable. Two of the callees are reached from more than one site, one per arm.
+constexpr std::uint32_t kVecNullBlockedJal = 0x80049A08u;
+constexpr std::uint32_t kVecNullJal = 0x80049DBCu; // the arm, the reset and the mode-2 arm share it
+constexpr std::uint32_t kRandArmJal = 0x80049AD0u;
+constexpr std::uint32_t kRandRefreshJal = 0x80049CDCu;
+constexpr std::uint32_t kFillArmJal = 0x80049B18u;
+constexpr std::uint32_t kFillRefreshJal = 0x80049D24u;
+constexpr std::uint32_t kFillResetJal = 0x80049D60u;
+constexpr std::uint32_t kSmoothHeadLookJal = 0x80049DDCu;
+
+// The two emitter placements are two copies of one body at two addresses.
+struct EmitterPlacementSites {
+  std::uint32_t rotate;
+  std::uint32_t add;
+  std::uint32_t rotateLast;
+};
+constexpr EmitterPlacementSites kEmitterPlacements[2] = {
+    {0x80049B88u, 0x80049B98u, 0x80049BA8u},
+    {0x80049C00u, 0x80049C10u, 0x80049C20u},
+};
 
 constexpr const char *kFlameBurst = "update_flame_burst";
 constexpr const char *kGroundShadow = "update_ground_shadow";
@@ -137,14 +160,16 @@ void armFlameBurst(Core *c) {
   c->mem_w8(kFlameActive, 1);
   c->mem_w8(kFlameState, 0);
   c->mem_w8(kFlameSelect, 1);
-  psx::cpu::callGuestNow(*c, kFlameBurst, kRand, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kRandArmJal, kRand, c->r[4], c->r[5], c->r[6], c->r[7]);
   const std::uint32_t fairyKiss = c->mem_r32(kFairyKissTimer);
   c->mem_w8(kFlameVariant, static_cast<std::uint8_t>(c->r[2] & 1u));
   c->mem_w32(kFlameSuper, fairyKiss != 0u ? 1u : 0u);
   c->r[4] = kFlameLengths;
   c->r[5] = 0;
   c->r[6] = 8;
-  psx::cpu::callGuestNow(*c, kFlameBurst, kFill, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kFillArmJal, kFill, c->r[4], c->r[5], c->r[6], c->r[7]);
 }
 
 // The restart at 0x80049C94..0x80049D2C, on tick 0x2C: rewind the tick count, publish the head
@@ -157,14 +182,16 @@ void refreshFlameBurst(Core *c) {
   c->mem_w8(kFlameActive, 1);
   c->mem_w8(kFlameState, 0);
   c->mem_w8(kFlameSelect, 1);
-  psx::cpu::callGuestNow(*c, kFlameBurst, kRand, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kRandRefreshJal, kRand, c->r[4], c->r[5], c->r[6], c->r[7]);
   const std::uint32_t fairyKiss = c->mem_r32(kFairyKissTimer);
   c->mem_w8(kFlameVariant, static_cast<std::uint8_t>(c->r[2] & 1u));
   c->mem_w32(kFlameSuper, fairyKiss != 0u ? 1u : 0u);
   c->r[4] = kFlameLengths;
   c->r[5] = 0;
   c->r[6] = 8;
-  psx::cpu::callGuestNow(*c, kFlameBurst, kFill, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kFillRefreshJal, kFill, c->r[4], c->r[5], c->r[6], c->r[7]);
 }
 
 // The reset at 0x80049D34..0x80049DBC, on tick 0x30: leave the burst, clearing the flame-active
@@ -176,13 +203,15 @@ void resetFlameBurst(Core *c) {
   c->r[4] = kFlameLengths;
   c->r[6] = 8;
   c->mem_w8(kFlameActive, 0);
-  psx::cpu::callGuestNow(*c, kFlameBurst, kFill, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kFillResetJal, kFill, c->r[4], c->r[5], c->r[6], c->r[7]);
   const std::uint32_t slot = c->mem_r8(kAnimationSlot);
   c->mem_w32(kSpyroBurstMode, 0);
   c->mem_w32(kSpyroBurstTicks, 0u - 1u);
   c->mem_w32(kSpyroHeadAnimationSpeed, c->mem_r8(kAnimationDetails + slot * 4u));
   c->r[4] = kSpyroHeadLookTarget;
-  psx::cpu::callGuestNow(*c, kFlameBurst, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kVecNullJal, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
 }
 
 // One emitter placement, 0x80049B78..0x80049BE4: rotate a burst offset by Spyro's matrix, add his
@@ -202,18 +231,24 @@ void placeFlameBurstEmitters(Core *c, std::uint32_t frame) {
     c->r[4] = kBurstMatrix;
     c->r[5] = offset;
     c->r[6] = frame + 0x10u;
-    psx::cpu::callGuestNow(*c, kFlameBurst, kRotate, c->r[4], c->r[5], c->r[6], c->r[7]);
+    const EmitterPlacementSites &sites = kEmitterPlacements[round];
+    spyro::callGuestJumpedFrom(
+        *c, kFlameBurst, sites.rotate, kRotate, c->r[4], c->r[5], c->r[6], c->r[7]);
     c->r[4] = frame + 0x10u;
     c->r[5] = frame + 0x10u;
     c->r[6] = kSpyroPosition;
-    psx::cpu::callGuestNow(*c, kFlameBurst, kVecAdd, c->r[4], c->r[5], c->r[6], c->r[7]);
+    spyro::callGuestJumpedFrom(
+        *c, kFlameBurst, sites.add, kVecAdd, c->r[4], c->r[5], c->r[6], c->r[7]);
     c->r[4] = offset + 0x18u;
     c->r[16] = frame + 0x20u;
     c->r[5] = c->r[16];
-    psx::cpu::callGuestNow(*c, kFlameBurst, kRotateLast, c->r[4], c->r[5], c->r[6], c->r[7]);
+    spyro::callGuestJumpedFrom(
+        *c, kFlameBurst, sites.rotateLast, kRotateLast, c->r[4], c->r[5], c->r[6], c->r[7]);
+    // `addiu $a0,$zero,1` sits in the delay slot of the `beqz` (0x80049BC0, 0x80049C38), so $a0 is
+    // 1 whichever way the flag branches, and only $a1 follows the flag.
     const std::uint32_t fromFairyKiss = c->mem_r32(kFlameSuper);
-    c->r[4] = fromFairyKiss != 0u ? 1u : 0u;
-    c->r[5] = c->r[4];
+    c->r[4] = 1u;
+    c->r[5] = fromFairyKiss != 0u ? 1u : 0u;
     c->r[6] = frame + 0x10u;
     c->r[7] = c->r[16];
     c->r[31] = kEmitterReturns[round];
@@ -278,7 +313,8 @@ void updateFlameBurst(Core *c) {
   if (c->mem_r8(kFlameBlockedInAnimation + defaultAnimation) != 0u) {
     c->mem_w32(kSpyroBurstMode, 0);
     c->r[4] = kSpyroHeadLookTarget;
-    psx::cpu::callGuestNow(*c, kFlameBurst, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
+    spyro::callGuestJumpedFrom(
+        *c, kFlameBurst, kVecNullBlockedJal, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
   } else {
     c->r[17] = kSpyroBurstMode;
     if (mode == 0u) {
@@ -294,23 +330,25 @@ void updateFlameBurst(Core *c) {
         c->r[16] = 1;
         armFlameBurst(c);
         c->r[4] = kSpyroHeadLookTarget;
-        psx::cpu::callGuestNow(*c, kFlameBurst, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
+        spyro::callGuestJumpedFrom(
+            *c, kFlameBurst, kVecNullJal, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
       }
     } else if (mode == 1u) {
       runFlameBurst(c, frame);
-    } else if (c->mem_r32(kCameraType) != (mode | 9u)) {
-      // $v1 is the mode with bit 0 and bit 3 forced on, formed in the `j`'s delay slot at
-      // 0x80049A3C, and the word at g_Camera+0x58 is compared against THAT — not against a fixed
-      // 0x80000009, which is the constant the same `lui` would have produced. A body that compares
-      // the constant arms the head-look reset on every mode but one.
+    } else if (c->mem_r32(kCameraType) != kExpectedCameraType) {
+      // The word at g_Camera+0x58 is compared against the constant 0x80000009, not against a value
+      // derived from the mode: the `lui $v1,0x8000` in the delay slot of the `j` at 0x80049A38
+      // overwrites the mode in $v1 before the `ori` at 0x80049DA8 makes the constant.
       c->r[4] = kSpyroHeadLookTarget;
-      psx::cpu::callGuestNow(*c, kFlameBurst, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
+      spyro::callGuestJumpedFrom(
+          *c, kFlameBurst, kVecNullJal, kVecNull, c->r[4], c->r[5], c->r[6], c->r[7]);
     }
     c->r[3] = kSpyroBurstTicks;
     c->r[2] = c->mem_r32(kSpyroBurstTicks) + 1u;
     c->mem_w32(kSpyroBurstTicks, c->r[2]);
   }
-  psx::cpu::callGuestNow(*c, kFlameBurst, kSmoothHeadLook, c->r[4], c->r[5], c->r[6], c->r[7]);
+  spyro::callGuestJumpedFrom(
+      *c, kFlameBurst, kSmoothHeadLookJal, kSmoothHeadLook, c->r[4], c->r[5], c->r[6], c->r[7]);
   c->r[16] = entryS0;
   c->r[17] = entryS1;
   c->r[31] = entryRa;

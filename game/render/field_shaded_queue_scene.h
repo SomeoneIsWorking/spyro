@@ -17,7 +17,6 @@ enum class Status : uint8_t {
   InvalidActor,
   InvalidMesh,
   InvalidShadowCursor,
-  UnsupportedVertexLighting,
 };
 
 struct Shadow {
@@ -36,10 +35,9 @@ struct Frame {
   std::vector<Shadow> shadows;
   uint32_t shadowCursor = 0;
   uint32_t queueRecords = 0;
-  // NOT "screen records": byte 0x50 is the guest's `m_RenderRadius`, so this counts mobies whose
-  // clipping radius has bit 7 set. It is a census of a population, not a filter -- see the walk in
-  // the .cpp for why the skip that used to live here was removed.
-  uint32_t largeRadiusActors = 0;
+  // Mobies whose render-radius byte (+0x50) has bit 7 set: the screen-space population
+  // (`g_Hud` Mobys and HUD glyphs), drawn by retail's own screen-space path and never culled.
+  uint32_t screenSpaceActors = 0;
   uint32_t validMeshRecords = 0;
   uint32_t validMeshPrimitiveCandidates = 0;
   std::vector<uint16_t> sourceMeshIndices;

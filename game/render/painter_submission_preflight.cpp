@@ -12,6 +12,8 @@ Plan preflight(const RenderQueue &queue, uint32_t object, size_t newFaces, uint3
   plan.queued = (int)admission.queued_items;
   plan.existingObjects = admission.existing_objects;
   plan.existingFaces = admission.existing_faces;
+  plan.refusal = static_cast<int>(admission.refusal);
+  plan.refusalItem = admission.refusal_item;
   return plan;
 }
 

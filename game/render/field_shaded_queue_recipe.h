@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -35,6 +36,11 @@ struct Record {
   uint32_t lightEntry = 0;
   int32_t lightEntryIndex = 0;
   psxport::native_projection::FixedAffine affine{};
+  // The projection centre this record is drawn about, when it is not the frame's. A screen-space
+  // Moby (render-radius bit 7, every `g_Hud` Moby and HUD glyph) writes its own position.x and
+  // position.y into GTE OFX and OFY at r_moby.s 0x80022D2C/0x80022D30, so it is projected about its
+  // own place on the screen and not about the frame's centre. Empty for a world Moby.
+  std::optional<psxport::native_projection::ProjectionParams> projection;
   // `Moby::m_DepthOffset` (external/spyro-1 moby.h), the guest's own "offsets the sorting depth of
   // the entire Moby" byte at `actor + 0x47`. Retail subtracts it from the moby's WORLD ordering-
   // table bin at r_moby.s 0x80022D9C-0x80022DA0 (`sra $a0, $s4, 24` -- arithmetic, because the

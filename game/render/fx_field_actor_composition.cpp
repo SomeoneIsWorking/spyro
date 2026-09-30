@@ -24,7 +24,6 @@ namespace {
 
 constexpr const char *kChannel = "fieldactors";
 constexpr uint32_t kSecondaryProducer = spyro::secondary_actor_emit::kProducerKey;
-constexpr uint32_t kShadedProducer = spyro::field_shaded_queue_emit::kProducerKey;
 
 spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   if (core == nullptr || core->game == nullptr) {
@@ -70,33 +69,40 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   RenderQueue &queue = core->game->rq;
   spyro::field_shaded_queue_scene::Frame shadedFrame{};
   spyro::field_shaded_queue_emit::Prepared shaded{};
+  const auto shadedPass = composition.captionPass ? spyro::field_shaded_queue_emit::kCaptionPass
+                                                  : spyro::field_shaded_queue_emit::kWorldPass;
   if (composition.shaded) {
     const auto shadedScene = spyro::field_shaded_queue_scene::prepare(
         core, spyro::wide_screen_space::drawClipRight(core), shadedFrame);
     if (shadedScene != spyro::field_shaded_queue_scene::Status::Ready) {
       return spyro::refuse(kChannel,
-                           kShadedProducer,
+                           shadedPass.key,
                            "shaded scene={} records={} shadows={}",
                            spyro::field_shaded_queue_scene::statusName(shadedScene),
                            shadedFrame.input.records.size(),
                            shadedFrame.shadows.size());
     }
-    shaded = spyro::field_shaded_queue_emit::prepare(*core, queue, shadedFrame.input);
+    shaded = spyro::field_shaded_queue_emit::prepare(
+        *core, queue, shadedFrame.input, nullptr, shadedPass);
     if (shaded.status != spyro::field_shaded_queue_emit::Status::Ready &&
         shaded.status != spyro::field_shaded_queue_emit::Status::ValidEmpty) {
-      return spyro::refuse(kChannel,
-                           kShadedProducer,
-                           "shaded stage={} recipe={} actor=0x{:08X} primitive={} candidates={} "
-                           "submission={} admission_ready={} queued={} existing_faces={}",
-                           spyro::actor_stage::name(shaded.status),
-                           spyro::field_shaded_queue_recipe::statusName(shaded.recipe.status),
-                           shaded.recipe.firstUnsupportedActor,
-                           shaded.recipe.firstUnsupportedPrimitive,
-                           shaded.recipe.candidates,
-                           spyro::field_shaded_queue_submitter::statusName(shaded.submitter.status),
-                           shaded.submitter.admission.ready,
-                           shaded.submitter.admission.queued,
-                           shaded.submitter.admission.existingFaces);
+      return spyro::refuse(
+          kChannel,
+          shadedPass.key,
+          "shaded stage={} recipe={} actor=0x{:08X} primitive={} candidates={} "
+          "submission={} admission_ready={} admission_refusal={} refusal_item={} queued={} "
+          "existing_faces={}",
+          spyro::actor_stage::name(shaded.status),
+          spyro::field_shaded_queue_recipe::statusName(shaded.recipe.status),
+          shaded.recipe.firstUnsupportedActor,
+          shaded.recipe.firstUnsupportedPrimitive,
+          shaded.recipe.candidates,
+          spyro::field_shaded_queue_submitter::statusName(shaded.submitter.status),
+          shaded.submitter.admission.ready,
+          shaded.submitter.admission.refusal,
+          shaded.submitter.admission.refusalItem,
+          shaded.submitter.admission.queued,
+          shaded.submitter.admission.existingFaces);
     }
   }
   const auto &shadedRecipe = shaded.recipe;
@@ -125,7 +131,7 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
       {kSecondaryProducer,
        secondaryRecipe.faces.size(),
        spyro::scene_painter_order::kActorWorldTerrainDomain},
-      {kShadedProducer,
+      {shadedPass.key,
        shadedRecipe.faces.size(),
        spyro::scene_painter_order::kActorWorldTerrainDomain},
   }};
@@ -194,7 +200,7 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   if (composition.secondary) {
     spyro_context(*core).secondaryActorTemporal.retain(std::move(secondaryFrame));
   }
-  if (composition.shaded) {
+  if (composition.shaded && !composition.captionPass) {
     spyro_context(*core).shadedQueueTemporal.retain(std::move(shadedFrame.input));
   }
   return {};

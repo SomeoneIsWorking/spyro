@@ -431,7 +431,8 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
         core->mem_r32(kMenuMobyArenaCursor),
         core->mem_r32(kMenuMobyArenaEnd),
         core->mem_r32(kMenuPrimPoolCursor));
-    if (spyro_field_actor_composition_submit(core, {.secondary = false, .shaded = true})) {
+    if (spyro_field_actor_composition_submit(
+            core, {.secondary = false, .shaded = true, .captionPass = true})) {
       return Refusal::ShadedActors;
     }
   }

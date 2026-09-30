@@ -147,4 +147,16 @@ worldAffine(Core *core, uint32_t moby, const Matrix &camera, std::array<int32_t,
   return affine;
 }
 
+psxport::native_projection::FixedAffine screenSpaceAffine(Core *core, uint32_t moby) {
+  const Matrix base{{{{0x1000, 0, 0}, {0, 0xA00, 0}, {0, 0, 0x1000}}}};
+  psxport::native_projection::FixedAffine affine{};
+  affine.m = rotateForMoby(core, base, core->mem_r32(moby + 0x44u)).value;
+  affine.t = {0, 0, (int32_t)core->mem_r32(moby + 20u) >> 1};
+  return affine;
+}
+
+ScreenCentre screenSpaceCentre(Core *core, uint32_t moby) {
+  return {(int32_t)core->mem_r32(moby + 12u), (int32_t)core->mem_r32(moby + 16u)};
+}
+
 } // namespace spyro::actor_transform_math

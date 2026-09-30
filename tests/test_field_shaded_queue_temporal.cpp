@@ -159,6 +159,24 @@ void test_each_identity_rule_names_the_field_that_rejected_the_pair() {
   CHECK(census.worstMismatch() == temporal::Mismatch::ClipMode);
   CHECK(std::string_view(temporal::mismatchName(temporal::Mismatch::ClipMode)) == "clip-mode");
 
+  // A screen-space Moby that moved is projected about a different centre, which one interval cannot
+  // sample across; the same centre pairs, and a world record (no override) against a screen-space
+  // one does not.
+  auto moved = frameOf({{0x80100000u, 1024}});
+  moved.records[0].projection = moved.projection;
+  moved.records[0].projection->ofx += 10 << 16;
+  auto anchored = frameOf({{0x80100000u, 0}});
+  anchored.records[0].projection = moved.projection;
+  sampleAt(anchored, moved, 0.0, census);
+  CHECK(census.worstMismatch() == temporal::Mismatch::Projection);
+  CHECK(std::string_view(temporal::mismatchName(temporal::Mismatch::Projection)) == "projection");
+  sampleAt(previous, anchored, 0.0, census);
+  CHECK(census.worstMismatch() == temporal::Mismatch::Projection);
+  auto same = frameOf({{0x80100000u, 1024}});
+  same.records[0].projection = anchored.records[0].projection;
+  sampleAt(anchored, same, 0.0, census);
+  CHECK_EQ(census.incompatible, 0u);
+
   // And the compatible case stays out of the breakdown entirely.
   sampleAt(previous, frameOf({{0x80100000u, 1024}}), 0.0, census);
   CHECK_EQ(census.incompatible, 0u);

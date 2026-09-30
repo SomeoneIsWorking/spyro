@@ -35,7 +35,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image: every horizontal cull or screen-rect limit the title owns (world sectors, Mobys, particles, glows, shadows, sky, per-object draw-distance or rect rejects) is overridden natively so the margins show what the view would: the native renderer draws margin objects from object memory and animates margin-only objects port-side, and guest memory is untouched so behaviour is unchanged (the `+0x51` byte `0x80051FEC` admits Mobys on stays native) | partial — projection widened and the drawn answer separated from the guest answer (issue 0152); the per-owner cull audit, port-side animation of margin Mobys, and a margin census (objects drawn at x < 0 or x > 512 at 16:9, animated, against a 4:3 run, with 0 bytes of RAM difference) are missing | S005 | G003 |
-| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | partial — one owner (`game/render/ui_anchor.*`, layout classes in `hud_layout.h`), draw-side only. MEASURED on the running product at 16:9: the pause panel and its border and the stage-13 title/menu elements (14 census elements, all centred) move by exactly the 86 px margin with unchanged widths and a 4:3 identity. NOT MEASURED: the left-edge and right-edge classes on the product — the gem/dragon/lives HUD Moby counters are culled before the anchoring hook on BOTH aspects, and the treasure-row and life-orb sprites have zero entries on every reachable route; tally/menu captions and the completed-gem text are unanchored. See S030 detail | S019 | G003 |
+| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | partial — one owner (`game/render/ui_anchor.*`, layout classes in `hud_layout.h`), draw-side only. MEASURED on the running product at 16:9: the pause panel and its border and the stage-13 title/menu elements move by exactly the 86 px margin with unchanged widths and a 4:3 identity, AND the gem/dragon/lives HUD Mobys are now drawn (screen-space path, `0x80022D1C`) and anchored: the census exercises `left-edge=2, centred=15, right-edge=2`, PASS. Their colours equal retail's packet colours for the faces shared with it (see S030 detail). NOT MEASURED: the treasure-row and life-orb sprites (zero entries on every reachable route), the key counter, the completed-gem text; pause/tally captions now draw but are not compared against retail. See S030 detail | S019 | G003 |
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — capability implemented and unit-proven; the gap is LEVEL CHOICE, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
@@ -2022,20 +2022,47 @@ census had printed PASS over that log because its refusal regex did not match th
 `[uihud:warn] REFUSED` prefix; it now matches, a refusal or an unwidened wide leg fails the census, and the
 selftest pins both.
 
-**Why the edge classes are unmeasured, and this is a separate defect.** With `PSXPORT_DEBUG=uihud` the
-attract demo (gem pickup, display state Open) drives the HUD: `field_shaded_queue_scene` receives all twelve
-`g_Hud` Moby records and computes camera-relative positions of about (-42566, 34768, 4558) against the WORLD
-camera, so `coarseVisible` rejects them; no gem, dragon or lives counter is drawn at 4:3 or 16:9, and the
-anchoring hook in `field_shaded_queue_submitter.cpp` is never reached. The retail HUD renders, so the
-native path is missing whatever the guest does to draw these records in screen space. Until that is fixed
-the `left-edge` and `right-edge` classes for Mobys, and `kLifeOrbAnchor`/`kTreasureRowAnchor` (zero entries
-on every reachable route), have unit tests only.
+**Root cause of the missing HUD Mobys, and the fix.** Retail's shaded Moby renderer `func_80022A2C`
+(`external/spyro-1/asm/renderers/r_moby.s`) tests the render-radius byte before any culling:
+`lhu`/`sll $a0,$a0,24` then `bltz $a0, .L80022D1C` at `0x80022B34`/`0x80022B38`. Bit 7 of `m_RenderRadius`
+(+0x50) selects a SCREEN-SPACE path: OFX/OFY are the Moby's own x and y (`ctc2 $at,OFX` `0x80022D2C`,
+`ctc2 $v0,OFY` `0x80022D30`, loaded from +0x0C/+0x10), TRZ is z>>1 (`sra $v1,$v1,1` `0x80022D3C`, `ctc2
+$v1,TRZ` `0x80022DC4`), the view matrix starts as diag(0x1000, 0xA00, 0x1000) (`0x80022D64-0x80022D88`),
+the Moby's own rotation at +0x44 is composed onto it, and it rejoins the model code at `.L80022FEC`. There
+is no camera cull and no shadow. All twelve `g_Hud` Moby records and every HUD glyph carry 0xFF there. The
+native scene (`field_shaded_queue_scene.cpp`) had no such path: it sent them through the WORLD path and
+culled them against the world camera (about 40000 units away). Now `prepare` builds a screen-space record
+per Moby (`actor_transform_math::screenSpaceAffine/screenSpaceCentre`), the recipe projects it about its own
+centre (`Record.projection`, including the widening offset `wide_screen_space::horizontalOffsetDelta`, so
+`ui_anchor`'s correction, defined against exactly that shift, applies), and the temporal pairing refuses to
+interpolate across a moved centre (`Mismatch::Projection`).
 
-**Not anchored:** the completed-gem text ("N/N", built in the HUD arena), the pause and tally captions
-(centred through the projection, consistent with their panel), the level-transition tally, and the
+Two further defects the same work exposed, both fixed at their owner:
+(1) per-vertex lighting (`0x800230EC-0x80023258`, and the variant-1 face arm `0x80023574-0x800236D4`) was
+refused as unsupported. `game/render/shaded_moby_light.*` now owns the GTE program (MVMVA rotate, GPF scale,
+CC against the light matrix, highlight), tested differentially against the vendored Beetle GTE (4000/4000;
+the test found that CC's second phase writes IR at x255/256, which a hand derivation missed).
+(2) the near-camera back-face exemption was applied to every variant, but only the lit flat arm
+(variant 3, `.L80023720`: `addi $t3,$t3,-0x800 ; bgez` at `0x80023734`/`0x80023738`) has it; variants 0, 1
+and 2 (`0x80023330-0x80023388`, `0x80023534-0x80023570`) cull at any depth and add no reverse bias. At the
+HUD's TRZ (1440 < 0x800) this drew the back faces as black patches. Retail ground truth: the Beetle
+full-console core's RAM at the same attract-demo frame holds the retail HUD packets; the chest's 26 retail
+face colours (`0x329292 ... 0x16060`) are a subset of the native faces' colours after the fix, and the native
+draw had emitted 58 faces before it against 28 after.
+
+**Measured after the fix** (`drive.py gameplay`, headless, `scratch/hud/final-{narrow,wide}.png`): at 4:3
+the chest/gem counter sits at the top-left, the dragon counter top-centre, the lives counter and Spyro head
+top-right, all pale yellow; at 16:9 the same elements are at the widened left and right edges with the
+dragon counter still centred. `tools/hud_anchor_census.py` on the two legs: PASS, `left-edge=2,
+centred=15, right-edge=2`. The pause menu, which composes the shaded pass a second time in one frame, now
+draws its captions (it aborted on a duplicate painter object until the second invocation got its own
+object, `field_shaded_queue_emit::kCaptionPass`).
+
+**Not anchored / not verified:** the completed-gem text ("N/N", built in the HUD arena), the "DEMO MODE" glyph text (absent natively, cause not found), the key counter, the pause and tally captions
+(now drawn, centred through the projection; not compared against retail, and at 60 fps the caption pass retains no interpolation source), the level-transition tally, and the
 non-centred text boxes. Screen fade and border are full-frame fills that take the live render width.
 
-Gate: `uv run --frozen python tools/verify.py` (Clang, Ninja, clang-format and clang-tidy over 272 translation units, registration of 82 test sources, `ctest` 117/117, pin check), built against the recorded framework pin `644ee5a6`.
+Gate: `uv run --frozen python tools/verify.py` (Clang, Ninja, clang-format and clang-tidy over 274 translation units, registration of 83 test sources, `ctest` 118/118, pin check), built against the recorded framework pin `644ee5a6`.
 
 Related goals: G003.
 

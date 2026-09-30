@@ -12,6 +12,10 @@ struct Plan {
   int queued = 0;
   size_t existingObjects = 0;
   size_t existingFaces = 0;
+  // painter_object_layer.h's PainterObjectAdmissionRefusal and the queue item it refused at, so a
+  // refusal names its cause instead of only that it happened.
+  int refusal = 0;
+  size_t refusalItem = SIZE_MAX;
 };
 
 // Atomic capacity/shape check shared by native PainterObject producers. No queue state is mutated.

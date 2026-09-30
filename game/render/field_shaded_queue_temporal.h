@@ -48,8 +48,12 @@ enum class Mismatch : uint8_t {
   VertexCount,
   PrimitiveCount,
   ClipMode,
+  // The two records are projected about different centres (a screen-space Moby that moved). The
+  // interval samples ONE projection for both endpoints, so sampling across a moved centre would put
+  // the moving part at the wrong place; it is drawn at its own transform instead.
+  Projection,
 };
-inline constexpr size_t kMismatchCount = (size_t)Mismatch::ClipMode + 1u;
+inline constexpr size_t kMismatchCount = (size_t)Mismatch::Projection + 1u;
 
 const char *mismatchName(Mismatch mismatch);
 

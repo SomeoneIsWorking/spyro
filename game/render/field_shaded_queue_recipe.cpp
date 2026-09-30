@@ -3,6 +3,7 @@
 #include "projection_stream.h"
 
 #include "scene_painter_order.h"
+#include "shaded_moby_light.h"
 #include "wide_clip_plan.h"
 
 #include <lucent/log.h>
@@ -72,28 +73,17 @@ uint32_t shade(const Input &input, const Record &record, uint32_t normal, bool r
   return channel(linear[0]) | (channel(linear[1]) << 8) | (channel(linear[2]) << 16);
 }
 
-// Variant 1's arm (`.L80023534`'s fall-through). Same idea as `shade` with the ROLES swapped: the
-// single entry word supplies the background channels AND the GPF scale (its top bits, `>>23 &
-// 0x1E`), while the primitive's colour word is the vector GPF scales. r_moby.s loads that colour
-// into IR1..3 at 0x8002358C, sets IR0 from the entry at 0x800235C0, loads the entry's channels as
-// RBK/GBK/BBK, then `GPF 0` and `CC` — so the contribution is `colour * scale` with NO shift (GPF's
-// sf is 0 on this path, unlike the variant-3 arm) and this arm has no reverse-facing factor at all.
-uint32_t shadeVariantOne(const Record &record, uint32_t colour) {
-  const uint32_t entry = record.lightEntry;
-  const int32_t scale = (int32_t)((entry >> 23) & 0x1eu);
-  std::array<int32_t, 3> linear = {(int32_t)((entry << 4) & 0xff0u),
-                                   (int32_t)((entry >> 4) & 0xff0u),
-                                   (int32_t)((entry >> 12) & 0xff0u)};
-  const std::array<int32_t, 3> vector = {(int32_t)((colour >> 16) & 0xffu),
-                                         (int32_t)((colour >> 8) & 0xffu),
-                                         (int32_t)(colour & 0xffu)};
-  for (uint32_t i = 0; i < 3; ++i) {
-    linear[i] += vector[i] * scale;
-  }
-  const auto channel = [](int32_t value) {
-    return (uint32_t)(std::clamp(value, 0, 4095) >> 4);
-  };
-  return channel(linear[0]) | (channel(linear[1]) << 8) | (channel(linear[2]) << 16);
+// Variant 1's arm (`.L80023534`'s fall-through, 0x80023574-0x800236D4): the primitive's word after
+// its indices is a signed NORMAL, lit exactly like a vertex normal -- rotated by the record's
+// matrix (MVMVA at 0x800235A0), scaled by the entry's factor (GPF 0), then CC against the light
+// colour matrix with the entry as background -- and then given the entry's highlight. An earlier
+// revision of this arm read that word as a COLOUR and multiplied it by the scale, skipping the
+// MVMVA at 0x800235A0 that sits between the `mtc2` loads and the GPF. It is one owner with the
+// per-vertex pass, `shaded_moby_light.h`, because both are the same GTE program.
+uint32_t shadeVariantOne(const Input &input, const Record &record, uint32_t normal) {
+  return shaded_light::faceColour(
+      {.rotation = record.affine.m, .colourMatrix = input.colourMatrix, .entry = record.lightEntry},
+      normal);
 }
 
 Vertex asVertex(const psxport::native_projection::NativeProjectedVertex &result) {
@@ -184,8 +174,11 @@ Recipe derive(const Input &input, const Interval *interval) {
       return refuse(std::move(recipe), Status::InvalidInput, record, 0);
     }
     const Record *const endpoint = pairedEndpoint(interval, recordIndex, record);
-    switch (projectRecord(
-        record, endpoint, input.projection, interval ? interval->t : 1.0, projected)) {
+    switch (projectRecord(record,
+                          endpoint,
+                          record.projection.value_or(input.projection),
+                          interval ? interval->t : 1.0,
+                          projected)) {
     case Projected::Sampled:
       ++recipe.sampled;
       break;
@@ -248,11 +241,18 @@ Recipe derive(const Input &input, const Interval *interval) {
       // 0x800 AND the face is front-facing; every other reached path subtracts 0x02000000 from the
       // command and the face is opaque. TRZ is approximated by the actor's view-Z origin.
       const bool nearCamera = record.affine.t[2] < 2048;
+      // Only the lit flat arm (variant 3, r_moby.s 0x80023720) has the near-camera exemption: its
+      // `addi $t3, $t3, -0x800 ; bgez` (0x80023734-0x80023738) skips the facing test below TRZ
+      // 0x800. Variants 0, 1 and 2 (0x80023330-0x80023388, 0x80023534-0x80023570) cull a face whose
+      // first NCLIP is not positive unless a quad's second winding (v3, v1, v2) is negative, at any
+      // depth, and never add the reverse bias. Applying the exemption to every variant drew the
+      // HUD's back faces (TRZ 1440) as black patches.
+      const bool nearExempt = variant == 3u && nearCamera;
       const int32_t firstFacing =
           nclip(projected[index[0]], projected[index[1]], projected[index[2]]);
       bool reverseFacing = false;
       if (firstFacing <= 0) {
-        if (!nearCamera) {
+        if (!nearExempt) {
           if (count == 3u ||
               nclip(projected[index[3]], projected[index[1]], projected[index[2]]) >= 0) {
             ++recipe.rejected;
@@ -264,7 +264,7 @@ Recipe derive(const Input &input, const Interval *interval) {
       int64_t depth = (int64_t)projected[index[0]].sz + projected[index[1]].sz +
                       projected[index[2]].sz + projected[index[3]].sz;
       depth -= (int64_t)std::max(record.affine.t[2] - 256, 0) * 4;
-      if (reverseFacing) {
+      if (reverseFacing && variant == 3u) {
         depth += 512;
       }
       if (depth <= 0) {
@@ -290,7 +290,7 @@ Recipe derive(const Input &input, const Interval *interval) {
           face.rgb[i] = primitive.vertexColours[i] & 0x00ffffffu;
         }
       } else if (variantOne) {
-        face.rgb.fill(shadeVariantOne(record, primitive.normal));
+        face.rgb.fill(shadeVariantOne(input, record, primitive.normal));
       } else {
         const uint32_t rgb = shade(input, record, primitive.normal, reverseFacing);
         face.rgb.fill(rgb);

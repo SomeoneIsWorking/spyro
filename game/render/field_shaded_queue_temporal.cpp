@@ -4,6 +4,7 @@
 
 #include <array>
 #include <lucent/log.h>
+#include <optional>
 #include <span>
 
 namespace spyro::field_shaded_queue_temporal {
@@ -22,9 +23,23 @@ const char *mismatchName(Mismatch mismatch) {
     return "primitive-count";
   case Mismatch::ClipMode:
     return "clip-mode";
+  case Mismatch::Projection:
+    return "projection";
   }
   return "unknown";
 }
+
+namespace {
+
+bool sameCentre(const std::optional<psxport::native_projection::ProjectionParams> &a,
+                const std::optional<psxport::native_projection::ProjectionParams> &b) {
+  if (a.has_value() != b.has_value()) {
+    return false;
+  }
+  return !a || (a->ofx == b->ofx && a->ofy == b->ofy && a->h == b->h);
+}
+
+} // namespace
 
 Mismatch mismatch(const Record &previous, const Record &current) {
   if (previous.meshIndex != current.meshIndex) {
@@ -42,6 +57,9 @@ Mismatch mismatch(const Record &previous, const Record &current) {
   // modes were not drawn through the same transform pipeline at all.
   if (previous.clipMode != current.clipMode) {
     return Mismatch::ClipMode;
+  }
+  if (!sameCentre(previous.projection, current.projection)) {
+    return Mismatch::Projection;
   }
   return Mismatch::None;
 }

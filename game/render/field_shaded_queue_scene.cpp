@@ -5,6 +5,11 @@
 #include "actor_transform_math.h"
 #include "core.h"
 #include "gpu_vk.h"
+#include "native_projection.h"
+#include "shaded_moby_light.h"
+#include "wide_screen_space.h"
+
+#include <lucent/log.h>
 
 #include <array>
 #include <cstdlib>
@@ -119,6 +124,129 @@ std::optional<MeshSource> inspectMesh(Core *core, uint32_t actor) {
   return source;
 }
 
+// The per-vertex colour words a Gouraud primitive indexes, by BYTE offset (`vertex * 4`, the
+// guest's own stride). A model with its vertex list behind the header keeps them in guest memory at
+// `vertexColourBase`; any other model has normals behind the header and retail lights them
+// (`shaded_moby_light.h`), so they are derived here from the record's own rotation.
+class VertexColours {
+public:
+  VertexColours(Core *core,
+                const MeshSource &mesh,
+                const field_shaded_queue_recipe::Record &record,
+                const shaded_light::Matrix3 &colourMatrix)
+      : core_(core), base_(mesh.vertexColourBase) {
+    if (base_ != 0u) {
+      return;
+    }
+    std::vector<std::array<std::int8_t, 3>> normals(mesh.vertexCount);
+    for (uint32_t i = 0; i < mesh.vertexCount; ++i) {
+      const uint32_t at = mesh.address + 16u + i * 3u;
+      normals[i] = {(std::int8_t)core->mem_r8(at),
+                    (std::int8_t)core->mem_r8(at + 1u),
+                    (std::int8_t)core->mem_r8(at + 2u)};
+    }
+    lit_ = shaded_light::vertexColours(
+        {.rotation = record.affine.m, .colourMatrix = colourMatrix, .entry = mesh.lightEntry},
+        normals);
+  }
+
+  std::optional<uint32_t> at(uint32_t byteOffset) const {
+    if (base_ != 0u) {
+      const uint32_t address = base_ + byteOffset;
+      if (address < kScratchVertices || address > kScratchEnd - 4u) {
+        return std::nullopt;
+      }
+      return core_->mem_r32(address);
+    }
+    if (byteOffset / 4u >= lit_.size()) {
+      return std::nullopt;
+    }
+    return lit_[byteOffset / 4u];
+  }
+
+private:
+  Core *core_;
+  uint32_t base_;
+  std::vector<uint32_t> lit_;
+};
+
+// The model's vertices and primitives, read from the guest's mesh exactly as 0x80022FEC onward
+// does. That tail is shared by the world path and the screen-space path, so both records come
+// through here.
+Status fillGeometry(Core *core,
+                    const MeshSource &mesh,
+                    const shaded_light::Matrix3 &colourMatrix,
+                    field_shaded_queue_recipe::Record &record) {
+  record.vertices.reserve(mesh.vertexCount);
+  for (uint32_t i = 0; i < mesh.vertexCount; ++i) {
+    record.vertices.push_back(decodeVertex(core, mesh.vertices + i * 3u));
+  }
+  if (mesh.vertexColourBase == 0u &&
+      !actor_recipe_capture::physical_span(mesh.address + 16u, mesh.vertexCount * 3u)) {
+    return Status::InvalidMesh;
+  }
+  const VertexColours colours(core, mesh, record, colourMatrix);
+  record.primitives.reserve(mesh.primitiveCount);
+  for (uint32_t i = 0; i < mesh.primitiveCount; ++i) {
+    field_shaded_queue_recipe::Primitive primitive{.indices = core->mem_r32(mesh.stream + i * 8u),
+                                                   .normal =
+                                                       core->mem_r32(mesh.stream + i * 8u + 4u)};
+    if ((primitive.indices & 3u) == 0u) {
+      const std::array<uint32_t, 4> offsets = {(primitive.normal >> 21) & 508u,
+                                               (primitive.normal >> 14) & 508u,
+                                               (primitive.normal >> 7) & 508u,
+                                               primitive.normal & 508u};
+      for (uint32_t vertex = 0; vertex < 4u; ++vertex) {
+        const auto colour = colours.at(offsets[vertex]);
+        if (!colour) {
+          return Status::InvalidMesh;
+        }
+        primitive.vertexColours[vertex] = *colour;
+      }
+    }
+    record.primitives.push_back(primitive);
+  }
+  return Status::Ready;
+}
+
+// The record of a screen-space Moby: the lighting words every Moby carries, and the two things the
+// screen-space path changes, its view (`screenSpaceAffine`) and its projection centre.
+field_shaded_queue_recipe::Record
+screenSpaceRecord(Core *core,
+                  uint32_t actor,
+                  uint32_t ordinal,
+                  const MeshSource &mesh,
+                  const psxport::native_projection::ProjectionParams &frameProjection) {
+  const auto centre = actor_transform_math::screenSpaceCentre(core, actor);
+  // The guest's x is in its own 512-wide frame. The drawn frame's projection is about the widened
+  // centre, so this moves by the same horizontal offset every world Moby already carries and
+  // `field_shaded_queue_submitter`'s anchor correction (defined against exactly that shift)
+  // applies.
+  auto projection = frameProjection;
+  projection.ofx = (centre.x + wide_screen_space::horizontalOffsetDelta(core)) << 16;
+  projection.ofy = centre.y << 16;
+  lucent::debug("shadedscreen",
+                "actor=0x{:08X} mesh={} centre=({}, {}) drawnCentreX={} viewZ={} vertexColours={}",
+                actor,
+                mesh.index,
+                centre.x,
+                centre.y,
+                projection.ofx >> 16,
+                (int32_t)core->mem_r32(actor + 20u) >> 1,
+                mesh.vertexColourBase != 0u ? "authored" : "lit");
+  return {.actor = actor,
+          .actorOrdinal = ordinal,
+          .meshIndex = mesh.index,
+          .clipMode = false,
+          .lightBase = mesh.lightBase,
+          .lightScale = mesh.lightScale,
+          .lightEntry = mesh.lightEntry,
+          .lightEntryIndex = mesh.lightEntryIndex,
+          .affine = actor_transform_math::screenSpaceAffine(core, actor),
+          .projection = projection,
+          .depthOffset = (int32_t)(int8_t)core->mem_r8(actor + 0x47u)};
+}
+
 Status reset(Frame &frame, Status status) {
   frame = {};
   return status;
@@ -161,22 +289,15 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
     if (!actor_recipe_capture::physical_span(actor, 0x58u)) {
       return reset(frame, Status::InvalidActor);
     }
-    // THE 0x50 BIT-7 SKIP IS GONE, and it was never justified. It was added in a bulk commit with
-    // no comment and no cited evidence, and it contradicts the guest's own struct: byte 0x50 is
-    // `m_RenderRadius` -- "Radius of the Moby for clipping purposes (>> 2)", a `u_char`
-    // (external/spyro-1/include/moby.h:133) -- with `m_WasDrawn` at 0x51. Bit 7 of a clipping
-    // radius is simply a large radius, not a flag.
-    //
-    // It was not cosmetic. `hud_text_builder.cpp` writes 0xFF at 0x50 for every glyph, because a
-    // glyph wants the largest radius, so EVERY HUD glyph moby was dropped here -- which is why the
-    // pause menu drew a panel and a border and NO CAPTIONS, and why the level-transition tally's
-    // captions are missing too (same route). Any moby whose render radius is >= 128 was dropped as
-    // well.
-    //
-    // The counter is kept, renamed to what it can honestly mean, because a diagnostic that silently
-    // stops reporting a population is worse than one that reports it under a truthful name.
-    if ((core->mem_r8(actor + 0x50u) & 0x80u) != 0u) {
-      ++frame.largeRadiusActors;
+    // Byte 0x50 is `m_RenderRadius` (external/spyro-1/include/moby.h:133), and bit 7 of it is what
+    // retail branches on: `sll $a0,$a0,24; bltz $a0, .L80022D1C` at 0x80022B34/0x80022B38 sends the
+    // Moby down the SCREEN-SPACE path before any culling. Every `g_Hud` Moby and every HUD glyph
+    // carries 0xFF there. The skip that used to sit here dropped them, and its removal alone sent
+    // them into the WORLD path below, which culls them against the world camera: their positions
+    // are screen coordinates, so they come out some 40000 units from it and nothing was drawn.
+    const bool screenSpace = actor_transform_math::isScreenSpace(core->mem_r8(actor + 0x50u));
+    if (screenSpace) {
+      ++frame.screenSpaceActors;
     }
     frame.visitedWorldActors.push_back(actor);
     const uint32_t meshAddress =
@@ -189,6 +310,21 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
       frame.validMeshPrimitiveCandidates += mesh->primitiveCount;
       frame.sourceMeshIndices.push_back(mesh->index);
       frame.sourceLightingOffsets.push_back(mesh->lightingOffset);
+    }
+    if (screenSpace) {
+      if (!mesh) {
+        return reset(frame, Status::InvalidMesh);
+      }
+      // 0x80022D98 marks the Moby drawn; there is no shadow and no clip gate on this path.
+      frame.transformedActors.push_back(actor);
+      auto record = screenSpaceRecord(core, actor, qi, *mesh, frame.input.projection);
+      if (const Status geometry = fillGeometry(core, *mesh, frame.input.colourMatrix, record);
+          geometry != Status::Ready) {
+        return reset(frame, geometry);
+      }
+      frame.primitiveCandidates += mesh->primitiveCount;
+      frame.input.records.push_back(std::move(record));
+      continue;
     }
     const int32_t radius = extentRadius(core->mem_r16(actor + 0x50u));
     const auto relative = actor_transform_math::cameraRelativePosition(core, actor);
@@ -255,32 +391,9 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
                                              .affine = affine,
                                              .depthOffset =
                                                  (int32_t)(int8_t)core->mem_r8(actor + 0x47u)};
-    record.vertices.reserve(mesh->vertexCount);
-    for (uint32_t i = 0; i < mesh->vertexCount; ++i) {
-      record.vertices.push_back(decodeVertex(core, mesh->vertices + i * 3u));
-    }
-    record.primitives.reserve(mesh->primitiveCount);
-    for (uint32_t i = 0; i < mesh->primitiveCount; ++i) {
-      field_shaded_queue_recipe::Primitive primitive{
-          .indices = core->mem_r32(mesh->stream + i * 8u),
-          .normal = core->mem_r32(mesh->stream + i * 8u + 4u)};
-      if ((primitive.indices & 3u) == 0u) {
-        if (mesh->vertexColourBase == 0u) {
-          return reset(frame, Status::UnsupportedVertexLighting);
-        }
-        const std::array<uint32_t, 4> offsets = {(primitive.normal >> 21) & 508u,
-                                                 (primitive.normal >> 14) & 508u,
-                                                 (primitive.normal >> 7) & 508u,
-                                                 primitive.normal & 508u};
-        for (uint32_t vertex = 0; vertex < 4u; ++vertex) {
-          const uint32_t colour = mesh->vertexColourBase + offsets[vertex];
-          if (colour < kScratchVertices || colour > kScratchEnd - 4u) {
-            return reset(frame, Status::InvalidMesh);
-          }
-          primitive.vertexColours[vertex] = core->mem_r32(colour);
-        }
-      }
-      record.primitives.push_back(primitive);
+    if (const Status geometry = fillGeometry(core, *mesh, frame.input.colourMatrix, record);
+        geometry != Status::Ready) {
+      return reset(frame, geometry);
     }
     frame.primitiveCandidates += mesh->primitiveCount;
     frame.input.records.push_back(std::move(record));
@@ -318,8 +431,6 @@ const char *statusName(Status status) {
     return "invalid mesh";
   case Status::InvalidShadowCursor:
     return "invalid shadow cursor";
-  case Status::UnsupportedVertexLighting:
-    return "unsupported vertex lighting";
   }
   return "unknown";
 }

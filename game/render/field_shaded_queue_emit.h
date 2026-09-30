@@ -27,11 +27,23 @@ namespace spyro::field_shaded_queue_emit {
 inline constexpr uint32_t kProducerKey = 0x80022a2cu;
 inline constexpr const char *kProducerName = "spriteq:world-shaded";
 
+// One frame can hold two invocations of 0x80022A2C: the world pass, and the pause menu's caption
+// pass (0x80018880 appends the built glyph Mobys to the shaded queue and the guest runs the same
+// routine again). The queue admits one painter object per producer key, so the second invocation
+// is a distinct object, not a continuation of the first.
+struct Pass {
+  uint32_t key = kProducerKey;
+  const char *name = kProducerName;
+};
+inline constexpr Pass kWorldPass{};
+inline constexpr Pass kCaptionPass{0x80022a2du, "spriteq:caption-shaded"};
+
 // Shared with every other producer's emission stage, so one refusal reads the same everywhere.
 using Status = actor_stage::Emit;
 
 struct Prepared {
   Status status = Status::ValidEmpty;
+  Pass pass{};
   field_shaded_queue_recipe::Recipe recipe;
   field_shaded_queue_submitter::Plan submitter;
 };
@@ -42,7 +54,8 @@ struct Prepared {
 Prepared prepare(const Core &core,
                  const RenderQueue &queue,
                  const field_shaded_queue_recipe::Input &input,
-                 const field_shaded_queue_recipe::Interval *interval = nullptr);
+                 const field_shaded_queue_recipe::Interval *interval = nullptr,
+                 Pass pass = kWorldPass);
 
 // Publishes a Ready plan under the producer's scope. A ValidEmpty plan publishes nothing and is not
 // a failure: a corpus whose every candidate was rejected still completed. Any other status is a

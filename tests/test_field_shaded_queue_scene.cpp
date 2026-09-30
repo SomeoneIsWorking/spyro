@@ -29,6 +29,32 @@ std::unique_ptr<Game> emptyGame() {
   return game;
 }
 
+constexpr uint32_t kMeshTable = 0x80076378u;
+constexpr uint32_t kMesh = 0x80074000u;
+
+// A one-primitive, three-vertex mesh behind model index 0: header, its vertex words, the
+// primitive stream (indices word, normal word) and the per-vertex normals that follow the header.
+void buildMesh(Core &core) {
+  core.mem_w32(kMeshTable, kMesh);
+  core.mem_w8(kMesh + 0u, 3u);
+  core.mem_w8(kMesh + 1u, 1u);
+  core.mem_w32(kMesh + 4u, 0x80074200u);
+  core.mem_w32(kMesh + 12u, 0x80074300u);
+  core.mem_w32(0x80074300u, (1u << 23) | (2u << 16) | (2u << 9) | (2u << 2) | 1u);
+  core.mem_w32(0x80074304u, 0x00010000u);
+}
+
+void placeActor(Core &core, uint32_t actor, uint8_t radius, int32_t x, int32_t y, int32_t z) {
+  core.mem_w32(kQueue, actor);
+  core.mem_w32(kQueue + 4u, 0u);
+  core.mem_w32(actor + 0x58u, 0x80074000u);
+  core.mem_w16(actor + 0x36u, 0u);
+  core.mem_w8(actor + 0x50u, radius);
+  core.mem_w32(actor + 12u, (uint32_t)x);
+  core.mem_w32(actor + 16u, (uint32_t)y);
+  core.mem_w32(actor + 20u, (uint32_t)z);
+}
+
 // A moby whose RENDER RADIUS has bit 7 set must be WALKED, not dropped.
 //
 // This is the regression test for the removed `mem_r8(actor + 0x50) & 0x80` skip. Byte 0x50 is the
@@ -39,36 +65,67 @@ std::unique_ptr<Game> emptyGame() {
 // missing too.
 //
 // The case is built so it FAILS if the skip comes back, and so it also pins the counter's new
-// honest name: a large-radius actor is now CENSUSED rather than filtered, so `largeRadiusActors`
+// honest name: a large-radius actor is now CENSUSED rather than filtered, so `screenSpaceActors`
 // must be 1 AND the actor must appear in `visitedWorldActors`.
 void test_a_large_render_radius_is_censused_not_dropped() {
   auto game = emptyGame();
   Core &core = game->core;
   constexpr uint32_t kActor = 0x80073000u;
-  core.mem_w32(kQueue, kActor);
-  // A physically valid actor span, and a mesh index that resolves, so the walk reaches the radius
-  // test rather than refusing earlier for an unrelated reason.
-  core.mem_w32(kActor + 0x58u, 0x80074000u);
-  core.mem_w16(kActor + 0x36u, 0u);
-  core.mem_w32(kQueue + 4u, 0u);
-  // The whole point: bit 7 of the radius byte SET.
-  core.mem_w8(kActor + 0x50u, 0xFFu);
-  core.mem_w8(kActor + 0x51u, 0x00u);
-  core.mem_w32(kActor + 0x00u, 0u);
-  core.mem_w32(kActor + 0x04u, 0u);
-  core.mem_w32(kActor + 0x08u, 0u);
+  // A physically valid actor and a mesh that resolves, so the walk reaches the radius test and a
+  // refusal -- which wipes the census -- cannot be mistaken for the actor being dropped.
+  buildMesh(core);
+  placeActor(core, kActor, 0xFFu, 0, 0, 0);
 
   spyro::field_shaded_queue_scene::Frame frame{};
   const auto status = spyro::field_shaded_queue_scene::prepare(&core, 512, frame);
-  // Whether the walk READY depends on mesh-table state this fixture does not build; what must not
-  // happen is the actor being silently dropped for its radius.
+  CHECK(status == spyro::field_shaded_queue_scene::Status::Ready);
   CHECK(frame.queueRecords >= 1u);
-  CHECK_EQ(frame.largeRadiusActors, 1u);
+  CHECK_EQ(frame.screenSpaceActors, 1u);
   const bool visited =
       std::find(frame.visitedWorldActors.begin(), frame.visitedWorldActors.end(), kActor) !=
       frame.visitedWorldActors.end();
   // CHECK, not CHECK_MSG: this house has no CHECK_MSG, and the label above states the property.
   CHECK(visited);
+}
+
+void test_a_screen_space_moby_is_projected_about_its_own_centre() {
+  auto game = emptyGame();
+  Core &core = game->core;
+  buildMesh(core);
+  constexpr uint32_t kActor = 0x80073000u;
+  placeActor(core, kActor, 0xFFu, 90, 2, 1440);
+  spyro::field_shaded_queue_scene::Frame frame{};
+  const auto status = spyro::field_shaded_queue_scene::prepare(&core, 512, frame);
+  CHECK(status == spyro::field_shaded_queue_scene::Status::Ready);
+  CHECK_EQ(frame.screenSpaceActors, 1u);
+  CHECK_EQ(frame.input.records.size(), 1u);
+  if (frame.input.records.size() == 1u) {
+    const auto &record = frame.input.records[0];
+    CHECK(record.projection.has_value());
+    if (record.projection) {
+      // 4:3: no widening offset, so the centre is the guest's own.
+      CHECK_EQ(record.projection->ofx, 90 << 16);
+      CHECK_EQ(record.projection->ofy, 2 << 16);
+    }
+    CHECK_EQ(record.affine.t[2], 720);
+    CHECK_EQ(record.affine.m[1][1], 0xA00);
+    CHECK_EQ(record.affine.m[0][0], 0x1000);
+  }
+}
+
+void test_a_world_moby_keeps_the_frame_projection() {
+  auto game = emptyGame();
+  Core &core = game->core;
+  buildMesh(core);
+  constexpr uint32_t kActor = 0x80073000u;
+  placeActor(core, kActor, 0x10u, 0, 0, 0);
+  spyro::field_shaded_queue_scene::Frame frame{};
+  spyro::field_shaded_queue_scene::prepare(&core, 512, frame);
+  CHECK_EQ(frame.screenSpaceActors, 0u);
+  CHECK_EQ(frame.input.records.size(), 1u);
+  for (const auto &record : frame.input.records) {
+    CHECK(!record.projection.has_value());
+  }
 }
 
 void test_empty_queue_is_atomic_valid_input() {
@@ -119,7 +176,7 @@ void inspectSnapshotIfRequested() {
               "recipe_candidates=%u rejected=%u faces=%zu meshes=%zu lighting=%zu shadows=%zu\n",
               spyro::field_shaded_queue_scene::statusName(scene),
               frame.queueRecords,
-              frame.largeRadiusActors,
+              frame.screenSpaceActors,
               frame.validMeshRecords,
               frame.nullMeshes,
               frame.validMeshPrimitiveCandidates,
@@ -154,6 +211,8 @@ void inspectSnapshotIfRequested() {
 
 int main() {
   RUN(a_large_render_radius_is_censused_not_dropped);
+  RUN(a_screen_space_moby_is_projected_about_its_own_centre);
+  RUN(a_world_moby_keeps_the_frame_projection);
   RUN(empty_queue_is_atomic_valid_input);
   RUN(invalid_actor_refuses_without_guest_side_effects);
   inspectSnapshotIfRequested();

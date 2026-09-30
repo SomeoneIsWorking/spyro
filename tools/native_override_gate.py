@@ -16,6 +16,12 @@ worktree. A change passes only when all of these hold, in this order:
      PSXPORT_OVERRIDE_DIFF armed for the named override samples at least one comparable call, and every sampled call matches the guest
      body it replaces (psxport tools/port/override_differential_gate.py).
 
+The gate takes no machine-wide slot of its own: its caller admits the whole gate once, the way a swarm
+job with heavy_gate does, or `heavy.py --kind build -- <this gate>` by hand. A nested admission from
+inside an admitted gate would queue behind requests waiting on the gate's own reservation. Its
+peak is the -j 4 build plus one route run (a 300-frame drive peaks near 190 MB with the differential
+armed, and psxport issue 0141 caps one shadowed call's journals at 32 MiB).
+
 Usage (from the job worktree):
     uv run --frozen python tools/native_override_gate.py <override-name>... [--route NAME] [--light]
     uv run --frozen python tools/native_override_gate.py --selftest
@@ -43,9 +49,8 @@ BUILD = (
 REPORT = ROOT / "scratch/override-gate/differential.json"
 CCACHE = shutil.which("ccache") is not None
 # A route takes minutes (the walk reaches gameplay at frame ~6,360 in about 15 s unpaced; the demo
-# route runs 420 s). Past this, the only explanation is an override that never returns. The deadline
-# is enforced INSIDE heavy.py's admission (coreutils timeout, which signals the route's whole process
-# group), so time spent queued for a run slot behind a swarm's gates never counts against it.
+# route runs 420 s). Past this, the only explanation is an override that never returns. coreutils
+# timeout enforces it and signals the route's whole process group.
 ROUTE_TIMEOUT_SECONDS = 900
 # coreutils timeout's exit status when the deadline fired (124) or its --kill-after SIGKILL did (137).
 DEADLINE_EXIT_CODES = (124, 137)
@@ -279,7 +284,6 @@ def read_dotenv(path: Path) -> dict[str, str]:
 
 def run_differential(
     names: list[str],
-    heavy: str,
     route_name: str,
     framework: Path,
     checkout: Path,
@@ -305,14 +309,6 @@ def run_differential(
     step(
         f"{route_name} run",
         [
-            heavy,
-            "--kind",
-            "run",
-            # A 300-frame gameplay drive peaks near 190 MB with the differential armed, and psxport
-            # issue 0141 caps one shadowed call's journals at 32 MiB, so a runaway override stays bounded.
-            "--mem-mib",
-            "512",
-            "--",
             "timeout",
             "--kill-after=10",
             str(ROUTE_TIMEOUT_SECONDS),
@@ -338,17 +334,6 @@ def run_differential(
     )
 
 
-def heavy_tool() -> str:
-    """The machine-wide slot wrapper, which the workspace installs on PATH."""
-    on_path = shutil.which("heavy.py")
-    if on_path is None:
-        raise GateFailure(
-            "heavy.py is not on PATH (re-harness tools/install_skills.py installs it); the route run "
-            "must take a machine-wide slot"
-        )
-    return on_path
-
-
 def names_for_addresses(addresses: str) -> list[str]:
     """The names this worktree registers for each requested entry address; every one must be registered."""
     wanted = [int(a, 16) for a in addresses.split(",") if a]
@@ -370,7 +355,6 @@ def gate(names: list[str], route: str, light: bool) -> None:
     framework = (checkout / "external/psxport").resolve()
     if not (framework / "cmake/psxport.cmake").is_file():
         raise GateFailure(f"framework: {framework} is not a psxport checkout")
-    heavy = heavy_tool()
     cpp = check_scope()
     link_provisioned_inputs(checkout)
     populate_submodules(checkout)
@@ -394,7 +378,6 @@ def gate(names: list[str], route: str, light: bool) -> None:
         )
     run_differential(
         names=names,
-        heavy=heavy,
         route_name=route,
         framework=framework,
         checkout=checkout,

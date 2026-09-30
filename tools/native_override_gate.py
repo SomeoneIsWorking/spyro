@@ -257,6 +257,7 @@ def read_dotenv(path: Path) -> dict[str, str]:
 
 def run_differential(
     names: list[str],
+    heavy: str,
     route_name: str,
     framework: Path,
     checkout: Path,
@@ -282,7 +283,7 @@ def run_differential(
     step(
         f"{route_name} run",
         [
-            "heavy.py",
+            heavy,
             "--kind",
             "run",
             "--",
@@ -307,6 +308,23 @@ def run_differential(
     )
 
 
+def heavy_tool(framework: Path) -> str:
+    """The machine-wide slot wrapper: on PATH, else the workspace's re-harness copy.
+
+    A swarm worker's shell does not carry the operator's PATH, so the workspace copy is what makes
+    the gate runnable from inside a job exactly as the swarm itself runs it.
+    """
+    on_path = shutil.which("heavy.py")
+    if on_path:
+        return on_path
+    workspace = framework.parent.parent / "shared/re-harness/tools/heavy.py"
+    if workspace.is_file():
+        return str(workspace)
+    raise GateFailure(
+        f"heavy.py is neither on PATH nor at {workspace}; the gameplay run must take a machine-wide run slot"
+    )
+
+
 def names_for_addresses(addresses: str) -> list[str]:
     """The names this worktree registers for each requested entry address; every one must be registered."""
     wanted = [int(a, 16) for a in addresses.split(",") if a]
@@ -324,14 +342,11 @@ def gate(names: list[str], route: str, light: bool) -> None:
         route_named(route)
     except ValueError as unknown:
         raise GateFailure(f"route: {unknown}") from unknown
-    if shutil.which("heavy.py") is None:
-        raise GateFailure(
-            "heavy.py is not on PATH; the gameplay run must take a machine-wide run slot"
-        )
     checkout = main_checkout()
     framework = (checkout / "external/psxport").resolve()
     if not (framework / "cmake/psxport.cmake").is_file():
         raise GateFailure(f"framework: {framework} is not a psxport checkout")
+    heavy = heavy_tool(framework)
     cpp = check_scope()
     link_provisioned_inputs(checkout)
     populate_submodules(checkout)
@@ -353,7 +368,7 @@ def gate(names: list[str], route: str, light: bool) -> None:
             ],
             env,
         )
-    run_differential(names, route, framework, checkout, env)
+    run_differential(names, route, heavy, framework, checkout, env)
     print(f"[gate] PASS: {', '.join(names)}")
 
 

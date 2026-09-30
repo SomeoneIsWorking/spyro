@@ -43,6 +43,10 @@ void test_empty_actor_submission_commits_shadow_reset() {
 void test_refused_actor_submission_preserves_shadow_state() {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
+  // The producer reads the drawn sector table before it walks the Moby array (issue 0152), so the
+  // context is part of this call's inputs even on the path that refuses.
+  SpyroContext context{};
+  core.gameCtx = &context;
   core.mem_w32(kLevelMobys, 0x801ffffcu);
   core.mem_w32(kShadowCursor, kPreviousCursor);
   core.mem_w32(kShadowStart, 0x80012000u);
@@ -133,8 +137,11 @@ constexpr uint32_t kBroadVisibility = 0x800771c8u;
 
 spyro::world_recipe::Recipe worldRecipe(bool visible) {
   spyro::world_recipe::Recipe recipe{};
-  recipe.broadVisible[3] = 0xffu;
-  recipe.broadVisible[255] = 0xffu;
+  // Sector 3 is inside retail's own plane at any width. Sector 255 is the issue-0152 discriminator:
+  // only the widened draw sees it, so the guest table must not carry it and the drawn table must.
+  recipe.visibility.guest[3] = 0xffu;
+  recipe.visibility.drawn[3] = 0xffu;
+  recipe.visibility.drawn[255] = 0xffu;
   if (visible) {
     spyro::world_recipe::Face face{};
     face.otBin = 100u;
@@ -174,10 +181,24 @@ void test_world_logic_submission_publishes_complete_visibility() {
         spyro::world_scene_submitter::prepare(&game->core, game->rq, kWorldProducer, recipe);
     CHECK(plan.status == (visible ? spyro::world_scene_submitter::Status::Ready
                                   : spyro::world_scene_submitter::Status::ValidEmpty));
-    spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan);
-    for (uint32_t i = 0; i < recipe.broadVisible.size(); ++i) {
-      CHECK_EQ(game->core.mem_r8(kBroadVisibility + i), recipe.broadVisible[i]);
+    spyro::sector_visibility::Table drawn{};
+    spyro::world_scene_submitter::submit(
+        &game->core, game->rq, kWorldProducer, recipe, plan, drawn);
+    // The guest table is published COMPLETE, all 256 bytes, because retail's 0x800258F0 rewrites
+    // the whole table every call — so the pre-run 0x5A fill is gone from every sector the 4:3 cull
+    // drops, and the test would be asserting the opposite of the shipping contract if it survived.
+    for (uint32_t i = 0; i < recipe.visibility.guest.size(); ++i) {
+      CHECK_EQ(game->core.mem_r8(kBroadVisibility + i), recipe.visibility.guest[i]);
     }
+    // Sector 255 is the issue-0152 discriminator, and it is a NEGATIVE case in both halves at once:
+    // it is inside retail's own plane, so the guest table keeps it, while the widened draw also
+    // carries it. Asserting only `drawn[255]` would pass on a build that leaked the margin into
+    // guest RAM, and asserting only `guest[255]` would pass on one that never widened at all.
+    CHECK_EQ(recipe.visibility.guest[3], 0xffu);
+    CHECK_EQ(recipe.visibility.drawn[3], 0xffu);
+    // The drawn table is the widened one, and the owner's readers get it in the same act.
+    CHECK(drawn == recipe.visibility.drawn);
+    CHECK_EQ(drawn[255], 0xffu);
     CHECK_EQ(game->rq.n, visible ? 1 : 0);
     if (game->rq.n == 1) {
       const auto &item = game->rq.items[0];
@@ -199,8 +220,12 @@ void test_refused_world_submission_preserves_visibility_and_queue() {
       spyro::world_scene_submitter::prepare(&game->core, game->rq, kWorldProducer, recipe);
   CHECK(plan.status == spyro::world_scene_submitter::Status::InvalidOrder);
   const std::vector<uint8_t> before(std::begin(game->core.ram), std::end(game->core.ram));
-  spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan);
+  spyro::sector_visibility::Table drawn{};
+  spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan, drawn);
   CHECK(std::equal(before.begin(), before.end(), std::begin(game->core.ram)));
+  CHECK(std::all_of(drawn.begin(), drawn.end(), [](uint8_t b) {
+    return b == 0u;
+  }));
   CHECK_EQ(game->rq.n, 0);
   CHECK(!spyro::world_scene_submitter::emit(&game->core, game->rq, kWorldProducer, recipe, plan));
   CHECK(std::equal(before.begin(), before.end(), std::begin(game->core.ram)));
@@ -224,7 +249,9 @@ void test_world_presentation_emits_without_guest_writes() {
     if (game->rq.n == 1) {
       const RqItem display = game->rq.items[0];
       game->rq.reset();
-      spyro::world_scene_submitter::submit(&game->core, game->rq, kWorldProducer, recipe, plan);
+      spyro::sector_visibility::Table drawn{};
+      spyro::world_scene_submitter::submit(
+          &game->core, game->rq, kWorldProducer, recipe, plan, drawn);
       CHECK_EQ(game->rq.n, 1);
       const auto &endpoint = game->rq.items[0];
       CHECK_EQ(display.painter_object, endpoint.painter_object);

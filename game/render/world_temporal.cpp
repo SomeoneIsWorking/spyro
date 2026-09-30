@@ -9,6 +9,7 @@
 #include "world_projection_math.h"
 #include "world_scene_builder.h"
 #include "world_scene_prepare.h"
+#include "world_source_animation.h"
 #include "world_source_pair.h"
 
 #include <algorithm>
@@ -116,112 +117,6 @@ bool matchesCaptured(const Core &core,
         digestResource(core, range) != resource.contentDigest) {
       return false;
     }
-  }
-  return true;
-}
-
-bool applyAnimationPlan(Frame &frame,
-                        const world_scene_prepare::AnimationSector &animation,
-                        uint32_t channel,
-                        const world_animation::Plan &plan,
-                        const char *&why) {
-  auto &slot = frame.source.selection.sectors[animation.index];
-  if (!slot || slot->address != animation.address) {
-    why = "animation_endpoint_sector";
-    return false;
-  }
-  auto &sourceSector = frame.source.sectors[animation.index];
-  if (!sourceSector) {
-    why = "animation_endpoint_chunk";
-    return false;
-  }
-  const auto &sector = *sourceSector;
-  if (plan.channels != 1u) {
-    why = "animation_endpoint_channels";
-    return false;
-  }
-  size_t stamps = 0;
-  for (const auto &write : plan.writes) {
-    if (write.width == 1u) {
-      ++stamps;
-    } else if (write.width != 4u) {
-      why = "animation_endpoint_width";
-      return false;
-    }
-  }
-  if (stamps != 1u) {
-    why = "animation_endpoint_stamp";
-    return false;
-  }
-  const bool low = channel < 2u;
-  const world_chunk_codec::LowChunk *lowChunk =
-      sector.lowStatus == world_chunk_codec::Status::Ok ? &sector.low : nullptr;
-  const world_chunk_codec::HighChunk *highChunk =
-      sector.highStatus == world_chunk_codec::Status::Ok ? &sector.high : nullptr;
-  if ((low && !lowChunk) || (!low && !highChunk)) {
-    why = "animation_endpoint_chunk";
-    return false;
-  }
-  uint32_t base = 0;
-  std::vector<uint32_t> *values = nullptr;
-  if (channel == 0u) {
-    base = lowChunk->address + 0x1cu;
-    values = &sourceSector->low.vertices;
-  } else if (channel == 1u) {
-    base = lowChunk->address + 0x1cu + (uint32_t)lowChunk->vertices.size() * 4u;
-    values = &sourceSector->low.colors;
-  } else if (channel == 2u) {
-    base = highChunk->address + 0x1cu + ((highChunk->layout >> 22) & 0x3fcu);
-    values = &sourceSector->high.vertices;
-  } else {
-    const uint32_t layout = highChunk->layout;
-    const uint32_t first =
-        highChunk->address + 0x1cu + ((layout >> 22) & 0x3fcu) + ((layout << 2) & 0x3fcu);
-    const uint32_t second = first + ((layout >> 6) & 0x3fcu);
-    size_t wordIndex = 0;
-    for (const auto &write : plan.writes) {
-      if (write.width == 1u) {
-        if (write.address != animation.address + 24u + channel) {
-          why = "animation_endpoint_stamp";
-          return false;
-        }
-        continue;
-      }
-      const uint32_t streamBase = (wordIndex++ & 1u) == 0u ? first : second;
-      auto &stream =
-          (wordIndex & 1u) == 1u ? sourceSector->high.farColors : sourceSector->high.nearColors;
-      if (write.address < streamBase || write.address >= streamBase + stream.size() * 4u ||
-          ((write.address - streamBase) & 3u)) {
-        why = "animation_endpoint_destination";
-        return false;
-      }
-      const size_t index = (write.address - streamBase) / 4u;
-      if (index >= stream.size()) {
-        why = "animation_endpoint_index";
-        return false;
-      }
-      stream[index] = write.value;
-    }
-    return true;
-  }
-  for (const auto &write : plan.writes) {
-    if (write.width == 1u) {
-      if (write.address != animation.address + 24u + channel) {
-        why = "animation_endpoint_stamp";
-        return false;
-      }
-      continue;
-    }
-    if (write.address < base || ((write.address - base) & 3u)) {
-      why = "animation_endpoint_destination";
-      return false;
-    }
-    const size_t index = (write.address - base) / 4u;
-    if (index >= values->size()) {
-      why = "animation_endpoint_index";
-      return false;
-    }
-    (*values)[index] = write.value;
   }
   return true;
 }
@@ -375,10 +270,10 @@ bool History::materializePending(Core &core, const char *&why) {
         why = "animation_resource_changed";
         return false;
       }
-      if (!applyAnimationPlan(staged, animation, channel, plan, why)) {
+      if (!world_source_animation::applyChannel(
+              staged.source, animation.index, animation.address, channel, plan, why)) {
         return false;
       }
-      previousHeader->animation |= 0xffu << (channel * 8u);
       pendingResources.insert(
           pendingResources.end(), captured->resources.begin(), captured->resources.end());
     }

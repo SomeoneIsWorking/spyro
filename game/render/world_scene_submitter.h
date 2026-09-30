@@ -50,12 +50,15 @@ Plan prepare(Core *core,
              const RenderQueue &queue,
              uint32_t producerKey,
              const world_recipe::Recipe &recipe);
-// Logic-frame submission publishes the complete guest visibility table, including empty output.
+// Logic-frame submission publishes the complete guest visibility table (retail's 4:3 answer),
+// including empty output, and hands the drawn table to the caller's owner in the same act, so the
+// port's own readers always see the widening of the guest table beside it (issue 0152).
 void submit(Core *core,
             RenderQueue &queue,
             uint32_t producerKey,
             const world_recipe::Recipe &recipe,
-            const Plan &plan);
+            const Plan &plan,
+            sector_visibility::Table &drawnSectors);
 
 // Presentation-only emission consumes the same admitted recipe without writing guest state.
 // False means the plan cannot be submitted; a valid empty recipe succeeds with no queue output.

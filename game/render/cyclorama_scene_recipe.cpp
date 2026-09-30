@@ -51,7 +51,7 @@ Status classifyPortalFrame(const cyclorama_portal_mesh::PortalFrame &frame) {
   return Status::InvalidPortalRecipe;
 }
 
-Recipe prepare(Core *core) {
+Recipe prepare(Core *core, const sector_visibility::Table &drawnSectors) {
   Recipe recipe{};
   if (core == nullptr) {
     return recipe;
@@ -85,7 +85,7 @@ Recipe prepare(Core *core) {
       if ((uint32_t)sector >= 256u) {
         return refuse(recipe, Status::InvalidPortalSector, "portal_sector");
       }
-      if (ram.r8(kBroadVisibility + (uint32_t)sector) == 0u) {
+      if (drawnSectors[(uint32_t)sector] == 0u) {
         continue;
       }
       ++recipe.activePortals;

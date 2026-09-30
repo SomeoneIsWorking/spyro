@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sector_visibility.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -67,7 +69,7 @@ struct Face {
 struct Recipe {
   Status status = Status::ValidEmpty;
   const char *refusal = "none";
-  std::array<uint8_t, 256> broadVisible{};
+  sector_visibility::Split visibility{};
   std::vector<Face> faces;
   uint32_t selectedSectors = 0;
   uint32_t lowSectors = 0;

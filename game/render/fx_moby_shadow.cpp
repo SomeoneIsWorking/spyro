@@ -5,6 +5,8 @@
 #include "moby_shadow_recipe.h"
 #include "moby_shadow_submitter.h"
 #include "render_queue.h"
+#include "spyro_context.h"
+#include "wide_screen_space.h"
 
 #include <lucent/log.h>
 
@@ -12,7 +14,11 @@ bool spyro_moby_shadow_submit(Core *core) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }
-  const auto recipe = spyro::moby_shadow_recipe::derive(core);
+  const auto recipe =
+      spyro::moby_shadow_recipe::derive(core,
+                                        spyro_context(*core).drawnMobyShadows,
+                                        spyro::wide_screen_space::projection(core),
+                                        spyro::wide_screen_space::drawClipRight(core));
   // Denominators on every path. A frame whose shadows were all rejected has to read differently
   // from a frame that queued none, and differently again from a refusal.
   const auto census = [&recipe]() {

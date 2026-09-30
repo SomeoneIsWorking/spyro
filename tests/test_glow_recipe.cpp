@@ -58,9 +58,22 @@ std::unique_ptr<Game> glowFixture(uint32_t points = 3, int32_t depth = 0x800, in
   return game;
 }
 
+// The frame's projection about a horizontal centre `ofx`: the fixture's own 160 is the 4:3 answer.
+psxport::native_projection::ProjectionParams projectionAbout(int32_t ofx) {
+  psxport::native_projection::ProjectionParams out{};
+  out.ofx = ofx << 16;
+  out.ofy = 120 << 16;
+  out.h = 256;
+  return out;
+}
+
+Recipe deriveNative(Core &core) {
+  return spyro::glow_recipe::derive(&core, projectionAbout(160), 512);
+}
+
 void test_a_three_point_ring_fans_two_triangles_from_the_centre() {
   const auto game = glowFixture();
-  const auto recipe = spyro::glow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::Ready);
   CHECK_EQ(recipe.records, 1u);
   CHECK_EQ(recipe.drawn, 1u);
@@ -81,8 +94,8 @@ void test_a_three_point_ring_fans_two_triangles_from_the_centre() {
 void test_the_ring_radius_scales_with_depth() {
   const auto near = glowFixture(3, 0x400);
   const auto far = glowFixture(3, 0x800);
-  const auto nearRecipe = spyro::glow_recipe::derive(&near->core);
-  const auto farRecipe = spyro::glow_recipe::derive(&far->core);
+  const auto nearRecipe = deriveNative(near->core);
+  const auto farRecipe = deriveNative(far->core);
   CHECK(nearRecipe.status == Status::Ready);
   CHECK(farRecipe.status == Status::Ready);
   const int nearOffset = nearRecipe.faces[0].vertices[1].sx - nearRecipe.faces[0].vertices[0].sx;
@@ -93,7 +106,7 @@ void test_the_ring_radius_scales_with_depth() {
 
 void test_a_zero_point_count_is_an_empty_record_not_a_refusal() {
   const auto game = glowFixture(0);
-  const auto recipe = spyro::glow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::ValidEmpty);
   CHECK_EQ(recipe.records, 0u);
   CHECK_EQ(recipe.rejects[(size_t)Reject::EmptyRecord], 16u);
@@ -103,7 +116,7 @@ void test_a_zero_point_count_is_an_empty_record_not_a_refusal() {
 // drops the record instead of sorting it in front of the ordering table.
 void test_a_bias_past_the_front_of_the_table_drops_the_record() {
   const auto game = glowFixture(3, 0x800, -0x20);
-  const auto recipe = spyro::glow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::ValidEmpty);
   CHECK_EQ(recipe.records, 1u);
   CHECK_EQ(recipe.rejects[(size_t)Reject::NegativeBin], 1u);
@@ -129,6 +142,29 @@ void test_the_right_edge_follows_the_widescreen_frame() {
   CHECK_EQ(spyro::glow_recipe::outcode(0x250, 0x100, 684), 2u);
 }
 
+// The glow is drawn about the projection the caller passes -- the frame's, widened at 16:9 -- and
+// culled against the frame's own right edge. It used to project about the guest's 4:3 centre
+// whatever the frame's was, so at 16:9 every halo sat 86 px left of the gem it belongs to.
+void test_the_glow_projects_about_the_frame_centre_and_clips_at_both_edges() {
+  const auto game = glowFixture();
+  // A record straight ahead projects onto the centre it was given.
+  const auto wide = spyro::glow_recipe::derive(&game->core, projectionAbout(160 + 86), 684);
+  CHECK(wide.status == Status::Ready);
+  CHECK_EQ(wide.faces[0].vertices[0].sx, 246);
+  // Right edge: a centre at 600 is off a 512 frame and on a 684 one.
+  const auto rightNative = spyro::glow_recipe::derive(&game->core, projectionAbout(600), 512);
+  CHECK(rightNative.status == Status::ValidEmpty);
+  CHECK_EQ(rightNative.rejects[(size_t)Reject::Offscreen], 1u);
+  const auto rightWide = spyro::glow_recipe::derive(&game->core, projectionAbout(600), 684);
+  CHECK(rightWide.status == Status::Ready);
+  // Left edge: a whole fan left of column 0 is off-screen at any width.
+  const auto left = spyro::glow_recipe::derive(&game->core, projectionAbout(-60), 684);
+  CHECK(left.status == Status::ValidEmpty);
+  CHECK_EQ(left.rejects[(size_t)Reject::Offscreen], 1u);
+  const auto leftInside = spyro::glow_recipe::derive(&game->core, projectionAbout(4), 684);
+  CHECK(leftInside.status == Status::Ready);
+}
+
 // The far half of the table is stretched by 0x40 bins past 0xFF and stops at the last bin, so two
 // distant glows cannot both pile into the final bucket by accident.
 void test_ot_bin_steps_past_the_near_half_and_clamps_at_the_last_bin() {
@@ -148,6 +184,7 @@ int main() {
   RUN(a_bias_past_the_front_of_the_table_drops_the_record);
   RUN(outcode_names_each_screen_edge_separately);
   RUN(the_right_edge_follows_the_widescreen_frame);
+  RUN(the_glow_projects_about_the_frame_centre_and_clips_at_both_edges);
   RUN(ot_bin_steps_past_the_near_half_and_clamps_at_the_last_bin);
   return pt_summary();
 }

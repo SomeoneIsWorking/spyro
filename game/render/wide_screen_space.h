@@ -39,6 +39,16 @@ int drawClipRight(Core *core);
 // and `h` come from the frame's own projection either way.
 psxport::native_projection::ProjectionParams projection(Core *core);
 
+// How far right of the guest's own projection this port projects: the widened horizontal centre
+// minus the guest's. Zero at 4:3. Subtracting it from a drawn x recovers the guest's x exactly.
+int32_t horizontalOffsetDelta(Core *core);
+
+// The one horizontal on-screen rule: strictly inside (0, right). The guest's window and the drawn
+// window apply the same rule with different right edges.
+constexpr bool onScreenX(int32_t x, int32_t right) {
+  return x > 0 && x < right;
+}
+
 // The x the guest's own projection would have produced for a vertex THIS port projected at
 // `drawnX`. The two projections differ only by their horizontal offset, so subtracting that
 // difference recovers the guest's x exactly. An arm that tests a bounding box edge by edge rather

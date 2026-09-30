@@ -1,8 +1,12 @@
 #pragma once
 
+#include "moby_shadow_list.h"
+#include "native_projection.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 class Core;
@@ -73,8 +77,14 @@ std::int32_t otBin(std::uint16_t firstSz,
 std::uint8_t distanceGrey(std::int32_t anchorViewZ);
 
 // Consume the owned scene projection published in Core::rsub.projParams, as the sibling Spyro
-// shadow does, rather than whatever the guest left in the GTE.
-Recipe derive(Core *core);
+// shadow does, rather than whatever the guest left in the GTE. `entries` is the DRAWN shadow list
+// (moby_shadow_list); `projection` and `clipRight` are the drawn horizontal window, so the fan is
+// projected about the same centre the world around it uses and kept against the same edges. At 4:3
+// they are retail's 512-px screen exactly (issue 0152).
+Recipe derive(Core *core,
+              std::span<const moby_shadow_list::Entry> entries,
+              const psxport::native_projection::ProjectionParams &projection,
+              std::int32_t clipRight);
 const char *statusName(Status status);
 
 } // namespace spyro::moby_shadow_recipe

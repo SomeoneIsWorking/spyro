@@ -8,6 +8,7 @@
 #include "render_queue.h"
 #include "sparkle_recipe.h"
 #include "sparkle_submitter.h"
+#include "wide_screen_space.h"
 
 #include <lucent/log.h>
 
@@ -16,7 +17,9 @@ namespace {
 using spyro::guest::kDeltaTime;
 
 bool submitGlows(Core *core) {
-  const auto recipe = spyro::glow_recipe::derive(core);
+  const auto recipe = spyro::glow_recipe::derive(core,
+                                                 spyro::wide_screen_space::projection(core),
+                                                 spyro::wide_screen_space::drawClipRight(core));
   const auto census = [&recipe]() {
     lucent::Line line;
     line.add("records={} drawn={} faces={}", recipe.records, recipe.drawn, recipe.faces.size());

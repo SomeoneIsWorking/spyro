@@ -6,9 +6,11 @@
 #include "field_owner.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
+#include "moby_shadow_list.h"
 #include "presentation_owner.h"
 #include "runtime_run.h"
 #include "secondary_actor_temporal.h"
+#include "sector_visibility.h"
 #include "temporal_scene.h"
 #include "terrain_temporal.h"
 #include "world_temporal.h"
@@ -27,6 +29,14 @@ struct SpyroContext {
   spyro::FieldOwner *fieldOwner = nullptr;
   SpyroPairedActorFrameState pairedActor{};
   spyro::world_temporal::History worldTemporal{};
+  // The drawn half of the sector-visibility table the last world submission published; its guest
+  // half is D_800771C8 itself. Same lifetime and timing as that guest table, so a reader that used
+  // to read D_800771C8 sees exactly the widening of what the guest reads (issue 0152).
+  spyro::sector_visibility::Table drawnSectors{};
+  // The drawn half of the Moby shadow list; its guest half is the list at 0x800724F4. Reset and
+  // appended by the same three passes at the same points as that list's cursor, and read by the
+  // shadow producer in its place, so margin Mobys cast shadows without entering guest RAM.
+  spyro::moby_shadow_list::List drawnMobyShadows{};
   spyro::actor_temporal::History actorTemporal{};
   spyro::secondary_actor_temporal::History secondaryActorTemporal{};
   spyro::field_shaded_queue_temporal::History shadedQueueTemporal{};

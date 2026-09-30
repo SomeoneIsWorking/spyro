@@ -19,7 +19,10 @@
 
 spyro::ProducerRefusal spyro_actor_submit(Core *c, spyro::actor_scene::Source source) {
   spyro::actor_scene::Frame sceneFrame{};
-  const auto sceneStatus = spyro::actor_scene::build_frame(c, sceneFrame, source);
+  // The guest's list membership and planes are retail's; the port draws the widened ones (0152).
+  const spyro::actor_scene::DrawnScope drawn{.sectors = spyro_context(*c).drawnSectors,
+                                             .width = spyro::wide_screen_space::drawClipRight(c)};
+  const auto sceneStatus = spyro::actor_scene::build_frame(c, sceneFrame, drawn, source);
   auto &records = sceneFrame.records;
   const auto &census = sceneFrame.census;
   if (sceneStatus != spyro::actor_scene::Status::Ready) {
@@ -102,6 +105,8 @@ spyro::ProducerRefusal spyro_actor_submit(Core *c, spyro::actor_scene::Source so
   spyro::actor_emit::publish(
       *c, c->game->rq, spyro::actor_draw::kProducerKey, spyro::actor_draw::kProducerName, prepared);
   spyro::actor_scene::commit(c, sceneFrame);
+  // 0x8001F158 restarts the shadow list; its drawn half restarts at the same point.
+  spyro_context(*c).drawnMobyShadows = std::move(sceneFrame.drawnShadows);
   lucent::debug("actordirect",
                 "PASS records={} candidates={} rejected={} faces={} shadows={} painters_before={}",
                 recipe.records,

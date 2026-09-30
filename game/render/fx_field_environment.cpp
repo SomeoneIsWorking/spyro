@@ -53,7 +53,8 @@ bool spyro_field_environment_submit(Core *core) {
 
   spyro::field_scene_recipe::applyEnvironment(core, frame.invocation);
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "field:environment");
-  spyro::world_scene_submitter::submit(core, core->game->rq, kProducerKey, frame.world, plan);
+  spyro::world_scene_submitter::submit(
+      core, core->game->rq, kProducerKey, frame.world, plan, spyro_context(*core).drawnSectors);
   history.retain(*core, std::move(frame.source), plan.draw);
   lucent::debug("fieldenv",
                 "PASS selection={} distance=0x{:X} sectors={} low={} high={} candidates={} "

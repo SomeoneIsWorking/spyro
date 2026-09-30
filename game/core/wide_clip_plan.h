@@ -12,6 +12,24 @@ namespace spyro::wide {
 constexpr int32_t kNativeClipHeight = 256;
 constexpr int32_t kNativeClipWidth = 512;
 
+// The view-space horizontal plane every hand-written Spyro culler writes as `4*extent < 3*depth`:
+// the 512-px viewport at the authored focal length. A widened viewport keeps the focal length and
+// grows by width/512, so only the depth term scales. Sectors (0x800258F0), the regular and
+// secondary Moby passes (0x8001F158, 0x800208FC) and the shaded queue (0x80022A2C) all share it;
+// the guest's answer is always this at kNativeClipWidth, and only what the port draws may use a
+// wider width.
+constexpr bool viewHorizontalInside(int32_t extent, int32_t depth, int32_t width) {
+  return 4ll * kNativeClipWidth * extent < 3ll * width * depth;
+}
+
+// The horizontal answer for what the port DRAWS. Scaling a negative depth term makes the plane
+// stricter, not wider, so a near-eye bound the native plane admitted could be lost; OR-ing the
+// native answer in keeps the drawn set a superset of the guest's by construction.
+constexpr bool drawnHorizontalInside(int32_t extent, int32_t depth, int32_t width) {
+  return viewHorizontalInside(extent, depth, kNativeClipWidth) ||
+         viewHorizontalInside(extent, depth, width);
+}
+
 enum ClipBit : uint32_t {
   kAbove = 1u,
   kBelow = 2u,

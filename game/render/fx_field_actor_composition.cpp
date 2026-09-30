@@ -8,14 +8,13 @@
 #include "field_shaded_queue_emit.h"
 #include "field_shaded_queue_scene.h"
 #include "game.h"
-#include "gpu_vk.h"
 #include "guest_globals.h"
 #include "scene_painter_order.h"
 #include "secondary_actor_emit.h"
 #include "secondary_actor_scene.h"
 #include "spyro_context.h"
+#include "wide_screen_space.h"
 
-#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <lucent/log.h>
@@ -35,7 +34,8 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   spyro::secondary_actor_scene::Frame secondaryFrame{};
   spyro::secondary_actor_emit::Prepared secondary{};
   if (composition.secondary) {
-    const auto secondaryScene = spyro::secondary_actor_scene::prepare(core, secondaryFrame);
+    const auto secondaryScene = spyro::secondary_actor_scene::prepare(
+        core, spyro::wide_screen_space::drawClipRight(core), secondaryFrame);
     if (secondaryScene != spyro::secondary_actor_scene::Status::Ready) {
       return spyro::refuse(kChannel,
                            kSecondaryProducer,
@@ -71,9 +71,8 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   spyro::field_shaded_queue_scene::Frame shadedFrame{};
   spyro::field_shaded_queue_emit::Prepared shaded{};
   if (composition.shaded) {
-    const int32_t clipRight =
-        gpu_vk_wide_engine(core) ? std::max(512, gpu_vk_wide_engine_w(core)) : 512;
-    const auto shadedScene = spyro::field_shaded_queue_scene::prepare(core, clipRight, shadedFrame);
+    const auto shadedScene = spyro::field_shaded_queue_scene::prepare(
+        core, spyro::wide_screen_space::drawClipRight(core), shadedFrame);
     if (shadedScene != spyro::field_shaded_queue_scene::Status::Ready) {
       return spyro::refuse(kChannel,
                            kShadedProducer,
@@ -167,6 +166,12 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   if (composition.shaded) {
     spyro::field_shaded_queue_scene::commit(core, shadedFrame);
   }
+  // The drawn half of the same shadow list, appended in the same order as the guest half above.
+  auto &drawnShadows = spyro_context(*core).drawnMobyShadows;
+  drawnShadows.insert(
+      drawnShadows.end(), secondaryFrame.drawnShadows.begin(), secondaryFrame.drawnShadows.end());
+  drawnShadows.insert(
+      drawnShadows.end(), shadedFrame.drawnShadows.begin(), shadedFrame.drawnShadows.end());
   if (composition.secondary) {
     spyro::secondary_actor_emit::publish(*core, queue, secondary);
     // An empty picture is still an endpoint: the next frame can interpolate against a scene that

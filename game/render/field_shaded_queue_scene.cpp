@@ -1,6 +1,7 @@
 #include "field_shaded_queue_scene.h"
 
 #include "actor_recipe_capture.h"
+#include "actor_scene_builder.h"
 #include "actor_transform_math.h"
 #include "core.h"
 #include "gpu_vk.h"
@@ -16,7 +17,6 @@ namespace {
 constexpr uint32_t kQueue = 0x800720f4u;
 constexpr uint32_t kQueueCapacity = 256u;
 constexpr uint32_t kMeshTable = 0x80076378u;
-constexpr uint32_t kShadowCursor = 0x80075f00u;
 constexpr uint32_t kLightTable = 0x8006e44cu;
 constexpr uint32_t kLightTableVariantOne = 0x8006e3d8u;
 constexpr uint32_t kColourMatrix = 0x800770c8u;
@@ -32,17 +32,26 @@ bool coarseVisible(std::array<int32_t, 3> relative, int32_t radius) {
          relative[1] - radius < 0 && relative[2] + radius > 0 && relative[2] - radius < 0;
 }
 
-bool firstViewGate(std::array<int32_t, 3> view, int32_t radius) {
-  return view[2] - radius < 0 && view[2] + 128 > 0 &&
-         (std::abs(view[0]) - 102) * 4 - (view[2] + 77) * 3 < 0;
+// 0x80022BE4..0x80022C20: depth, then the horizontal plane. Both answers come from one view: the
+// guest's is retail's 512-px plane, the drawn one widens it with the rule every pass shares.
+struct FirstGate {
+  bool guest = false;
+  bool drawn = false;
+};
+
+FirstGate firstViewGate(std::array<int32_t, 3> view, int32_t radius, int32_t drawWidth) {
+  const bool depth = view[2] - radius < 0 && view[2] + 128 > 0;
+  const int32_t extent = std::abs(view[0]) - 102, planeDepth = view[2] + 77;
+  return {.guest = depth && wide::viewHorizontalInside(extent, planeDepth, wide::kNativeClipWidth),
+          .drawn = depth && wide::drawnHorizontalInside(extent, planeDepth, drawWidth)};
 }
 
 bool finalViewGate(std::array<int32_t, 3> view) {
   return view[2] + 40 - (std::abs(view[1]) - 121) * 3 > 0;
 }
 
-bool whollyInside(std::array<int32_t, 3> view) {
-  return (std::abs(view[0]) + 102) * 4 - (view[2] - 77) * 3 < 0 &&
+bool whollyInside(std::array<int32_t, 3> view, int32_t drawWidth) {
+  return wide::viewHorizontalInside(std::abs(view[0]) + 102, view[2] - 77, drawWidth) &&
          view[2] - 40 - (std::abs(view[1]) + 121) * 3 >= 1;
 }
 
@@ -138,7 +147,7 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
   const int16_t colourC = (int16_t)core->mem_r32(kColourMatrix + 8u);
   frame.input.colourMatrix = {
       {{colourA, colourB, colourC}, {colourA, colourB, colourC}, {colourA, colourB, colourC}}};
-  frame.shadowCursor = core->mem_r32(kShadowCursor);
+  frame.shadowCursor = core->mem_r32(moby_shadow_list::kCursor);
   if (!actor_recipe_capture::physical_span(frame.shadowCursor, 8u)) {
     return reset(frame, Status::InvalidShadowCursor);
   }
@@ -189,29 +198,48 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
     }
     std::array<int32_t, 3> view{};
     auto affine = actor_transform_math::worldAffine(core, actor, camera, view);
-    if (!firstViewGate(view, radius)) {
+    const FirstGate first = firstViewGate(view, radius, clipRight);
+    if (!first.drawn) {
       ++frame.culled;
       continue;
     }
     if (!mesh) {
       return reset(frame, Status::InvalidMesh);
     }
-    if ((int32_t)core->mem_r32(actor + 0x1cu) < 0 && view[2] < -0x1100) {
+    // 0x80022C2C..0x80022C44 appends the shadow after the horizontal plane and before the vertical
+    // one, when m_ShadowDistance is negative and the view depth passes the staging limit.
+    //
+    // THE SIGN IS RETAIL'S OWN AND IS DELIBERATELY PRESERVED. 0x80022C30 computes
+    // `addi $a0,$v1,-0x1100` and branches `bgez` past the append, and view[2] is a positive depth,
+    // so this pair is unsatisfiable and this pass stages NO shadow — at 4:3 as much as at 16:9.
+    // That is a real fidelity defect against retail, but it is not a widescreen one: it is visible
+    // at the native aspect, where this change must be a no-op. Fixing it is a separate finding, so
+    // the negated limit is passed through verbatim rather than quietly corrected here.
+    const moby_shadow_list::Entry shadow{
+        .moby = actor, .radius = (uint32_t)(int8_t)core->mem_r8(mesh->address + 2u)};
+    const bool stages =
+        actor_scene::stages_shadow((int32_t)core->mem_r32(actor + 0x1cu), view[2], -0x1100);
+    if (stages && first.guest) {
       if (!actor_recipe_capture::physical_span(
               frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
         return reset(frame, Status::InvalidShadowCursor);
       }
-      frame.shadows.push_back(
-          {.actor = actor, .modelByte = (uint32_t)(int8_t)core->mem_r8(mesh->address + 2u)});
+      frame.shadows.push_back({.actor = shadow.moby, .modelByte = shadow.radius});
+    }
+    if (stages) {
+      frame.drawnShadows.push_back(shadow);
     }
     if (!finalViewGate(view)) {
       ++frame.culled;
       continue;
     }
+    if (first.guest) {
+      frame.transformedActors.push_back(actor);
+    }
     field_shaded_queue_recipe::Record record{.actor = actor,
                                              .actorOrdinal = qi,
                                              .meshIndex = mesh->index,
-                                             .clipMode = !whollyInside(view),
+                                             .clipMode = !whollyInside(view, clipRight),
                                              .lightBase = mesh->lightBase,
                                              .lightScale = mesh->lightScale,
                                              .lightEntry = mesh->lightEntry,
@@ -247,7 +275,6 @@ Status prepare(Core *core, int32_t clipRight, Frame &frame) {
       record.primitives.push_back(primitive);
     }
     frame.primitiveCandidates += mesh->primitiveCount;
-    frame.transformedActors.push_back(actor);
     frame.input.records.push_back(std::move(record));
   }
   return reset(frame, Status::UnterminatedQueue);
@@ -265,7 +292,8 @@ void commit(Core *core, const Frame &frame) {
     core->mem_w32(out, frame.shadows[i].actor);
     core->mem_w32(out + 4u, frame.shadows[i].modelByte);
   }
-  core->mem_w32(kShadowCursor, frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u);
+  core->mem_w32(moby_shadow_list::kCursor,
+                frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u);
 }
 
 const char *statusName(Status status) {

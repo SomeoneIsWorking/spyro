@@ -3,7 +3,6 @@
 
 #include "actor_transform_math.h"
 #include "core.h"
-#include "gpu_vk.h"
 #include "proj_params.h"
 
 #include <algorithm>
@@ -70,7 +69,9 @@ std::int32_t otBin(std::uint32_t viewZ, std::int32_t bias) {
   return std::min(bin, kOtLastBin);
 }
 
-Recipe derive(Core *core) {
+Recipe derive(Core *core,
+              const psxport::native_projection::ProjectionParams &projection,
+              std::int32_t clipRight) {
   Recipe recipe{};
   if (core == nullptr || core->game == nullptr) {
     recipe.status = Status::InvalidCore;
@@ -80,26 +81,13 @@ Recipe derive(Core *core) {
     recipe.status = Status::InvalidState;
     return recipe;
   }
-  const auto &geometry = core->rsub.projParams;
-  if (!geometry.geomValid()) {
-    recipe.status = Status::InvalidProjection;
-    return recipe;
-  }
-  psxport::native_projection::ProjectionParams projection{};
-  projection.ofx = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfx() << 16u);
-  projection.ofy = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfy() << 16u);
-  projection.h = (std::uint16_t)(std::int32_t)geometry.geomH();
-  if (projection.h == 0u) {
+  if (!core->rsub.projParams.geomValid() || projection.h == 0u) {
     recipe.status = Status::InvalidProjection;
     return recipe;
   }
 
   psxport::native_projection::FixedAffine affine{};
   affine.m = actor_transform_math::readCameraMatrix(core).value;
-  // Retail's right edge is the console's 512; a widescreen frame is wider, and a glow between 512
-  // and that width is on screen. Reading it here keeps the whole fan on one edge policy.
-  const std::int32_t clipRight =
-      gpu_vk_wide_engine(core) ? (std::int32_t)gpu_vk_wide_engine_w(core) : 512;
   const std::int32_t cameraX = (std::int32_t)core->mem_r32(kCamera + 0x28u);
   const std::int32_t cameraY = (std::int32_t)core->mem_r32(kCamera + 0x2Cu);
   const std::int32_t cameraZ = (std::int32_t)core->mem_r32(kCamera + 0x30u);

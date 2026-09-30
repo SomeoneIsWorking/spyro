@@ -2,6 +2,7 @@
 
 #include "cyclorama_portal_mesh_recipe.h"
 #include "guest_globals.h"
+#include "sector_visibility.h"
 
 #include <cstdint>
 #include <vector>
@@ -16,7 +17,6 @@ namespace spyro::cyclorama_scene_recipe {
 // aperture is empty before invoking the owned static-mesh producer 0x8004EBA8.
 constexpr uint32_t kSpinYaw = 0x80075858u;
 constexpr uint32_t kSpinPitch = 0x800758fcu;
-constexpr uint32_t kBroadVisibility = 0x800771c8u;
 constexpr uint32_t kPortalCapacity = 6u;
 
 enum class Status : uint8_t {
@@ -43,7 +43,9 @@ struct Recipe {
 
 // Pure/read-only preparation. No spin state or render queue is published until
 // the complete supported recipe has passed the downstream terrain admission.
-Recipe prepare(Core *core);
+// Retail 0x80050EA8 reads a portal's sector byte from D_800771C8; this decides what the port DRAWS,
+// so it takes the drawn table the world submission published beside that guest table (issue 0152).
+Recipe prepare(Core *core, const sector_visibility::Table &drawnSectors);
 void publishSpin(Core *core, const Recipe &recipe);
 Status classifyPortalFrame(const cyclorama_portal_mesh::PortalFrame &frame);
 const char *statusName(Status status);

@@ -14,8 +14,6 @@ namespace spyro::moby_shadow_recipe {
 namespace {
 
 // Addresses recovered from 0x80059F8C's own instruction encodings; see docs/issues/0103.
-constexpr std::uint32_t kShadowList = 0x800724F4u;  // D_8006FCF4 + 0x2800
-constexpr std::uint32_t kMobyShadows = 0x80075EF8u; // +0/+4 UVs, +8 the list-end cursor
 using spyro::guest::kCamera;
 constexpr std::uint32_t kMobyShadowDistance = 0x1Cu;
 constexpr std::uint32_t kMobyDepthOffset = 0x47u;
@@ -23,6 +21,7 @@ constexpr std::uint32_t kFarViewZ = 0x1000u;
 constexpr std::uint32_t kFadeViewZ = 0xC00u;
 constexpr std::int32_t kNudgeViewZ = 0x400;
 constexpr std::uint32_t kOtShift = 7u;
+constexpr std::int32_t kEdgeSlack = 8;
 // A shadow list longer than this is a corrupt cursor, not a busy frame; the level Moby array it is
 // built from is itself bounded well below this.
 constexpr std::uint32_t kMaxEntries = 4096u;
@@ -66,38 +65,25 @@ std::uint8_t distanceGrey(std::int32_t anchorViewZ) {
   return (std::uint8_t)std::clamp(ramp, 0, 0xff);
 }
 
-Recipe derive(Core *core) {
+Recipe derive(Core *core,
+              std::span<const moby_shadow_list::Entry> entries,
+              const psxport::native_projection::ProjectionParams &projection,
+              std::int32_t clipRight) {
   Recipe recipe{};
   if (core == nullptr || core->game == nullptr) {
     recipe.status = Status::InvalidCore;
     return recipe;
   }
-  if (!span(kMobyShadows, 12u) || !span(kCamera, 0x34u)) {
+  if (!span(kCamera, 0x34u) || entries.size() > kMaxEntries) {
     recipe.status = Status::InvalidState;
     return recipe;
   }
-  const std::uint32_t listEnd = core->mem_r32(kMobyShadows + 8u);
-  if (listEnd < kShadowList || ((listEnd - kShadowList) & 7u) != 0u ||
-      (listEnd - kShadowList) / 8u > kMaxEntries || !span(kShadowList, listEnd - kShadowList)) {
-    recipe.status = Status::InvalidState;
-    return recipe;
-  }
-  recipe.entries = (listEnd - kShadowList) / 8u;
+  recipe.entries = (std::uint32_t)entries.size();
   if (recipe.entries == 0u) {
     recipe.status = Status::ValidEmpty;
     return recipe;
   }
-
-  const auto &geometry = core->rsub.projParams;
-  if (!geometry.geomValid()) {
-    recipe.status = Status::InvalidProjection;
-    return recipe;
-  }
-  psxport::native_projection::ProjectionParams projection{};
-  projection.ofx = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfx() << 16u);
-  projection.ofy = (std::int32_t)((std::uint32_t)(std::int32_t)geometry.geomOfy() << 16u);
-  projection.h = (std::uint16_t)(std::int32_t)geometry.geomH();
-  if (projection.h == 0u) {
+  if (!core->rsub.projParams.geomValid() || projection.h == 0u) {
     recipe.status = Status::InvalidProjection;
     return recipe;
   }
@@ -111,10 +97,9 @@ Recipe derive(Core *core) {
     ++recipe.rejects[(std::size_t)reason];
   };
 
-  for (std::uint32_t entry = 0; entry < recipe.entries; ++entry) {
-    const std::uint32_t record = kShadowList + entry * 8u;
-    const std::uint32_t moby = core->mem_r32(record);
-    const std::int32_t radius = (std::int32_t)core->mem_r32(record + 4u);
+  for (const moby_shadow_list::Entry &entry : entries) {
+    const std::uint32_t moby = entry.moby;
+    const std::int32_t radius = (std::int32_t)entry.radius;
     if (!span(moby, 0x58u)) {
       recipe.status = Status::InvalidState;
       return recipe;
@@ -175,7 +160,10 @@ Recipe derive(Core *core) {
       reject(Reject::Backfacing);
       continue;
     }
-    if (anchor.sy <= 0 || anchor.sy >= 240 || anchor.sx <= -8 || anchor.sx >= 0x208) {
+    // Retail's window is -8 < sx < 0x208, i.e. 8 px of slack either side of its 512-px screen. The
+    // fan is drawn about the drawn window's centre, so the same slack sits on the drawn edges.
+    if (anchor.sy <= 0 || anchor.sy >= 240 || anchor.sx <= -kEdgeSlack ||
+        anchor.sx >= clipRight + kEdgeSlack) {
       reject(Reject::OffScreen);
       continue;
     }

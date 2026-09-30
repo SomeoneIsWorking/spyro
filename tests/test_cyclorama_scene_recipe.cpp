@@ -14,6 +14,8 @@ using spyro::cyclorama_scene_recipe::Status;
 
 struct Harness {
   std::unique_ptr<Core> core = std::make_unique<Core>();
+  // The drawn sector table the world submission would have published; guest RAM holds the other.
+  spyro::sector_visibility::Table drawn{};
 
   Harness() {
     core->rsub.projParams.setGeomOffset(256.0f, 120.0f);
@@ -32,7 +34,7 @@ void setPortal(Harness &h, uint32_t index, uint32_t address, int32_t sector) {
 
 void test_no_portals_is_ready_and_pure() {
   Harness h;
-  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get());
+  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
   CHECK(recipe.status == Status::Ready);
   CHECK_EQ(recipe.mainSelection, 3);
   CHECK_EQ(recipe.nextYaw, 1u);
@@ -48,7 +50,7 @@ void test_publish_spin_requires_ready_recipe() {
   Recipe refused{};
   spyro::cyclorama_scene_recipe::publishSpin(h.core.get(), refused);
   CHECK_EQ(h.core->mem_r32(spyro::cyclorama_scene_recipe::kSpinYaw), 0xfffu);
-  const Recipe ready = spyro::cyclorama_scene_recipe::prepare(h.core.get());
+  const Recipe ready = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
   spyro::cyclorama_scene_recipe::publishSpin(h.core.get(), ready);
   CHECK_EQ(h.core->mem_r32(spyro::cyclorama_scene_recipe::kSpinYaw), 1u);
   CHECK_EQ((int32_t)h.core->mem_r32(spyro::cyclorama_scene_recipe::kSpinPitch), -2046);
@@ -58,7 +60,7 @@ void test_inactive_portal_keeps_main_sky_ready() {
   Harness h;
   h.core->mem_w32(spyro::guest::kPortalCount, 1u);
   setPortal(h, 0u, 0x80010000u, 7);
-  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get());
+  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
   CHECK(recipe.status == Status::Ready);
   CHECK_EQ(recipe.portalCount, 1);
   CHECK_EQ(recipe.activePortals, 0u);
@@ -69,25 +71,46 @@ void test_active_malformed_portal_refuses() {
   h.core->mem_w32(spyro::guest::kPortalCount, 2u);
   setPortal(h, 0u, 0x80010000u, 7);
   setPortal(h, 1u, 0x80010020u, -1);
-  h.core->mem_w8(spyro::cyclorama_scene_recipe::kBroadVisibility + 7u, 0xffu);
-  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get());
+  h.drawn[7] = 0xffu;
+  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
   CHECK(recipe.status == Status::InvalidPortalRecipe);
   CHECK_EQ(recipe.activePortals, 1u);
+}
+
+// Issue 0152: the portal test decides what the port draws, so a sector only the widened view admits
+// must be visited, and a guest byte the drawn table does not carry must not decide anything. The
+// malformed portal record at 0x80010000 makes a visited portal observable as a refusal.
+void test_portal_visibility_reads_the_drawn_table_not_guest_ram() {
+  Harness h;
+  h.core->mem_w32(spyro::guest::kPortalCount, 1u);
+  setPortal(h, 0u, 0x80010000u, 7);
+  h.core->mem_w8(spyro::sector_visibility::kGuestTable + 7u, 0xffu);
+  const Recipe guestOnly = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
+  CHECK(guestOnly.status == Status::Ready);
+  CHECK_EQ(guestOnly.activePortals, 0u);
+
+  h.core->mem_w8(spyro::sector_visibility::kGuestTable + 7u, 0u);
+  h.drawn[7] = 0xffu;
+  const Recipe marginOnly = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
+  CHECK_EQ(marginOnly.activePortals, 1u);
+  CHECK(marginOnly.status != Status::Ready || marginOnly.portalFrames.size() == 1u);
 }
 
 void test_invalid_portal_shape_refuses() {
   Harness h;
   h.core->mem_w32(spyro::guest::kPortalCount, 7u);
-  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status == Status::InvalidPortalCount);
+  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn).status ==
+        Status::InvalidPortalCount);
   h.core->mem_w32(spyro::guest::kPortalCount, 1u);
   h.core->mem_w32(spyro::guest::kPortals, 0u);
-  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status ==
+  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn).status ==
         Status::InvalidPortalPointer);
   h.core->mem_w32(spyro::guest::kPortals, 0x90000000u);
-  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status ==
+  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn).status ==
         Status::InvalidPortalPointer);
   setPortal(h, 0u, 0x80010000u, 256);
-  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get()).status == Status::InvalidPortalSector);
+  CHECK(spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn).status ==
+        Status::InvalidPortalSector);
 }
 
 void test_portal_frame_classification_preserves_mask_ownership() {
@@ -118,9 +141,11 @@ void inspectSnapshotIfRequested() {
   CHECK(input.good());
   input.read(reinterpret_cast<char *>(h.core->ram), sizeof(h.core->ram));
   CHECK(input.gcount() == static_cast<std::streamsize>(sizeof(h.core->ram)));
+  // A snapshot carries only the guest table, which is the drawn table of a 4:3 frame.
+  h.drawn = spyro::sector_visibility::readGuest(*h.core);
   const uint32_t yaw = h.core->mem_r32(spyro::cyclorama_scene_recipe::kSpinYaw);
   const uint32_t pitch = h.core->mem_r32(spyro::cyclorama_scene_recipe::kSpinPitch);
-  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get());
+  const Recipe recipe = spyro::cyclorama_scene_recipe::prepare(h.core.get(), h.drawn);
   std::printf("field cyclorama snapshot: status=%s selection=%d portals=%d active=%u "
               "yaw=0x%X->0x%X pitch=%d->%d reason=%s\n",
               spyro::cyclorama_scene_recipe::statusName(recipe.status),
@@ -152,6 +177,7 @@ int main() {
   RUN(inactive_portal_keeps_main_sky_ready);
   RUN(active_malformed_portal_refuses);
   RUN(invalid_portal_shape_refuses);
+  RUN(portal_visibility_reads_the_drawn_table_not_guest_ram);
   RUN(portal_frame_classification_preserves_mask_ownership);
   inspectSnapshotIfRequested();
   return pt_summary();

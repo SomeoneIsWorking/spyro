@@ -14,8 +14,6 @@ using spyro::moby_shadow_recipe::Reject;
 using spyro::moby_shadow_recipe::Status;
 
 using spyro::guest::kCamera;
-constexpr uint32_t kShadowList = 0x800724f4u;
-constexpr uint32_t kMobyShadows = 0x80075ef8u;
 constexpr uint32_t kMoby = 0x80100000u;
 
 // One Moby directly ahead of the camera with a flat shadow plane, no plane rotation and no depth
@@ -23,7 +21,7 @@ constexpr uint32_t kMoby = 0x80100000u;
 // four corners straddle the anchor. Its handedness is deliberate: 0x80059F8C rejects the whole
 // shadow on NCLIP, so a camera that winds the fan away from the viewer produces no faces at all —
 // which is the correct answer, not a fixture that happens to work.
-std::unique_ptr<Game> shadowFixture(uint32_t shadowWord = 0x400u, int32_t radius = 256) {
+std::unique_ptr<Game> shadowFixture(uint32_t shadowWord = 0x400u) {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
   const std::array<int16_t, 9> matrix{4096, 0, 0, 0, 0, -4096, 0, -4096, 0};
@@ -34,17 +32,32 @@ std::unique_ptr<Game> shadowFixture(uint32_t shadowWord = 0x400u, int32_t radius
   core.mem_w32(kMoby + 0x10u, 0u);         // position Y
   core.mem_w32(kMoby + 0x1cu, shadowWord); // shadow plane and its two rotation angles
   core.mem_w8(kMoby + 0x47u, 0u);          // m_DepthOffset
-  core.mem_w32(kShadowList, kMoby);
-  core.mem_w32(kShadowList + 4u, (uint32_t)radius);
-  core.mem_w32(kMobyShadows + 8u, kShadowList + 8u);
   core.rsub.projParams.setGeomOffset(256, 120);
   core.rsub.projParams.setGeomScreen(256);
   return game;
 }
 
+// The recipe reads the DRAWN shadow list the three Moby passes publish, not the guest's list at
+// 0x800724F4: at 16:9 the drawn list also carries margin Mobys the guest never stages.
+spyro::moby_shadow_list::List oneShadow(int32_t radius = 256) {
+  return {{.moby = kMoby, .radius = (uint32_t)radius}};
+}
+
+psxport::native_projection::ProjectionParams projectionAbout(int32_t ofx) {
+  psxport::native_projection::ProjectionParams out{};
+  out.ofx = ofx << 16;
+  out.ofy = 120 << 16;
+  out.h = 256;
+  return out;
+}
+
+Recipe deriveNative(Core &core, const spyro::moby_shadow_list::List &entries = oneShadow()) {
+  return spyro::moby_shadow_recipe::derive(&core, entries, projectionAbout(256), 512);
+}
+
 void test_derive_projects_one_closed_four_point_fan() {
   const auto game = shadowFixture();
-  const auto recipe = spyro::moby_shadow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::Ready);
   CHECK_EQ(recipe.entries, 1u);
   CHECK_EQ(recipe.drawn, 1u);
@@ -73,14 +86,14 @@ void test_derive_projects_one_closed_four_point_fan() {
 void test_reversed_winding_rejects_the_whole_shadow() {
   const auto game = shadowFixture();
   game->core.mem_w16(kCamera, (uint16_t)-4096); // mirror screen X, reversing the fan's winding
-  const auto recipe = spyro::moby_shadow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::ValidEmpty);
   CHECK_EQ(recipe.rejects[(size_t)Reject::Backfacing], 1u);
 }
 
 void test_shadowless_moby_is_counted_not_dropped() {
   const auto game = shadowFixture(0u);
-  const auto recipe = spyro::moby_shadow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::ValidEmpty);
   CHECK_EQ(recipe.entries, 1u);
   CHECK_EQ(recipe.drawn, 0u);
@@ -89,8 +102,7 @@ void test_shadowless_moby_is_counted_not_dropped() {
 
 void test_empty_list_is_valid_and_distinguishable() {
   const auto game = shadowFixture();
-  game->core.mem_w32(kMobyShadows + 8u, kShadowList);
-  const auto recipe = spyro::moby_shadow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core, {});
   CHECK(recipe.status == Status::ValidEmpty);
   CHECK_EQ(recipe.entries, 0u);
   CHECK_EQ(recipe.rejects[(size_t)Reject::NoShadowPlane], 0u);
@@ -98,18 +110,41 @@ void test_empty_list_is_valid_and_distinguishable() {
 
 void test_far_moby_is_rejected_at_the_view_limit() {
   const auto game = shadowFixture(0x1000u);
-  const auto recipe = spyro::moby_shadow_recipe::derive(&game->core);
+  const auto recipe = deriveNative(game->core);
   CHECK(recipe.status == Status::ValidEmpty);
   CHECK_EQ(recipe.rejects[(size_t)Reject::BehindCamera], 1u);
 }
 
-void test_misaligned_or_reversed_cursor_refuses() {
-  for (const uint32_t cursor : {kShadowList + 4u, kShadowList - 8u}) {
-    const auto game = shadowFixture();
-    game->core.mem_w32(kMobyShadows + 8u, cursor);
-    const auto recipe = spyro::moby_shadow_recipe::derive(&game->core);
-    CHECK(recipe.status == Status::InvalidState);
+void test_an_oversized_list_refuses() {
+  const auto game = shadowFixture();
+  const spyro::moby_shadow_list::List entries(4097u, oneShadow().front());
+  CHECK(deriveNative(game->core, entries).status == Status::InvalidState);
+}
+
+// Retail keeps a shadow whose anchor is -8 < sx < 0x208: eight pixels of slack either side of its
+// 512-px screen. The fan is drawn about the frame's own centre with the slack on the frame's own
+// edges; it used to be projected about the 4:3 centre and clipped at 512 at every aspect, so a
+// margin Moby's shadow was either missing or drawn 86 px left of its Moby.
+void test_the_anchor_window_follows_the_drawn_frame_at_both_edges() {
+  const auto game = shadowFixture();
+  const auto at = [&](int32_t anchorX, int32_t clipRight) {
+    return spyro::moby_shadow_recipe::derive(
+        &game->core, oneShadow(), projectionAbout(anchorX), clipRight);
+  };
+  const auto anchored = at(342, 684);
+  CHECK(anchored.status == Status::Ready);
+  CHECK(anchored.faces[0].vertices[0].screenX == 342);
+  // Left edge, identical at both widths.
+  for (const int32_t right : {512, 684}) {
+    CHECK_EQ(at(-8, right).rejects[(size_t)Reject::OffScreen], 1u);
+    CHECK_EQ(at(-7, right).drawn, 1u);
   }
+  // Right edge: 0x208 at 4:3, 684 + 8 at 16:9.
+  CHECK_EQ(at(519, 512).drawn, 1u);
+  CHECK_EQ(at(520, 512).rejects[(size_t)Reject::OffScreen], 1u);
+  CHECK_EQ(at(600, 684).drawn, 1u);
+  CHECK_EQ(at(691, 684).drawn, 1u);
+  CHECK_EQ(at(692, 684).rejects[(size_t)Reject::OffScreen], 1u);
 }
 
 // 0x80059F8C shifts by seven where the sixteen-point Spyro shadow shifts by nine. Reusing the
@@ -130,7 +165,7 @@ void test_distance_fade_ramps_to_zero_at_the_far_limit() {
 
 void test_missing_game_is_refused() {
   const auto core = std::make_unique<Core>();
-  const auto recipe = spyro::moby_shadow_recipe::derive(core.get());
+  const auto recipe = spyro::moby_shadow_recipe::derive(core.get(), {}, projectionAbout(256), 512);
   CHECK(recipe.status == Status::InvalidCore);
 }
 
@@ -142,7 +177,8 @@ int main() {
   RUN(shadowless_moby_is_counted_not_dropped);
   RUN(empty_list_is_valid_and_distinguishable);
   RUN(far_moby_is_rejected_at_the_view_limit);
-  RUN(misaligned_or_reversed_cursor_refuses);
+  RUN(an_oversized_list_refuses);
+  RUN(the_anchor_window_follows_the_drawn_frame_at_both_edges);
   RUN(retained_ot_formula_shift);
   RUN(distance_fade_ramps_to_zero_at_the_far_limit);
   RUN(missing_game_is_refused);

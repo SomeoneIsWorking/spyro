@@ -7,6 +7,7 @@
 #include "cyclorama_portal_submitter.h"
 #include "cyclorama_scene_recipe.h"
 #include "game.h"
+#include "spyro_context.h"
 #include "spyro_game.h"
 
 #include <lucent/log.h>
@@ -68,7 +69,8 @@ void reportDraws(const char *which,
 } // namespace
 
 bool spyro_field_cyclorama_submit(Core *core) {
-  const auto recipe = spyro::cyclorama_scene_recipe::prepare(core);
+  const auto recipe =
+      spyro::cyclorama_scene_recipe::prepare(core, spyro_context(*core).drawnSectors);
   if (recipe.status != spyro::cyclorama_scene_recipe::Status::Ready) {
     lucent::debug("fieldsky",
                   "REFUSED status={} reason={} portals={} active={} valid_empty={}",

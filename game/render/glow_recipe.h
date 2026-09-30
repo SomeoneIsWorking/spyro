@@ -1,5 +1,7 @@
 #pragma once
 
+#include "native_projection.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -72,7 +74,12 @@ std::uint32_t outcode(std::int32_t x, std::int32_t y, std::int32_t right);
 // offset, pushed 0x40 further back past 0xFF and clamped at the table's last bin.
 std::int32_t otBin(std::uint32_t viewZ, std::int32_t bias);
 
-Recipe derive(Core *core);
+// `projection` and `clipRight` are the DRAWN horizontal window: the fan is projected about the same
+// centre the world uses and tested against the same right edge. Glows write no guest state, so the
+// window is the port's alone; at 4:3 it is retail's 512-px screen exactly (issue 0152).
+Recipe derive(Core *core,
+              const psxport::native_projection::ProjectionParams &projection,
+              std::int32_t clipRight);
 const char *statusName(Status status);
 
 } // namespace spyro::glow_recipe

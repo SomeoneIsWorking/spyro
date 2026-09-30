@@ -16,6 +16,7 @@
 #include <string_view>
 #include <vector>
 
+using spyro::sector_visibility::Split;
 using spyro::world_chunk_codec::RamView;
 using spyro::world_scene_prepare::Prepared;
 
@@ -52,7 +53,7 @@ void retained_selection_contract() {
   view(bytes, 0, 0, 1000, 100);
   const auto flat = prepare(bytes, kNativeWidth);
   require(flat.selectedSectors == 1 && flat.low.size() == 1 && flat.high.size() == 1 &&
-              flat.broadVisible[0] == 0xffu,
+              flat.visibility.guest[0] == 0xffu && flat.visibility.drawn[0] == 0xffu,
           "native sector and both LODs preserved");
   w32(bytes, kGroups, kGroup);
   w8(bytes, kGroup, 0u);
@@ -69,42 +70,55 @@ void retained_selection_contract() {
           "unresolved native animation still refuses");
 }
 
+// Issue 0152's core: a widened width changes the DRAWN answer only. Every widened case below
+// asserts the two tables separately, because a single table cannot express the requirement and an
+// assertion that only checked `drawn` would pass on a build that also wrote the margin into guest
+// RAM.
 void horizontal_projection_contract() {
   auto bytes = fixture();
   psxport::native_projection::FixedAffine matrix{};
   matrix.m = {{{4096, 0, 0}, {0, 4096, 0}, {0, 0, 4096}}};
   for (int side : {-1, 1}) {
     view(bytes, side * 900, 0, 1000, 0);
-    require(prepare(bytes, kNativeWidth).broadVisible[0] == 0,
+    const auto native = prepare(bytes, kNativeWidth);
+    require(native.visibility.drawn[0] == 0 && native.visibility.guest[0] == 0,
             "side sector is outside native frustum");
     const auto wide = prepare(bytes, kWideWidth);
-    require(wide.broadVisible[0] == 0xffu && wide.low.size() == 1 && wide.low[0].tags == 0,
+    require(wide.visibility.drawn[0] == 0xffu && wide.visibility.guest[0] == 0,
+            "the widened draw admits the side sector while the guest table does not");
+    require(wide.low.size() == 1 && wide.low[0].tags == 0,
             "same side sector is wholly inside widened frustum");
     const psxport::native_projection::ModelVertex vertex{(int16_t)(side * 900), 0, 1000};
-    const auto native = psxport::native_projection::project(
+    const auto projectedNative = psxport::native_projection::project(
         matrix, {.ofx = (kNativeWidth / 2) << 16, .ofy = 120 << 16, .h = 341}, vertex);
-    const auto projected = psxport::native_projection::project(
+    const auto projectedWide = psxport::native_projection::project(
         matrix, {.ofx = (kWideWidth / 2) << 16, .ofy = 120 << 16, .h = 341}, vertex);
-    require(native.px < 0 || native.px >= kNativeWidth, "native projection excludes discriminator");
-    require(projected.px >= 0 && projected.px < kWideWidth,
+    require(projectedNative.px < 0 || projectedNative.px >= kNativeWidth,
+            "native projection excludes discriminator");
+    require(projectedWide.px >= 0 && projectedWide.px < kWideWidth,
             "wide projection includes culled-sector discriminator");
 
     view(bytes, side * 767, 0, 1024, 0);
-    require(prepare(bytes, kNativeWidth).broadVisible[0] == 0xffu,
+    const auto insideNative = prepare(bytes, kNativeWidth);
+    require(insideNative.visibility.guest[0] == 0xffu && insideNative.visibility.drawn[0] == 0xffu,
             "just inside native horizontal edge");
     view(bytes, side * 768, 0, 1024, 0);
-    require(prepare(bytes, kNativeWidth).broadVisible[0] == 0,
+    const auto edgeNative = prepare(bytes, kNativeWidth);
+    require(edgeNative.visibility.guest[0] == 0 && edgeNative.visibility.drawn[0] == 0,
             "native strict horizontal edge preserved");
     view(bytes, side * 1025, 0, 1024, 0);
-    require(prepare(bytes, kWideWidth).broadVisible[0] == 0xffu,
-            "just inside wide horizontal edge");
+    const auto insideWide = prepare(bytes, kWideWidth);
+    require(insideWide.visibility.drawn[0] == 0xffu && insideWide.visibility.guest[0] == 0,
+            "just inside wide horizontal edge is drawn, never guest-visible");
     view(bytes, side * 1026, 0, 1024, 0);
-    require(prepare(bytes, kWideWidth).broadVisible[0] == 0,
+    const auto edgeWide = prepare(bytes, kWideWidth);
+    require(edgeWide.visibility.drawn[0] == 0 && edgeWide.visibility.guest[0] == 0,
             "wide strict horizontal edge excludes");
     view(bytes, side * 900, 0, 1000, 100);
     const auto margin = prepare(bytes, kWideWidth);
-    require(margin.broadVisible[0] == 0xffu && (margin.low[0].tags & 1u),
-            "intersecting bounds retain clipping tag");
+    require(margin.visibility.drawn[0] == 0xffu && margin.visibility.guest[0] == 0 &&
+                (margin.low[0].tags & 1u),
+            "intersecting bounds retain clipping tag and still stay out of the guest table");
   }
 }
 
@@ -112,16 +126,24 @@ void unchanged_vertical_and_near_contract() {
   auto bytes = fixture();
   for (int width : {kNativeWidth, kWideWidth, 896}) {
     for (int side : {-1, 1}) {
+      // Both tables at every width: a widened width that changed a vertical or near answer would
+      // show here as `drawn` and `guest` disagreeing.
       view(bytes, 0, side * 543, 1024, 0);
-      require(prepare(bytes, width).broadVisible[0] == 0xffu,
-              "inside vertical edge at every width");
+      const auto inside = prepare(bytes, width);
+      require(inside.visibility.drawn[0] == 0xffu && inside.visibility.guest[0] == 0xffu,
+              "inside vertical edge at every width, in both answers");
       view(bytes, 0, side * 544, 1024, 0);
-      require(prepare(bytes, width).broadVisible[0] == 0, "strict vertical edge unchanged");
+      const auto edge = prepare(bytes, width);
+      require(edge.visibility.drawn[0] == 0 && edge.visibility.guest[0] == 0,
+              "strict vertical edge unchanged");
       view(bytes, side * 35, 0, -99, 100);
-      require(prepare(bytes, width).broadVisible[0] == 0xffu,
+      const auto near = prepare(bytes, width);
+      require(near.visibility.drawn[0] == 0xffu && near.visibility.guest[0] == 0xffu,
               "authored behind-eye bound margin preserved");
       view(bytes, side * 35, 0, -100, 100);
-      require(prepare(bytes, width).broadVisible[0] == 0, "strict near-plane edge unchanged");
+      const auto strict = prepare(bytes, width);
+      require(strict.visibility.drawn[0] == 0 && strict.visibility.guest[0] == 0,
+              "strict near-plane edge unchanged");
     }
   }
   for (int width : {0, kNativeWidth - 1, 32768}) {
@@ -151,8 +173,9 @@ void widened_animation_and_build_contract() {
   const char *why = "none";
   require(
       spyro::world_scene_prepare::prepare(RamView(bytes), -1, kWideWidth, planned, why, &plan) &&
-          plan.channels == 1 && plan.writes.size() == 2 && planned.broadVisible[0] == 0xffu,
-      "wide preparation plans newly visible animation");
+          plan.channels == 0 && plan.writes.empty() && planned.visibility.drawn[0] == 0xffu &&
+          planned.visibility.guest[0] == 0,
+      "wide preparation draws the margin sector but plans no guest animation for it");
   require(bytes == untouched, "preparation remains read-only with animation plan");
 
   auto game = std::make_unique<Game>();
@@ -165,25 +188,34 @@ void widened_animation_and_build_contract() {
   game->mods.aspect = ASPECT_4_3;
   require(spyro::world_scene::animate(&core, -1).channels == 0 && core.mem_r8(kSector + 24u) == 0,
           "native animation leaves out-of-frustum source unchanged");
-  require(spyro::world_scene::build(&core, -1).broadVisible[0] == 0,
-          "native builder keeps original culling");
+  const auto narrow = spyro::world_scene::build(&core, -1);
+  require(narrow.visibility.drawn[0] == 0 && narrow.visibility.guest[0] == 0,
+          "native builder keeps original culling in both answers");
 
   game->mods.aspect = ASPECT_16_9;
   require(gpu_vk_wide_engine_w(&core) == kWideWidth,
           "builder uses the production 512-wide 16:9 viewport");
-  require(spyro::world_scene::build(&core, -1).status ==
-              spyro::world_recipe::Status::ActiveAnimation,
-          "wide render refuses unresolved newly visible geometry");
+  // THE ISSUE-0152 ARM. The widened view draws this sector, so its geometry has to be current; but
+  // retail at 4:3 never animates a sector its own cull drops, so the animation must land in the
+  // captured Source and NOT in guest RAM. The negative case is the second half: `animate` is the
+  // ONE owner that writes guest animation state, and at 16:9 it must write nothing at all.
   const auto result = spyro::world_scene::animate(&core, -1);
-  require(result.ok && result.channels == 1 && result.direct == 1 && result.writes == 2 &&
-              core.mem_r32(kSector + 28u) == vertex && core.mem_r8(kSector + 24u) == 0xffu,
-          "production animation applies and verifies same wide selection");
+  require(result.ok && result.channels == 0 && result.writes == 0 &&
+              core.mem_r32(kSector + 28u) == 0u && core.mem_r8(kSector + 24u) == 0u,
+          "16:9 animation writes no guest state for a sector retail's 4:3 cull drops");
   const auto rendered = spyro::world_scene::build(&core, -1);
   require(rendered.status == spyro::world_recipe::Status::ValidEmpty &&
-              rendered.broadVisible[0] == 0xffu && rendered.lowSectors == 1,
-          "production build accepts the same resolved wide sector");
-  require(spyro::world_scene::animate(&core, -1).channels == 0,
-          "resolved animation is not replayed");
+              rendered.visibility.drawn[0] == 0xffu && rendered.visibility.guest[0] == 0 &&
+              rendered.lowSectors == 1,
+          "the widened draw still renders the margin sector, from the Source's own animation");
+  require(core.mem_r32(kSector + 28u) == 0u && core.mem_r8(kSector + 24u) == 0u,
+          "rendering the margin sector advanced no guest animation channel");
+  // And the control leg: at 4:3 the same fixture is still an ordinary un-animated out-of-frustum
+  // sector, so the split did not quietly start animating sectors retail leaves alone at any aspect.
+  game->mods.aspect = ASPECT_4_3;
+  const auto again = spyro::world_scene::build(&core, -1);
+  require(again.visibility.drawn[0] == 0 && core.mem_r32(kSector + 28u) == 0u,
+          "4:3 remains the guest's own cull after a 16:9 draw of the same sector");
 }
 
 void immutable_source_contract() {
@@ -231,7 +263,7 @@ void immutable_source_contract() {
   core.rsub.projParams.setGeomOffset(0, 0);
   const auto rebuilt = spyro::world_scene::build(captured);
   require(
-      rebuilt.status == endpoint.status && rebuilt.broadVisible == endpoint.broadVisible &&
+      rebuilt.status == endpoint.status && rebuilt.visibility == endpoint.visibility &&
           rebuilt.candidates == endpoint.candidates &&
           spyro::world_recipe::compare(endpoint.faces, rebuilt.faces).equal &&
           rebuilt.faces[0].vertices[0].viewZ == endpoint.faces[0].vertices[0].viewZ &&
@@ -346,7 +378,7 @@ void immutable_refined_source_contract() {
     std::fill(std::begin(core.ram), std::end(core.ram), 0u);
     core.rsub.projParams.setGeomScreen(1);
     const auto rebuilt = spyro::world_scene::build(captured);
-    require(rebuilt.status == endpoint.status && rebuilt.broadVisible == endpoint.broadVisible &&
+    require(rebuilt.status == endpoint.status && rebuilt.visibility == endpoint.visibility &&
                 spyro::world_recipe::compare(endpoint.faces, rebuilt.faces).equal,
             "HQ source rebuild retains geometry, camera, material and refinement tables after RAM "
             "destruction");
@@ -454,7 +486,7 @@ void resource_span_contract() {
 }
 
 bool sameRecipe(const spyro::world_recipe::Recipe &a, const spyro::world_recipe::Recipe &b) {
-  if (a.status != b.status || a.broadVisible != b.broadVisible || a.candidates != b.candidates ||
+  if (a.status != b.status || a.visibility != b.visibility || a.candidates != b.candidates ||
       a.rejected != b.rejected || !spyro::world_recipe::compare(a.faces, b.faces).equal) {
     return false;
   }

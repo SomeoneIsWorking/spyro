@@ -13,22 +13,21 @@ namespace {
 
 using spyro::world_chunk_codec::RamView;
 
-bool horizontalInside(int32_t extent, int32_t depth, int32_t width) {
-  // The authored native plane is 4*x < 3*z. Projection retains focal length and
-  // expands its centered viewport by width/512, so scale only the depth term.
-  return 4ll * wide::kNativeClipWidth * extent < 3ll * width * depth;
-}
+struct BroadCull {
+  bool guest = false; // retail's 4:3 answer, the one D_800771C8 and the guest's animation follow
+  bool drawn = false; // what the port draws; a superset of `guest`
+};
 
-bool broadCull(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width) {
+BroadCull broadCull(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width) {
   const int32_t hx = (radius >> 1) + (radius >> 2) + (radius >> 5);
   const int32_t xz = (radius >> 1) + (radius >> 4) + (radius >> 5);
   const int32_t hy = radius - (radius >> 3);
   const int32_t yz = (radius >> 1) - (radius >> 4);
-  // Retain authored near-eye margin acceptance even when z+xz is negative: rotating
-  // that approximate bound outward must not remove sectors the native view admitted.
-  const bool horizontal = horizontalInside(std::abs(x) - hx, z + xz, wide::kNativeClipWidth) ||
-                          horizontalInside(std::abs(x) - hx, z + xz, width);
-  return z + radius > 0 && horizontal && 32 * (std::abs(y) - hy) - 17 * (z + yz) < 0;
+  const bool depthAndVertical = z + radius > 0 && 32 * (std::abs(y) - hy) - 17 * (z + yz) < 0;
+  return {.guest = depthAndVertical &&
+                   wide::viewHorizontalInside(std::abs(x) - hx, z + xz, wide::kNativeClipWidth),
+          .drawn =
+              depthAndVertical && wide::drawnHorizontalInside(std::abs(x) - hx, z + xz, width)};
 }
 
 bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width) {
@@ -36,7 +35,7 @@ bool whollyInside(int32_t x, int32_t y, int32_t z, int32_t radius, int32_t width
   const int32_t xz = (radius >> 1) + (radius >> 4) + (radius >> 5);
   const int32_t hy = radius - (radius >> 3);
   const int32_t yz = (radius >> 1) - (radius >> 4);
-  return z - radius > 0 && horizontalInside(std::abs(x) + hx, z - xz, width) &&
+  return z - radius > 0 && wide::viewHorizontalInside(std::abs(x) + hx, z - xz, width) &&
          32 * (std::abs(y) + hy) - 17 * (z - yz) < 0;
 }
 
@@ -89,10 +88,14 @@ bool prepare(const world_source::Selection &previous,
     }
     const int32_t x = transformed->ir[0], y = transformed->ir[1], z = transformed->ir[2];
     const int32_t radius = h1 & 0x1fffu;
-    if (!broadCull(x, y, z, radius, horizontalWidth)) {
+    const BroadCull cull = broadCull(x, y, z, radius, horizontalWidth);
+    if (!cull.drawn) {
       continue;
     }
-    out.broadVisible[index] = 0xffu;
+    out.visibility.drawn[index] = 0xffu;
+    if (cull.guest) {
+      out.visibility.guest[index] = 0xffu;
+    }
     uint8_t tags = whollyInside(x, y, z, radius, horizontalWidth) ? 0u : 1u;
     const uint32_t flags = h1 & 0xe000u;
     const bool low = !(flags & 0x2000u) && ((flags & 0x8000u) || (int32_t)lod < z + radius + 256);
@@ -111,7 +114,7 @@ bool prepare(const world_source::Selection &previous,
         low ? (high ? 0u : 0xffff0000u) : (high ? 0x0000ffffu : 0xffffffffu);
     const uint32_t active = dirty | activeMask;
     if (decodingAnimation) {
-      out.animations.push_back({sector, index, activeMask, active});
+      out.animations.push_back({sector, index, activeMask, active, cull.guest});
       continue;
     }
     const uint32_t previousActive = previous.sectors[index]->animation | activeMask;
@@ -164,6 +167,11 @@ bool prepare(const RamView &ram,
   }
   if (animation != nullptr) {
     for (const auto &sector : out.animations) {
+      // Retail animates only what its own 4:3 cull keeps. A margin-only sector's channels stay
+      // pending in guest RAM exactly as they would on the console (issue 0152).
+      if (!sector.guest) {
+        continue;
+      }
       if (!world_animation::appendSector(ram, sector.address, sector.active, *animation, why)) {
         return false;
       }

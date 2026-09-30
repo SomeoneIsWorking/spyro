@@ -50,7 +50,8 @@ bool spyro_world_submit(Core *core, int32_t selection) {
     return false;
   }
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "world:static");
-  spyro::world_scene_submitter::submit(core, core->game->rq, kProducerKey, recipe, plan);
+  spyro::world_scene_submitter::submit(
+      core, core->game->rq, kProducerKey, recipe, plan, spyro_context(*core).drawnSectors);
   history.retain(*core, std::move(source), plan.draw);
   lucent::debug("worlddirect",
                 "PASS selected={} low={} high={} candidates={} rejected={} faces={} "

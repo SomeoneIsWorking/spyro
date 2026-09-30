@@ -4,19 +4,6 @@
 #include "gpu_vk.h"
 
 namespace spyro::wide_screen_space {
-namespace {
-
-// The horizontal offset the port projected with, minus the one the guest's own projection uses.
-// Zero unless the wide engine widened the window.
-int32_t horizontalOffsetDelta(Core *core) {
-  if (!gpu_vk_wide_engine(core)) {
-    return 0;
-  }
-  return horizontalCenter(core) - (int32_t)core->rsub.projParams.geomOfx();
-}
-
-} // namespace
-
 int32_t horizontalCenter(Core *core) {
   // The framework already answers this, for both aspects: gpu_vk_wide_engine_ofx is the render
   // width for the selected aspect divided by two, and that width collapses to the guest's own
@@ -44,17 +31,23 @@ psxport::native_projection::ProjectionParams projection(Core *core) {
   return out;
 }
 
+int32_t horizontalOffsetDelta(Core *core) {
+  if (!gpu_vk_wide_engine(core)) {
+    return 0;
+  }
+  return horizontalCenter(core) - (int32_t)core->rsub.projParams.geomOfx();
+}
+
 int32_t guestX(Core *core, int32_t drawnX) {
   return drawnX - horizontalOffsetDelta(core);
 }
 
 bool guestOnScreenX(Core *core, int32_t drawnX) {
-  const int32_t x = guestX(core, drawnX);
-  return x > 0 && x < kGuestClipRight;
+  return onScreenX(guestX(core, drawnX), kGuestClipRight);
 }
 
 bool drawnOnScreenX(int drawRight, int32_t drawnX) {
-  return drawnX > 0 && drawnX < drawRight;
+  return onScreenX(drawnX, drawRight);
 }
 
 } // namespace spyro::wide_screen_space

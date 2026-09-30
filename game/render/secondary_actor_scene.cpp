@@ -11,13 +11,14 @@ namespace {
 
 constexpr uint32_t kSourceList = 0x80071ef4u;
 constexpr uint32_t kSourceCapacity = 256u;
-constexpr uint32_t kShadowCursor = 0x80075f00u;
+constexpr uint32_t kWasDrawn = 0x51u;
+constexpr uint32_t kShadowDistance = 0x1cu;
 
 } // namespace
 
-Status prepare(Core *core, Frame &frame) {
+Status prepare(Core *core, int32_t drawWidth, Frame &frame) {
   frame = {};
-  frame.shadowCursor = core->mem_r32(kShadowCursor);
+  frame.shadowCursor = core->mem_r32(moby_shadow_list::kCursor);
   if (!actor_recipe_capture::physical_span(frame.shadowCursor, 8u)) {
     return Status::InvalidShadowCursor;
   }
@@ -34,21 +35,36 @@ Status prepare(Core *core, Frame &frame) {
     frame.visitedMobys.push_back(moby);
     ++frame.census.scanned;
     actor_recipe_capture::SourceRecord source{};
-    bool horizontalVisible = false;
-    if (!actor_scene::build_source_record(core, moby, source, frame.census, &horizontalVisible)) {
-      ++frame.census.culled;
-      // 0x800208FC appends a shadow after horizontal culling even if vertical culling fails.
-      if (horizontalVisible && (int32_t)core->mem_r32(moby + 0x1cu) < 0 && source.tz < -0x1200) {
-        const uint32_t texture =
-            source.descriptor + 0x2au + (uint32_t)core->mem_r8(moby + 0x3eu) * 8u;
-        if (!actor_recipe_capture::physical_span(texture & ~3u, 4u) ||
-            !actor_recipe_capture::physical_span(
-                frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
-          frame = {};
-          return Status::InvalidShadowCursor;
-        }
-        frame.shadows.push_back({.moby = moby, .modelByte = core->mem_r8(texture)});
+    actor_scene::Answers answers{};
+    const bool drawn =
+        actor_scene::build_source_record(core, moby, drawWidth, source, frame.census, answers);
+    if (answers.guest.visible) {
+      frame.guestVisibleMobys.push_back(moby);
+    }
+    // 0x800208FC appends a shadow after horizontal culling even if vertical culling fails, with the
+    // same 0x1200 limit as 0x8001F158 (0x80020AF8 `addi $t3,$v1,-0x1200; bgez` skips).
+    const bool stages = actor_scene::stages_shadow((int32_t)core->mem_r32(moby + kShadowDistance),
+                                                   source.tz,
+                                                   actor_scene::kShadowStagingDepth);
+    if (stages && answers.guest.horizontal) {
+      const auto entry = actor_scene::shadow_entry(core, moby, source.descriptor);
+      if (!entry || !actor_recipe_capture::physical_span(
+                        frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
+        frame = {};
+        return Status::InvalidShadowCursor;
       }
+      frame.shadows.push_back({.moby = moby, .modelByte = entry->radius});
+    }
+    if (stages && answers.drawn.horizontal) {
+      const auto entry = actor_scene::shadow_entry(core, moby, source.descriptor);
+      if (!entry) {
+        frame = {};
+        return Status::InvalidShadowCursor;
+      }
+      frame.drawnShadows.push_back(*entry);
+    }
+    if (!drawn) {
+      ++frame.census.culled;
       continue;
     }
     if (frame.records.size() == actor_recipe_capture::kDurableRecords) {
@@ -62,18 +78,6 @@ Status prepare(Core *core, Frame &frame) {
     }
     frame.records.push_back(std::move(record));
     ++frame.census.queued;
-
-    if ((int32_t)core->mem_r32(moby + 0x1cu) < 0 && source.tz < -0x1200) {
-      const uint32_t texture =
-          source.descriptor + 0x2au + (uint32_t)core->mem_r8(moby + 0x3eu) * 8u;
-      if (!actor_recipe_capture::physical_span(texture & ~3u, 4u) ||
-          !actor_recipe_capture::physical_span(
-              frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u, 8u)) {
-        frame = {};
-        return Status::InvalidShadowCursor;
-      }
-      frame.shadows.push_back({.moby = moby, .modelByte = core->mem_r8(texture)});
-    }
   }
   frame = {};
   return Status::UnterminatedSourceList;
@@ -81,17 +85,18 @@ Status prepare(Core *core, Frame &frame) {
 
 void commit(Core *core, const Frame &frame) {
   for (uint32_t moby : frame.visitedMobys) {
-    core->mem_w8(moby + 0x51u, 0u);
+    core->mem_w8(moby + kWasDrawn, 0u);
   }
-  for (const Record &record : frame.records) {
-    core->mem_w8(record.moby + 0x51u, 1u);
+  for (uint32_t moby : frame.guestVisibleMobys) {
+    core->mem_w8(moby + kWasDrawn, 1u);
   }
   for (uint32_t i = 0; i < frame.shadows.size(); ++i) {
     const uint32_t out = frame.shadowCursor + i * 8u;
     core->mem_w32(out, frame.shadows[i].moby);
     core->mem_w32(out + 4u, frame.shadows[i].modelByte);
   }
-  core->mem_w32(kShadowCursor, frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u);
+  core->mem_w32(moby_shadow_list::kCursor,
+                frame.shadowCursor + (uint32_t)frame.shadows.size() * 8u);
 }
 
 const char *status_name(Status status) {

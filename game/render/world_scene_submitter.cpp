@@ -12,8 +12,6 @@
 namespace spyro::world_scene_submitter {
 namespace {
 
-constexpr uint32_t kBroadVisibility = 0x800771c8u;
-
 uint32_t vertexCount(world_recipe::Family family) {
   using world_recipe::Family;
   return family == Family::G4 || family == Family::GT4 ? 4u : 3u;
@@ -209,13 +207,13 @@ void submit(Core *core,
             RenderQueue &queue,
             uint32_t producerKey,
             const world_recipe::Recipe &recipe,
-            const Plan &plan) {
+            const Plan &plan,
+            sector_visibility::Table &drawnSectors) {
   if (!validSubmission(core, recipe, plan)) {
     return;
   }
-  for (uint32_t i = 0; i < recipe.broadVisible.size(); ++i) {
-    core->mem_w8(kBroadVisibility + i, recipe.broadVisible[i]);
-  }
+  sector_visibility::publishGuest(*core, recipe.visibility.guest);
+  drawnSectors = recipe.visibility.drawn;
   emitPrepared(core, queue, producerKey, recipe, plan);
 }
 

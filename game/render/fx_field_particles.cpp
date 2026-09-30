@@ -2,6 +2,7 @@
 #include "guest_globals.h"
 
 #include "core.h"
+#include "field_particle_endpoint.h"
 #include "field_particle_oriented_submitter.h"
 #include "field_particle_type2_submitter.h"
 #include "field_particle_type3_submitter.h"
@@ -123,6 +124,7 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
   }
 
   const int clipRight = spyro::wide_screen_space::drawClipRight(core);
+  const int32_t offsetDelta = spyro::wide_screen_space::horizontalOffsetDelta(core);
   const auto camera = spyro::world_projection_math::decodeMatrix(ram, kCamera);
   const auto params = spyro::wide_screen_space::projection(core);
   const int32_t cameraX = (int32_t)core->mem_r32(kCamera + 0x28u) >> 2;
@@ -137,17 +139,11 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     const auto input = spyro::world_projection_math::packProjectionInput(
         cameraY - point.y, cameraZ - point.z, point.x - cameraX);
     const auto projected = psxport::native_projection::project(camera, params, input);
-    const int32_t otDepth = (int32_t)(projected.sz >> 5) - (int32_t)point.depthBias;
-    // The guest's own byte is decided by the GUEST's window; what this port draws is decided by the
-    // widened one. Writing the widened answer here made widescreen change guest memory.
-    const bool depthAndRowOk = projected.sz != 0u && projected.sz < 0x2000u && otDepth > 2 &&
-                               projected.sy > 0 && projected.sy < 256;
-    const bool guestVisible =
-        depthAndRowOk && spyro::wide_screen_space::guestOnScreenX(core, projected.sx);
-    core->mem_w8(point.address + 3u, guestVisible ? 1u : 0u);
-    const bool visible =
-        depthAndRowOk && spyro::wide_screen_space::drawnOnScreenX(clipRight, projected.sx);
-    if (!visible) {
+    const auto answer = spyro::field_particle_endpoint::classify(
+        {projected.sz, projected.sx, projected.sy}, point.depthBias, offsetDelta, clipRight);
+    const int32_t otDepth = answer.otDepth;
+    core->mem_w8(point.address + 3u, answer.guest ? 1u : 0u);
+    if (!answer.drawn) {
       continue;
     }
     const int xs[2] = {projected.sx, projected.sx + 1};
@@ -174,11 +170,11 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
         params,
         spyro::world_projection_math::packProjectionInput(
             cameraY - line.y0, cameraZ - line.z0, line.x0 - cameraX));
-    const int32_t otDepth = (int32_t)(first.sz >> 5) - (int32_t)line.depthBias;
-    const bool visible = first.sz != 0u && first.sz < 0x2000u && otDepth > 2 && first.sx > 0 &&
-                         first.sx < clipRight && first.sy > 0 && first.sy < 256;
-    core->mem_w8(line.address + 3u, visible ? 1u : 0u);
-    if (!visible) {
+    const auto answer = spyro::field_particle_endpoint::classify(
+        {first.sz, first.sx, first.sy}, line.depthBias, offsetDelta, clipRight);
+    const int32_t otDepth = answer.otDepth;
+    core->mem_w8(line.address + 3u, answer.guest ? 1u : 0u);
+    if (!answer.drawn) {
       continue;
     }
     const auto second = psxport::native_projection::project(

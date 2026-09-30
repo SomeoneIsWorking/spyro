@@ -8,6 +8,7 @@
 #include "world_hq_recipe.h"
 #include "world_lq_recipe.h"
 #include "world_scene_prepare.h"
+#include "world_source_animation.h"
 #include "world_source_pair.h"
 
 #include <cmath>
@@ -65,7 +66,10 @@ AnimationResult animate(Core *core, int32_t selection) {
     out.refusal = core ? "no_game" : "no_core";
     return out;
   }
-  const int clipRight = renderWidth(core);
+  // Guest animation state follows retail's own 4:3 cull at every aspect. The walk and its
+  // verification both run at the native width; a sector only the widened view admits is animated
+  // for the draw alone, inside the captured Source (see `capture`), never here (issue 0152).
+  const int clipRight = wide::kNativeClipWidth;
   const world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   world_scene_prepare::Prepared prepared{};
   world_animation::Plan plan{};
@@ -109,11 +113,15 @@ capture(Core *core, int32_t selection, std::optional<uint32_t> cullingDistance) 
     return out;
   }
   const int clipRight = renderWidth(core);
-  return world_source::capture(world_chunk_codec::RamView(std::span<const uint8_t>(core->ram)),
-                               selection,
-                               projection(core, clipRight),
-                               clipRight,
-                               cullingDistance);
+  const world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
+  auto out = world_source::capture(
+      ram, selection, projection(core, clipRight), clipRight, cullingDistance);
+  const char *why = "none";
+  if (!world_source_animation::animateDrawnOnly(ram, out, why)) {
+    out.selection.valid = false;
+    out.selection.refusal = why;
+  }
+  return out;
 }
 
 Recipe build(Core *core,
@@ -150,7 +158,7 @@ Recipe reconstruct(const world_source::Source &previous,
                                                                       : Status::InvalidSelection;
     return refuse(std::move(out), status, why);
   }
-  out.broadVisible = prepared.broadVisible;
+  out.visibility = prepared.visibility;
   out.selectedSectors = prepared.selectedSectors;
   out.lowSectors = (uint32_t)prepared.low.size();
   out.highSectors = (uint32_t)prepared.high.size();

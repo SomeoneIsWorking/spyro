@@ -4,7 +4,9 @@
 #include "guest_globals.h"
 #include "secondary_actor_recipe.h"
 #include "secondary_actor_scene.h"
+#include "sector_visibility.h"
 #include "testutil.h"
+#include "wide_clip_plan.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -16,6 +18,8 @@ constexpr uint32_t kSourceList = 0x80071ef4u;
 using spyro::guest::kLevelMobys;
 constexpr uint32_t kShadowCursor = 0x80075f00u;
 constexpr uint32_t kShadowListStart = 0x800724f4u;
+// Every fixture here is a 4:3 frame, so retail's 512-px plane IS the drawn one (issue 0152).
+constexpr int32_t kNativeDrawWidth = spyro::wide::kNativeClipWidth;
 
 std::unique_ptr<Core> empty_core() {
   auto core = std::make_unique<Core>();
@@ -29,7 +33,7 @@ std::unique_ptr<Core> empty_core() {
 void test_empty_list_is_a_complete_atomic_frame() {
   auto core = empty_core();
   spyro::secondary_actor_scene::Frame frame{};
-  CHECK(spyro::secondary_actor_scene::prepare(core.get(), frame) ==
+  CHECK(spyro::secondary_actor_scene::prepare(core.get(), kNativeDrawWidth, frame) ==
         spyro::secondary_actor_scene::Status::Ready);
   CHECK_EQ(frame.visitedMobys.size(), 0u);
   CHECK_EQ(frame.records.size(), 0u);
@@ -46,7 +50,7 @@ void test_invalid_source_refuses_without_side_effects() {
   auto core = empty_core();
   core->mem_w32(kSourceList, 0x807ffff0u);
   spyro::secondary_actor_scene::Frame frame{};
-  CHECK(spyro::secondary_actor_scene::prepare(core.get(), frame) ==
+  CHECK(spyro::secondary_actor_scene::prepare(core.get(), kNativeDrawWidth, frame) ==
         spyro::secondary_actor_scene::Status::InvalidSourceList);
   CHECK_EQ(core->mem_r32(kSourceList), 0x807ffff0u);
   CHECK_EQ(core->mem_r32(kShadowCursor), 0x800724f4u);
@@ -80,7 +84,10 @@ void test_regular_frame_resets_shadow_cursor_at_retail_list_start() {
   core->mem_w32(kShadowCursor, 0x80072500u);
 
   spyro::actor_scene::Frame frame{};
-  CHECK(spyro::actor_scene::build_frame(core.get(), frame) == spyro::actor_scene::Status::Ready);
+  const spyro::actor_scene::DrawnScope drawn{.sectors = spyro::sector_visibility::readGuest(*core),
+                                             .width = kNativeDrawWidth};
+  CHECK(spyro::actor_scene::build_frame(core.get(), frame, drawn) ==
+        spyro::actor_scene::Status::Ready);
   CHECK_EQ(frame.shadowCursor, kShadowListStart);
   CHECK(frame.records.empty());
   CHECK(frame.shadows.empty());
@@ -109,7 +116,8 @@ void inspect_snapshot_if_requested() {
   std::vector<spyro::actor_prefix::Output> regularOutputs;
   const auto regularRecipe =
       spyro::actor_recipe_capture::compose_records(regularRecords, regularOutputs);
-  const auto sceneStatus = spyro::secondary_actor_scene::prepare(core.get(), frame);
+  const auto sceneStatus =
+      spyro::secondary_actor_scene::prepare(core.get(), kNativeDrawWidth, frame);
   const auto recipe = spyro::secondary_actor_recipe::derive(frame);
   const uint32_t firstRegularPrefix =
       regularRecipe.firstUnsupportedRecord < regularOutputs.size()

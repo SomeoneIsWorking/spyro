@@ -1,6 +1,7 @@
 #pragma once
 
 #include "field_shaded_queue_recipe.h"
+#include "moby_shadow_list.h"
 
 #include <cstdint>
 #include <vector>
@@ -25,7 +26,11 @@ struct Shadow {
 };
 
 struct Frame {
+  // Drawn half: the records and shadow entries under the widened plane (issue 0152).
   field_shaded_queue_recipe::Input input{};
+  moby_shadow_list::List drawnShadows;
+  // Guest half: every visited actor has +0x51 cleared, those retail's 512-px planes transform have
+  // it set, and the shadow list holds retail's entries.
   std::vector<uint32_t> visitedWorldActors;
   std::vector<uint32_t> transformedActors;
   std::vector<Shadow> shadows;
@@ -44,6 +49,8 @@ struct Frame {
   uint32_t primitiveCandidates = 0;
 };
 
+// `clipRight` is the drawn width: it widens the horizontal plane and the projection window of what
+// the port draws, never the guest half.
 Status prepare(Core *core, int32_t clipRight, Frame &frame);
 void commit(Core *core, const Frame &frame);
 const char *statusName(Status status);

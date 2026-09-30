@@ -48,6 +48,9 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S032 | Spyro 3 widescreen anchors the UI: edge HUD elements at the widened edges or safe area, centred elements centred, nothing stretched | missing | S027 | G003 |
 | S028 | Spyro 2 presents interpolated 60fps from captured source geometry | missing | S024 | G003 |
 | S029 | Spyro 3 presents interpolated 60fps from captured source geometry | missing | S025 | G003 |
+| S033 | Spyro 1: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S011 | G005 |
+| S034 | Spyro 2: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S024 | G005 |
+| S035 | Spyro 3: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S025 | G005 |
 
 ## Current focus
 
@@ -1932,3 +1935,24 @@ named in S020 — and none of them transfers to another title's scene layout. Wh
 framework: the temporal presenter, the pairing walk, the projection stream and the measurement tools.
 
 Related goals: G001, G002, G003.
+
+### S033 — Spyro 1 loading removal
+
+Missing. No load operation has been censused or classified for Spyro 1. Gap: enumerate its load
+issuers and the wait and presentation each drives, then complete each through the title's own load
+mechanics without its loading-only wait, with payload and terminal state compared against retail
+and the absence of loading presentation captured.
+
+### S034 — Spyro 2 loading removal
+
+Missing. No load operation has been censused or classified for Spyro 2. Gap: enumerate its load
+issuers and the wait and presentation each drives, then complete each through the title's own load
+mechanics without its loading-only wait, with payload and terminal state compared against retail
+and the absence of loading presentation captured.
+
+### S035 — Spyro 3 loading removal
+
+Missing. No load operation has been censused or classified for Spyro 3. Gap: enumerate its load
+issuers and the wait and presentation each drives, then complete each through the title's own load
+mechanics without its loading-only wait, with payload and terminal state compared against retail
+and the absence of loading presentation captured.

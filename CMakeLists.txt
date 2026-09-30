@@ -238,8 +238,10 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_cutscene.cpp
   titles/spyro1/core/native_draw_setup.cpp
   titles/spyro1/core/native_effect_state.cpp
+  titles/spyro1/core/native_environment_light.cpp
   titles/spyro1/core/native_gamepad.cpp
   titles/spyro1/core/native_glow_sparkle_pools.cpp
+  titles/spyro1/core/native_hud_collectables.cpp
   titles/spyro1/core/native_level_globals_table.cpp
   titles/spyro1/core/native_moby_allocator.cpp
   titles/spyro1/core/native_moby_collision.cpp

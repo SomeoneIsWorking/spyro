@@ -12,8 +12,10 @@
 #include "native_cutscene.h"
 #include "native_draw_setup.h"
 #include "native_effect_state.h"
+#include "native_environment_light.h"
 #include "native_gamepad.h"
 #include "native_glow_sparkle_pools.h"
+#include "native_hud_collectables.h"
 #include "native_level_globals_table.h"
 #include "native_level_initialization.h"
 #include "native_moby_allocator.h"
@@ -90,8 +92,10 @@ void Spyro1Runtime::registerOverrides(Game &game) {
   native::registerCutsceneOverrides(game.core);
   native::registerDrawSetupOverrides(game.core);
   native::registerEffectStateOverrides(game.core);
+  native::registerEnvironmentLightOverrides(game.core);
   native::registerGamepadOverrides(game.core);
   native::registerGlowSparklePoolOverrides(game.core);
+  native::registerHudCollectableOverrides(game.core);
   native::registerLevelGlobalsTableOverrides(game.core);
   native::registerMobyAllocatorOverrides(game.core);
   native::registerMobyCollisionOverrides(game.core);

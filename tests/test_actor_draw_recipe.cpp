@@ -204,10 +204,12 @@ void testBitTwoTriangleIsOrdinaryInTheRegularLayerOnly() {
 
   // The same face in the secondary layer is still refused without an environment, so the regular
   // result above is the layer's own behaviour and not the recipe having stopped checking.
-  const Recipe secondary = composeWithFaceLight(std::span(&flagged, 1), spyro::face_light::Environment{});
+  const Recipe secondary =
+      composeWithFaceLight(std::span(&flagged, 1), spyro::face_light::Environment{});
   require(secondary.status == Status::Unsupported && secondary.firstReason == Reason::FaceLight,
           "secondary layer stopped refusing a bit-2 triangle it cannot light");
-  const Recipe secondaryTint = composeWithFaceLight(std::span(&tinted, 1), spyro::face_light::Environment{});
+  const Recipe secondaryTint =
+      composeWithFaceLight(std::span(&tinted, 1), spyro::face_light::Environment{});
   require(secondaryTint.status == Status::Ready && secondaryTint.faceLightFaces == 1 &&
               secondaryTint.faces[0].input.color[0] != 0x00112233u,
           "secondary layer did not run its tint program");

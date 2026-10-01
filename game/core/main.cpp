@@ -11,11 +11,12 @@ bool helpRequested(int argc, char **argv) {
 }
 
 void printUsage(const char *program) {
-  lucent::info("cli",
-               "Usage: {} [executable]\n"
-               "With no argument: the title selector, then the chosen Spyro title, in this process.\n"
-               "With an executable: run exactly that serial-identified executable (maintainer override).",
-               program);
+  lucent::info(
+      "cli",
+      "Usage: {} [executable]\n"
+      "With no argument: the title selector, then the chosen Spyro title, in this process.\n"
+      "With an executable: run exactly that serial-identified executable (maintainer override).",
+      program);
 }
 } // namespace
 

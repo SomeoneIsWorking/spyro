@@ -14,8 +14,9 @@ struct ExecutableIdentity {
   SpyroTitle title;
   std::string_view displayName;
   std::string_view serial;
-  // Directory name under the provisioning root where this title's executable lands (`scratch/assets/<slug>/`);
-  // tools/generate_title_catalog.py's TITLE_ENUMS is the one source, shared with tools/provision_title.py.
+  // Directory name under the provisioning root where this title's executable lands
+  // (`scratch/assets/<slug>/`); tools/generate_title_catalog.py's TITLE_ENUMS is the one source,
+  // shared with tools/provision_title.py.
   std::string_view slug;
   std::size_t fileSize;
   std::string_view sha256;

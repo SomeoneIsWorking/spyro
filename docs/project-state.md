@@ -1912,7 +1912,10 @@ the check; no tool in this repository can say it looks right.
 The oracle comparison is not affected by that and never was. `tools/oracle_compare.py` builds its
 route from `tools/drive.py`'s observing Navigator rather than from a pad file, and arrives in
 Artisans; its 485 checkpoints over 6,305 decisive range comparisons with zero divergences describe
-gameplay. Issue 0116 reaches the looks-right verdicts and the frame-time budget only.
+gameplay. Issue 0116 reached the looks-right verdicts and the frame-time budget only, and it is now
+resolved at the file rather than only at the route: `replays/gameplay/artisans-arrival.pad`
+is a v1 phase-keyed, card-identified recording that replays into Artisans with no input
+driver, while the route remains what the verdicts are taken through.
 
 The endpoint lifecycle is now owned for visible world animation channels. When a previous source
 contains a pending channel, temporal admission decodes that channel through the same pure animation

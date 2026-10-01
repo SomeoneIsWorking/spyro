@@ -1,5 +1,6 @@
 #pragma once
 
+#include "spyro1_input_phase.h"
 #include "spyro_runtime.h"
 
 namespace spyro1 {
@@ -8,6 +9,16 @@ namespace spyro1 {
 class Spyro1Runtime final : public spyro::SpyroRuntime {
 public:
   Spyro1Runtime();
+
+  // The input phase pad recordings are keyed on (spyro1_input_phase.h). A .pad replay replays each
+  // press at its offset from the entry of the phase it was recorded in, so a boot or load that
+  // takes a different number of frames moves the phase boundary rather than every later press —
+  // which is what made the repository's only gameplay replay answer a dialog instead of the level
+  // (issue 0116). Held BY VALUE: a phase is a read of guest words, and no process-global can be
+  // what decides which instance answers.
+  std::uint64_t inputPhase(Core &core) const override {
+    return inputPhase_.of(core);
+  }
 
   void *createContext(Core &core) override;
   void destroyContext(void *context) override;
@@ -32,6 +43,7 @@ public:
 
 private:
   static const GuestProgramImage programImage_;
+  InputPhase inputPhase_;
 };
 
 } // namespace spyro1

@@ -234,6 +234,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/spyro1_boot_sequence.cpp
   titles/spyro1/core/spyro1_field_scheduler.cpp
   titles/spyro1/core/spyro1_frame_driver.cpp
+  titles/spyro1/core/spyro1_input_phase.cpp
   titles/spyro1/core/handoff_store_observer.cpp
   titles/spyro1/core/stage_update_observer.cpp
   titles/spyro1/core/spyro1_transition_skip.cpp
@@ -364,6 +365,15 @@ if(BUILD_TESTING)
   target_include_directories(test_spyro3_runtime PRIVATE game/core)
   target_link_libraries(test_spyro3_runtime PRIVATE spyro_runtime)
   add_test(NAME spyro3_runtime COMMAND test_spyro3_runtime)
+  # The phase a Spyro 1 pad recording is keyed on. Gated for the two properties a recording's
+  # meaning rests on: the same guest words give the same key (so presses are interchangeable within
+  # a phase), and the framework's reserved "no phase" is unreachable (so a keyed file can never
+  # replay as absolute-from-boot while claiming to be keyed).
+  add_executable(test_spyro1_input_phase
+    tests/test_spyro1_input_phase.cpp)
+  target_include_directories(test_spyro1_input_phase PRIVATE game/core)
+  target_link_libraries(test_spyro1_input_phase PRIVATE spyro_runtime)
+  add_test(NAME spyro1_input_phase COMMAND test_spyro1_input_phase)
   add_test(NAME launcher_policy
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_launcher.py)
   add_test(NAME provision_titles

@@ -947,9 +947,10 @@ the measurement.
 `reason=face-light`) was the regular actor layer being asked for the secondary layer's per-face colour
 program; retail's `0x8001F798` has none (no `andi ..., 4` on its triangle path, no OP/SQR/CC), so a bit-2
 triangle is an ordinary face there. Fixed at the cause (`compose` / `composeWithFaceLight`). The route now
-reaches frame 21,318 and stops on a different refusal, the paired actor's semi-transparent faces
-(`0x80023AC4`, `fx_paired_actor.cpp`), so S011 stays `missing` and the demo still ends in exit 139.
-Issue 0128 holds the evidence.
+reaches frame 21,318, where the paired actor `0x80023AC4` refused its semi-transparent faces; retail draws them
+through the same packet path (GP0 bit 1 from stream word 1 bit 0, ABR from the model's TPAGE, same depth bucket),
+and the producer now does too. The no-input demo then outlived its 900 s clock with no refusal. That is an
+observation, not the user's crash, so S011 stays `missing`. Issue 0128 holds the evidence.
 
 The attract demo is now a comparison route, and it is the first one that crosses a LEVEL ENTRY.
 `tools/oracle_compare.py --policy demo` (tools/oracle_spyro1_demo.py) drives BOTH cores with no pad

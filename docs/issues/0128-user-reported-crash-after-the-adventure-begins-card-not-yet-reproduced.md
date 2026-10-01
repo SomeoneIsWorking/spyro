@@ -316,6 +316,44 @@ semi-transparency bit, and its emitter passes semi = 0 and its painter group ass
 deliberate, named gap and not the face-light arm, so it was not changed here. It is now the demo route's
 end (the corpus's attract-demo route also exits 139 there).
 
+## 2026-10-01: frame 21,318 — the paired actor refused every semi-transparent face
+
+**Cause.** `fx_paired_actor.cpp` refused any face whose GP0 command carried the semi bit, passed `semi = 0`
+to its emitter, and its painter-group contract asserted `!item.semi`. That was a named gap, not a retail
+rule. Retail `0x80023AC4` draws such a face through the same packet path as an opaque one (bytes of
+`SCUS_942.28`, text at file offset 0x800):
+
+- quad (GT4) `0x80024E3C andi $s0,$s0,1` takes bit 0 of stream word 1, `0x80024E40 sll $s0,$s0,0x19` moves it to
+  GP0 bit 25 (0x02000000), `0x80024E44 add $t2,$t2,$s0` adds it to colour|`0x3C000000` (`0x80024DA8 lui $t6,0x3c00`),
+  `0x80024E48 sw $t2,4($t8)` stores it: command `0x3E` against opaque `0x3C`;
+- triangle (GT3) is the same sequence at `0x80024FD8..0x80024FE4` over `0x80024F4C lui $t6,0x3400`: `0x36` against `0x34`;
+- the TPAGE word is never edited: it is stored from the model's own attribute word (`0x80025000 sw $a3,0x18($t8)`
+  quad / `0x80024E58 sw $a3,0x18($t8)`), so **ABR is bits 5..6 of that word's high half, straight from the model**;
+- ordering: the bucket index (`0x80024DAC..0x80024E20`, `0x80024F50..0x80024FC0`) is computed from depth and the
+  ordering-table adjust `sra $t6,$s0,0x1c` and **does not read the semi bit**. The packet is linked at the bucket
+  tail (`0x80024E68 beqz $v1` / `0x80024E70 sh $t8,($v1)`) exactly like an opaque one, so a semi face is in the
+  SAME bucket and the same FIFO order as its opaque neighbours. There is no separate semi bucket and no append pass.
+
+**Fix.** `ResolvedMaterial::semiTransparent()` and `ResolvedFace::blendMode()` (`paired_actor_decode.h`) are the one
+reading of those two bytes; the emitter passes `semi` and `tp_blend` to `RenderQueue::emitOrQueue`, the same
+parameters `actor_face_submitter` uses, and the face order is unchanged. The refusal is removed; the painter-group
+check now compares the queue's semi count to the resolved faces' (`SpyroPairedActorFrameState::semiFaces`, also
+printed in the ownership gate line as `semi=N`). Test: `tests/test_paired_actor_decode.cpp` (semi triangle is `0x36`
+with its model ABR, opaque quad stays `0x3C` with no semi flag, a semi quad becomes `0x3E`, ABR is TPAGE bits 5..6).
+
+**Which object.** The paired actor is Spyro himself (`g_Spyro`; the refusal names "Spyro actor producer"). In level
+33 the first frame with any semi face is 21,319: 22 of 183 faces. The picture (`tools/shot.py 21319`, opened) shows
+the orange wing membranes with the blue/green background visible through them. Which model faces the 22 are was not
+checked against the model's own indices; the wing identification is from the picture, not from the bytes.
+
+**Result.** `tools/demo_run.py` (no input) passes 21,318 and was still running when its 900 s clock killed it:
+816 gate lines with `semi=` above zero, 64,459 `refusal=none => PASS`, zero `=> FAIL`, zero `NOT IMPLEMENTED`
+(same shape as the 2026-09-22 observation, which had not held on `7110d4f`). Not a clean exit and not a proof of the
+user's crash. `reach_corpus.py`: the attract-demo route now exits 0 (was 139), 90 owned overrides, 0 mismatches
+across 86 gated rows, union 367/547; four scene routes (flight, boss, death, save-fairy) exit 2 with "portal ...
+unreachable from here", identical on main `1a7371d` for flight-level, so unrelated. `drive.py gameplay` reaches
+GS_Playing at frame 6,360.
+
 ### The superseded plan
 
 ## Next

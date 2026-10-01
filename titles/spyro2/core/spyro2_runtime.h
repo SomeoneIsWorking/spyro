@@ -1,7 +1,10 @@
 #pragma once
 
 #include "platform_hle.h"
+#include "spyro2_widescreen.h"
 #include "spyro_runtime.h"
+
+#include <memory>
 
 namespace spyro2 {
 
@@ -26,10 +29,24 @@ public:
   std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
   void pacePresentation(Core &core, int fields, int parts) override;
 
+  // THE TITLE'S ANSWER to the configured aspect, and the only place `gpu_vk_latch_guest_projection`
+  // can learn one. Before it existed this returned the base nullptr, so the framework resolved
+  // `requested = Standard4x3` and every plan was 4:3 whatever the settings file said.
+  const GuestWidescreenProjection *guestWidescreenProjection() const override;
+
+  [[nodiscard]] WidescreenOwner &widescreen() {
+    return widescreen_;
+  }
+
 private:
   static const GuestProgramImage programImage_;
   static const PlatformHlePlan platformHlePlan_;
   static const GuestCdStreamCallbackLayout cdStreamCallbackLayout_;
+
+  // Process-lifetime, and reached from a native override through
+  // `spyro_context(core).projectionHook` rather than through this member: an override is a plain
+  // function pointer with nowhere to hang a back-pointer.
+  WidescreenOwner widescreen_{};
 };
 
 } // namespace spyro2

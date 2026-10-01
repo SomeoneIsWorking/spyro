@@ -267,6 +267,7 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_spu_transfer_mode.cpp
   titles/spyro1/core/native_spu_common_attr.cpp
   titles/spyro2/core/spyro2_runtime.cpp
+  titles/spyro2/core/spyro2_widescreen.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 
 add_library(spyro_runtime STATIC ${SPYRO_RUNTIME_SOURCES})
@@ -359,6 +360,14 @@ if(BUILD_TESTING)
   target_include_directories(test_spyro3_runtime PRIVATE game/core)
   target_link_libraries(test_spyro3_runtime PRIVATE spyro_runtime)
   add_test(NAME spyro3_runtime COMMAND test_spyro3_runtime)
+  # Spyro 2's horizontal widening arithmetic, plus the two addresses the owner binds: the widened
+  # centre, the widened clipping rectangle, and the fact that neither ever narrows.
+  add_executable(test_spyro2_widescreen
+    tests/test_spyro2_widescreen.cpp)
+  target_include_directories(test_spyro2_widescreen PRIVATE
+    game/core titles/spyro2/core)
+  target_link_libraries(test_spyro2_widescreen PRIVATE spyro_runtime)
+  add_test(NAME spyro2_widescreen COMMAND test_spyro2_widescreen)
   # The phase a Spyro 1 pad recording is keyed on. Gated for the two properties a recording's
   # meaning rests on: the same guest words give the same key (so presses are interchangeable within
   # a phase), and the framework's reserved "no phase" is unreachable (so a keyed file can never

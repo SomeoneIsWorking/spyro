@@ -167,14 +167,16 @@ void Spyro2Runtime::destroyContext(void *context) {
   delete static_cast<SpyroContext *>(context);
 }
 
-void Spyro2Runtime::registerOverrides(Game &) {
-  // Every Spyro 2 hardware service this title's boot reaches is either a measured library leaf
-  // in the plan above or the framework's own stock CD path. A title override installed here
-  // would be a claim about SCUS_944.25's own code, and boot has not yet produced evidence for
-  // one; the log says so rather than implying a set was installed.
+void Spyro2Runtime::registerOverrides(Game &game) {
+  // The two libgte projection leaves, and through them the title's own widening decision. Every
+  // OTHER Spyro 2 hardware service this title's boot reaches is either a measured library leaf in
+  // the plan above or the framework's own stock CD path, and that is still said rather than left
+  // implied: a reader must be able to tell which overrides exist and why.
+  widescreen_.registerProjectionOverrides(game.core);
   lucent::info("boot",
-               "installed no Spyro 2 native overrides: every boot service is a measured "
-               "library leaf or the framework's stock CD seam");
+               "installed Spyro 2 native overrides for the two measured libgte projection leaves; "
+               "every other boot service remains a measured library leaf or the framework's stock "
+               "CD seam");
 }
 
 void Spyro2Runtime::bootInit(Core &core) {
@@ -182,7 +184,14 @@ void Spyro2Runtime::bootInit(Core &core) {
 }
 
 std::unique_ptr<FrameDriver> Spyro2Runtime::createFrameDriver(Game &game) {
-  return std::make_unique<spyro::BootPrefixFrameDriver>(game, kBootPrefixFacts);
+  // The widescreen owner is this title's field observer AND its frame-tail hook, because the two
+  // are different jobs at different points of the step and neither can do the other's:
+  //  - the field observer asserts the widened horizontal centre BEFORE the guest resumes drawing;
+  //  - the frame-tail hook widens the GPU drawing rectangle after the guest's last command and
+  //    before the queue rasterises, because the guest reissues that rectangle twice per frame at
+  //    x1 = 511 and would re-narrow anything set earlier.
+  return std::make_unique<spyro::BootPrefixFrameDriver>(
+      game, kBootPrefixFacts, &widescreen_, &widescreen_);
 }
 
 const PlatformHlePlan *Spyro2Runtime::platformHlePlan() const {
@@ -195,6 +204,10 @@ const char *Spyro2Runtime::discEnvVar() const {
 
 const GuestCdStreamCallbackLayout *Spyro2Runtime::guestCdStreamCallbackLayout() const {
   return &cdStreamCallbackLayout_;
+}
+
+const GuestWidescreenProjection *Spyro2Runtime::guestWidescreenProjection() const {
+  return &widescreen_;
 }
 
 void Spyro2Runtime::pacePresentation(Core &core, int fields, int parts) {

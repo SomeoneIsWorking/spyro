@@ -24,8 +24,12 @@ constexpr int kMaxLoopCallsPerStep = 4;
 
 } // namespace
 
-BootPrefixFrameDriver::BootPrefixFrameDriver(Game &game, const BootPrefixFacts &facts)
-    : facts_(facts), fields_(game, facts.field), call_(game.core, facts.callName) {}
+BootPrefixFrameDriver::BootPrefixFrameDriver(Game &game,
+                                             const BootPrefixFacts &facts,
+                                             spyro::FieldObserver *observer,
+                                             spyro::FrameTailObserver *tail)
+    : facts_(facts), fields_(game, facts.field, observer), tail_(tail),
+      call_(game.core, facts.callName) {}
 
 void BootPrefixFrameDriver::initialize() {
   if (initialized_) {
@@ -197,6 +201,13 @@ void BootPrefixFrameDriver::stepFrame(Core &core, std::uint32_t frame) {
     stepBoot(core);
   } else {
     stepMainLoop(core);
+  }
+
+  // The title's frame-tail work, with the guest's last command of the step already executed and the
+  // step's queue NOT yet rasterised. That is the whole reason this hook exists; see
+  // `FrameTailObserver`.
+  if (tail_ != nullptr) {
+    tail_->onFrameTail(core);
   }
 
   // Exactly one presentation fence per product step, which is the framework's frame contract.

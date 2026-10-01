@@ -49,7 +49,17 @@ struct BootPrefixFacts {
 // already presents one.
 class BootPrefixFrameDriver final : public FrameDriver {
 public:
-  BootPrefixFrameDriver(Game &game, const BootPrefixFacts &facts);
+  // The title's per-field observer, or null for a title with nothing to observe. It is a
+  // constructor argument rather than part of `BootPrefixFacts` because the facts are measured BYTES
+  // and the observer is an OBJECT with a lifetime; a facts struct that carried a pointer to one
+  // would make the measured table responsible for something it cannot own.
+  //
+  // `tail` is the same idea at the step's other end: the point between the guest's last work and
+  // the field being presented. See `FrameTailObserver` for why that is a separate moment.
+  BootPrefixFrameDriver(Game &game,
+                        const BootPrefixFacts &facts,
+                        spyro::FieldObserver *observer = nullptr,
+                        spyro::FrameTailObserver *tail = nullptr);
 
   void initialize();
   void stepFrame(Core &core, std::uint32_t frame) override;
@@ -98,6 +108,7 @@ private:
 
   BootPrefixFacts facts_;
   FieldOwner fields_;
+  spyro::FrameTailObserver *tail_ = nullptr;
   GuestCall call_;
   Phase phase_ = Phase::Boot;
   // Which retail call the guest call in `call_` is, or is about to be, once the main loop runs. A

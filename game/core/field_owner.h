@@ -46,6 +46,21 @@ public:
   virtual void onField(Core &core, bool startEdge) = 0;
 };
 
+// The per-STEP title hook, at the one point between the guest's last work in a step and the field
+// being presented.
+//
+// It is a different moment from `FieldObserver` with a different requirement, which is why it is a
+// separate interface rather than a flag on one. `FieldObserver` runs INSIDE the delivery, after the
+// frame's queue has already been rasterised; this runs BEFORE it. A guest-path widescreen title
+// needs exactly that: the guest re-issues its own GP1 drawing rectangle every frame, so a widened
+// rectangle written anywhere after the guest's frame is overwritten before the queue is rasterised,
+// and the extra geometry is clipped away. Writing it here is the only point at which it survives.
+class FrameTailObserver {
+public:
+  virtual ~FrameTailObserver() = default;
+  virtual void onFrameTail(Core &core) = 0;
+};
+
 // Counts fields delivered during one logic iteration and states the minimum a product step
 // must reach. The guest's own frame tail compares the previous field stamp and has the same
 // minimum; the host scheduler validates that native and diagnostic paths preserve it.

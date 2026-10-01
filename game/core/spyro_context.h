@@ -6,6 +6,7 @@
 #include "field_owner.h"
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
+#include "guest_projection_owner.h"
 #include "interp_census.h"
 #include "load_ledger.h"
 #include "margin_object_census.h"
@@ -34,6 +35,10 @@ struct SpyroContext {
   // back-pointer is valid for the whole process and is how a host turn with only a Core
   // reaches "a field happened".
   spyro::FieldOwner *fieldOwner = nullptr;
+  // The selected title's guest-projection owner (Spyro 2's widescreen owner), published by the
+  // runtime that registers its projection overrides. Non-owning, and null on every title that has
+  // no projection of its own. See `guest_projection_owner.h` for why the seam exists at all.
+  GuestProjectionOwner *projectionHook = nullptr;
   SpyroPairedActorFrameState pairedActor{};
   spyro::world_temporal::History worldTemporal{};
   // The drawn half of the sector-visibility table the last world submission published; its guest

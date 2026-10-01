@@ -1,6 +1,5 @@
-// spyro2_sector_frustum.h — the sphere-against-view-frustum arithmetic of Spyro 2's moby visibility
-// walk (SCUS_944.25 0x80043858; the "sector" in the name is a misreading, see
-// spyro2_sector_visibility.h), with no Core and no GTE.
+// spyro2_moby_frustum.h — the sphere-against-view-frustum arithmetic of Spyro 2's moby visibility
+// walk (SCUS_944.25 0x80043858; see spyro2_moby_visibility.h), with no Core and no GTE.
 //
 // Retail tests a moby's bounding sphere, already in view space (x right, y down, z forward),
 // against four planes through the eye. Every plane test is the same integer shape with a sphere
@@ -22,7 +21,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-namespace spyro2::sector_frustum {
+namespace spyro2::moby_frustum {
 
 // The two weights of the horizontal plane test: reject when xWeight*|x| - zWeight*z >= 0 after the
 // margins. Retail's are (4, 3).
@@ -102,4 +101,4 @@ insideFrustum(const ViewPoint &p, const SphereMargins &m, const HorizontalSlope 
   return yDepth - 3 * yLateral > 0;
 }
 
-} // namespace spyro2::sector_frustum
+} // namespace spyro2::moby_frustum

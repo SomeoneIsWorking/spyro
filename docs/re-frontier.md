@@ -92,12 +92,12 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - gap: Disc provenance and dynamic product execution remain unverified.
 - notes: Spyro 3 implementation waits for Spyro 1's representative gameplay gate.
 
-### spyro2.sector-visibility — Own Spyro 2's moby visibility walk natively
+### spyro2.moby-visibility — Own Spyro 2's moby visibility walk natively
 - status: re-verified
 - deps: spyro2.identity
-- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored rotations), RAM, GTE and v0/v1 included; 684/684 again after its globals moved to spyro2_render_globals.h. It walks the 0x58-byte moby records at *0x80066F14 (the file and step names say "sector" from a first misreading) and is called only from the object half of the frame draw FUN_8004C534, ahead of the moby drawers FUN_80044504, FUN_80046FD8 and the close-moby drawer FUN_800499D4; the terrain is FUN_80023BB4, called from FUN_8004C4FC
-- where: titles/spyro2/render/spyro2_sector_*
-- gap: none at 4:3; file and identifier names still say "sector"
+- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored rotations), RAM, GTE and v0/v1 included; 684/684 again after its globals moved to spyro2_render_globals.h. It walks the 0x58-byte moby records at *0x80066F14 and is called only from the object half of the frame draw FUN_8004C534, ahead of the moby drawers FUN_80044504, FUN_80046FD8 and the close-moby drawer FUN_800499D4; the terrain is FUN_80023BB4, called from FUN_8004C4FC
+- where: titles/spyro2/render/spyro2_moby_*
+- gap: none
 
 ### spyro2.terrain-drawer — Own Spyro 2's terrain drawer natively
 - status: re-verified

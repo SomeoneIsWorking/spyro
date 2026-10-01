@@ -1,8 +1,8 @@
-// Spyro 2's terrain sector frustum (titles/spyro2/render/spyro2_sector_frustum.h): the 4:3 weights
+// Spyro 2's moby visibility frustum (titles/spyro2/render/spyro2_moby_frustum.h): the 4:3 weights
 // are retail's literal (4, 3) and reproduce the image's plane test, the widened weights put the
 // horizontal half-angle at the plan's projection width, and a plan that does not widen never
 // narrows.
-#include "spyro2_sector_frustum.h"
+#include "spyro2_moby_frustum.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -20,7 +20,7 @@ void expect(bool condition, const char *name) {
 
 // The image's own horizontal reject, 80043A68..80043A8C, in 32-bit arithmetic.
 bool retailOutsideHorizontal(std::int32_t x, std::int32_t z, std::uint32_t radius) {
-  const auto margins = spyro2::sector_frustum::sphereMargins(radius);
+  const auto margins = spyro2::moby_frustum::sphereMargins(radius);
   const std::int32_t lateral = (x < 0 ? -x : x) - margins.horizontalLateral;
   const std::int32_t depth = z + margins.horizontalDepth;
   return lateral * 4 - depth * 3 >= 0;
@@ -29,13 +29,13 @@ bool retailOutsideHorizontal(std::int32_t x, std::int32_t z, std::uint32_t radiu
 } // namespace
 
 int main() {
-  using spyro2::sector_frustum::behindEye;
-  using spyro2::sector_frustum::insideFrustum;
-  using spyro2::sector_frustum::kRetailSlope;
-  using spyro2::sector_frustum::outsideHorizontal;
-  using spyro2::sector_frustum::sphereMargins;
-  using spyro2::sector_frustum::ViewPoint;
-  using spyro2::sector_frustum::widenedSlope;
+  using spyro2::moby_frustum::behindEye;
+  using spyro2::moby_frustum::insideFrustum;
+  using spyro2::moby_frustum::kRetailSlope;
+  using spyro2::moby_frustum::outsideHorizontal;
+  using spyro2::moby_frustum::sphereMargins;
+  using spyro2::moby_frustum::ViewPoint;
+  using spyro2::moby_frustum::widenedSlope;
 
   // Retail's shift sums for a radius of 0x100 (a mesh radius byte of 16).
   const auto margins = sphereMargins(0x100);
@@ -80,7 +80,7 @@ int main() {
   expect(!behindEye(ViewPoint{0, 0, -0x3F}, 0x40), "a sphere crossing the eye plane");
 
   if (failures == 0) {
-    std::printf("spyro2_sector_frustum: all checks passed\n");
+    std::printf("spyro2_moby_frustum: all checks passed\n");
   }
   return failures == 0 ? 0 : 1;
 }

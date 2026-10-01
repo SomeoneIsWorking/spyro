@@ -1,11 +1,11 @@
-#include "spyro2_sector_visibility.h"
+#include "spyro2_moby_visibility.h"
 
 #include "core.h"
 #include "native_execution.h"
+#include "spyro2_moby_frustum.h"
+#include "spyro2_moby_gte.h"
+#include "spyro2_moby_rotation.h"
 #include "spyro2_render_globals.h"
-#include "spyro2_sector_frustum.h"
-#include "spyro2_sector_gte.h"
-#include "spyro2_sector_rotation.h"
 #include "spyro2_widescreen.h"
 
 #include <array>
@@ -13,10 +13,10 @@
 namespace spyro2 {
 namespace {
 
-namespace gte = sector_gte;
-using sector_frustum::HorizontalSlope;
-using sector_frustum::ViewPoint;
-using sector_rotation::RotationWords;
+namespace gte = moby_gte;
+using moby_frustum::HorizontalSlope;
+using moby_frustum::ViewPoint;
+using moby_rotation::RotationWords;
 
 // ── Guest globals, each named by the instruction that reaches it ─────────────────────────────────
 constexpr std::uint32_t kFirstRecordWord = 0x80066F14u; // 800438A4: the level's moby array
@@ -35,7 +35,7 @@ constexpr std::uint32_t kDeferredEndBelow = 0x1010;   // CR9
 constexpr std::uint32_t kRenderListBelow = 0x1000;    // fp
 constexpr std::uint32_t kRenderListEndBelow = 0x10;   // HI
 
-// ── Sector record (0x58 bytes) ───────────────────────────────────────────────────────────────────
+// ── Moby record (0x58 bytes) ───────────────────────────────────────────────────────────────────
 constexpr std::uint32_t kRecordStride = 0x58;
 namespace record {
 constexpr std::uint32_t kX = 0x0C;
@@ -106,16 +106,15 @@ constexpr std::uint32_t asWord(std::int32_t value) {
 HorizontalSlope slopeFor(Core &core) {
   const WidescreenOwner &widescreen = WidescreenOwner::of(core);
   if (!widescreen.latched() || !widescreen.plan().widescreen()) {
-    return sector_frustum::kRetailSlope;
+    return moby_frustum::kRetailSlope;
   }
   const GuestProjectionPlan &plan = widescreen.plan();
-  return sector_frustum::widenedSlope(plan.nativeProjectionExtent.width,
-                                      plan.projectionExtent.width);
+  return moby_frustum::widenedSlope(plan.nativeProjectionExtent.width, plan.projectionExtent.width);
 }
 
-class SectorWalk {
+class MobyWalk {
 public:
-  SectorWalk(Core &core, HorizontalSlope slope) : core_(core), slope_(slope) {}
+  MobyWalk(Core &core, HorizontalSlope slope) : core_(core), slope_(slope) {}
 
   void run();
 
@@ -163,7 +162,7 @@ private:
   std::uint32_t v1_ = 0;
 };
 
-void SectorWalk::run() {
+void MobyWalk::run() {
   render_globals::spillBorrowedRegisters(core_);
   const std::uint32_t base = core_.mem_r32(render_globals::kScratchBaseWord);
   const std::uint32_t firstRecord = core_.mem_r32(kFirstRecordWord);
@@ -194,7 +193,7 @@ void SectorWalk::run() {
   core_.r[3] = v1_;
 }
 
-SectorWalk::Step SectorWalk::visit(std::uint32_t rec) {
+MobyWalk::Step MobyWalk::visit(std::uint32_t rec) {
   const std::int32_t flag = core_.mem_r8s(rec + record::kFlag);
   if (flag < 0) {
     return flag == -1 ? Step::End : Step::Next;
@@ -245,7 +244,7 @@ SectorWalk::Step SectorWalk::visit(std::uint32_t rec) {
   }
   const MeshSlots mesh = meshSlots(rec);
   if (asSigned(mesh.slots) > 0) {
-    // The mesh is not resident: its slot word is not a pointer. Hand the sector on with its
+    // The mesh is not resident: its slot word is not a pointer. Hand the moby on with its
     // camera-relative centre and reach instead of drawing it.
     defer(rec, asWord(dx), asWord(dy), asWord(drawDistance), mesh.slot());
     return Step::Next;
@@ -253,7 +252,7 @@ SectorWalk::Step SectorWalk::visit(std::uint32_t rec) {
   return drawCandidate(rec, dx, dy, dz, drawDistance, mesh);
 }
 
-SectorWalk::MeshSlots SectorWalk::meshSlots(std::uint32_t rec) {
+MobyWalk::MeshSlots MobyWalk::meshSlots(std::uint32_t rec) {
   const std::uint32_t index = core_.mem_r16(rec + record::kMeshIndex);
   return MeshSlots{
       .slots = core_.mem_r32(kMeshSlotTable + index * 4),
@@ -263,7 +262,7 @@ SectorWalk::MeshSlots SectorWalk::meshSlots(std::uint32_t rec) {
 
 // 8004415C..80044194. The record pointer is stored even when the buffer is full; the rest of the
 // slot is written and the cursor advanced only when it is not.
-void SectorWalk::defer(
+void MobyWalk::defer(
     std::uint32_t rec, std::uint32_t x, std::uint32_t y, std::uint32_t tail, std::uint32_t slot) {
   const std::uint32_t cursor = gte_read_ctrl(gte::kDeferredCursor);
   const std::uint32_t end = gte_read_ctrl(gte::kDeferredEnd);
@@ -279,12 +278,12 @@ void SectorWalk::defer(
 }
 
 // 800439F4..80043B04: rotate the centre into view space and cull its bounding sphere.
-SectorWalk::Step SectorWalk::drawCandidate(std::uint32_t rec,
-                                           std::int32_t dx,
-                                           std::int32_t dy,
-                                           std::int32_t dz,
-                                           std::int32_t drawDistance,
-                                           const MeshSlots &slots) {
+MobyWalk::Step MobyWalk::drawCandidate(std::uint32_t rec,
+                                       std::int32_t dx,
+                                       std::int32_t dy,
+                                       std::int32_t dz,
+                                       std::int32_t drawDistance,
+                                       const MeshSlots &slots) {
   const std::uint32_t mesh = core_.mem_r32(slots.slot() + kSlotMesh);
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
     gte_write_ctrl(gte::kRotation0 + i, camera_[i]);
@@ -298,41 +297,41 @@ SectorWalk::Step SectorWalk::drawCandidate(std::uint32_t rec,
                        asSigned(gte_read_data(gte::kMac2)),
                        asSigned(gte_read_data(gte::kMac3))};
   v1_ = asWord(view.z);
-  if (view.z - drawDistance >= 0 || sector_frustum::behindEye(view, radius)) {
+  if (view.z - drawDistance >= 0 || moby_frustum::behindEye(view, radius)) {
     return Step::Next;
   }
-  const sector_frustum::SphereMargins margins = sector_frustum::sphereMargins(radius);
-  if (sector_frustum::outsideHorizontal(view, margins, slope_)) {
+  const moby_frustum::SphereMargins margins = moby_frustum::sphereMargins(radius);
+  if (moby_frustum::outsideHorizontal(view, margins, slope_)) {
     return Step::Next;
   }
   listClose(rec, view.z, mesh, slots);
-  if (sector_frustum::outsideVertical(view, margins)) {
+  if (moby_frustum::outsideVertical(view, margins)) {
     return Step::Next;
   }
   gte_write_ctrl(gte::kTranslationX, asWord(view.x));
   gte_write_ctrl(gte::kTranslationY, asWord(view.y));
   gte_write_ctrl(gte::kTranslationZ, asWord(view.z));
-  const std::uint32_t sectorClass = sector_frustum::insideFrustum(view, margins, slope_) ? 2u : 1u;
-  core_.mem_w8(rec + record::kClass, static_cast<std::uint8_t>(sectorClass));
+  const std::uint32_t mobyClass = moby_frustum::insideFrustum(view, margins, slope_) ? 2u : 1u;
+  core_.mem_w8(rec + record::kClass, static_cast<std::uint8_t>(mobyClass));
 
   const RotationWords rotation = orient(rec);
-  core_.mem_w32(entry_ + entry::kClass, sectorClass);
+  core_.mem_w32(entry_ + entry::kClass, mobyClass);
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
     core_.mem_w32(entry_ + entry::kRotation + 4 * i, rotation[i]);
   }
   core_.mem_w32(entry_ + entry::kRecord, rec);
-  if (sectorClass == 1 && subSphereRejects(mesh)) {
+  if (mobyClass == 1 && subSphereRejects(mesh)) {
     return Step::Next;
   }
   return finishEntry(rec, mesh, slots);
 }
 
-// 80043A94..80043AD8: a sector flagged close and nearer than kCloseDepth is also listed with one
+// 80043A94..80043AD8: a moby flagged close and nearer than kCloseDepth is also listed with one
 // byte of its mesh, whatever the vertical test then decides.
-void SectorWalk::listClose(std::uint32_t rec,
-                           std::int32_t depth,
-                           std::uint32_t mesh,
-                           const MeshSlots &slots) {
+void MobyWalk::listClose(std::uint32_t rec,
+                         std::int32_t depth,
+                         std::uint32_t mesh,
+                         const MeshSlots &slots) {
   if (asSigned(core_.mem_r32(rec + record::kCloseFlag)) >= 0 || depth - kCloseDepth >= 0) {
     return;
   }
@@ -342,15 +341,15 @@ void SectorWalk::listClose(std::uint32_t rec,
   closeCursor_ += 8;
 }
 
-// 80043B68..80043D7C and 8004419C..80044500: compose the sector's orientation onto the camera.
-RotationWords SectorWalk::orient(std::uint32_t rec) {
+// 80043B68..80043D7C and 8004419C..80044500: compose the moby's orientation onto the camera.
+RotationWords MobyWalk::orient(std::uint32_t rec) {
   const std::uint32_t flags = core_.mem_r32(rec + record::kFlags);
   const std::uint32_t angles = core_.mem_r32(rec + record::kAngles);
   RotationWords rotation = camera_;
-  v1_ = sector_rotation::kSineTable;
+  v1_ = moby_rotation::kSineTable;
   core_.mem_w32(entry_ + entry::kFlags, flags);
   if ((flags & kInterpolatedAngles) == 0) {
-    sector_rotation::composeTabled(core_, angles, rotation);
+    moby_rotation::composeTabled(core_, angles, rotation);
     return rotation;
   }
   if ((flags & kMirrored) == 0) {
@@ -360,19 +359,19 @@ RotationWords SectorWalk::orient(std::uint32_t rec) {
   // light-matrix registers for the duration and leaves them there.
   gte_write_ctrl(gte::kParkedCursor, closeCursor_);
   gte_write_ctrl(gte::kParkedListEnd, listEnd_);
-  sector_rotation::composeInterpolated(core_, angles, flags, rotation);
+  moby_rotation::composeInterpolated(core_, angles, flags, rotation);
   if ((flags & kMirrored) == 0) {
     v1_ = rotation[0] & 0xFFFFu;
     return rotation;
   }
   v1_ = rotation[3] & 0xFFFFu;
-  sector_rotation::mirror(rotation);
+  moby_rotation::mirror(rotation);
   return rotation;
 }
 
-// 80043DA8..80043EE8: a class-1 sector whose mesh names a second sphere is culled on it too, and
+// 80043DA8..80043EE8: a class-1 moby whose mesh names a second sphere is culled on it too, and
 // promoted to class 2 when that sphere is fully inside.
-bool SectorWalk::subSphereRejects(std::uint32_t mesh) {
+bool MobyWalk::subSphereRejects(std::uint32_t mesh) {
   const std::uint32_t sphere = core_.mem_r32(mesh + kMeshSubSphere);
   if (sphere == 0) {
     return false;
@@ -388,23 +387,23 @@ bool SectorWalk::subSphereRejects(std::uint32_t mesh) {
   const ViewPoint view{asSigned(gte_read_data(gte::kMac1)),
                        asSigned(gte_read_data(gte::kMac2)),
                        asSigned(gte_read_data(gte::kMac3))};
-  if (sector_frustum::behindEye(view, radius)) {
+  if (moby_frustum::behindEye(view, radius)) {
     return true;
   }
-  const sector_frustum::SphereMargins margins = sector_frustum::sphereMargins(radius);
-  if (sector_frustum::outsideHorizontal(view, margins, slope_) ||
-      sector_frustum::outsideVertical(view, margins)) {
+  const moby_frustum::SphereMargins margins = moby_frustum::sphereMargins(radius);
+  if (moby_frustum::outsideHorizontal(view, margins, slope_) ||
+      moby_frustum::outsideVertical(view, margins)) {
     return true;
   }
-  if (sector_frustum::insideFrustum(view, margins, slope_)) {
+  if (moby_frustum::insideFrustum(view, margins, slope_)) {
     core_.mem_w32(entry_ + entry::kClass, 2);
   }
   return false;
 }
 
 // 80043EEC..800440C8: mesh, overlay, shading, detail and the projected centre.
-SectorWalk::Step
-SectorWalk::finishEntry(std::uint32_t rec, std::uint32_t mesh, const MeshSlots &slots) {
+MobyWalk::Step
+MobyWalk::finishEntry(std::uint32_t rec, std::uint32_t mesh, const MeshSlots &slots) {
   const std::int32_t cx = asSigned(gte_read_ctrl(gte::kTranslationX));
   const std::int32_t cy = asSigned(gte_read_ctrl(gte::kTranslationY));
   const std::int32_t cz = asSigned(gte_read_ctrl(gte::kTranslationZ));
@@ -491,15 +490,15 @@ SectorWalk::finishEntry(std::uint32_t rec, std::uint32_t mesh, const MeshSlots &
   return entry_ == listEnd_ ? Step::End : Step::Next;
 }
 
-void sectorVisibility(Core *core) {
-  SectorWalk(*core, slopeFor(*core)).run();
+void mobyVisibility(Core *core) {
+  MobyWalk(*core, slopeFor(*core)).run();
 }
 
 } // namespace
 
-void registerSectorVisibilityOverride(Core &core) {
+void registerMobyVisibilityOverride(Core &core) {
   spyro::installNativeOverride(
-      core, kSectorVisibilityEntry, "spyro2-sector-visibility", sectorVisibility);
+      core, kMobyVisibilityEntry, "spyro2-moby-visibility", mobyVisibility);
 }
 
 } // namespace spyro2

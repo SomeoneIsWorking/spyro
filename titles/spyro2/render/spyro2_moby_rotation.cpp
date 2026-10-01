@@ -1,12 +1,12 @@
-#include "spyro2_sector_rotation.h"
+#include "spyro2_moby_rotation.h"
 
 #include "core.h"
-#include "spyro2_sector_gte.h"
+#include "spyro2_moby_gte.h"
 
-namespace spyro2::sector_rotation {
+namespace spyro2::moby_rotation {
 namespace {
 
-namespace gte = sector_gte;
+namespace gte = moby_gte;
 
 constexpr std::uint32_t kLow = 0x0000FFFFu;
 constexpr std::uint32_t kHigh = 0xFFFF0000u;
@@ -149,4 +149,4 @@ void mirror(RotationWords &rotation) {
   rotation[3] = (0u - (rotation[3] & kHigh)) | (rotation[3] & kLow);
 }
 
-} // namespace spyro2::sector_rotation
+} // namespace spyro2::moby_rotation

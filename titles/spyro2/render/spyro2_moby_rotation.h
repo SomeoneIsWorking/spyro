@@ -1,6 +1,6 @@
-// spyro2_sector_rotation.h — a moby's orientation, composed onto the camera rotation by Spyro 2's
-// moby visibility walk (SCUS_944.25 0x80043858, 80043B9C..80043D7C and 800441BC..800444B0; "sector"
-// in the name is a misreading, see spyro2_sector_visibility.h).
+// spyro2_moby_rotation.h — a moby's orientation, composed onto the camera rotation by Spyro 2's
+// moby visibility walk (SCUS_944.25 0x80043858, 80043B9C..80043D7C and 800441BC..800444B0; see
+// spyro2_moby_visibility.h).
 //
 // A moby carries three 8-bit angles (bytes 2, 1, 0 of its rotation word, 256 steps per
 // turn). For each non-zero angle the walk rotates the current GTE rotation matrix about one axis:
@@ -22,7 +22,7 @@
 
 class Core;
 
-namespace spyro2::sector_rotation {
+namespace spyro2::moby_rotation {
 
 // The five GTE rotation words RT11RT12, RT13RT21, RT22RT23, RT31RT32, RT33.
 using RotationWords = std::array<std::uint32_t, 5>;
@@ -50,4 +50,4 @@ void composeInterpolated(Core &core,
 // negates RT12, RT22 and RT32 in the stored copy only; CR0..CR4 keep the unmirrored matrix.
 void mirror(RotationWords &rotation);
 
-} // namespace spyro2::sector_rotation
+} // namespace spyro2::moby_rotation

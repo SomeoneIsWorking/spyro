@@ -58,7 +58,7 @@ struct Malformation {
 
 bool populate(const actor_prefix::Output &record,
               uint32_t sourceWord,
-              const face_light::Environment &lighting,
+              const face_light::Environment *lighting,
               PrimitiveInput &out,
               Malformation &why) {
   // The caller's own `while (source < record.primitiveWords.size())` is what makes this subtraction
@@ -140,12 +140,13 @@ bool populate(const actor_prefix::Output &record,
   out.lightingControl = record.lightingControl;
   // Bit 2 on a triangle hands the three material colours to one of the two per-face colour
   // programs; the control word's top byte chooses which. The billboard arm above is what the same
-  // bit means on a quad.
-  if (!quad && (out.words[0] & 4u) != 0u) {
+  // bit means on a quad. Only the secondary layer has the programs: the regular layer passes no
+  // environment and keeps the material colours, as its retail code does.
+  if (lighting != nullptr && !quad && (out.words[0] & 4u) != 0u) {
     const auto lit = face_light::face_color({out.view[0], out.view[1], out.view[2]},
                                             {out.color[0], out.color[1], out.color[2]},
                                             out.lightingControl,
-                                            lighting);
+                                            *lighting);
     out.lighting = lit.status;
     if (lit.status == face_light::Status::Ready) {
       out.color[0] = lit.color[0];
@@ -390,8 +391,10 @@ Evaluation evaluate(const PrimitiveInput &s) {
   return out;
 }
 
-Recipe compose(std::span<const actor_prefix::Output> records,
-               const face_light::Environment &lighting) {
+namespace {
+
+Recipe composeFaces(std::span<const actor_prefix::Output> records,
+                    const face_light::Environment *lighting) {
   Recipe recipe{};
   recipe.records = (uint32_t)records.size();
   const auto boundary = actor_prefix::classifyCall(records);
@@ -445,7 +448,7 @@ Recipe compose(std::span<const actor_prefix::Output> records,
         return recipe;
       }
       if (result.emitted) {
-        if ((int32_t)input.words[0] >= 0 && (input.words[0] & 4u) != 0u) {
+        if (lighting != nullptr && (int32_t)input.words[0] >= 0 && (input.words[0] & 4u) != 0u) {
           ++recipe.faceLightFaces;
         }
         recipe.faces.push_back({recordIndex,
@@ -466,6 +469,17 @@ Recipe compose(std::span<const actor_prefix::Output> records,
   }
   recipe.status = recipe.faces.empty() ? Status::ValidEmpty : Status::Ready;
   return recipe;
+}
+
+} // namespace
+
+Recipe compose(std::span<const actor_prefix::Output> records) {
+  return composeFaces(records, nullptr);
+}
+
+Recipe composeWithFaceLight(std::span<const actor_prefix::Output> records,
+                            const face_light::Environment &lighting) {
+  return composeFaces(records, &lighting);
 }
 
 } // namespace spyro::actor_draw_recipe

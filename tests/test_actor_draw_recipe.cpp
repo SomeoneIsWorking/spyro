@@ -178,11 +178,47 @@ void testAtomicComposition() {
           "visibility-rejected record was not valid empty");
 }
 
+// Retail's regular layer 0x8001F798 never tests bit 2 on a triangle (its only `andi ..., 4` is
+// 0x80020010 on the quad path) and issues no OP, SQR or CC, so the bit changes nothing there. The
+// secondary layer 0x80020F34 branches on it at 0x80021C0C. Demo frame 21158 aborted because one
+// composition served both layers and asked the regular layer for a program it does not have.
+void testBitTwoTriangleIsOrdinaryInTheRegularLayerOnly() {
+  const auto plain = record(0);
+  const auto flagged = record(4u);
+  const Recipe regular = compose(std::span(&flagged, 1));
+  require(regular.status == Status::Ready && regular.faces.size() == 1 &&
+              regular.faceLightFaces == 0,
+          "regular layer did not draw a bit-2 triangle as an ordinary face");
+  const Recipe reference = compose(std::span(&plain, 1));
+  require(regular.faces[0].payload == reference.faces[0].payload &&
+              regular.faces[0].localBin == reference.faces[0].localBin &&
+              regular.faces[0].input.color[0] == 0x00112233u,
+          "regular layer's bit-2 triangle differs from the same triangle without the bit");
+
+  // A non-zero control top byte is the tint program in the secondary layer. The regular layer has
+  // no control word at all, so a stale one must not reach it.
+  auto tinted = flagged;
+  tinted.lightingControl = 0x7f050000u;
+  require(compose(std::span(&tinted, 1)).faces[0].input.color[0] == 0x00112233u,
+          "regular layer applied the secondary layer's tint program");
+
+  // The same face in the secondary layer is still refused without an environment, so the regular
+  // result above is the layer's own behaviour and not the recipe having stopped checking.
+  const Recipe secondary = composeWithFaceLight(std::span(&flagged, 1), spyro::face_light::Environment{});
+  require(secondary.status == Status::Unsupported && secondary.firstReason == Reason::FaceLight,
+          "secondary layer stopped refusing a bit-2 triangle it cannot light");
+  const Recipe secondaryTint = composeWithFaceLight(std::span(&tinted, 1), spyro::face_light::Environment{});
+  require(secondaryTint.status == Status::Ready && secondaryTint.faceLightFaces == 1 &&
+              secondaryTint.faces[0].input.color[0] != 0x00112233u,
+          "secondary layer did not run its tint program");
+}
+
 } // namespace
 
 int main() {
   testEvaluatorFamiliesAndNegatives();
   testAtomicComposition();
+  testBitTwoTriangleIsOrdinaryInTheRegularLayerOnly();
   std::printf("actor_draw_recipe: PASS (%u checks)\n", checks);
   return 0;
 }

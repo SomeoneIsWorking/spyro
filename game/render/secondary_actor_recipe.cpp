@@ -32,7 +32,7 @@ Recipe derive(const secondary_actor_scene::Frame &frame, const face_light::Envir
     recipe.outputs.back().lightingControl = record.lightingControl;
   }
 
-  auto topology = actor_draw_recipe::compose(recipe.outputs, lighting);
+  auto topology = actor_draw_recipe::composeWithFaceLight(recipe.outputs, lighting);
   recipe.candidates = topology.candidates;
   recipe.rejectedCandidates = topology.rejectedCandidates;
   if (topology.status == actor_draw_recipe::Status::ValidEmpty) {

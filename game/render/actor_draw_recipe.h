@@ -128,9 +128,16 @@ QuadDecision classifyQuad(int32_t firstArea, int32_t secondArea, bool twoSided);
 
 // Atomically composes complete prefix outputs. Unsupported/malformed input
 // clears every face; a complete call with no accepted faces is ValidEmpty.
-// Without a lighting environment the bit-2 colour program cannot run, and the faces that ask for
-// it are refused by name rather than drawn with the material colours retail would have replaced.
-Recipe compose(std::span<const actor_prefix::Output> records,
-               const face_light::Environment &lighting = {});
+//
+// `compose` is the REGULAR layer, `0x8001F798`. Its triangle path (0x8002031C onward) never tests
+// bit 2 and its body issues no OP, SQR or CC, so a triangle with that bit set is drawn with its
+// three material colours exactly like any other. `composeWithFaceLight` is the SECONDARY layer,
+// `0x80020F34`, whose bit 2 selects one of the two per-face colour programs; without a usable
+// environment the faces that ask for one are refused by name rather than drawn with the material
+// colours retail would have replaced. They are separate functions so that a layer cannot inherit
+// the other's behaviour from a default argument, which is how the regular layer once refused.
+Recipe compose(std::span<const actor_prefix::Output> records);
+Recipe composeWithFaceLight(std::span<const actor_prefix::Output> records,
+                            const face_light::Environment &lighting);
 
 } // namespace spyro::actor_draw_recipe

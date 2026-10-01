@@ -44,10 +44,16 @@ struct ExpectedTitle {
   std::uint32_t boundCdControlB;
 };
 
-constexpr ExpectedTitle kSpyro2{"Spyro 2", 0x80011E9Cu, 0x8001B140u, 0x800156FCu, 0x80058EDCu,
-                                     0x80066618u, 0x800582B8u, 0x80058994u};
-constexpr ExpectedTitle kSpyro3{"Spyro 3", 0x8002AB38u, 0x80055400u, 0x8001E638u, 0x8005956Cu,
-                                     0x8006B480u, 0x8005DB1Cu, 0u};
+constexpr ExpectedTitle kSpyro2{"Spyro 2",
+                                0x80011E9Cu,
+                                0x8001B140u,
+                                0x800156FCu,
+                                0x80058EDCu,
+                                0x80066618u,
+                                0x800582B8u,
+                                0x80058994u};
+constexpr ExpectedTitle kSpyro3{
+    "Spyro 3", 0x8002AB38u, 0x80055400u, 0x8001E638u, 0x8005956Cu, 0x8006B480u, 0x8005DB1Cu, 0u};
 
 // Half-open, and a zero high disables the slot, exactly as the framework reads the plan.
 bool windowAdmits(const PlatformHlePlan &plan, std::uint32_t address) {

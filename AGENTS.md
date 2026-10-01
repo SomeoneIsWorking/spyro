@@ -5,10 +5,7 @@ instructions execute through psxport's runtime Lightrec integration. `CLAUDE.md`
 file. Read `../AGENTS.md`, `external/psxport/AGENTS.md`, and
 `docs/migration.md` before changing execution architecture.
 
-Project intent, factual coverage, placement, migration order, and binary-evidence order live in
-`docs/project-goals.md`, `docs/project-state.md`, `docs/codemap.md`, `docs/migration.md`, and
-`docs/re-frontier.md`. Begin non-trivial work with `python3 tools/info.py brief <terms>`, then consult
-`python3 tools/re_frontier.py next` and the relevant issue.
+Goals are in `docs/project-goals.md`, status in `docs/project-state.md`, placement in `docs/codemap.md`.
 
 ## Product execution contract
 
@@ -30,29 +27,6 @@ Project intent, factual coverage, placement, migration order, and binary-evidenc
 - WAD loads, executable-memory writes, savestate restore, and override-table changes invalidate all
   affected translated blocks. Frame suspension, interrupts, exceptions, and termination use bounded
   executor exits rather than host-stack unwinding assumptions.
-
-## Spyro 1 first discriminator
-
-Reach both recorded stage-13 routes through Lightrec: the 800-field boot/title route and the 900-field
-forced-input mode-2 save-picker route. A new title-owned frame/field boundary must execute nonzero
-dynamic blocks, satisfy one presentation fence per host step, and leave guest libetc VSync
-`0x8005DBC4` fatal. The retired frame driver and scheduler are not compatibility paths.
-
-`game/core/world_body.inc` and every generated-world-body call have been replaced by the
-`WorldGuestExecution` scoped-original boundary. The unchanged world body must suspend and resume
-through explicit executor exits while
-native scene owners remain active. Do not transcribe, regenerate, or retain a generated body as a
-shipping super-call.
-
-The 800/900 stage-13 routes are first wiring discriminators, not representative gameplay. An
-interactive gameplay route must prove native and scoped-original dispatch,
-address-reusing WAD invalidation, independent-oracle state, bounded fallback admission, and the
-declared correctness/performance budget on each released host.
-
-Spyro 1 is the active title and its work lands first. Spyro 2 and 3 may progress in parallel on
-Space Bunny (boot, RE, title-local owners), but nothing merged for them may regress Spyro 1's gates;
-re-run Spyro 1's verify and corpus on any shared change. Preserve their measured identities and boot
-facts, but do not extend their retired generated bring-up paths.
 
 ## Preserved binary and behavior facts
 
@@ -79,30 +53,15 @@ fresh process. Issue 0169.
 
 ## Working discipline
 
-- Never guess an address, image identity, or load base. Query the project registry and committed
-  analysis metadata before reasoning from a guest address, and prefer runtime write/reach evidence
-  over raw greps.
-- Native render producers consume pre-GTE game state. Diagnostic replay may observe a guest body from
-  a complete snapshot, but shipping presentation must not execute partial guest rendering or consume
-  guest scratch/GTE output as native source state.
-- Native owners remain cohesive: frame/field lifecycle, rendering, input, audio, storage, CD/archive,
-  diagnostics, and title selection do not collapse into `main.cpp` or `render_frame.cpp`.
-- Diagnostics report denominators, missing corpus, and both answers. Boot, logos, menus, FMV, and a
-  clean trace do not establish gameplay conformance.
-- **`./run.sh` is the user's launcher, not the agent's tool.** It provisions, builds, and opens the
-  windowed, audible, real-time product for a human, so an agent run takes over the desktop. Never use
-  it to diagnose, measure, verify, or smoke-test your own work. Drive the product with the maintained
-  tools instead — `tools/drive.py` (reads guest state through the product's REPL and issues real pad
-  edges), `tools/demo_run.py` (no input at all: the attract demo plays itself, which is the only
-  route that reaches issue 0128's crash), `tools/shot.py`, `tools/depth_cov.py` — or launch the
-  product binary directly through
-  `external/psxport/tools/port/launch_environment.py::agent_environment`, which is offscreen, silent,
-  and unpaced. Take audio evidence from the headless `PSXPORT_WAV` sink, never from a device, and keep
-  build probes under `build/` (`build/` maintainer, `build/player` player, `build/player-tools`
-  framework tools) rather than `scratch/`. Exercise the zero-argument route only as a bounded check
-  on the shipping surface the user meets, and never as the evidence for a gameplay, audio, or
-  performance claim.
-- Preserve verified binary addresses, behavior, native subsystem contracts, and real scenarios while
-  replacing stale methodology. Update the one nearest living authority whose answer changes.
+- Look up addresses with Ghidra (`external/psxport/tools/decomp_pipeline.py --image scratch/assets/<title>/<exe>
+  --target/--callers/--refs/--function-at 0xADDR`) instead of guessing or reading one address at a time.
+- Native owners stay cohesive: frame/field lifecycle, rendering, input, audio, storage, CD/archive and title
+  selection are separate owners, not piled into `main.cpp` or `render_frame.cpp`.
+- **Agents never run `./run.sh`.** Run the product with `tools/drive.py`, `tools/title_route.py`, `tools/shot.py`,
+  or the binary through `external/psxport/tools/port/launch_environment.py::agent_environment` (offscreen, silent).
+  Headless button presses go through a forced-input path, not the player's SDL path: when a fix is about input,
+  check it through the live path too.
+- Check work by running the game and looking at the capture. Gate once at the end:
+  `uv run --frozen python tools/verify.py --jobs 6`.
 
 No game asset, executable, disc image, generated guest body, or machine-specific path is committed.

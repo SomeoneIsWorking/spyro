@@ -131,6 +131,24 @@ def read_log(path: Path) -> Reading:
     return reading
 
 
+def merge_logs(*logs: Path) -> Reading:
+    """One reading over several logs of the same aspect: every kind of observation, from each.
+
+    The projected HUD parts' corrections are merged with the placed elements. They were not: the
+    merge carried elements, refusals and frames only, so on the default route (a gameplay log plus a
+    front-end log) every `g_Hud` Moby correction was dropped, the census reported `left-edge=0,
+    right-edge=0` and PASSed without checking one of them.
+    """
+    combined = Reading()
+    for path in logs:
+        one = read_log(path)
+        combined.elements.update(one.elements)
+        combined.corrections.update(one.corrections)
+        combined.refusals.extend(one.refusals)
+        combined.frames |= one.frames
+    return combined
+
+
 def margin(frame: tuple[int, int]) -> int:
     return (frame[1] - frame[0]) // 2
 
@@ -385,6 +403,25 @@ def selftest() -> int:
         print()
         if (code == 0) != must_pass:
             failed.append(label)
+    # The default route reads TWO logs per aspect (gameplay and front end) and merges them. The
+    # corrections live in the gameplay log only, wrong-signed in the wide leg: a merge that drops
+    # them reads a pass over an element that was never checked.
+    merged_cases = [
+        ("merged logs, HUD correction correct", good_corrections, True),
+        ("merged logs, HUD correction of the wrong sign",
+         good_corrections.replace("correction=-86", "correction=86"), False),
+    ]
+    for index, (label, wide_corrections, must_pass) in enumerate(merged_cases):
+        print(f"== {label} (expected {'PASS' if must_pass else 'FAIL'})")
+        code = report(
+            merge_logs(leg(text(good_n) + narrow_corrections, f"merge{index}-narrow.log"),
+                       leg("", f"merge{index}-narrow-front.log")),
+            merge_logs(leg(text(good_w) + wide_corrections, f"merge{index}-wide.log"),
+                       leg("", f"merge{index}-wide-front.log")))
+        print()
+        if (code == 0) != must_pass:
+            failed.append(label)
+    cases = cases + merged_cases
     if failed:
         print("SELFTEST FAILED: the census answered wrongly on: " + "; ".join(failed))
         return 1
@@ -485,16 +522,7 @@ def main() -> int:
         return 1
     # Both routes' logs are read into ONE reading per aspect: the census is about elements, and an
     # element that only exists on one of the two routes is still an element.
-    def merged(*logs: Path) -> Reading:
-        combined = Reading()
-        for path in logs:
-            one = read_log(path)
-            combined.elements.update(one.elements)
-            combined.refusals.extend(one.refusals)
-            combined.frames |= one.frames
-        return combined
-
-    return report(merged(narrow_log, narrow_front_log), merged(wide_log, wide_front_log))
+    return report(merge_logs(narrow_log, narrow_front_log), merge_logs(wide_log, wide_front_log))
 
 
 if __name__ == "__main__":

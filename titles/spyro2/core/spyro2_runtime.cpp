@@ -69,27 +69,14 @@ constexpr std::uint32_t kCdSync = 0x80058810u;
 // the command owner: CdRead, the entry the framework's synchronous disc owner replaces.
 constexpr std::uint32_t kCdRead = 0x80058108u;
 
-// libcd's initialisation. 0x800582B8 is called by the CD bootstrap leaf 0x80011B3C before any
-// command, retries a handshake, and reaches VSync(-1) at 0x8005824C. The controller has no
-// interrupt handshake to complete here, so the owner's whole job is to report the state libcd
-// publishes on success and let the guest continue.
-constexpr std::uint32_t kCdInit = 0x800582B8u;
+// libcd's initialisation, CdInit at 0x800582B8 (called by the CD bootstrap leaf 0x80011B3C), is NOT
+// bound: the retail body runs through Lightrec and registers libcd's interrupt handler and its
+// callback table itself, the same way Spyro 3's does. See docs/issues/0159.
 
 // The guest word libcd's CdReadyCallback writes. 0x800582A4 is `*(0x800663B8) = a0` returning the
 // previous value, and the CD bootstrap leaf 0x80011B68 calls it with the image's own per-sector
 // callback 0x8001379C, so this is the slot the stock CD path must read to find that callback.
 constexpr std::uint32_t kCdReadyCallbackPointer = 0x800663B8u;
-
-// libcd's own private handshake state, published by CdInit so the guest's callback and the
-// command worker agree on who runs next. 0x800582B8's success path writes each of these through
-// the same setters the guest uses: 0x800582A4 (ready callback), 0x80058830 (0x80066700, the sync
-// callback CdCommand saves and restores) and 0x80058844 (0x80066704).
-constexpr std::uint32_t kCdSyncCallbackPointer = 0x80066700u;
-constexpr std::uint32_t kCdReadyCallbackSlot = 0x80066704u;
-constexpr std::uint32_t kCdInitFlag = 0x800663BCu;
-constexpr std::uint32_t kCdInitReadyCallback = 0x800583D4u;
-constexpr std::uint32_t kCdInitSyncCallback = 0x80058384u;
-constexpr std::uint32_t kCdInitStreamCallback = 0x800583ACu;
 
 // libgpu's DrawSync, and the two leaves of its measured timeout. The display bootstrap leaf
 // 0x80011BBC calls 0x8005574C, 0x8005557C and 0x800556F0 in sequence after its VSync, and the
@@ -100,21 +87,6 @@ constexpr std::uint32_t kGpuTimeoutDeadline = 0x80066354u;
 constexpr std::uint32_t kGpuTimeoutPollCount = 0x80066358u;
 constexpr std::uint32_t kGpuTimeoutArm = 0x80057B20u;
 constexpr std::uint32_t kGpuTimeoutCheck = 0x80057AF4u;
-
-void cdInitSuccess(Core *core) {
-  // 0x800582B8's success path leaves libcd's callback table and its initialised flag in a state
-  // the guest's own command worker reads. Publishing the same four words is the whole native
-  // contract: there is no controller handshake left to fail, and pretending otherwise would
-  // leave the guest's per-sector callback unregistered.
-  core->mem_w32(kCdReadyCallbackPointer, kCdInitReadyCallback);
-  core->mem_w32(kCdInitFlag, 0u);
-  core->mem_w32(kCdSyncCallbackPointer, kCdInitSyncCallback);
-  core->mem_w32(kCdReadyCallbackSlot, kCdInitStreamCallback);
-  // Retail CdInit also opens the CD-ROM interrupt line in I_MASK; this body replaces it, so it owes
-  // the same effect, or the completion a stock read queues is never deliverable (framework owner).
-  psx::cd::armCdInterrupt(*core);
-  core->r[2] = 1u;
-}
 
 void completeDrawSync(Core *core) {
   // The host GPU consumes guest GP0/DMA work synchronously, so DrawSync has no pending work and
@@ -156,11 +128,10 @@ const PlatformHlePlan Spyro2Runtime::platformHlePlan_{
     .cdSyncAddress = kCdSync,
     .vsyncAddress = kVSync,
     .vsyncQueryCounterAddress = kVSyncQueryCounter,
-    .bindings = {{kCdInit, cdInitSuccess},
-                 {kCdControlB, cd_control_sync},
+    .bindings = {{kCdControlB, cd_control_sync},
                  {kGpuTimeoutArm, armGpuTimeout},
                  {kGpuTimeoutCheck, completeDrawSync}},
-    .bindingCount = 4,
+    .bindingCount = 3,
     // Three windows, because the framework admits four and every address this title binds lies in
     // one of these three regions of the image:
     //   libetc  0x80058EDC  VSync

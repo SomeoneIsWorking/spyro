@@ -114,48 +114,17 @@ constexpr std::uint32_t kCdSync = 0x8005E074u;
 // The CD bootstrap leaf reaches it directly at 0x8002A7D0 with $a0 = 0x0E.
 constexpr std::uint32_t kCdCommand = 0x8005E0BCu;
 
-// libcd's initialisation, called by the CD bootstrap leaf 0x8002A7B4 at 0x8002A7C0:
-//   8005DB1C  addiu $sp,$sp,-0x18 ; addiu $s0,$zero,4      four attempts
-//   8005DB2C  jal  0x8005DBAC                                the handshake
-//   8005DB38  bne $v0,$v0(1),0x8005DB7C                      not ready -> retry
-//   8005DB4C  sw  $v1,-0x4a98($at)   with $v1 = 0x8005DBE8  the default sync callback
-//   8005DB5C  sw  $v1,-0x4a94($at)   with $v1 = 0x8005DC10  the default stream callback
-//   8005DB6C  sw  $v1,-0x4c30($at)   with $v1 = 0x8005DC38  the default ready callback
-//   8005DB78  sw  $zero,-0x4c2c($at)                        the initialised flag, cleared
-//   8005DB94  addiu $a0,$a0,0x1a2c  -> "CdInit: Init failed\n", the failure path's only output
-// The handshake 0x8005DBAC drives the interrupt-handler table at 0x8006B350 and has no controller
-// response to complete on this port, so the owner's whole job is to publish the four words the
-// success path above publishes and report success.
-constexpr std::uint32_t kCdInit = 0x8005DB1Cu;
+// libcd's initialisation, CdInit at 0x8005DB1C (called by the CD bootstrap leaf 0x8002A7B4 at
+// 0x8002A7C0), is NOT bound: the retail body runs through Lightrec. It registers libcd's
+// interrupt handler (CD_init 0x80061C8C -> InterruptCallback(2, 0x800621CC)), which is what the
+// libapi dispatcher 0x8005C6B4 needs to acknowledge the CD interrupt; a native stand-in that only
+// wrote the callback words left it unregistered and every later CD interrupt ended in the
+// "intr timeout" at 0x8005CA18. See docs/issues/0159.
 
-// The four words CdInit's success path writes, each reached by `lui $at,0x8007` plus a
-// displacement, so the address is computed rather than remembered:
-//   -0x4a98 -> 0x8006B568   the sync callback slot CdCommand saves and restores (0x8005E0F4 reads
-//   it) -0x4a94 -> 0x8006B56C   the stream callback slot -0x4c30 -> 0x8006B3D0   the ready callback
-//   CdReadyCallback(0x8005DB08) reads and writes -0x4c2c -> 0x8006B3D4   the initialised flag
-constexpr std::uint32_t kCdSyncCallbackPointer = 0x8006B568u;
-constexpr std::uint32_t kCdReadyCallbackSlot = 0x8006B56Cu;
+// The guest word libcd's CdReadyCallback reads and writes (CdInit's 8005DB6C stores the default
+// ready callback 0x8005DC38 there through `lui $at,0x8007 ; sw $v1,-0x4c30($at)`), which the stock
+// CD path reads to find the title's per-sector callback.
 constexpr std::uint32_t kCdReadyCallbackPointer = 0x8006B3D0u;
-constexpr std::uint32_t kCdInitFlag = 0x8006B3D4u;
-constexpr std::uint32_t kCdInitSyncCallback = 0x8005DBE8u;
-constexpr std::uint32_t kCdInitStreamCallback = 0x8005DC10u;
-constexpr std::uint32_t kCdInitReadyCallback = 0x8005DC38u;
-
-void cdInitSuccess(Core *core) {
-  // Exactly the four stores above, and nothing else. The controller handshake has no response to
-  // wait for on this port, so publishing the same words the retail success path publishes is the
-  // whole native contract: skip them and the guest's per-sector reader is never registered.
-  core->mem_w32(kCdReadyCallbackPointer, kCdInitReadyCallback);
-  core->mem_w32(kCdInitFlag, 0u);
-  core->mem_w32(kCdSyncCallbackPointer, kCdInitSyncCallback);
-  core->mem_w32(kCdReadyCallbackSlot, kCdInitStreamCallback);
-  // Retail CdInit also opens the CD-ROM interrupt line in I_MASK; this body replaces it, so it owes
-  // the same effect, or the completion a stock read queues is never deliverable (framework owner).
-  psx::cd::armCdInterrupt(*core);
-  // 0x8005DB38 leaves $v0 = 1 on the success edge and 0x8005DB98 returns 0 on the failure edge, so
-  // success is reported the way the guest's own body reports it.
-  core->r[2] = 1u;
-}
 
 } // namespace
 
@@ -169,8 +138,8 @@ const PlatformHlePlan Spyro3Runtime::platformHlePlan_{
     .cdSyncAddress = kCdSync,
     .vsyncAddress = kVSync,
     .vsyncQueryCounterAddress = kVSyncQueryCounter,
-    .bindings = {{kCdInit, cdInitSuccess}},
-    .bindingCount = 1,
+    .bindings = {},
+    .bindingCount = 0,
     // Three windows, because the framework admits four and every address this title binds lies in
     // one of these three regions of the image:
     //   libetc  0x8005956C  VSync, and its timeout helper at 0x800596E4

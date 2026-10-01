@@ -11,7 +11,6 @@ if(NOT EXISTS "${PSXPORT_DIR}/cmake/psxport.cmake")
   message(FATAL_ERROR
     "PSXPORT_DIR=${PSXPORT_DIR} has no cmake/psxport.cmake; resolve the psxport checkout")
 endif()
-find_package(Git REQUIRED)
 execute_process(
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 

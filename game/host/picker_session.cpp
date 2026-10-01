@@ -20,13 +20,16 @@ constexpr std::uint16_t kPadStart = 0x0008u;
 constexpr std::uint16_t kPadCross = 0x4000u;
 } // namespace
 
-PickerSession::PickerSession(PickerRuntime &runtime, const PickerContent &content, int frameCap)
-    : runtime_(runtime), content_(content), frameCap_(frameCap) {}
+PickerSession::PickerSession(PickerRuntime &runtime,
+                             const PickerContent &content,
+                             int frameCap,
+                             GpuDevice &presentation)
+    : runtime_(runtime), content_(content), frameCap_(frameCap), presentation_(presentation) {}
 
 PickerSession::Result PickerSession::run() {
   runtime_.bind(&content_);
   psxport_install_game(runtime_);
-  auto game = std::make_unique<Game>();
+  auto game = std::make_unique<Game>(presentation_);
   Core &core = game->core;
   // The picker is not a play session: it must not open (or rotate) the default pad recording.
   game->pad.useLiveInputOnly();

@@ -653,6 +653,10 @@ release-edge explanation or complete current gameplay parity.
 Gap: current interactive jump, charge, flame, and controller parity still need representative
 gameplay comparison against the independent console oracle.
 
+Live host input now reaches the pad: `Pad` takes its key state from KEY_DOWN/KEY_UP events instead
+of SDL's keyboard-focus-gated state array, and every drain of the host queue feeds it (psxport
+`d7a9fdfd`), so a real press ends Spyro 1's logo holds and reaches the guest pad packet.
+
 ### S008 — Runtime Lightrec execution
 
 Implemented subset: the product enters authenticated crt0 through psxport's per-`Core`

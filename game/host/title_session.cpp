@@ -29,13 +29,15 @@ void dc_step_frame(Core *c, uint32_t frame);
 
 namespace spyro {
 
-TitleSession::TitleSession(const TitleAvailability &title, bool selectorAvailable)
-    : title_(title), selectorAvailable_(selectorAvailable) {}
+TitleSession::TitleSession(const TitleAvailability &title,
+                           bool selectorAvailable,
+                           GpuDevice &presentation)
+    : title_(title), selectorAvailable_(selectorAvailable), presentation_(presentation) {}
 
 TitleSession::End TitleSession::run() {
   SpyroRuntime &runtime = runtimeFor(title_.identity->title);
   psxport_install_game(runtime);
-  auto game = std::make_unique<Game>();
+  auto game = std::make_unique<Game>(presentation_);
   Core &core = game->core;
   game->session.setReturnAvailable(selectorAvailable_);
 

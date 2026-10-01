@@ -14,7 +14,11 @@
 namespace spyro {
 
 ProductHost::ProductHost(std::filesystem::path provisioningRoot)
-    : root_(std::move(provisioningRoot)) {}
+    : root_(std::move(provisioningRoot)) {
+  // The window belongs to the product, so the product names it. Left unset, it would take the name
+  // of whichever Game brought the device up first — the selector's — for the rest of the run.
+  presentation_.setWindowTitle("Spyro");
+}
 
 int ProductHost::runSelector() {
   PickerRuntime pickerRuntime;
@@ -24,7 +28,8 @@ int ProductHost::runSelector() {
     // available.
     const std::vector<TitleAvailability> titles = probe.probe();
     const PickerContent content(titles);
-    PickerSession picker(pickerRuntime, content, cfg_int("PSXPORT_PICKER_FRAMES", 0));
+    PickerSession picker(
+        pickerRuntime, content, cfg_int("PSXPORT_PICKER_FRAMES", 0), presentation_.device());
     const PickerSession::Result choice = picker.run();
     if (choice.outcome != PickerSession::Outcome::Chosen) {
       return 0;
@@ -33,7 +38,7 @@ int ProductHost::runSelector() {
                  "starting {} ({})",
                  choice.title->identity->displayName,
                  choice.title->identity->serial);
-    TitleSession session(*choice.title, true);
+    TitleSession session(*choice.title, true, presentation_.device());
     if (session.run() == TitleSession::End::Finished) {
       return 0;
     }
@@ -50,7 +55,7 @@ int ProductHost::runExecutable(const std::filesystem::path &executable) {
   title.identity = selection.identity;
   title.executable = executable;
   title.status = AvailabilityStatus::Available;
-  TitleSession session(title, false);
+  TitleSession session(title, false, presentation_.device());
   session.run();
   return 0;
 }

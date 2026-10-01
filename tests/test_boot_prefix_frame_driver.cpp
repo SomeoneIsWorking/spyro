@@ -384,6 +384,36 @@ void test_boot_presents_one_field_per_guest_wait() {
   CHECK_EQ(fixture.driver.fields().presents(), stepsTaken + 8u);
 }
 
+// The retail main loop alternates update and draw, and a draw that stops at its display wait is
+// RESUMED by the next step as the draw it is. The driver once resumed it in the update's slot and
+// then began the draw again, so after the first iteration the update was never called again: both
+// titles' worlds froze with 0 faults and a plausible picture (issue 0159). The old assertion here,
+// `update <= draw`, held for exactly that defect, so this one asks for the update to keep running.
+void test_main_loop_keeps_running_the_update_after_the_draw_suspends() {
+  psx::config::cv_nopace.set(psx::config::Layer::Runtime, true);
+  psx::config::cv_repl.set(psx::config::Layer::Runtime, false);
+  resetCounters();
+  BootFixture fixture;
+  CHECK(fixture.install());
+  Core &core = fixture.game->core;
+  fixture.driver.initialize();
+  stepUntilBootComplete(fixture.driver, core);
+  CHECK(fixture.driver.bootComplete());
+  resetCounters();
+
+  constexpr std::uint32_t kLoopSteps = 24;
+  for (std::uint32_t step = 0; step < kLoopSteps; ++step) {
+    fixture.driver.stepFrame(core, step);
+  }
+  // The synthetic draw waits once, so each step reaches one display wait and finishes the iteration
+  // the previous step suspended: one update and one draw per step, to within the suspended call.
+  CHECK(gVisitUpdate >= kLoopSteps - 1u);
+  CHECK(gVisitDraw >= kLoopSteps - 1u);
+  CHECK(gVisitUpdate <= gVisitDraw + 1u);
+  CHECK(gVisitDraw <= gVisitUpdate + 1u);
+  CHECK_EQ(gVBlankWaits, gVisitDraw);
+}
+
 void test_guest_call_refuses_a_return_address_inside_guest_ram() {
   resetCounters();
   BootFixture fixture;
@@ -594,6 +624,7 @@ void test_negative_vsync_query_answers_the_derived_counter() {
 
 int main() {
   RUN(boot_presents_one_field_per_guest_wait);
+  RUN(main_loop_keeps_running_the_update_after_the_draw_suspends);
   RUN(guest_call_refuses_a_return_address_inside_guest_ram);
   RUN(boot_prefix_that_never_returns_is_bounded);
   RUN(boot_prefix_that_polls_without_asking_for_a_field_is_bounded);

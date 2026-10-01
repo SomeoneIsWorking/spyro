@@ -77,6 +77,8 @@ public:
 private:
   enum class Phase : std::uint8_t { Boot, MainLoop };
   enum class CallProgress : std::uint8_t { Returned, TurnBudgetReached, FieldBoundReached };
+  // The two retail calls of one main-loop iteration, in the order game main runs them.
+  enum class LoopCall : std::uint8_t { Update, Draw };
 
   // One guest call, a bounded number of host turns, and one presented field. `fieldBound` is the
   // number of fields this ONE call may have the host deliver before the step calls it stalled, and
@@ -90,12 +92,18 @@ private:
   void deliverField(const char *site, bool present);
   void stepBoot(Core &core);
   void stepMainLoop(Core &core);
+  [[nodiscard]] std::uint32_t entryOf(LoopCall call) const;
+  [[nodiscard]] const char *siteOf(LoopCall call) const;
   void reportStop(Core &core, const GuestCall &call, const GuestCall::Result &result) const;
 
   BootPrefixFacts facts_;
   FieldOwner fields_;
   GuestCall call_;
   Phase phase_ = Phase::Boot;
+  // Which retail call the guest call in `call_` is, or is about to be, once the main loop runs. A
+  // call suspended at a display wait is resumed by a later step, so the step cannot assume it holds
+  // the update: it holds whichever call the loop reached.
+  LoopCall loopCall_ = LoopCall::Update;
   bool initialized_ = false;
   bool bootStalled_ = false;
   std::uint64_t steps_ = 0;

@@ -16,6 +16,11 @@ namespace {
 // carry real work, and the field boundaries inside it are delivered as they are reached.
 constexpr std::uint32_t kBootTurnsPerStep = 4;
 constexpr std::uint32_t kFrameTurnsPerStep = 8;
+// Guest calls one main-loop step may complete. A step ends at the first display wait a call stops
+// at, so this only bounds a loop whose iteration waits for nothing (which would otherwise spin
+// inside one step): two full iterations is enough for a step to finish the suspended call and
+// reach the next wait.
+constexpr int kMaxLoopCallsPerStep = 4;
 
 } // namespace
 
@@ -155,20 +160,29 @@ void BootPrefixFrameDriver::stepBoot(Core &core) {
   }
 }
 
+std::uint32_t BootPrefixFrameDriver::entryOf(LoopCall call) const {
+  return call == LoopCall::Update ? facts_.frameUpdate : facts_.frameDraw;
+}
+
+const char *BootPrefixFrameDriver::siteOf(LoopCall call) const {
+  return call == LoopCall::Update ? "frame-update" : "frame-draw";
+}
+
 void BootPrefixFrameDriver::stepMainLoop(Core &core) {
-  // One product step is one drawn retail iteration: the gamestate update, then the draw that
-  // carries the frame's display wait. The update is finite and must return inside its step; a
-  // call that outlives the step is resumed by the next one, which is why the draw follows only
-  // once the update has actually returned.
-  if (!call_.active()) {
-    call_.begin(facts_.frameUpdate);
-  }
-  if (runCall(core, call_, kFrameTurnsPerStep, "frame-update", fields_.fields() + 1u) ==
-      CallProgress::Returned) {
+  // One product step advances the retail loop to its next display wait: the update, then the draw
+  // that carries the frame's wait, resuming whichever call the previous step left suspended. The
+  // loop therefore remembers WHICH call is in flight. Resuming a suspended draw as though it were
+  // the update, and then starting the draw again, left the update unreachable after its first
+  // iteration, so the world never advanced (issue 0159).
+  for (int calls = 0; calls < kMaxLoopCallsPerStep; ++calls) {
     if (!call_.active()) {
-      call_.begin(facts_.frameDraw);
+      call_.begin(entryOf(loopCall_));
     }
-    runCall(core, call_, kFrameTurnsPerStep, "frame-draw", fields_.fields() + 1u);
+    if (runCall(core, call_, kFrameTurnsPerStep, siteOf(loopCall_), fields_.fields() + 1u) !=
+        CallProgress::Returned) {
+      return;
+    }
+    loopCall_ = loopCall_ == LoopCall::Update ? LoopCall::Draw : LoopCall::Update;
   }
 }
 

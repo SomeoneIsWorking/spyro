@@ -11,7 +11,6 @@ if(NOT EXISTS "${PSXPORT_DIR}/cmake/psxport.cmake")
   message(FATAL_ERROR
     "PSXPORT_DIR=${PSXPORT_DIR} has no cmake/psxport.cmake; resolve the psxport checkout")
 endif()
-execute_process(
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # ONE LOCKED PYTHON ENVIRONMENT. Every maintainer tool and test below runs on the project's own

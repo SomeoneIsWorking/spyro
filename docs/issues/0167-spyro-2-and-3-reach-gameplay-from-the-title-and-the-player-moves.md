@@ -30,6 +30,8 @@ position, and the z word `0x8006E028` is read-modify-written at `0x80012354/0x80
 is reached through the base pointer built at `0x80016AF4`, so a lui+offset scan of `0x80067EEC` reports zero sites
 (the dead-tap shape; the jump moving it 9831 to 10054 to 10348 is what identifies it).
 
+**CORRECTED (issue 0169): the 4740 and 3190 above are the second-run values.** Every agent run shared one memory card, so a run started from the previous run's writes; on a blank card the arrival fields are 4890 (Spyro 3) and 3340 (Spyro 2), 8 of 8 runs each.
+
 ## The path, and the blockers it found
 
 Spyro 3: stock CdRead completions were instant (issue 0164, with the lost CD delivery behind a VBlank claim) and the

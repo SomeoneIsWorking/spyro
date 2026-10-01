@@ -375,6 +375,8 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_profile.py --selftest)
   add_test(NAME title_route_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_route.py --selftest)
+  add_test(NAME drive_environment_card
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_drive_environment.py)
   add_test(NAME guest_globals_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/guest_globals.py --selftest)
   # The route both the interactive driver and the oracle's level checkpoint walk. A steering table

@@ -56,6 +56,17 @@ ROOT = Path(__file__).resolve().parent.parent
 # on, from the operator's personal file, and a fresh clone or CI would silently have run without them.
 SHIPPING_SETTINGS = ROOT / "tools" / "shipping_settings.ini"
 
+# The memory card a route that must repeat starts without. The card is an input the guest reads and a file
+# the run writes, and with no `PSXPORT_CARD` every run of every title shares `scratch/saves/card.mcr`: the
+# previous run's writes become the next run's boot state. Measured 2026-10-01 (docs/issues/0169): Spyro 3's
+# title route reached gameplay at field 4890 on the card Spyro 1 left and 4740 on every run after, and
+# Spyro 2 at 3340 on a blank card and 3190 after its own run wrote one -- same binary, same pad edges, a
+# per-field state digest identical until the field the guest first reads the card. Deleted before each
+# launch, so the start state is a function of the binary and the disc alone. The Spyro 2/3 routes
+# (title_route.open_port) use it. Spyro 1's own route does NOT: it answers the save picker of the existing card
+# and stalls on a blank one (never reaches TSM_Loading), and it never writes that card.
+ROUTE_CARD = ROOT / "scratch" / "saves" / "route.mcr"
+
 # Guest addresses. The shared ones come from the shipping owner, game/core/guest_globals.h, through
 # tools/guest_globals.py, so this driver and the product cannot read different memory. The two
 # level-transition words below are read here and nowhere else, so they stay with their only reader.
@@ -544,18 +555,23 @@ def quit_to_home(port: Port, budget: int = 4000) -> None:
                   f"last gamestate={port.gamestate()}")
 
 
-def environment(disc: str | None, settings: Path | None = None) -> dict[str, str]:
+def environment(disc: str | None, settings: Path | None = None,
+                card: Path | None = None) -> dict[str, str]:
     """The headless REPL launch environment for the built port. The framework's launch policy
     (external/psxport/tools/port/launch_environment.py) owns the headless/silent/unpaced knobs so
     no agent driver can seize the desktop or drift from the others.
 
     `settings` names the tracked .ini the run is gated with, defaulting to the shipping one. The
     picture oracle passes the reference configuration instead: it photographs the product against a
-    4:3 console, and a widescreen frame is a different SIZE, which the comparison would refuse."""
+    4:3 console, and a widescreen frame is a different SIZE, which the comparison would refuse.
+
+    `card` is a memory-card image the run starts without (deleted here, so the product makes a blank one);
+    pass `ROUTE_CARD` for any route that must repeat. The default None runs on whatever card is in force,
+    which makes the run depend on every run that wrote it before (see ROUTE_CARD)."""
     sys.path.insert(0, str(ROOT / "external" / "psxport" / "tools"))
     from port.launch_environment import agent_environment
 
-    env = agent_environment(dict(os.environ), settings or SHIPPING_SETTINGS)
+    env = agent_environment(dict(os.environ), settings or SHIPPING_SETTINGS, card=card)
     env.update(
         PSXPORT_REPL="1",
         PSXPORT_WATCHDOG="0",

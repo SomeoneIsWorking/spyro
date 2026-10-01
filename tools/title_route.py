@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -219,8 +219,11 @@ def report(entry: TitleProfile, evidence: Evidence) -> str:
     )
 
 
-def open_port(name: str, executable: Path, log: Path) -> tuple[TitleProfile, "drive.Port"]:
-    """Launch the built port headless on `name`'s disc. Shared by every live route (title_conversation.py)."""
+def open_port(
+    name: str, executable: Path, log: Path, extra_environment: Mapping[str, str] | None = None
+) -> tuple[TitleProfile, "drive.Port"]:
+    """Launch the built port headless on `name`'s disc. Shared by every live route (title_conversation.py)
+    and by determinism_check.py, which adds the per-field digest channel through `extra_environment`."""
     import drive  # the live port; imported here so the selftest needs no binary and no disc
 
     entry = profile(name)
@@ -232,8 +235,9 @@ def open_port(name: str, executable: Path, log: Path) -> tuple[TitleProfile, "dr
         raise Refusal(f"{entry.label} is not provisioned: {image} is missing - run tools/provision_title.py")
     if not disc:
         raise Refusal(f"no disc for {entry.label}: set {entry.disc_variable} (environment or .env)")
-    env = drive.environment(None)
+    env = drive.environment(None, card=drive.ROUTE_CARD)
     env[entry.disc_variable] = disc
+    env.update(extra_environment or {})
     return entry, drive.Port(executable, image, log, env, gamestate_address=entry.gamestate_word)
 
 

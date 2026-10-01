@@ -165,6 +165,34 @@ these five) on a native render refusal, `actor producer 0x8001F798 refused its a
 frame 21158. That is the render side, not a differential result, and it was not re-run on a clean
 `main` build, so whether it predates this round is unverified.
 
+## Round d (2026-10-01): the four held overrides, root-caused and landed
+
+All four re-derived from `SCUS_942.28` bytes and fixed at the cause; none weakened the gate. Six-route
+corpus (`tools/reach_corpus.py --routes ...`), sampled / match / mismatch: `assign_active_sound_slot`
+139/139/0, `propagate_environment_light` 142/142/0, `update_flame_burst` 189/189/0,
+`update_hud_collectables` 142/142/0. The attract-demo route still dies at frame 21158 (exit 139, issue
+0128) and loses its report; its coverage was taken separately from a clean REPL prefix of 20,500 fields:
+sound 4,440, env 3,349, flame 6,698, hud 2,423, all 0 mismatches. `verify.py --jobs 6`: 127 of 127 ctest.
+
+Common cause across all four: delay slots that execute on taken branches and values left in `$v1`/`$a*`
+at the retail `jal`, which the native bodies did not reproduce. Nested guest calls now go through
+`callGuestJumpedFrom` with the retail jal site; the entry `$ra` is restored (`PreservedReturnAddress`),
+and `GuestFrameScope` models the `$sp` frame for the HUD.
+
+- `propagate_environment_light`: the byte/record chain walk indexed `next` with the wrong base; the retail
+  read is `base + (index<<2|3) + (flags&1) + 1`, entry `base + (next<<2)` (records `<<3`, `+2`).
+- `assign_active_sound_slot`: probe-reject left `$v1` unset; the scan's lowest-key tracking and the no-free
+  return value (`keyWasLower`) were wrong; the kind-0 level reduction is `level - low(step*(range>>1))`
+  using retail `mult` HI/LO; angle results feed the next call's arguments through `$v0`.
+- `update_flame_burst`: wrong expected camera type constant and emitter args (`a0=1`, `a1=fromFairyKiss`),
+  plus the jal sites for the vec/rand/fill/smooth-head calls.
+- `update_hud_collectables`: gem catch-up (`>=3`, `+8`/`+1`/unchanged, fresh-tally park), signed counter
+  compares for egg/key, saved-register frame, and the jal sites of every `play` call.
+
+Unverified: which arms of the env lists 3-7 and the vertex arms are actually exercised was not measured
+(no coverage probe kept); a stale comment in `native_environment_light.cpp` about the five 8-byte lists
+being "carried on the listing alone" is neither confirmed nor refuted. No push, main untouched.
+
 ## The four scenes the corpus was missing (2026-09-30)
 
 The four MISSING routes named above are now routes. They are in `tools/route_scenes.py` and the

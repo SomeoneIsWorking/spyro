@@ -79,4 +79,4 @@ Rebasing the framework pin onto psxport main (Toy Story 2's `c42a9f46`) broke bo
 Bisected on psxport: `996a400d` good, `c42a9f46` bad. Cause: `cd_read_stock_sync` stores a sector unnotified and reports
 the range once per sector, but reported `{buf, buf + bytes}` for every sector, so translated code in sectors 2..n of a
 module load was never invalidated (the per-byte stores it replaced had hidden it). Fixed in the framework with a test
-that is red on the old range (psxport `64b35402`).
+that is red on the old range (psxport branch `determ-main-rebased`, `ef9c63ae`, on main 9c80ab83-era history; the measured pin 1635d442 is based on 41373bc0 and does not need it).

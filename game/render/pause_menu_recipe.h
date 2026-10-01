@@ -23,15 +23,18 @@
 // operator's run aborted on.
 //
 // WHY THE FOUR TILED QUADS ARE NOT A LAYER HERE. They are 4-vertex quads 128 wide and 224 tall at
-// x = 0,128,256,384, y = 8..231, and 0x8001A5E0 fills them from two RAM buffers through 0x8005FA8C
-// StoreImage, 0x80017E98 (an in-place RGB555 -> 3-3-2 conversion of exactly 0x7000 = 128*224
-// pixels, one tile per loop iteration) and 0x8005FA28 LoadImage. A per-tile pixel-count constant, a
-// colour-space conversion, and a VRAM round trip through a framebuffer-sized buffer are a FROZEN
-// COPY OF THE JUST-DRAWN WORLD, not menu art: the game captures the field once and re-blits it
-// while the menu is up rather than redrawing an unchanging scene. This port draws the world through
-// its own producers on every menu frame instead, which is the same picture and is neither a
-// captured framebuffer nor wrong under widescreen (the port's frame is wider than the 512x240 the
-// guest captured). Everything the menu ADDS is owned here.
+// x = 0,128,256,384, y = 8..231, that 0x8001A5E0 draws from the texture rect (512,0) 256x225. The
+// zero path fills that rect after a world frame: 0x8005FA8C StoreImage parks the rect's textures in
+// RAM below the HUD OT, then per tile StoreImage of the framebuffer, 0x80017E98 (an in-place RGB555
+// -> 3-3-2 conversion of exactly 0x7000 = 128*224 pixels) and 0x8005FA28 LoadImage over the rect.
+// The menu's exit (0x8002C534 / 0x8002C7BC) loads the parked textures back, so the PARK is a VRAM
+// lifecycle step the scene owner keeps (pause_menu_scene); only the copy is dropped. A per-tile
+// pixel-count constant, a colour-space conversion, and a VRAM round trip through a
+// framebuffer-sized buffer are a FROZEN COPY OF THE JUST-DRAWN WORLD, not menu art: the game
+// captures the field once and re-blits it while the menu is up rather than redrawing an unchanging
+// scene. This port draws the world through its own producers on every menu frame instead, which is
+// the same picture and is neither a captured framebuffer nor wrong under widescreen (the port's
+// frame is wider than the 512x240 the guest captured). Everything the menu ADDS is owned here.
 //
 // THE PANEL IS THE VISIBLE PART, and it is not subtle: 0x8001A7C4-0x8001A84C builds a GP0(0x2A)
 // untextured quad whose three colour bytes are whatever `$s4` holds at 0x8001A7D8-0x8001A7E0, i.e.

@@ -3,6 +3,7 @@
 #include "core.h"
 #include "fx_field_actor_composition.h"
 #include "game.h"
+#include "gpu_native_internal.h"
 #include "guest_call.h"
 #include "guest_globals.h"
 #include "hud_text_builder.h"
@@ -86,10 +87,41 @@ constexpr std::uint32_t kMenuMobyArenaEnd = 0x800756FCu;
 constexpr std::uint32_t kMenuOverlayPrimCursor = 0x800758B0u;
 constexpr std::uint32_t kMenuPrimPoolBytes = 0x1C000u;
 constexpr std::uint32_t kMenuMobyBaseAdjust = 0xFFFE3E00u;
+
+// THE TEXTURE RECT THE GUEST LENDS TO ITS FROZEN BACKDROP, and the RAM it is parked in while lent.
+// The zero path's StoreImage at 0x8001A508 saves RECT(512, 0, 256, 225) (0x8001A4E8-0x8001A504) to
+// [0x800785F0] + 0xFFFE3E00 (0x8001A50C), i.e. the 0x1C200 bytes immediately below the HUD OT; the
+// same address the menu arena above starts from. 0x8001A57C then overwrites that texture rect with
+// the grayscale copy of the screen. Leaving the menu, 0x8002C534 (and 0x8002C7BC from the
+// inventory) LoadImages that RAM back over the same rect unconditionally, so the restore is only an
+// identity if the save happened.
+constexpr std::uint32_t kBackdropRectX = 512u;
+constexpr std::uint32_t kBackdropRectY = 0u;
+constexpr std::uint32_t kBackdropRectW = 256u;
+constexpr std::uint32_t kBackdropRectH = 225u;
+constexpr std::uint32_t kGp0VramToCpu = 0xC0000000u;
 // Record sizes, from the cursor steps the guest's own code performs: `DAT_800757b0 = puVar1 + 0x17`
 // after a prim at puVar1[0x11] is 6 words, and 0x8001844C's `addiu $s0,$s0,0x14` is 5.
 constexpr std::uint32_t kPanelPrimBytes = 6u * 4u;
 constexpr std::uint32_t kLinePrimBytes = 5u * 4u;
+
+// The one address both the menu arena and the borrowed-texture save are relative to.
+std::uint32_t hudOtSaveBase(Core *core) {
+  return core->mem_r32(kMenuMobyPoolBase) + kMenuMobyBaseAdjust;
+}
+
+// The guest's StoreImage of the borrowed rect, as the GPU sees it: GP0(0xC0) with the rect, drained
+// by a VRAM->CPU DMA2 block into the save buffer. Only the save is reproduced. The guest's
+// grayscale copy that follows it is a frozen picture of the world, and this port draws the live
+// world on every menu frame instead, sampling the very texture pages that copy would have
+// overwritten.
+void saveBorrowedTextures(Core *core) {
+  gpu_gp0(core, kGp0VramToCpu);
+  gpu_gp0(core, (kBackdropRectY << 16) | kBackdropRectX);
+  gpu_gp0(core, (kBackdropRectH << 16) | kBackdropRectW);
+  gpu_dma2_block(
+      core, hudOtSaveBase(core), static_cast<int>((kBackdropRectW * kBackdropRectH + 1u) / 2u), 0);
+}
 
 // `lighting` is borrowed by the returned State's ramp span, so the caller keeps it alive for as
 // long as the State is used.
@@ -237,7 +269,12 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
                 recipe.panelY1,
                 recipe.border.size(),
                 recipe.captions.size());
-  if (recipe.gui) {
+  if (!recipe.gui) {
+    // The zero path's VRAM lifecycle: the menu's exit restores this save (see kBackdropRectX).
+    // Skipping it made that restore write whatever the buffer last held over live texture pages
+    // and CLUTs, which is the noise the world showed after every pause.
+    saveBorrowedTextures(core);
+  } else {
     // THE MENU'S OWN TWO ARENAS, established exactly where 0x8001A5E0 establishes them
     // (0x8001A604-0x8001A650), before anything is built in either. Both are guest state this
     // producer has to own, and the second is what makes the TEXT VISIBLE AT ALL: 0x80018880 — the
@@ -247,7 +284,7 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
     // nothing, and the shaded pass reported shaded_faces=0 — a MEASURED 0, not an absent one. The
     // first pair is the prim pool the panel and border are linked into.
     const std::uint32_t primBase = core->mem_r32(kMenuPrimPoolBase);
-    const std::uint32_t mobyBase = core->mem_r32(kMenuMobyPoolBase) + kMenuMobyBaseAdjust;
+    const std::uint32_t mobyBase = hudOtSaveBase(core);
     core->mem_w32(kMenuPrimPoolCursor, primBase);
     core->mem_w32(kMenuPrimPoolEnd, primBase + kMenuPrimPoolBytes);
     core->mem_w32(kMenuMobyArenaEnd, mobyBase);

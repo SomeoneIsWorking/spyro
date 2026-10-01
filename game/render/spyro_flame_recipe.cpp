@@ -91,11 +91,37 @@ CrossSection readCrossSection(Core *core, std::uint32_t address) {
 
 } // namespace
 
-std::int32_t ringScale(bool wide, bool superFlame) {
-  if (!wide) {
-    return 8;
-  }
+// THE TWO RING SCALES ARE DIFFERENT NUMBERS, and retail does not share one between them.
+//
+// The TIP's ring at 0x80058F78:
+//
+//     beqz  $s2, skip        ; normal flame branches away
+//     addi  $a0, $zero, 0x2c ; delay slot — 0x2C always lands first
+//     addi  $a0, $zero, 0x40 ; runs only on the SUPERFLAME path
+//   skip:
+//
+// so the tip ring is 0x2C for a normal flame and 0x40 for a superflame.
+//
+// The RIBBON's ring at 0x800592E8 is NOT the same sequence:
+//
+//     blez  $t8, narrow      ; remaining <= 0
+//     addi  $t1, $zero, 8    ; delay slot — 8 always lands first
+//     beqz  $gp, narrow      ; nothing projected yet
+//     beqz  $s2, narrow      ; NOT a superflame
+//     addi  $t1, $zero, 0x2c ; dead store: the next delay slot overwrites it
+//     addi  $t1, $zero, 0x40 ; delay slot of that beqz — 0x40 always lands
+//   narrow:
+//
+// so the ribbon ring is 8 unless the flame is a SUPERFLAME, in which case it is 0x40. The 0x2C in
+// this sequence is unreachable: it is a dead store killed by its own branch's delay slot. One
+// shared `ringScale` returning 0x2C for a normal wide ribbon therefore gave the ribbon rings a
+// radius 5.5x retail's, which is the low flat plume across the field where the cone should be.
+std::int32_t tipRingScale(bool superFlame) {
   return superFlame ? 0x40 : 0x2C;
+}
+
+std::int32_t ribbonRingScale(bool wide, bool superFlame) {
+  return (wide && superFlame) ? 0x40 : 8;
 }
 
 std::uint8_t rampGrey(std::uint32_t rampIndex) {
@@ -213,7 +239,7 @@ Recipe derive(Core *core) {
       const auto tipVertex = project(-tip.x, -tip.y, tip.z);
       const auto ring = readCrossSection(core, cursor - kCrossSectionBytes);
       const auto trig = actor_transform_math::sineCosine(core, ring.sineByteOffset);
-      const std::int32_t scale = ringScale(true, superFlame);
+      const std::int32_t scale = tipRingScale(superFlame);
       std::int32_t cosine = (scale * trig.cosine) >> 11;
       std::int32_t sine = (scale * trig.sine) >> 11;
       const std::int32_t ax = cosine - ring.x, ay = sine - ring.y;
@@ -315,7 +341,7 @@ Recipe derive(Core *core) {
       cursor -= kCrossSectionBytes;
       const auto trig = actor_transform_math::sineCosine(core, section.sineByteOffset);
       const bool wide = remaining > 0 && projectedAnything;
-      const std::int32_t scale = ringScale(wide, superFlame);
+      const std::int32_t scale = ribbonRingScale(wide, superFlame);
       const std::int32_t cosine = (scale * trig.cosine) >> 11;
       const std::int32_t sine = (scale * trig.sine) >> 11;
       const std::int32_t ax = cosine - section.x, ay = sine - section.y;

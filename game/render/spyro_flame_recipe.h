@@ -67,9 +67,12 @@ struct Recipe {
   std::uint32_t rejects[(std::size_t)Reject::Count]{};
 };
 
-// The ring radius 0x80058D64 scales its sine/cosine pair by, wide once the ribbon is past its first
-// cross-section and narrow at the tip and the two closing steps.
-std::int32_t ringScale(bool wide, bool superFlame);
+// The two ring radii 0x80058D64 scales its sine/cosine pair by. They are NOT one shared value: the
+// tip's ring at 0x80058F78 is 0x2C for a normal flame, while the ribbon's ring at 0x800592E8 is 8
+// unless the flame is a superflame (its 0x2C store is a dead write killed by its branch's delay
+// slot). `wide` is the ribbon's own `remaining > 0 && projectedAnything`.
+std::int32_t tipRingScale(bool superFlame);
+std::int32_t ribbonRingScale(bool wide, bool superFlame);
 
 // The grey the ribbon starts at, five steps darker per texture row already consumed.
 std::uint8_t rampGrey(std::uint32_t rampIndex);

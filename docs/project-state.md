@@ -943,6 +943,14 @@ units), and `verify.py` now refuses an unregistered test source by name. Issue
 [0128](issues/0128-user-reported-crash-after-the-adventure-begins-card-not-yet-reproduced.md) holds
 the measurement.
 
+**2026-10-01, `demo-crash` branch:** the attract route's frame-21,158 refusal (`actor producer 0x8001F798`,
+`reason=face-light`) was the regular actor layer being asked for the secondary layer's per-face colour
+program; retail's `0x8001F798` has none (no `andi ..., 4` on its triangle path, no OP/SQR/CC), so a bit-2
+triangle is an ordinary face there. Fixed at the cause (`compose` / `composeWithFaceLight`). The route now
+reaches frame 21,318 and stops on a different refusal, the paired actor's semi-transparent faces
+(`0x80023AC4`, `fx_paired_actor.cpp`), so S011 stays `missing` and the demo still ends in exit 139.
+Issue 0128 holds the evidence.
+
 The attract demo is now a comparison route, and it is the first one that crosses a LEVEL ENTRY.
 `tools/oracle_compare.py --policy demo` (tools/oracle_spyro1_demo.py) drives BOTH cores with no pad
 input at all, so the title screen times out into `TSM_Demo`/`TSD_DemoLevel` and loads

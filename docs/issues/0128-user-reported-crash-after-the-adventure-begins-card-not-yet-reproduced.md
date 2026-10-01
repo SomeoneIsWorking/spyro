@@ -6,7 +6,7 @@ symptom: the product renders the "THE ADVENTURE BEGINS..." flyby card and then d
 state_items: S011
 tags: crash,render,producer,transition,repro
 created: 2026-09-19
-updated: 2026-09-22
+updated: 2026-10-01
 ---
 
 ## The observation outranks the runs
@@ -253,11 +253,68 @@ produce, reported as a tool failure. It now reports both endings with the same c
 
 ## Next
 
+0. The paired actor's semi-transparent faces (`0x80023AC4`, frame 21,318 on the attract route) — see the
+   2026-10-01 section.
 1. Particle types 4 (`.L80057954`) and 5 (`.L80057750`) are still unported and will refuse the same
    way when a record reaches them.
 2. The paired actor's fatal boundary still prints `refused its atomic recipe` with no reason; the
    reason is on the `pairedactor` channel. `SpyroPairedActorFrameState` already carries it, so the
    abort should say it, the way `0x8001F798`'s now does.
+
+## 2026-10-01: frame 21,158 on the attract route — the regular layer asked for a program it does not have
+
+The 2026-09-22 observation above (900 s, no refusal) does not hold on main `7110d4f`: `tools/demo_run.py`
+with no input exits 139 at frame 21,158 on a native render refusal. Whether that is a regression since
+2026-09-22 or a route that moved is NOT bisected (no earlier build was made).
+
+```
+[render:error] NATIVE RENDER NOT IMPLEMENTED — stage selector = 0 (actor producer 0x8001F798 refused its
+  atomic recipe — stage=recipe recipe=unsupported reason=face-light prefix_status=0 submission=ValidEmpty
+  record=4 source_word=10 words=0241A156,10000C04 slot=0 offset=0 limit=0 records=5 candidates=269
+  source_scanned=162 source_queued=5 source_culled=35 coarse=20 view=15 invalid_model=0)
+```
+
+Level 33 (`g_LevelId` read from `snap_21158.bin`: Wizard Peak, homeworld 3), `g_Gamestate` 0, demo tick 780.
+The face is a TEXTURED TRIANGLE (`words[0]` = `0x0241A156`: bit 31 clear, bit 1 textured, bit 2 set).
+Which Moby owns record 4 was not identified: the record list is rebuilt per frame and the snapshot holds
+it empty. `Reason::FaceLight` with the layer's `lightingControl` of 0 is `Status::NoEnvironment`.
+
+**Cause.** `actor_draw_recipe::compose` served both actor layers, with the secondary layer's per-face
+colour programs behind a defaulted empty `Environment`. The regular layer `0x8001F798` has no such program:
+
+- its triangle path begins at `0x8002031C` (`0x8001FFF8 bgez $at,0x8002031C` splits quad from triangle) and
+  never tests bit 2; the ONLY `andi ..., 4` in `0x8001F798..0x800208FC` is `0x80020010` on the QUAD path,
+  where `0x80020014 bgtz $t6,0x800205C4` is the billboard;
+- the whole body issues five COP2 command words, `0x4A180001` RTPS, `0x4A780010` DPCS, `0x4A980011` INTPL,
+  `0x4B400006` NCLIP and `0x4B90003D` GPF. The secondary program needs OP `0x4B70000C`, SQR `0x4AA00428`
+  and CC `0x4B38041C`, none of which appear (all 1,113 words scanned, 56 COP2 words decoded by command
+  field because Capstone does not decode COP2);
+- the secondary layer is the one that branches: `0x80021B64 andi $a1,$at,4` and `0x80021C0C bgtz $a1,0x80021DB4`.
+
+So retail draws a bit-2 triangle in the regular layer with its three material-table colours. The port's
+regular layer never captures the Moby's `+0x4C` control word either, so it could not have run the program
+correctly even with an environment; with a non-zero control it would have silently applied the tint arm.
+
+**Fix** (`9ee77a0`): `compose` (regular, no per-face programs) and `composeWithFaceLight` (secondary) are
+separate functions, so a layer cannot inherit the other's behaviour from a default argument. No lighting
+arm was added to the regular producer, because retail has none, and `shaded_moby_light` is not involved
+(it is the shaded pass `0x80022A2C`, a different renderer). Test: `tests/test_actor_draw_recipe.cpp`
+`testBitTwoTriangleIsOrdinaryInTheRegularLayerOnly`, with the secondary layer's refusal and tint as the
+negative controls.
+
+**Result.** The same route now passes 21,158 and reaches frame 21,318 (`scratch/screenshots/f21159.png`
+was captured by `tools/shot.py 21159` and opened: Spyro on a green checkered floor in Wizard Peak, 92.77%
+non-black), where the NEXT, unrelated refusal stops it:
+
+```
+Spyro actor producer 0x80023AC4 refused its atomic recipe — semi-transparent face in opaque group
+  (invocations=1 groups=0 candidates=278 faces=183)
+```
+
+That is the paired actor (Spyro) path, `fx_paired_actor.cpp:649`: it refuses any face whose command has the
+semi-transparency bit, and its emitter passes semi = 0 and its painter group asserts `!item.semi`. It is a
+deliberate, named gap and not the face-light arm, so it was not changed here. It is now the demo route's
+end (the corpus's attract-demo route also exits 139 there).
 
 ### The superseded plan
 

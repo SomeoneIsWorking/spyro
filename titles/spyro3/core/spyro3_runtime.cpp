@@ -61,18 +61,12 @@ const GuestProgramImage kProgramImage{
 // frame-boundary exit.
 constexpr std::uint32_t kVSync = 0x8005956Cu;
 
-// The counter the negative query reports, named by the executable's OWN data rather than assumed.
-// `tools/probe_guest_word.py` resolves 0x80069F28 and 0x80069F2C to three and two access sites, all
-// LOADS inside VSync and its timeout helper: no instruction in the resident text ever stores them,
-// so their values come from the image's initialised data. In that data (inside the mapped text
-// range, this executable declares d_size == 0):
-//   0x80069F28 = 0x1F801814   GPUSTAT
-//   0x80069F2C = 0x1F801110   root counter 1, the HBlank timer the BIOS display interrupt counts on
-// The polled pointer is the second one, so that is the counter a negative VSync answers with. It is
-// the framework's DERIVED register (`io_peripherals.cpp` serves 0x1F801110 from
-// `Timing::hSyncCounter` and the register has no writable state), so the field owner owns no guest
-// word for it and the host does not advance one.
-constexpr std::uint32_t kVSyncQueryCounter = 0x1F801110u;
+// The word a negative VSync returns: the guest's own vblank count maintained by the libetc vblank
+// callback, not a hardware register. VSync's negative path (0x800595C4 `bgez $a0` not taken) is
+//   800595CC  lui $v0,0x8007 ; 800595D0  lw $v0,-0x4b80($v0)     -> 0x8006B480
+// The earlier reading of 0x80069F2C/0x1F801110 described the blocking-wait pointer pair, not this
+// query. See docs/issues/0160.
+constexpr std::uint32_t kVSyncQueryCounter = 0x8006B480u;
 
 // libgpu's projection offset leaf, called by this image's geometry-init leaf 0x8002A99C with the
 // same (0x100, 0x78) pair Spyro 2's uses, and by nothing else in the image:

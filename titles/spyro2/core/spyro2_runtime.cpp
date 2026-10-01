@@ -28,22 +28,15 @@ namespace {
 // exit the title's field owner satisfies.
 constexpr std::uint32_t kVSync = 0x80058EDCu;
 
-// The counter SCUS_944.25's VSync reports for a negative argument, measured from the executable's
-// own data rather than assumed. The VSync body loads two counter POINTERS and polls them:
-//   80058EDC  lui $v0,0x8006 ; 80058EE0  lw $v0, 0x6450($v0)    mode 0 counter
-//   80058EE4  lui $a1,0x8006 ; 80058EE8  lw $a1, 0x6454($a1)    mode 1 counter
-// and the answer it returns is a difference of those two counts (0x80058F30 `subu $v0,$v0,$v1`
-// with $v1 loaded from 0x80066458). In the authenticated image the two pointer words hold
-// 0x1F801814 and 0x1F801110 -- GPUSTAT and root counter 1.
-//
-// Root counter 1 is the HBlank-clocked timer, and the framework already derives its value from
-// delivered display time (`io_peripherals.cpp` serves 0x1F801110 from `Timing::hSyncCounter`,
-// and the register has no writable state). So the host does not advance a word here and the
-// field owner owns no counter for it: adding one would have been a write to a register that
-// discards it, documented as though it counted fields. `tests/test_boot_prefix_frame_driver.cpp` is
-// what caught that -- a case asserting the counter equalled the field count read 263 after ONE
-// field, which is 263 scanlines, and is the hSync counter doing exactly its own job.
-constexpr std::uint32_t kVSyncQueryCounter = 0x1F801110u;
+// The word SCUS_944.25's VSync returns for a negative argument: the guest's own vblank count, not a
+// hardware register. The negative path (0x80058F34 `bgez $a0` not taken) falls to
+//   80058F3C  lui $v0,0x8006 ; 80058F40  lw $v0,0x6618($v0)
+// and that word is zeroed at 0x8005AC58 and incremented by the libetc vblank callback at
+//   8005ACB0  addiu $v0,$v0,1 ; 8005ACB8  sw $v0,0x6618($at)
+// The title's frame limiter (draw 0x80015900..0x80015990) compares it against its own saved last
+// value, so answering from the 16-bit HBlank timer 0x1F801110 made `now - last < 2` hold for
+// thousands of steps after the timer wrapped. See docs/issues/0160.
+constexpr std::uint32_t kVSyncQueryCounter = 0x80066618u;
 
 // libgpu's two projection leaves, called by the geometry-init leaf 0x80011D24:
 //   80011D38  jal 0x80057AF8   with a0=0x100, a1=0x78

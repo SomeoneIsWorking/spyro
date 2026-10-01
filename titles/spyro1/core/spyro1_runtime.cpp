@@ -136,6 +136,10 @@ bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {
   return spyro_presentation_owner(game.core).guestVramIsPicture();
 }
 
+bool Spyro1Runtime::guestPictureIsNativeWidth(const Game &game) const {
+  return spyro_presentation_owner(game.core).guestPictureIsNativeWidth();
+}
+
 void Spyro1Runtime::pacePresentation(Core &core, int fields, int parts) {
   // FieldScheduler has already delivered this simulated time, including the guest IRQ callbacks.
   gpu_wait_presented_fields(&core, fields, parts);

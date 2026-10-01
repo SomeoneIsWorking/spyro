@@ -8,7 +8,7 @@ class Core;
 class SpyroPresentationOwner {
 public:
   void beginGuestFrame() {
-    owner_ = Owner::GuestVram;
+    owner_ = Owner::GuestReference;
   }
 
   void beginNativeFrame() {
@@ -16,12 +16,19 @@ public:
   }
 
   bool guestVramIsPicture() const {
-    return owner_ == Owner::GuestVram;
+    return owner_ != Owner::NativeProducers;
+  }
+
+  // The boot logos are guest uploads at the native width; no widening applies to them.
+  bool guestPictureIsNativeWidth() const {
+    return owner_ == Owner::BootUploads;
   }
 
 private:
-  enum class Owner { GuestVram, NativeProducers };
-  Owner owner_ = Owner::GuestVram;
+  // BootUploads: the upload-only logos before the frame driver; GuestReference: the diagnostic
+  // guest-render leg; NativeProducers: the shipping native frame.
+  enum class Owner { BootUploads, GuestReference, NativeProducers };
+  Owner owner_ = Owner::BootUploads;
 };
 
 SpyroPresentationOwner &spyro_presentation_owner(Core &core);

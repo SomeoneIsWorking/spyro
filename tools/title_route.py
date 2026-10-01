@@ -183,7 +183,7 @@ def report(entry: TitleProfile, evidence: Evidence) -> str:
     )
 
 
-def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None, fallback_limit: int | None) -> int:
+def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None) -> int:
     import drive  # the live port; imported here so the selftest needs no binary and no disc
 
     entry = profile(name)
@@ -197,9 +197,6 @@ def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None, fall
         raise Refusal(f"no disc for {entry.label}: set {entry.disc_variable} (environment or .env)")
     env = drive.environment(None)
     env[entry.disc_variable] = disc
-    allowance = fallback_limit if fallback_limit is not None else entry.fallback_allowance
-    if allowance is not None:
-        env["PSXPORT_LIGHTREC_FALLBACK_BLOCK_LIMIT"] = str(allowance)
     if shot_dir is not None:
         (drive.ROOT / shot_dir).mkdir(parents=True, exist_ok=True)
     port = drive.Port(executable, image, log, env, gamestate_address=entry.gamestate_word)
@@ -210,8 +207,6 @@ def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None, fall
     finally:
         port.end()
     print(report(entry, evidence))
-    if allowance is not None:
-        print(f"  DIAGNOSTIC: run under a Lightrec fallback budget of {allowance} block(s) (docs/issues/0092 section 4); not product evidence")
     return EXIT_OK
 
 
@@ -307,7 +302,6 @@ def main(argv: Sequence[str] | None = None, *, live: Callable[..., int] = run_li
     parser.add_argument("--executable", type=Path, default=Path("build/bin/spyro_port"))
     parser.add_argument("--log", type=Path, default=Path("scratch/play/title_route.log"))
     parser.add_argument("--shot-dir", type=Path, default=None, help="write settled.ppm and moved.ppm here")
-    parser.add_argument("--fallback-limit", type=int, default=None, help="PSXPORT_LIGHTREC_FALLBACK_BLOCK_LIMIT")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv)
     if args.selftest:
@@ -315,7 +309,7 @@ def main(argv: Sequence[str] | None = None, *, live: Callable[..., int] = run_li
     if not args.title:
         parser.error("--title is required")
     try:
-        return live(args.title, args.executable, args.log, args.shot_dir, args.fallback_limit)
+        return live(args.title, args.executable, args.log, args.shot_dir)
     except Refusal as refusal:
         print(f"REFUSED: {refusal}", file=sys.stderr)
         return EXIT_REFUSED

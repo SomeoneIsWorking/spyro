@@ -143,7 +143,7 @@ def _value(number: int | None, why: str) -> str:
     return f"{number:,}" if number is not None else f"NOT MEASURED ({why})"
 
 
-def render(report: BootReport, *, title: str, fallback_budget: int | None) -> str:
+def render(report: BootReport, *, title: str) -> str:
     aborted = "the process aborted before its run-complete line" if report.end_kind == "stop" else "no run-complete line"
     lines = [f"boot run: {title}"]
     if report.end_kind == "resume":
@@ -175,11 +175,6 @@ def render(report: BootReport, *, title: str, fallback_budget: int | None) -> st
         lines.append(f"  fallback by reason:      {reasons}")
         refused = ", ".join(f"{k}={v}" for k, v in report.refused_reasons.items())
         lines.append(f"  refused by reason:       {refused}")
-    if fallback_budget is not None:
-        lines.append(
-            f"  fallback budget:         RAISED to {fallback_budget:,} blocks — a diagnostic allowance, "
-            "not product evidence"
-        )
     reads = len(report.reads)
     if report.published:
         lines.append(

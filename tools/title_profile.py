@@ -63,12 +63,6 @@ class TitleProfile:
     # The pad direction that walks away from the first conversation. Spyro 2's start faces a character who
     # opens a dialogue (state 1) within a 40-field run forward; walking back stays in the playing state.
     walk_button: str
-    # The Lightrec fallback-block budget this title's boot needs, or None for the shipping default of zero.
-    # Spyro 2 needs one because of a false positive in the shared Lightrec self-modifying-code rule at
-    # 0x8005FFFC (docs/issues/0092 section 4): `lui $at,0x8006` forms 0x80060000, which lies inside the
-    # block [0x8005FFFC, 0x80060058) the store `sw $v0,0x6C58($at)` belongs to, although the store's real
-    # target 0x80066C58 is data. A run under a budget is diagnostic, not product evidence.
-    fallback_allowance: int | None = None
 
     def __post_init__(self) -> None:
         states = {self.state_title, self.state_loading, self.state_playing}
@@ -90,7 +84,6 @@ TITLES: Mapping[str, TitleProfile] = {
         state_playing=0,
         position_word=0x80067EE4,
         walk_button="down",
-        fallback_allowance=2000,
     ),
     "spyro3": TitleProfile(
         label="Spyro 3 (SCUS_944.67)",

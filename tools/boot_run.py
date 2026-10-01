@@ -2,7 +2,7 @@
 """boot_run.py — run a Spyro 2 or Spyro 3 boot headless and report what it did, with denominators.
 
     uv run --frozen python tools/boot_run.py --title spyro2
-    uv run --frozen python tools/boot_run.py --title spyro3 --fallback-limit 100000000
+    uv run --frozen python tools/boot_run.py --title spyro3 --frames 600
     uv run --frozen python tools/boot_run.py --selftest
 
 WHY THIS EXISTS. Both titles boot their retail prefix through Lightrec and then stop, and "where they
@@ -23,10 +23,7 @@ IDENTIFIED and exits 1, because a report of zeros about a run nobody could read 
 exists not to produce. `--require-cd-match` makes a delivery count that differs from the read count
 exit 1 as well.
 
-`--fallback-limit N` raises the Lightrec fallback budget. Spyro 2 needs it today, because a shared
-self-modifying-block false positive at 0x8005FFFC (Spyro issue 0092 section 4) refuses the printf
-emitter; the report says the budget was raised, because a run under it is diagnostic and not product
-evidence. The log goes to `scratch/boot/<title>.log`, overwritten each run.
+The log goes to `scratch/boot/<title>.log`, overwritten each run.
 """
 
 from __future__ import annotations
@@ -61,15 +58,11 @@ class Refusal(RuntimeError):
 Runner = Callable[..., subprocess.CompletedProcess]
 
 
-def boot_environment(
-    title: TitleProfile, disc: str, fallback_limit: int | None, frames: int | None = None
-) -> dict[str, str]:
+def boot_environment(title: TitleProfile, disc: str, frames: int | None = None) -> dict[str, str]:
     env = drive.environment(None)
     env.pop("PSXPORT_REPL", None)  # a boot run reads no commands; the REPL would wait for stdin
     env[title.disc_variable] = disc
     env["PSXPORT_DEBUG"] = ",".join(filter(None, (env.get("PSXPORT_DEBUG"), BOOT_CHANNELS)))
-    if fallback_limit is not None:
-        env["PSXPORT_LIGHTREC_FALLBACK_BLOCK_LIMIT"] = str(fallback_limit)
     if frames is not None:
         env["PSXPORT_NATIVE_FRAMES"] = str(frames)
     return env
@@ -121,7 +114,6 @@ def main(argv: Sequence[str] | None = None, *, runner: Runner = subprocess.run, 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--title", choices=sorted(TITLES))
     parser.add_argument("--executable", type=Path, default=root / "build/bin/spyro_port")
-    parser.add_argument("--fallback-limit", type=int, default=None)
     parser.add_argument(
         "--frames",
         type=int,
@@ -139,14 +131,14 @@ def main(argv: Sequence[str] | None = None, *, runner: Runner = subprocess.run, 
     title = TITLES[args.title]
     try:
         executable, image = resolve_inputs(title, args.executable, root, drive.disc_path(title.disc_variable))
-        env = boot_environment(title, drive.disc_path(title.disc_variable) or "", args.fallback_limit, args.frames)
+        env = boot_environment(title, drive.disc_path(title.disc_variable) or "", args.frames)
         log = root / "scratch/boot" / f"{args.title}.log"
         output = run_boot(title, executable, image, env, log, args.timeout, runner)
     except Refusal as refusal:
         print(f"boot_run: REFUSED: {refusal}", file=sys.stderr)
         return EXIT_REFUSED
     report = boot_log.parse(output)
-    print(boot_log.render(report, title=title.label, fallback_budget=args.fallback_limit))
+    print(boot_log.render(report, title=title.label))
     print(f"  log: {log}")
     if not report.end_named:
         return EXIT_UNREADABLE_OR_MISMATCH
@@ -214,23 +206,22 @@ def selftest() -> int:
     check("aborted run has NO executed-block total, not a zero", stopped.executed_blocks is None and stopped.faults is None)
     check("two reads, two queued, two delivered is a MATCH", len(stopped.reads) == 2 and stopped.cd_matches)
     check("the stop's own counts are read", (stopped.fields, stopped.product_steps) == (3, 1))
-    rendered = boot_log.render(stopped, title="t", fallback_budget=5)
+    rendered = boot_log.render(stopped, title="t")
     check("an unmeasured total prints as NOT MEASURED", "faults:                  NOT MEASURED" in rendered)
-    check("a raised budget is named", "RAISED to 5" in rendered)
 
     capped = boot_log.parse(_SPYRO3_CAPPED)
     check("a completed run with no stop is a CAP, not a stop", capped.end_kind == "cap" and capped.faults == 0)
     check("the boot prefix's return is read", capped.boot_returned == (336, 546))
     check("a published read is counted with its generation", capped.published == [(570, 27, 3)])
     check("a stop never reads as published", stopped.published == [] and stopped.boot_returned is None)
-    check("an unpublished run says so", "NONE seen" in boot_log.render(stopped, title="t", fallback_budget=None))
-    check("a capped run renders its cap and its publication", "PRODUCT-STEP CAP" in boot_log.render(capped, title="t", fallback_budget=None))
+    check("an unpublished run says so", "NONE seen" in boot_log.render(stopped, title="t"))
+    check("a capped run renders its cap and its publication", "PRODUCT-STEP CAP" in boot_log.render(capped, title="t"))
     bound = boot_log.parse(_SPYRO2_FIELD_BOUND)
     check("a field-bound end is a named resume with its bound", (bound.end_kind, bound.end_pc) == ("resume", "0x800772FC") and "64" in bound.end_detail)
 
     unreadable = boot_log.parse("nothing the port ever prints\n")
     check("an unreadable log names no end", not unreadable.end_named)
-    check("an unreadable log has no CD verdict", "NO READS SEEN" in boot_log.render(unreadable, title="t", fallback_budget=None))
+    check("an unreadable log has no CD verdict", "NO READS SEEN" in boot_log.render(unreadable, title="t"))
 
     root = Path("/nonexistent-boot-run-selftest")
     try:

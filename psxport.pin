@@ -5,4 +5,4 @@
 # tools/psxport_fetch.py establishes. Ports are deliberately not all on framework HEAD — see
 # that tool's module docstring for why.
 url = https://github.com/SomeoneIsWorking/psxport.git
-commit = 2bb8d2f65ba0bbd9b9753ca732bfefd0199e5067
+commit = 41373bc0897bbf4885b686ecf71aee9801fb682b

@@ -41,7 +41,7 @@ TOOLS = Path(__file__).resolve().parent
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
-from title_profile import Refusal, TitleProfile, profile
+from title_profile import LevelFacts, Refusal, TitleProfile, profile
 
 EXIT_OK, EXIT_NOT_PLAYING, EXIT_REFUSED = 0, 1, 2
 
@@ -79,6 +79,7 @@ class Evidence:
     after_up: Position = (0, 0, 0)
     rested: Position = (0, 0, 0)
     after_jump: Position = (0, 0, 0)
+    level: "LevelIdentity | None" = None
 
     def moved(self) -> int:
         return abs(self.after_up[0] - self.settled[0]) + abs(self.after_up[1] - self.settled[1])
@@ -91,6 +92,32 @@ def _signed(word: int) -> int:
 def read_position(port: RoutePort, entry: TitleProfile) -> Position:
     x, y, z = (_signed(port.words(address, 1)[0]) for address in entry.position_words())
     return x, y, z
+
+
+@dataclass(frozen=True)
+class LevelIdentity:
+    level_id: int
+    homeworld: int
+    level: int
+    name: str
+
+
+NAME_WORDS = 8  # 32 bytes: longer than any level name the guest's table holds
+
+
+def read_level(port: RoutePort, facts: LevelFacts) -> LevelIdentity:
+    """The level the guest says it is in, named through the guest's own table (never from a picture)."""
+    homeworld = port.words(facts.homeworld_word, 1)[0]
+    level = port.words(facts.level_word, 1)[0]
+    level_id = port.words(facts.level_id_word, 1)[0]
+    pointer = port.words(facts.name_pointer_address(homeworld, level), 1)[0]
+    raw = b"".join(word.to_bytes(4, "little") for word in port.words(pointer, NAME_WORDS)).split(b"\0")[0]
+    if not raw or not all(0x20 <= byte < 0x7F for byte in raw):
+        raise Refusal(
+            f"level words (homeworld {homeworld}, level {level}, id {level_id}) name a pointer {pointer:#010x} "
+            f"that does not hold a printable name: {raw!r}"
+        )
+    return LevelIdentity(level_id, homeworld, level, raw.decode("ascii"))
 
 
 def _note(evidence: Evidence, state: int) -> None:
@@ -142,6 +169,8 @@ def prove_movement(port: RoutePort, entry: TitleProfile, evidence: Evidence, sho
     """Settle, then show the position responding to the pad. Raises Refusal when it does not."""
     port.run(SETTLE)
     evidence.settled = read_position(port, entry)
+    if entry.level is not None:
+        evidence.level = read_level(port, entry.level)
     if shot_dir is not None:
         port.shot(str(shot_dir / "settled.ppm"))
     _hold(port, entry.walk_button, HOLD_WALK)
@@ -172,9 +201,16 @@ def play(port: RoutePort, entry: TitleProfile, shot_dir: Path | None = None) -> 
 
 
 def report(entry: TitleProfile, evidence: Evidence) -> str:
+    level = evidence.level
+    level_line = (
+        f"  level      {level.name} (id {level.level_id}, homeworld {level.homeworld}, level {level.level})"
+        if level is not None
+        else "  level      not identified (no level words recorded for this title)"
+    )
     return "\n".join(
         (
             f"{entry.label}: reached gameplay after {evidence.arrival_field} fields; states seen {evidence.states_seen}",
+            level_line,
             f"  settled    {evidence.settled}",
             f"  after walk {evidence.after_up}  (moved {evidence.moved()} units horizontally)",
             f"  at rest    {evidence.rested}",
@@ -183,7 +219,8 @@ def report(entry: TitleProfile, evidence: Evidence) -> str:
     )
 
 
-def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None) -> int:
+def open_port(name: str, executable: Path, log: Path) -> tuple[TitleProfile, "drive.Port"]:
+    """Launch the built port headless on `name`'s disc. Shared by every live route (title_conversation.py)."""
     import drive  # the live port; imported here so the selftest needs no binary and no disc
 
     entry = profile(name)
@@ -197,9 +234,15 @@ def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None) -> i
         raise Refusal(f"no disc for {entry.label}: set {entry.disc_variable} (environment or .env)")
     env = drive.environment(None)
     env[entry.disc_variable] = disc
+    return entry, drive.Port(executable, image, log, env, gamestate_address=entry.gamestate_word)
+
+
+def run_live(name: str, executable: Path, log: Path, shot_dir: Path | None) -> int:
+    import drive
+
+    entry, port = open_port(name, executable, log)
     if shot_dir is not None:
         (drive.ROOT / shot_dir).mkdir(parents=True, exist_ok=True)
-    port = drive.Port(executable, image, log, env, gamestate_address=entry.gamestate_word)
     try:
         evidence = play(port, entry, shot_dir)
     except drive.Refusal as refusal:
@@ -260,6 +303,38 @@ class _Scripted:
         pass
 
 
+class _Memory:
+    """Guest words by address, for the level-identity selftest."""
+
+    def __init__(self, words: dict[int, int]) -> None:
+        self._words = words
+
+    def words(self, address: int, count: int = 1) -> list[int]:
+        return [self._words.get(address + 4 * i, 0) for i in range(count)]
+
+
+def _selftest_level() -> bool:
+    facts = profile("spyro2").level
+    assert facts is not None
+    pointer = facts.name_pointer_address(0, 1)
+    named = _Memory({
+        facts.homeworld_word: 0, facts.level_word: 1, facts.level_id_word: 11,
+        pointer: 0x80066EA0, 0x80066EA0: int.from_bytes(b"Glim", "little"), 0x80066EA4: int.from_bytes(b"mer\0", "little"),
+    })
+    identity = read_level(named, facts)
+    if (identity.name, identity.level_id) != ("Glimmer", 11):
+        print(f"SELFTEST FAILED: level read {identity}", file=sys.stderr)
+        return False
+    unnamed = _Memory({facts.homeworld_word: 0, facts.level_word: 1, facts.level_id_word: 11, pointer: 0x80066EA0})
+    try:
+        read_level(unnamed, facts)
+    except Refusal as refusal:
+        print(f"  refuses a level pointer to no name: {refusal}")
+        return True
+    print("SELFTEST FAILED: an empty name was accepted", file=sys.stderr)
+    return False
+
+
 def _selftest() -> int:
     entry = profile("spyro3")
     entry = TitleProfile(entry.label, entry.image, entry.disc_variable, 0x80000000, 11, 5, 0, 0x80000100, "up")
@@ -290,7 +365,7 @@ def _selftest() -> int:
         attempt("a position that does not respond to Up", _Scripted(route, walks=False), "moved the position by 0"),
         attempt("a height that does not respond to a jump", _Scripted(route, jumps=False), "did not rise"),
     )
-    if not all(cases):
+    if not all(cases) or not _selftest_level():
         return 1
     print("title_route selftest PASS")
     return 0

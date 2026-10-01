@@ -22,6 +22,13 @@ it, a position triple from the code that reads or writes it, so a reader can dec
     position triple 0x80067EE4 (x, y, z, one word each, z up): 0x80016AF4 `lui $s1,0x8006 ; addiu $s1,$s1,
                 0x7EE4` hands its address to the routine at 0x80016AFC; the triple moved with the pad and
                 z with a jump (tools/title_route.py reports both, and refuses when they do not).
+    conversation state 1 was OBSERVED live (Up from the arrival point opens Pogo's talk; gamestate 1 for
+                the whole conversation, then back to 0).
+    level identity: 0x80014450..0x8001447C `lw 0x7118($v0)` (homeworld, word 0x80067118) `sll 5`, `+ lw
+                0x6F54($v1)` (level in homeworld, word 0x80066F54) `sll 2`, `lw 0x49B4($at)` is the guest's
+                own level-name pointer table at 0x800649B4 (entries 0x80066EA0 "Glimmer", 0x800106D0 "Idol
+                Springs", 0x800106E0 "Summer Forest"); 0x80053D50..0x80053D74 reads the level id word
+                0x80066F90 (`lw 0x6F90`) through the byte table at 0x80064940 to the same name table.
   Spyro 3 (SCUS_944.67) game-state word 0x8006E344
     0x80055420  lui $v1,0x8007 ; 0x80055424 lw $v1,-0x1CBC($v1)    the per-frame update's switch operand
                 (0x8005542C `sltiu $v0,$v1,0x14` bounds it at 20 states)
@@ -50,6 +57,22 @@ class Refusal(RuntimeError):
 
 
 @dataclass(frozen=True)
+class LevelFacts:
+    """Where a title keeps the level it is in, and the guest's own name table for it.
+
+    The name is NOT inferred from a picture: the guest's name table holds a pointer per level, indexed
+    `(homeworld << 5) + level`, and the route reads the pointer and the string it names."""
+
+    homeworld_word: int
+    level_word: int
+    level_id_word: int
+    name_table: int
+
+    def name_pointer_address(self, homeworld: int, level: int) -> int:
+        return self.name_table + 4 * ((homeworld << 5) + level)
+
+
+@dataclass(frozen=True)
 class TitleProfile:
     label: str
     image: str
@@ -63,6 +86,11 @@ class TitleProfile:
     # The pad direction that walks away from the first conversation. Spyro 2's start faces a character who
     # opens a dialogue (state 1) within a 40-field run forward; walking back stays in the playing state.
     walk_button: str
+    # The game state of a conversation, and the pad direction that walks into one. None when this title's
+    # conversation has not been observed (tools/title_conversation.py refuses such a title by name).
+    state_dialogue: int | None = None
+    dialogue_button: str | None = None
+    level: LevelFacts | None = None
 
     def __post_init__(self) -> None:
         states = {self.state_title, self.state_loading, self.state_playing}
@@ -84,6 +112,14 @@ TITLES: Mapping[str, TitleProfile] = {
         state_playing=0,
         position_word=0x80067EE4,
         walk_button="down",
+        state_dialogue=1,
+        dialogue_button="up",
+        level=LevelFacts(
+            homeworld_word=0x80067118,
+            level_word=0x80066F54,
+            level_id_word=0x80066F90,
+            name_table=0x800649B4,
+        ),
     ),
     "spyro3": TitleProfile(
         label="Spyro 3 (SCUS_944.67)",

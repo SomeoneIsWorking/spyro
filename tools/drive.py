@@ -292,8 +292,14 @@ class Port:
         self._send(f"gate-teleport {gate} {node}")
 
     def shot(self, path: str) -> None:
+        """Capture the presented picture to `path`, returning once the port has written it (its own
+        `[repl] shot ... -> <path>` line), so a caller can read the file at once."""
         Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)
         self._send(f"shot {path}")
+        for line in self._lines():
+            if "[repl] shot" in line and f"-> {path}" in line:
+                return
+        raise Refusal(f"the port exited before writing the shot {path}")
 
     def dumpram(self, path: str) -> None:
         Path(ROOT / path).parent.mkdir(parents=True, exist_ok=True)

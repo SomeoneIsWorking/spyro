@@ -327,8 +327,8 @@ rule. Retail `0x80023AC4` draws such a face through the same packet path as an o
   GP0 bit 25 (0x02000000), `0x80024E44 add $t2,$t2,$s0` adds it to colour|`0x3C000000` (`0x80024DA8 lui $t6,0x3c00`),
   `0x80024E48 sw $t2,4($t8)` stores it: command `0x3E` against opaque `0x3C`;
 - triangle (GT3) is the same sequence at `0x80024FD8..0x80024FE4` over `0x80024F4C lui $t6,0x3400`: `0x36` against `0x34`;
-- the TPAGE word is never edited: it is stored from the model's own attribute word (`0x80025000 sw $a3,0x18($t8)`
-  quad / `0x80024E58 sw $a3,0x18($t8)`), so **ABR is bits 5..6 of that word's high half, straight from the model**;
+- the TPAGE word is never edited: it is stored from the model's own attribute word (`0x80024E58 sw $a3,0x18($t8)`
+  quad / `0x80025000 sw $a3,0x18($t8)` triangle), so **ABR is bits 5..6 of that word's high half, straight from the model**;
 - ordering: the bucket index (`0x80024DAC..0x80024E20`, `0x80024F50..0x80024FC0`) is computed from depth and the
   ordering-table adjust `sra $t6,$s0,0x1c` and **does not read the semi bit**. The packet is linked at the bucket
   tail (`0x80024E68 beqz $v1` / `0x80024E70 sh $t8,($v1)`) exactly like an opaque one, so a semi face is in the

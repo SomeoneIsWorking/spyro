@@ -48,11 +48,18 @@ disagree about WHICH MENU ROUTE to take.** Measured, on the same binary:
 | holds this game's save | reaches `GS_Playing` at game frame ~6340, i.e. plays |
 | blank | answers "CREATE SAVE FILE NOW?", sits on the warning, never commits a slot |
 
-Both columns are the SAME 6,781 recorded frames. The presses are landing correctly; the screen they
-were recorded against is not the screen a blank card offers. The recording therefore described a
-card-state route and nothing recorded that card state, so a reader could not tell which route the
-file belonged to - and the file's name (`artisans-arrival`) said "level", which is the one thing it
-could not deliver on a card that had never been written.
+Both columns are the SAME 6,781 recorded frames, and they differ only in the card. So the recording
+was captured on the save-holding route: its presses are that route's presses, and on a blank card the
+guest takes a different route through the front end, so the presses no longer match anything. Nothing
+was desynchronised and nothing regressed - the file described a route and said nothing about which
+one, and the file's NAME (`artisans-arrival`) claimed the one thing it could not deliver on a card
+that had never been written.
+
+The replacement recording is captured ON the blank card (SHA-256 `77d33c6b...30cb`, the canonical
+formatted-blank image), so its 28 button-pressing frames include the ones that answer the create-save
+prompt, and the card identity in the file is what makes that pairing checkable instead of
+accidental. Replayed against that same blank card it reaches Artisans; against the save-holding card
+it is now REFUSED by name.
 
 This is the same class of defect as the lineage null in `docs/findings/lineage-metric.md`: a real
 measurement of the wrong subject. Here the wrong subject is the CARD, and it was invisible because a
@@ -103,9 +110,10 @@ than pretending to be keyed.
 ### The recorded pad, as it now stands
 
 `replays/gameplay/artisans-arrival.pad` is a v1 (`PSXPADPH`) file: 6 segments, 6,502 frames, 28
-frames actually holding a button, recorded against card SHA-256
-`77d33c6be1b8862c8b55d6159ba9a6aed172778a64b6ae9aa705f0638c0330cb`. Its phases, in order, with the
-frames each one covers:
+frames actually holding a button, recorded against the BLANK card SHA-256
+`77d33c6be1b8862c8b55d6159ba9a6aed172778a64b6ae9aa705f0638c0330cb` (the canonical formatted-empty
+image; the seed is `scratch/saves/pad_seed.mcr`). Its phases, in order, with the frames each one
+covers:
 
 | phase | what it is | frames |
 |---|---|---|
@@ -121,11 +129,17 @@ The last row is the claim the file's name makes, and it is the only row that is 
 ### Measured legs
 
 **Positive.** The keyed pad replayed with NO input driver at all - nothing taps anything, so every
-press in Artisans came out of the file - under `tools/fps60_control_settings.ini`, recorded under
-`tools/shipping_settings.ini`. The guest enters `gs=0/level=0xa` at frame 6361 and the log ends
-`[padphase] replay COMPLETE: all 6 segment(s) consumed, 6502 of 6502 recorded frame(s) delivered`.
-`scratch/padphase/leg3_playing.ppm` is 512x240 at 93.3% non-black and shows Spyro standing in
-Artisans with terrain, bridge and towers.
+press in Artisans came out of the file:
+
+    uv run --frozen python tools/pad_replay.py \
+        --pad replays/gameplay/artisans-arrival.pad \
+        --card-seed scratch/saves/pad_seed.mcr \
+        --settings tools/fps60_control_settings.ini --frames 6600
+
+Run on the port built from this branch against the pinned framework, the guest enters
+`gs=0/level=0xa` at frame 6361 and the log ends `[padphase] replay COMPLETE: all 6 segment(s)
+consumed, 6502 of 6502 recorded frame(s) delivered`; the captured frame is 512x240 at 93.3% non-black
+and shows Spyro standing in Artisans with terrain, bridge and towers.
 
 **Negative control, and it did not fail - reported as measured.** The same 6,502 masks, flattened by
 a scratch-only script into one unkeyed absolute segment through the production `migrate` path (the
@@ -157,14 +171,22 @@ also the boot prefix, and which is why an earlier probe reported arrival at fram
 | keyed, no input driver | `ARRIVED IN A LEVEL (gs=0, level!=0) at frame 6361`, `[padphase] replay COMPLETE: all 6 segment(s) consumed, 6502 of 6502 recorded frame(s) delivered`, 512x240 at 93.3% non-black showing Spyro in Artisans |
 | absolute (unkeyed) control, same settings | `ARRIVED IN A LEVEL at frame 6361`, `all 1 segment(s) consumed, 6502 of 6502`, same 93.3% |
 
-**The card identity is exact, and that has a cost worth stating.** The digest in the file is the
-card as it was at RECORDING time, and the guest writes a save during the run, so the file on disk
-afterwards no longer hashes to it. `scratch/saves/card.mcr` still is that card
-(`77d33c6b...30cb`) and every leg above ran against a COPY of it, leaving the original untouched.
-The copies taken after a run all hash to `161fd683...` instead, and replaying against one of those
-is refused by name. That is the intended behaviour - the route the file describes belongs to the
-card it was recorded against - but it means a replay leg needs a card in the recorded state, and
-the refusal is the correct answer rather than an obstacle to work around.
+**The card identity is exact, and `tools/pad_replay.py` owns the leg.** A pad leg is the one run
+whose start state is fixed by something outside itself - the recording's card - so its card is
+`scratch/saves/pad_replay.mcr`, restored from the seed image `scratch/saves/pad_seed.mcr` before the
+run. It is never `scratch/saves/card.mcr`: that is the shared card, and a run that writes it changes
+the next run's input (docs/issues/0169). The digest in the file is the card at RECORDING time and the
+guest writes a save during the run, so the copies taken after a run no longer hash to it and are
+refused by name - the intended behaviour, because the route the file describes belongs to the card it
+was recorded against.
+
+`drive.environment(card=)` is deliberately NOT used for a pad leg, and the reason is in the tool's
+docstring: `card=` runs `blank_card_environment`, which DELETES the card so the product formats a
+fresh one. For a title route that is exactly right, because the requirement is "must repeat". For a
+pad leg the requirement is "must start from the recorded state", and deleting the image would
+guarantee a refusal. The isolation is identical - a private image, never the shared one - and only
+the start state differs. Spyro 2/3's title routes keep the blank-card path unchanged and were
+measured on it after this change: 3340 and 4890 fields, the numbers docs/issues/0169 recorded.
 
 ### Test counts at the time of writing
 
@@ -172,12 +194,20 @@ the refusal is the correct answer rather than an obstacle to work around.
 |---|---|
 | `psxport` `ctest --test-dir build` | **199/199** - the 198 upstream tests plus `test_pad_phase_replay` |
 | `spyro` `uv run --frozen python tools/verify.py --jobs 6` | **130/131**, the one red being `spyro_psxport_pin_live` refusing a DIRTY framework dev clone. That is the pin guard working: this run deliberately built against the uncommitted framework worktree rather than the recorded pin `41373bc0` |
-| `tools/drive.py gameplay` | reaches `GS_Playing` at frame 6360, exit 0 |
+| `tools/drive.py gameplay` | reaches `GS_Playing` at frame 6360, exit 0 - ON A CARD HOLDING THIS GAME'S SAVE |
+| `tools/title_route.py --title spyro2` | reached gameplay after 3340 fields (Glimmer), exit 0 |
+| `tools/title_route.py --title spyro3` | reached gameplay after 4890 fields, exit 0 |
 
-`drive.py gameplay` needs saying out loud because it looks like a regression and is not: with the
-BLANK `scratch/saves/card.mcr` it refuses DETERMINISTICALLY (twice, at the same frames 1740/1760) at
-the create-save prompt, and with a card holding this game's save it reaches Artisans immediately.
-That is this issue's own cause reproduced through the live driver, and it predates the phase work -
-the record/replay session is inert with no record or replay path configured
+`drive.py gameplay` is qualified because it looks like a regression here and is not. On THIS
+worktree's shared `scratch/saves/card.mcr` - the blank image, digest `77d33c6b` - it refuses
+DETERMINISTICALLY (repeated runs, always frames 1740/1760) at the create-save prompt, which is
+upstream's recorded behaviour for Spyro 1 on a blank card. Given a card holding the game's save it
+reaches Artisans at 6360 on this same binary. So the code is unchanged and the card is the variable -
+and it is the same variable this issue is about, now visible in the driver as well as in the pad file.
+The record/replay session is inert with no record or replay path configured
 (`PadRecordReplay::service` returns the live mask when nothing is configured, and Spyro's
-`InputPhase::of` only reads two guest words).
+`InputPhase::of` only reads two guest words), so none of the pad work can move that number.
+
+The two title routes were re-measured on the blank `drive.ROUTE_CARD` after this change, and both
+match what docs/issues/0169 recorded for a blank card (3340 and 4890), which is the point: the pad
+work moved nothing in the routes that carry no recording.

@@ -1915,7 +1915,11 @@ Artisans; its 485 checkpoints over 6,305 decisive range comparisons with zero di
 gameplay. Issue 0116 reached the looks-right verdicts and the frame-time budget only, and it is now
 resolved at the file rather than only at the route: `replays/gameplay/artisans-arrival.pad`
 is a v1 phase-keyed, card-identified recording that replays into Artisans with no input
-driver, while the route remains what the verdicts are taken through.
+driver (`tools/pad_replay.py`, on a private card seeded to the state the capture was made
+against - the blank image, never the shared `scratch/saves/card.mcr`), while the route remains
+what the verdicts are taken through. MEASURED after: 6361 on the keyed file, 6502 of 6502 frames
+over all 6 segments, with Spyro in Artisans in the captured frame; and, on the same binary,
+`title_route.py` 3340 (Spyro 2) / 4890 (Spyro 3) on the blank route card, unchanged.
 
 The endpoint lifecycle is now owned for visible world animation channels. When a previous source
 contains a pending channel, temporal admission decodes that channel through the same pure animation

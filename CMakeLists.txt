@@ -375,6 +375,12 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_profile.py --selftest)
   add_test(NAME title_route_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_route.py --selftest)
+  # Two runs of one binary on one set of inputs must be one run (docs/issues/0169). The comparison logic is
+  # gated here without the disc, with the cases that matter as pairs: identical runs against runs that drift,
+  # and a perturbed leg that diverges against one the digest cannot see. The live check is maintainer-run:
+  # `uv run --frozen python tools/determinism_check.py --title spyro2|spyro3`.
+  add_test(NAME determinism_check_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/determinism_check.py --selftest)
   add_test(NAME drive_environment_card
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_drive_environment.py)
   add_test(NAME guest_globals_selftest

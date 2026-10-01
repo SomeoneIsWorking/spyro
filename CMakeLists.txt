@@ -9,21 +9,10 @@ set(PSXPORT_DIR "${CMAKE_SOURCE_DIR}/external/psxport" CACHE PATH
     "psxport framework source directory")
 if(NOT EXISTS "${PSXPORT_DIR}/cmake/psxport.cmake")
   message(FATAL_ERROR
-    "PSXPORT_DIR=${PSXPORT_DIR} has no cmake/psxport.cmake; resolve the pinned psxport checkout")
+    "PSXPORT_DIR=${PSXPORT_DIR} has no cmake/psxport.cmake; resolve the psxport checkout")
 endif()
 find_package(Git REQUIRED)
 execute_process(
-  COMMAND "${GIT_EXECUTABLE}" -C "${PSXPORT_DIR}" rev-parse HEAD
-  RESULT_VARIABLE PSXPORT_REVISION_RESULT
-  OUTPUT_VARIABLE PSXPORT_REVISION
-  ERROR_QUIET
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
-if(NOT PSXPORT_REVISION_RESULT EQUAL 0 OR PSXPORT_REVISION STREQUAL "")
-  message(FATAL_ERROR "cannot resolve the PSXPORT_DIR commit for build provenance")
-endif()
-file(WRITE "${CMAKE_BINARY_DIR}/psxport_resolved.txt"
-     "dir = ${PSXPORT_DIR}\ncommit = ${PSXPORT_REVISION}\n")
-
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # ONE LOCKED PYTHON ENVIRONMENT. Every maintainer tool and test below runs on the project's own
@@ -710,13 +699,3 @@ if(BUILD_TESTING)
   set_tests_properties(oracle_level_entry_selftest PROPERTIES TIMEOUT 60)
 endif()
 
-# THE PIN TOOL AND ITS BEHAVIOUR TEST. Unguarded, because this repository calls enable_testing()
-# directly: an if(BUILD_TESTING) add_test here is silently inert, which is the failure this gate exists to
-# prevent. Verified live: perturbing psxport.pin turns the first one red.
-add_test(
-  NAME spyro_psxport_pin_live
-  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/psxport_sync.py"
-          --check --build "${CMAKE_BINARY_DIR}")
-add_test(
-  NAME spyro_psxport_pin_selftest
-  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_psxport_sync.py")

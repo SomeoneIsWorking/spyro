@@ -368,6 +368,13 @@ if(BUILD_TESTING)
   # totals must read NOT MEASURED, never 0), a matching CD count and a mismatching one, and the refusals.
   add_test(NAME boot_run_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/boot_run.py --selftest)
+  # The per-title play facts and the route that uses them. Cases are pairs: a title that loads and plays
+  # against one that never leaves its title, never shows one, skips loading, or whose position and
+  # height words do not respond to the pad. A route that cannot refuse would report a loading screen as play.
+  add_test(NAME title_profile_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_profile.py --selftest)
+  add_test(NAME title_route_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_route.py --selftest)
   add_test(NAME guest_globals_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/guest_globals.py --selftest)
   # The route both the interactive driver and the oracle's level checkpoint walk. A steering table

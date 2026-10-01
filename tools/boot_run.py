@@ -36,7 +36,6 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -45,6 +44,7 @@ if str(TOOLS) not in sys.path:
 
 import boot_log  # noqa: E402
 import drive  # noqa: E402
+from title_profile import TITLES, TitleProfile
 
 ROOT = drive.ROOT
 EXIT_OK, EXIT_UNREADABLE_OR_MISMATCH, EXIT_REFUSED = 0, 1, 2
@@ -52,19 +52,6 @@ EXIT_OK, EXIT_UNREADABLE_OR_MISMATCH, EXIT_REFUSED = 0, 1, 2
 # Channels the report's CD denominators are read from. `cd` logs each CdRead, `cdirq` each queued and
 # delivered completion; without them the report could only say "no reads seen".
 BOOT_CHANNELS = "cd,cdirq"
-
-
-@dataclass(frozen=True)
-class Title:
-    label: str
-    image: str
-    disc_variable: str
-
-
-TITLES: Mapping[str, Title] = {
-    "spyro2": Title("Spyro 2 (SCUS_944.25)", "scratch/assets/spyro2/SCUS_944.25", "PSXPORT_SPYRO2_DISC"),
-    "spyro3": Title("Spyro 3 (SCUS_944.67)", "scratch/assets/spyro3/SCUS_944.67", "PSXPORT_SPYRO3_DISC"),
-}
 
 
 class Refusal(RuntimeError):
@@ -75,7 +62,7 @@ Runner = Callable[..., subprocess.CompletedProcess]
 
 
 def boot_environment(
-    title: Title, disc: str, fallback_limit: int | None, frames: int | None = None
+    title: TitleProfile, disc: str, fallback_limit: int | None, frames: int | None = None
 ) -> dict[str, str]:
     env = drive.environment(None)
     env.pop("PSXPORT_REPL", None)  # a boot run reads no commands; the REPL would wait for stdin
@@ -88,7 +75,7 @@ def boot_environment(
     return env
 
 
-def resolve_inputs(title: Title, executable: Path, root: Path, disc: str | None) -> tuple[Path, Path]:
+def resolve_inputs(title: TitleProfile, executable: Path, root: Path, disc: str | None) -> tuple[Path, Path]:
     if not executable.is_file():
         raise Refusal(f"the built port is missing: {executable} — build target spyro_port first")
     image = root / title.image
@@ -100,7 +87,7 @@ def resolve_inputs(title: Title, executable: Path, root: Path, disc: str | None)
 
 
 def run_boot(
-    title: Title,
+    title: TitleProfile,
     executable: Path,
     image: Path,
     env: Mapping[str, str],

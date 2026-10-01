@@ -136,7 +136,12 @@ class Port:
     _READY = re.compile(r"\[repl\] frame=(\d+) ready")
 
     def __init__(self, executable: Path, binary: Path, log: Path, env: dict[str, str],
-                 post_presses: "press_conditions.PostArrivalPressConditions | None" = None):
+                 post_presses: "press_conditions.PostArrivalPressConditions | None" = None,
+                 gamestate_address: int = G_GAMESTATE):
+        # The word every sample reads. Spyro 1's by default; a title with its own game-state word
+        # (tools/title_profile.py) names it here, because sampling Spyro 1's address in another
+        # image reads an unrelated word and fills the census with plausible integers.
+        self._gamestate_address = gamestate_address
         log.parent.mkdir(parents=True, exist_ok=True)
         self._log = log.open("w")
         self._proc = subprocess.Popen(
@@ -257,7 +262,7 @@ class Port:
         return self.words(address, 1)[0]
 
     def gamestate(self) -> int:
-        return self.word(G_GAMESTATE)
+        return self.word(self._gamestate_address)
 
     def pause_menu(self) -> tuple[int, int]:
         """The pause menu's selected entry (`D_80075720`) and its submenu flag (`D_800757C8`).
@@ -316,9 +321,12 @@ class Port:
         self._send(f"preseq {count} {target}")
 
     def end(self) -> int:
-        self._send("end")
-        assert self._proc.stdin is not None
-        self._proc.stdin.close()
+        # A port that already exited (it stopped on its own, which is what a refused run is) has no
+        # reader for `end`; reap it instead of writing to a closed pipe and burying the real refusal.
+        if self._proc.poll() is None:
+            self._send("end")
+            assert self._proc.stdin is not None
+            self._proc.stdin.close()
         self._drain()
         return self._proc.wait()
 

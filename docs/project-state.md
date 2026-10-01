@@ -49,7 +49,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S028 | Spyro 2 presents interpolated 60fps from captured source geometry | missing | S024 | G003 |
 | S029 | Spyro 3 presents interpolated 60fps from captured source geometry | missing | S025 | G003 |
 | S036 | The zero-argument product opens on an in-window title selector; entries are enabled only for provisioned, authenticated executables; a title can return to the selector and another can start in the same process | verified headless, both orders, for all three pairs (1<->2, 2<->3, 1<->3) at frame 300, partial overall — selector rendered by the psxport RmlUi screen and captured from the present image; `tools/title_switch.py` runs selector -> A (frame N) -> `session return` -> selector -> B (frame N) and compares B's full guest RAM and scratchpad with two fresh-process B runs (the two fresh runs agree first, as the control): identical in both orders (the control also differs between titles: 36f2a838 / 3ab8187f / 74f52d7f). Defects found and fixed on the way are in issue 0169. a pad-driven (not control-channel) selection of every title, and any windowed run, are not recorded; the picker window has no title (the pinned framework has no HostIdentity); the explicit executable argument remains a maintainer override that skips the selector |
-| S033 | Spyro 1: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing — M3 measured: 26 operations, 0 pending, worst 2 fields, 20 of 31 census sites; M1/M2 oracle comparison and M4 still open | S008, S011 | G005 |
+| S033 | Spyro 1: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | partial — M1 and M2 measured against the full-console reference (28/28 payload digests identical; 0 hand-off field differences at 4 terminals) and R6 decided; M4 (absence of loading presentation) still open | S008, S011 | G005 |
 | S034 | Spyro 2: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S024 | G005 |
 | S035 | Spyro 3: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S025 | G005 |
 
@@ -2229,19 +2229,59 @@ per-field call cadence, not a host cost: the column is not ordered by byte size 
 bit `[0x800774B4] & 0x40` was SET in 26 of 26 operations, so every load took the music-aware path
 and it still cost at most 2 fields — but a constant reading cannot separate "always set" from "wrong
 address", so R6 stays open with the named next step (a silent-music run must show it clear on some
-operations). Coverage is **20 of the 31 census sites, 11 unreached, 6 of the 20 unattributed by
+operations). **(R6 is decided below, 2026-10-01: the bit IS clear in thousands of observations on
+both cores, the instruction that clears it executed on the reference, and no read on this route was
+issued while it was clear.)** Coverage is **20 of the 31 census sites, 11 unreached, 6 of the 20 unattributed by
 site**: `$ra - 8` names a `jal` site only when the CALLER was guest code, and the port's native
 `BootSequence::loadAssets` performs S02-S05 by dispatching the loader directly. Shown the other
 answer: CTest `load_ledger` drives the real class with the completion withheld and the stage machine
 stops at 2 operations, 1 pending, with the unfinished operation's latency reported as no latency at
 all rather than 0.
 
-**Still missing: M1 and M2.** The ledger now records the payload multiset M1 compares and carries
-the guest words M2's field list names, so both legs have their input, but **neither was run** — M1
-needs the oracle core with real CD timing and M2 needs `tools/ram_compare.py` from the `skips`
-worktree. Nor is M4 (absence of loading presentation) done. Until M1/M2 land this item stays
-**missing**, not partial: the port's own path is measured, and nothing has been compared against
-retail.
+**M1 and M2 are measured against retail (2026-10-01, `docs/issues/0155` "M1 and M2 measured, R6
+decided", `tools/load_compare.py`, CTest `load_compare_selftest`).** Both cores were driven over the
+same route in one run (`tools/oracle_spyro1.py`'s policy: save picker → `GS_Playing` → settled play
+→ the twelve gameplay segments; native 7,738 frames, console 8,778 fields, 15 checkpoints, every
+decisive range MATCH), the port through its REPL with `PSXPORT_LOAD_LEDGER`, the reference through
+the pinned full-console core with its bounded PC observer on the two CD loaders (2,546,226,609
+instructions scanned, 30 matches, 0 dropped, 0 pairing errors).
+
+**M1: 28 of 28 payload operations identical, every SHA-256 included.** The reference's leg is not
+read from the port: its loader arguments come from the observer's registers and its payload digest
+is computed from `WAD.WAD` (110,260,224 B, sha256 `7ba8961c3626bcec`). Six rows differ in the
+tuple's **issuer-site column alone** with byte-identical payloads, and every one is the known `$ra-8`
+case: four reads the port dispatches from its own boot owner (site `0xDEACFFF8`) are the reference's
+**S02-S05**, and the PETE read the port attributes to `0x8002D4A4` is **S06 `0x8005B83C`** — which
+independently confirms §2.1's size-based identification of those five host-dispatched reads.
+Coverage: **23 of the census's 31 issuer sites exercised on at least one core** (the port alone
+reaches 18 named sites plus 6 unattributed operations), **8 unreached and named** — S07, S08, S09,
+S10, S11, A17, A18, A19, every one a route this comparison does not take. M1's negative is measured,
+not asserted: with the archive truncated so four reads lose their sectors, those four are reported
+UNEQUAL with the byte range named and the tool exits 1 (`--truncate-bytes`; the exactly-one-sector
+form is in the selftest).
+
+**M2: 0 hand-off field differences at all four terminals** (three LoadCutscene stage-10 and LoadLevel
+leaving stage 13), with the clock deltas named separately (`g_LevelTicks` 231 vs 435 at the boot
+cutscene, 0 vs 1 at the level exit). At the first terminal — the only point where no later read has
+re-used any destination — **all 28 payload destination ranges are byte-identical in both cores' RAM**;
+at the later terminals the ranges differ because both cores have consumed their own staging buffers
+(32 of 33 differing ranges have both cores past the payload; in the one exception the PORT still
+holds its payload and the reference has moved on), so that column is reported rather than judged
+outside the first terminal, and the tool prints which is which.
+
+**R6 is decided: the XA bit is not permanently set, and the 26/26 was a property of WHEN reads are
+issued.** Polled every field, `[0x800774B4] & 0x40` is CLEAR in 2,232 of 7,738 port observations and
+3,441 of 8,778 reference ones (values `0x00`, `0x10`, `0x40`, `0x100`, `0x200`); `tools/writers.py`
+finds the six immediate-form writers of that word, of which **two store `0x100` — bit 6 CLEAR** —
+and the observer caught `0x8002BF2C` executing **2 times** on the reference. Yet at a loader entry
+the bit was set in 28 of 28 on the reference too (the observer carries the word in every record, so
+that is sampled at the read itself): Spyro issues its reads when the gate is open, which is why the
+latency is bounded at 2 fields. R6 therefore stays open only in the narrower form "a read issued
+while the bit is clear also costs nothing", needing a route with a music command in flight.
+
+**M4 (absence of loading presentation) is still not done**, and the two logo holds remain. So this
+item is **partial**, not verified: the payload, the terminal state and the residual latency are all
+measured against the reference on this route, and the presentation claim has no measurement.
 
 The logo-hold press latch is done (2026-10-01): a Start/Cross press made in any boot fade or in the
 stage 3->10 loader is honoured at the next hold through the existing hold-skip route, measured as the

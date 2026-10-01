@@ -467,6 +467,19 @@ if(BUILD_TESTING)
   # a short file would make every address read as zero and every field look equal.
   add_test(NAME ram_compare_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/ram_compare.py --selftest)
+  # 0155 §7 M1 (payload) and M2 (terminal state) of the loading census, and the R6 XA-gate question.
+  # Gated for the failure this class of instrument has produced nine times in this workspace: a
+  # comparison that cannot report a difference. Its selftest plants every way M1 can be unequal --
+  # one differing digest, one missing operation, one extra operation, and §7's own negative, the
+  # archive truncated by one sector, where a missing payload must become an UNEQUAL operation rather
+  # than a shorter table -- refuses a ledger report and an observer record set it cannot read (an
+  # unreadable report would compare as zero operations on both sides and report M1 as passing), and
+  # runs M2's field list through the SHARED ram_compare comparer, whose negative is the other half:
+  # a capture pair differing in a clock AND in a hand-off field must report exactly those two.
+  # The live legs need the disc, the full-console reference and a second core, so they are
+  # maintainer-run: `uv run --frozen python tools/load_compare.py --bios ../SCPH1001.BIN`.
+  add_test(NAME load_compare_selftest
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/load_compare.py --selftest)
   # The menu policy the two drivers share. Gated because a driver that presses the wrong button does
   # not fail -- it walks into another menu, or opens the pause menu during gameplay, and the run still
   # reaches GS_Playing and looks fine. Its selftest pins each decision and, more importantly, the

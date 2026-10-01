@@ -52,6 +52,11 @@ the other 15 named as unreached. `docs/issues/0155`, "M3 measured".
   loader function. The ledger reports these as `outside the 0155 census` with the guest PC beside
   them rather than putting a plausible-looking guest address in the site column. In the measured
   run 6 of 26 operations were unattributed, so coverage read `16/31` for a route that in fact
-  exercised 20 of the census's sites.
-* It records what the overrides did. It does not compare any of it against retail — that is M1 and
-  M2, still open — so its zero-latency result is a statement about the port's own path.
+  exercised 20 of the census's sites. **Measured from the other side (2026-10-01, I006): the
+  reference's own guest boot issues those four reads from S02-S05 with byte-identical payloads, and
+  issues the PETE read from S06 `0x8005B83C`, which is what `0x8002D4A4` is a caller of.**
+* It records what the overrides did. **Since 2026-10-01 those records ARE compared against retail,
+  by instrument I006 (`tools/load_compare.py`): 28 of 28 payload operations identical including every
+  SHA-256, and 0 hand-off field differences at four load terminals. What the ledger itself cannot do
+  is attribute a read its own native boot owner dispatched — see below — and that gap is now measured
+  from both sides rather than inferred.**

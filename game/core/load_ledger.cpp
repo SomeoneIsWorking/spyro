@@ -68,10 +68,6 @@ std::string siteLabel(std::uint32_t address) {
                          : hex(address) + " (outside the 0155 census)";
 }
 
-std::string digestPrefix(const std::string &digestHex) {
-  return digestHex.size() > 16 ? digestHex.substr(0, 16) : digestHex;
-}
-
 } // namespace
 
 const IssuerSite *knownIssuerSites() {
@@ -169,14 +165,19 @@ std::string Ledger::report() const {
         "denominator below is reported against an empty run and every named site is unreached.\n";
   }
   out += "load ledger: per operation\n";
-  out += "  # site ra-8 pc lba len dest deferred stage@issue field@issue field@done latency "
-         "music-idle@issue sha256[0:16]\n";
+  // The byte offset and the FULL digest are here because this table is M1's input record (0155 §7):
+  // the payload multiset it compares is (issuer site, LBA, byte offset, length, destination,
+  // SHA-256), so a column that carried a 16-character digest prefix or no offset at all would be a
+  // comparison of a prefix and a guess. The report goes to a file, so the length costs nothing.
+  out += "  # site ra-8 pc lba off len dest deferred stage@issue field@issue field@done latency "
+         "music-idle@issue sha256\n";
   for (std::size_t index = 0; index < operations_.size(); ++index) {
     const Operation &operation = operations_[index];
     out += "  " + format(index) + " " + siteLabel(operation.issuerSite) + " " +
-           hex(operation.guestPc) + " " + hex(operation.baseLba) + " " + format(operation.length) +
-           " " + hex(operation.destination) + " " + (operation.deferred ? "stream" : "blocking") +
-           " " + format(static_cast<std::uint64_t>(operation.loadStageAtIssue)) + " " +
+           hex(operation.guestPc) + " " + hex(operation.baseLba) + " " + hex(operation.byteOffset) +
+           " " + format(operation.length) + " " + hex(operation.destination) + " " +
+           (operation.deferred ? "stream" : "blocking") + " " +
+           format(static_cast<std::uint64_t>(operation.loadStageAtIssue)) + " " +
            (operation.fieldCounted ? format(operation.fieldAtIssue) : std::string("nocounter")) +
            " " +
            (operation.completed && operation.fieldCounted
@@ -187,7 +188,8 @@ std::string Ledger::report() const {
                 ? format(operation.latencyFields())
                 : (operation.fieldCounted ? std::string("pending") : std::string("nocounter"))) +
            " " + (operation.musicGateClearAtIssue ? "clear" : "busy") + " " +
-           digestPrefix(operation.digest) + (operation.accepted ? "" : " REFUSED") + "\n";
+           (operation.digest.empty() ? std::string("NO-DIGEST") : operation.digest) +
+           (operation.accepted ? "" : " REFUSED") + "\n";
   }
 
   // The coverage denominator. A site the run never reached is named, so "the route never died"

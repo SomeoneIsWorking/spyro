@@ -513,6 +513,10 @@ entered with and is `0x80016500` or `0x80016698` in every row, which is the fals
 on the loader and not somewhere that merely looks like it.
 
 | # | site | lba | bytes | dest | kind | `g_LoadStage`@issue | field@issue | field@done | latency (fields) | XA bit clear @issue | sha256[0:16] |
+
+**Format note (2026-10-01).** `load_ledger.cpp`'s report now carries the byte offset and the FULL
+digest, because that table is M1's input record and a 16-character prefix plus no offset is a
+comparison of a prefix and a guess. The table above is left as measured, with its own header.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | **S01** `0x8001253C` | 0x25 | 2,048 | `0x8007AA38` | blocking | 0 | nocounter | nocounter | 0 | no | `15d3e9c45f07e27a` |
 | 1 | host dispatch | 0x25 | 2,048 | `0x8007AA38` | blocking | 0 | nocounter | nocounter | 0 | no | `229efedc2014e753` |
@@ -607,7 +611,12 @@ the game forever, in exchange for evidence the unit test already produces from t
 that run is wanted, the honest form is a fault-injection knob owned next to the latch in
 `ArchiveTransfer` and a drive that refuses on `pending > 0` rather than waiting 12,000 fields.
 
-### What M1 and M2 would still need (not attempted)
+### What M1 and M2 would still need (not attempted) — SUPERSEDED 2026-10-01
+
+**Both were run the same day; see "M1 and M2 measured, R6 decided" at the end of this issue.** What
+follows is the M3 session's own record of what was missing, kept because the two gaps it names are
+exactly the two the new section had to solve and it is worth seeing that neither was closed by
+reading more code.
 
 The ledger now records the payload multiset M1 compares — `(issuer site, LBA, length, destination,
 SHA-256)` per operation, with the digest taken from the image identity rather than recomputed — and
@@ -617,6 +626,10 @@ worktree, and both are longer than this change. The one thing the table above al
 M1 is that within one run every operation at the same site can be compared operation-by-operation
 (row 9 and row 18 are the same PETE payload by digest, `b73da4852629d203`, read at boot end and
 again at the cutscene end).
+
+**Both gaps are now closed, and the run added what this section could not have predicted:** the
+reference's guest boot issues the four reads the port dispatches itself, from S02-S05, with
+byte-identical payloads, which independently confirms §2.1's size-based identification of them.
 
 ### The instruction-field form the census scan used (method note, and a trap)
 
@@ -631,3 +644,143 @@ re-measured, not transcribed, and it is the only tool in this issue that would h
 plain-relative reading silently reporting an empty corpus.** What that says about the image is not
 settled here and is not claimed; what matters for the ledger is that the table's 31 addresses are
 the ones the image actually contains, checked against the file itself.
+
+## M1 and M2 measured, R6 decided (2026-10-01)
+
+**The instrument: `tools/load_compare.py`** (`load_compare_selftest` in CTest), which drives the
+title's own oracle route (`tools/oracle_spyro1.py`: save picker → `GS_Playing` → settled play →
+the twelve gameplay segments, the same policy `tools/oracle_compare.py --policy artisans` runs) on
+BOTH cores at once — the port through its REPL with `PSXPORT_LOAD_LEDGER` set, the reference through
+the pinned full-console core — and then answers M1, M2 and R6 from what each core actually did. It
+reuses `compare.py`/`compare_cores.py` for the driving and `tools/ram_compare.py` for the field-list
+comparison; it forks neither. One run: **native 7,738 frames / console 8,778 fields, 15 checkpoints,
+every decisive range MATCH, 88.9 s**, with the reference's CD loader entries read by the pinned
+core's bounded PC observer (4 targets, 2 RAM ranges, 2,546,226,609 instructions scanned, 30 matches
+on the loaders plus the R6 writers, **0 dropped, 0 pairing errors**).
+
+### M1 — payload: **28 of 28 operations identical, including every SHA-256**
+
+| | port leg | reference leg |
+|---|---|---|
+| operations | 28 (7 blocking, 21 streaming) | 28 (7 blocking, 21 streaming) |
+| source | `LoadLedger` report (`PSXPORT_LOAD_LEDGER`) | PC-observer records at `0x80016500` / `0x80016698`, arguments `a0`/`a1`/`a2`/`a3` |
+| payload digest | the digest `image_publication` already computed | **SHA-256 of the same disc sectors, computed by this tool from `WAD.WAD`** (110,260,224 B, sha256 `7ba8961c3626bcec`), never read from the port |
+
+**Payload identity: 28 matched, 0 only on the port, 0 only on the reference, 0 refused.** Order
+matched too (the table in `scratch/load_compare/analysis.txt` is row-for-row identical), which is a
+stronger result than the multiset asks for and is not claimed as more than it is: the route is the
+same on both cores, so the order is expected to be the same.
+
+**§7's strict tuple differs in exactly one column, and the difference is the site's.** 22 of 28
+match on the full `(site, LBA, offset, length, destination, SHA-256)` key; the other 6 are 6 port
+rows and 6 reference rows with **byte-identical payloads**, and every one of them is a case §"the
+`$ra - 8` failure mode" already predicted:
+
+| # | port records | reference records (real guest `jal`) | payload (both) |
+|---|---|---|---|
+| 1 | site `0xDEACFFF8` (a host return address) | **S02 `0x80012924`** | `229efedc2014e753` |
+| 2 | site `0xDEACFFF8` | **S03 `0x80012970`** | `2209002b8c4f8754` |
+| 3 | site `0xDEACFFF8` | **S04 `0x80012994`** | `8ee66fe644407bf1` |
+| 4 | site `0xDEACFFF8` | **S05 `0x800129C0`** | `6f82c9e7efacbe5f` |
+| 5, 6 | site `0x8002D4A4` | **S06 `0x8005B83C`** (twice) | `b73da4852629d203` |
+
+So the reference's own guest boot issues the four reads the port's `BootSequence::loadAssets`
+dispatches, from the four sites the census names, and the bytes are the same bytes; and the PETE
+read the port attributes to `0x8002D4A4` (a *caller* of the function containing the `jal`) is
+`0x8005B83C`'s on the reference. **The census's identification of those five host-dispatched reads
+by size is confirmed against a core that names them itself**, which is a check of §2.1 the census
+could not have performed on its own. The six rows are reported, not excused: the tool's verdict is
+the payload verdict and the site gap is printed as its own line, because §7's tuple includes a column
+the port provably cannot fill in for a read its own native code issued.
+
+**Coverage denominator, with the sites that were NOT reached named.** **23 of the census's 31 issuer
+sites exercised on at least one core** — the port alone reaches 18 named sites (and 6 operations
+whose site it cannot name), and the reference adds **S02-S05** (the four boot reads the port
+dispatches itself) and **S06** (the PETE read). **8 unreached: S07 credits overlay, S08 pause-quit,
+S09 game over, S10 demo end, S11 respawn, A17/A18 dragon-cutscene overflow, A19 demo-end
+graphics** — every one of them a route this comparison does not take (it does not die, does not
+pause-and-quit, does not reach the credits or the end of a demo, and crosses no second dragon cutscene).
+Two addresses were reached that the census does not name at all: `0xDEACFFF8` (the port's host
+dispatch) and `0x8002D4A4` (the PETE caller, already named in the M3 section as the sixth
+unattributed row). The ledger's own coverage line for this route reads `18 of 31 ... 6 operation(s)
+came from an address the census does not name`.
+
+### M1's negative: the archive truncated by one sector makes the comparison report UNEQUAL
+
+§7 asks for exactly this and it is implemented at the same place `tests/test_archive_transfer`
+truncates: the payload source refuses a range whose sectors are not there rather than hashing a
+prefix. Measured on the recorded legs with the archive truncated so the last four reads lose their
+sectors (`--truncate-bytes 100000000`, leaving 10,260,224 of 110,260,224 bytes): **four
+operations reported UNEQUAL with the byte range named** — `[0x97C800,0x9CA000)`, `[0x9CA000,
+0x9DE800)`, `[0x9DE800,0xA2A000)`, `[0xA2A000,0xA37000)` — payload identity 24 matched / 4 only on
+the port / 4 only on the reference, exit status 1. The exactly-one-sector form is in the selftest,
+where the sectors before the truncation still hash identically and the ones past it are refused.
+
+### M2 — terminal state: every hand-off field agrees at all four terminals
+
+`tools/ram_compare.py`'s field list plus §7 M2's named fields (`g_LoadStage`, `g_Gamestate`,
+`g_LevelId`, `g_LevelIndex`, the `g_Buffers` pointer block, `g_LevelHeader`, `g_CdMusic.m_Flags`, the
+`0x80076BB8` gate) as hand-off fields, and the six clocks (`g_GameTick`, `g_LevelTicks`,
+`g_DeltaTime`, `g_LevelTransTicks`, `g_UnprocessedFrames`, `D_800758B8`) reported separately. Each
+core is dumped at ITS OWN terminal and the two dumps are compared.
+
+| terminal (each core's own) | fields equal | HAND-OFF differing | clock differing | payload destination ranges byte-identical |
+|---|---|---|---|---|
+| LoadCutscene stage 10, #0 (boot title cutscene) | 17/19 | **0** | 2 (`g_LevelTicks`, `g_UnprocessedFrames`: 231 vs 435) | **28 of 28** |
+| LoadCutscene stage 10, #1 (level-entry cutscene) | 18/19 | **0** | 1 (`g_LevelTicks` 2701 vs 2826) | 23 of 28 |
+| LoadCutscene stage 10, #2 | 18/19 | **0** | 1 (5653 vs 6176) | 16 of 28 |
+| LoadLevel leaving stage 13 (`g_LoadStage = -1`, store `0x800163B8`) | 18/19 | **0** | 1 (`g_LevelTicks` 0 vs 1) | 12 of 28 |
+
+**Zero hand-off differences at every terminal: the load hands over the same state it hands over on
+retail.** The clock deltas are the expected ones and are named: the port arrives earlier because it
+spent no fields on the disc, and the boot cutscene's 231-vs-435 is that difference whole.
+
+**The destination-range column needs its own sentence, because it is NOT a payload test except at
+the first terminal, and the three-way print says why.** Each destination range was hashed in both
+cores' RAM *and* against the payload on the medium. At the boot terminal — the only point where no
+later read has re-used any of the addresses — **all 28 are byte-identical**. At the later terminals
+the guest has consumed its own staging buffers on each side at its own rate: of the ranges that
+differ, **both** cores have already moved past the payload in 32 of 33 cases across the three later
+terminals, and in the single exception (A06's `0x8011593C` at cutscene terminal #2) the PORT still
+holds the payload byte-for-byte while the reference has moved on. So the divergence is in what the
+game did with the buffer afterwards, not in what the load delivered; the decisive payload evidence
+is M1's 28 digests, and the first terminal's 28/28 identical ranges is the in-RAM confirmation of it.
+
+### R6 — the XA-ready bit is **not** always set; the 26/26 was a property of WHEN reads are issued
+
+The M3 section left this open with a named next step, and the next step settles it three ways.
+
+**The bit is clear routinely, on both cores, in the same run.** Polled every field (the port through
+its REPL, the reference through the console's RAM read):
+
+| core | observations | bit SET | bit **CLEAR** | values seen |
+|---|---|---|---|---|
+| port | 7,738 | 5,506 | **2,232** | `0x10`×2212, `0x40`×5506, `0x100`×2, `0x200`×18 |
+| reference | 8,778 | 5,337 | **3,441** | `0x00`×340, `0x10`×2277, `0x40`×5337, `0x100`×8, `0x200`×17, `0x88880000`×799 |
+
+(The reference's `0x88880000` is a value **no writer in the image produces** — §"the CD primitives"
+and `tools/writers.py 0x800774B4` together account for every store of that word, and they store
+`0x40` or `0x100` — so it is whatever the word held before the game first wrote it. It is listed
+rather than dropped, and it is the one value here this issue does not interpret.)
+
+**And the writer that clears it EXECUTED, on the reference, in this route.** `tools/writers.py
+0x800774B4` returns six immediate-form writers, and the values are not all the same: four store
+`0x40` (bit 6 set) and **two store `0x100` (bit 6 CLEAR)** — `0x8002BF2C` (in `CDMusicUpdate`'s
+CdControl arm, after `jal 0x80063C48`) and `0x8002BFC4` (a routine that sets `0x100` when
+`flags & 0x200` is clear). Both were PC-observer targets: **`0x8002BF2C` was entered 2 times**,
+`0x8002BFC4` 0 times. So the clear path is reachable, and it ran.
+
+**But at a loader entry the bit was set in 28 of 28 on the reference as well**, and the observer
+carries `0x800774B4` in every record, so that is measured at the same instant the read was issued
+rather than polled around it: `{0x80016500: 7 set, 0 clear}, {0x80016698: 21 set, 0 clear}` — the
+same 28/28 the port's own ledger column reported.
+
+**The decision: the address is right, the bit is not permanently set, and the 26/26 was a sampling
+property of when Spyro issues CD reads.** All three answers the question asked for are in hand: the
+bit is observed CLEAR thousands of times on both cores; the instruction that clears it executed on
+the reference; and no read on this route was issued while it was clear. What is therefore settled is
+that R6 cannot cost anything on this route — a gate that is already open when every read is issued
+costs nothing, and the M3 measurement (worst 2 fields, not ordered by byte size) is consistent with
+that. What is NOT settled, and is not claimed, is that a route which issues a read while the bit is
+clear also costs nothing. R6 stays open only in that narrower form, and the measurement that would
+close it is a route with a music command in flight — not a defect in the loaders.

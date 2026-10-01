@@ -21,7 +21,6 @@ constexpr std::uint32_t kLevelNames = 0x8006F7F0u;      // g_LevelNames[37], an 
 constexpr std::uint32_t kTransGems = 0x8007571Cu;       // g_LevelTransGems, a POINTER to TransGem[]
 constexpr std::uint32_t kRecentGems = 0x80077DB8u;      // g_RecentGemsCollected[32]
 constexpr std::uint32_t kSine = 0x8006CBF8u;            // SINE_8's table, indexed directly
-constexpr std::uint32_t kCosine = 0x8006CC78u;          // COSINE_8's table
 
 // TransGem, include/loaders.h: two screen offsets, two targets, a live flag, an age, then a
 // byte-angle triple.
@@ -32,7 +31,6 @@ constexpr std::uint32_t kGemActive = 0x08u;
 constexpr std::uint32_t kGemRotation = 0x0Au;
 
 constexpr std::uint32_t kMobyRotationX = 0x44u;
-constexpr std::uint32_t kMobyRotationZ = 0x46u;
 
 constexpr std::uint32_t kChestClass = 473u;
 // The guest derives a gem's shade from its own class; 0x52 is where that family starts.
@@ -248,7 +246,6 @@ State read(Core *core) {
 }
 
 bool submit(Core *core) {
-  const auto cosine = readTable(core, kCosine);
   const State state = read(core);
   const Plan tally = plan(state);
 
@@ -265,10 +262,7 @@ bool submit(Core *core) {
 
   // Every string the tally draws gets the same wobble, with the glyph index restarting at zero.
   const auto wobble = [&](const std::vector<std::uint32_t> &written) {
-    for (std::size_t i = 0; i < written.size(); ++i) {
-      const std::uint32_t phase = (std::uint32_t)((state.ticks * 2 + (std::int32_t)i * 12) & 0xFF);
-      core->mem_w8(written[i] + kMobyRotationZ, (std::uint8_t)(std::int8_t)(cosine[phase] >> 7));
-    }
+    hud_text::wobble(core, written, state.ticks * 2);
   };
   const auto sprite = [&](const Sprite &moby) {
     const hud_text::Layout single{{{moby.position, moby.mobyClass}}, moby.position};

@@ -121,6 +121,50 @@ void test_append_refuses_atomically_when_the_arena_cannot_hold_the_string() {
   CHECK(h.core->mem_r16(kCursor - kMobySize + 0x36u) == 0u);
 }
 
+constexpr std::uint32_t kQueue = spyro::hud_text::kShadedMobyQueue;
+
+// The wobble every caller shares: glyph i's rotation is COSINE_8((phase + 12 i) & 0xFF) >> 7, the
+// low byte of a signed shift, so a negative cosine stores its two's complement.
+void test_wobble_applies_the_phase_and_the_per_glyph_step() {
+  Harness h;
+  constexpr std::uint32_t kCosine = 0x8006CC78u;
+  for (std::uint32_t i = 0; i < 256u; ++i) {
+    h.core->mem_w16(kCosine + i * 2u, (std::uint16_t)(std::int16_t)(i < 128u ? 0x1000 : -0x1000));
+  }
+  const std::vector<std::uint32_t> glyphs = {0x80100000u, 0x80100058u};
+  spyro::hud_text::wobble(h.core.get(), glyphs, 124);
+  CHECK(h.core->mem_r8(glyphs[0] + 0x46u) == 0x20u);        // index 124: +0x1000 >> 7
+  CHECK(h.core->mem_r8(glyphs[1] + 0x46u) == 0xE0u);        // index 136: -0x1000 >> 7 == -32
+  spyro::hud_text::wobble(h.core.get(), glyphs, 124 + 256); // the phase wraps at 256
+  CHECK(h.core->mem_r8(glyphs[0] + 0x46u) == 0x20u);
+}
+
+void test_enqueue_appends_after_the_entries_and_terminates() {
+  Harness h;
+  h.core->mem_w32(kQueue, 0x80077FECu);
+  h.core->mem_w32(kQueue + 4u, 0u);
+  h.core->mem_w32(kQueue + 8u, 0xDEADBEEFu); // stale, past the terminator
+  const std::vector<std::uint32_t> mobys = {0x80100000u, 0x80100058u};
+  CHECK(spyro::hud_text::enqueueShaded(h.core.get(), mobys));
+  CHECK(h.core->mem_r32(kQueue + 4u) == 0x80100000u);
+  CHECK(h.core->mem_r32(kQueue + 8u) == 0x80100058u);
+  CHECK(h.core->mem_r32(kQueue + 12u) == 0u);
+}
+
+// Room is counted for the terminator too: 255 entries leave exactly one free slot, which is the
+// terminator's, so even a single further Moby is refused and nothing is written.
+void test_enqueue_refuses_when_the_terminator_would_not_fit() {
+  Harness h;
+  for (std::uint32_t slot = 0; slot < 255u; ++slot) {
+    h.core->mem_w32(kQueue + slot * 4u, 0x80080000u);
+  }
+  const std::vector<std::uint32_t> one = {0x80100000u};
+  CHECK(!spyro::hud_text::shadedQueueFits(h.core.get(), 1u));
+  CHECK(!spyro::hud_text::enqueueShaded(h.core.get(), one));
+  CHECK(h.core->mem_r32(kQueue + 255u * 4u) == 0u);
+  CHECK(spyro::hud_text::shadedQueueFits(h.core.get(), 0u));
+}
+
 } // namespace
 
 int main() {
@@ -131,5 +175,8 @@ int main() {
   RUN(a_negative_space_advance_rounds_toward_zero);
   RUN(append_writes_the_arena_downward_and_moves_the_cursor);
   RUN(append_refuses_atomically_when_the_arena_cannot_hold_the_string);
+  RUN(wobble_applies_the_phase_and_the_per_glyph_step);
+  RUN(enqueue_appends_after_the_entries_and_terminates);
+  RUN(enqueue_refuses_when_the_terminator_would_not_fit);
   return pt_summary();
 }

@@ -25,12 +25,11 @@ constexpr uint32_t kFlightLevel = 0x80075690u;
 constexpr uint32_t kHud = spyro::hud_layout::kHud;
 constexpr uint32_t kHudSprites = spyro::hud_layout::kSpriteRects;
 constexpr uint32_t kHudTiles = kHud + 0x564u;
-constexpr uint32_t kShadedMobyQueue = 0x800720f4u;
-constexpr uint32_t kShadedMobyCapacity = 256u;
+constexpr uint32_t kShadedMobyQueue = spyro::hud_text::kShadedMobyQueue;
+constexpr uint32_t kShadedMobyCapacity = spyro::hud_text::kShadedMobyCapacity;
 constexpr uint32_t kSpecularTime = 0x800770f4u;
 constexpr uint32_t kCosine = 0x8006cc78u;
 constexpr uint32_t kGemSteadyTicks = 0x0Cu;
-constexpr uint32_t kMobyRotationZ = 0x46u;
 constexpr uint32_t kMaxCompletedTextCount = 15u; // source text buffer is char text[16]
 
 State readState(Core *core) {
@@ -108,17 +107,11 @@ bool preflight(Core *core, const Recipe &recipe, uint32_t &queueEnd) {
 // then every glyph it just appended gets a wobble from the gem-steady tick count and goes into the
 // shaded queue, newest first. This used to be hand-written here and had drifted: every glyph was
 // written at x = 90, so the whole string stacked in one column, and the wobble was missing.
-void appendCompletedGemText(Core *core, uint32_t &queueEnd) {
+void appendCompletedGemText(Core *core) {
   const auto layout = spyro::hud_text::layoutCounter(completedGemText(core), {90, 36, 2880}, 28);
   const auto written = spyro::hud_text::append(core, layout, 11u);
-  const int32_t ticks = (int32_t)core->mem_r32(kHud + kGemSteadyTicks);
-  for (uint32_t i = 0; i < written.size(); ++i) {
-    const uint32_t phase = (uint32_t)((ticks * 4 + (int32_t)i * 12) & 0xFF);
-    const int32_t wobble = (int32_t)core->mem_r16s(kCosine + phase * 2u) >> 7;
-    core->mem_w8(written[i] + kMobyRotationZ, (uint8_t)(int8_t)wobble);
-    core->mem_w32(kShadedMobyQueue + queueEnd * 4u, written[i]);
-    ++queueEnd;
-  }
+  spyro::hud_text::wobble(core, written, (int32_t)core->mem_r32(kHud + kGemSteadyTicks) * 4);
+  spyro::hud_text::enqueueShaded(core, written);
 }
 
 void emitSprite(Core *core,
@@ -199,10 +192,12 @@ bool spyro_field_collectables_commit(Core *core, const Recipe &recipe) {
     core->mem_w32(kShadedMobyQueue + (queueEnd + i) * 4u, recipe.shadedMobys[i]);
   }
   queueEnd += recipe.shadedCount;
-  if (recipe.status == Status::CompletedGemText) {
-    appendCompletedGemText(core, queueEnd);
-  }
+  // Terminated before the text is appended: `enqueueShaded` finds its slot by scanning to the first
+  // zero, and the slots past the HUD Mobys still hold the previous frame's entries.
   core->mem_w32(kShadedMobyQueue + queueEnd * 4u, 0u);
+  if (recipe.status == Status::CompletedGemText) {
+    appendCompletedGemText(core);
+  }
   return true;
 }
 

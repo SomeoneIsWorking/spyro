@@ -15,12 +15,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <vector>
 
 struct Core;
 
 namespace spyro::hud_text {
+
+// g_SonyImage.m_ShadedMobys (0x800720F4): the zero-terminated list of Mobys the shaded pass
+// 0x80022A2C draws, which the HUD text builders' callers append their glyphs to.
+inline constexpr std::uint32_t kShadedMobyQueue = 0x800720F4u;
+inline constexpr std::uint32_t kShadedMobyCapacity = 256u;
 
 struct Point3 {
   std::int32_t x = 0;
@@ -59,5 +65,20 @@ bool fits(Core *core, std::size_t glyphCount);
 // without re-deriving where they landed. Refuses and writes nothing when the arena cannot hold the
 // string.
 std::vector<std::uint32_t> append(Core *core, const Layout &layout, std::uint8_t shadeIndex);
+
+// The wobble every HUD text caller gives its glyphs: glyph i's rotation about z is
+// COSINE_8((phase + i * 12) & 0xFF) >> 7 (0x8006CC78 is COSINE_8's table). The callers differ only
+// in the phase they pass: the demo text `g_LevelTicks * 4` (0x80018990-0x800189A0), the
+// completed-gem tally `g_Hud` steady ticks * 4, the level-transition tally its tick * 2.
+void wobble(Core *core, std::span<const std::uint32_t> glyphs, std::int32_t phase);
+
+// Whether the shaded-Moby queue can take that many more entries and its terminator. Exposed for the
+// same reason as `fits`: a producer that must refuse before writing anything asks the question
+// `enqueueShaded` answers.
+bool shadedQueueFits(Core *core, std::size_t count);
+
+// Append Mobys to the first empty slot of the shaded-Moby queue and terminate it after the last.
+// Refuses and writes nothing when `shadedQueueFits` says no.
+bool enqueueShaded(Core *core, std::span<const std::uint32_t> mobys);
 
 } // namespace spyro::hud_text

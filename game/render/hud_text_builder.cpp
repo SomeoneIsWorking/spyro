@@ -28,6 +28,10 @@ constexpr std::uint32_t kClass = 0x36u;
 constexpr std::uint32_t kDepthOffset = 0x47u;
 constexpr std::uint32_t kSpecularMetalType = 0x4Fu;
 constexpr std::uint32_t kRenderRadius = 0x50u;
+constexpr std::uint32_t kRotationZ = 0x46u;
+
+// COSINE_8's table (include/math.h): 256 signed halfwords.
+constexpr std::uint32_t kCosineTable = 0x8006CC78u;
 
 // g_HudMobys. GamestateDraw points it at the transient pool's far end each frame and every builder
 // walks it DOWNWARD, so it is a bump allocator running backwards, not an array base.
@@ -161,6 +165,44 @@ std::vector<std::uint32_t> append(Core *core, const Layout &layout, std::uint8_t
   }
   core->mem_w32(kHudMobyCursor, moby);
   return written;
+}
+
+void wobble(Core *core, std::span<const std::uint32_t> glyphs, std::int32_t phase) {
+  for (std::size_t i = 0; i < glyphs.size(); ++i) {
+    const std::uint32_t index = (std::uint32_t)((phase + (std::int32_t)i * 12) & 0xFF);
+    const std::int32_t wobble = (std::int32_t)core->mem_r16s(kCosineTable + index * 2u) >> 7;
+    core->mem_w8(glyphs[i] + kRotationZ, (std::uint8_t)(std::int8_t)wobble);
+  }
+}
+
+namespace {
+
+// The index of the first empty slot, or the capacity when the list is full.
+std::uint32_t shadedQueueEnd(Core *core) {
+  std::uint32_t end = 0;
+  while (end < kShadedMobyCapacity && core->mem_r32(kShadedMobyQueue + end * 4u) != 0u) {
+    ++end;
+  }
+  return end;
+}
+
+} // namespace
+
+bool shadedQueueFits(Core *core, std::size_t count) {
+  return count + 1u <= kShadedMobyCapacity - shadedQueueEnd(core);
+}
+
+bool enqueueShaded(Core *core, std::span<const std::uint32_t> mobys) {
+  if (!shadedQueueFits(core, mobys.size())) {
+    return false;
+  }
+  std::uint32_t end = shadedQueueEnd(core);
+  for (const std::uint32_t moby : mobys) {
+    core->mem_w32(kShadedMobyQueue + end * 4u, moby);
+    ++end;
+  }
+  core->mem_w32(kShadedMobyQueue + end * 4u, 0u);
+  return true;
 }
 
 } // namespace spyro::hud_text

@@ -92,9 +92,16 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - gap: Disc provenance and dynamic product execution remain unverified.
 - notes: Spyro 3 implementation waits for Spyro 1's representative gameplay gate.
 
-### spyro2.sector-visibility — Own Spyro 2's terrain sector walk natively
+### spyro2.sector-visibility — Own Spyro 2's moby visibility walk natively
 - status: re-verified
 - deps: spyro2.identity
-- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored sector rotations), RAM, GTE and v0/v1 included
+- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored rotations), RAM, GTE and v0/v1 included; 684/684 again after its globals moved to spyro2_render_globals.h. It walks the 0x58-byte moby records at *0x80066F14 (the file and step names say "sector" from a first misreading) and is called only from the object half of the frame draw FUN_8004C534, ahead of the moby drawers FUN_80044504, FUN_80046FD8 and the close-moby drawer FUN_800499D4; the terrain is FUN_80023BB4, called from FUN_8004C4FC
 - where: titles/spyro2/render/spyro2_sector_*
-- gap: none at 4:3; at 16:9 the widened plane test is not what stops the left-margin ground: with horizontal sector culling disabled the staircase is unchanged, so it lives downstream (sector drawer FUN_80044504's 512-wide vertex outcodes or later)
+- gap: none at 4:3; file and identifier names still say "sector"
+
+### spyro2.terrain-drawer — Own Spyro 2's terrain drawer natively
+- status: re-verified
+- deps: spyro2.identity
+- evidence: FUN_80023BB4 (5487 insns, every pass: classify 80023C0C, detail 80024534, translucent 80025434, coarse split 80025CC8, fine split 80026C74, GPU-size re-split 80028504, far 80028B14) is native with no guest hand-off; override differential at 4:3, every call: 0 mismatches over the Glimmer route (683/684, 1 incomparable interrupt), the long Glimmer route (1060/1062, 2 incomparable) and 60000 attract-demo fields (12886/12886). Its horizontal outcodes test [-margin, 512+margin) at 16:9, so the ground fills both margins in presented captures
+- where: titles/spyro2/render/spyro2_terrain_*
+- gap: the re-split pass (GT3/GT4 too large for the GPU) is not shown to have run on the routes measured. FUN_80046FD8's OFX/OFY = 256/120 restore at LAB_80047EA8 changes nothing visible at 16:9 (patched live to 342 and to 0 in Glimmer: frames identical to the unpatched timeline)

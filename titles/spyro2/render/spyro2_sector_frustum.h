@@ -1,7 +1,8 @@
-// spyro2_sector_frustum.h — the sphere-against-view-frustum arithmetic of Spyro 2's terrain sector
-// walk (SCUS_944.25 0x80043858), with no Core and no GTE.
+// spyro2_sector_frustum.h — the sphere-against-view-frustum arithmetic of Spyro 2's moby visibility
+// walk (SCUS_944.25 0x80043858; the "sector" in the name is a misreading, see
+// spyro2_sector_visibility.h), with no Core and no GTE.
 //
-// Retail tests a sector's bounding sphere, already in view space (x right, y down, z forward),
+// Retail tests a moby's bounding sphere, already in view space (x right, y down, z forward),
 // against four planes through the eye. Every plane test is the same integer shape with a sphere
 // margin on each side; only the weights differ:
 //

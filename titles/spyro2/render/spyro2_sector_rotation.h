@@ -1,15 +1,16 @@
-// spyro2_sector_rotation.h — a terrain sector's orientation, composed onto the camera rotation by
-// Spyro 2's sector walk (SCUS_944.25 0x80043858, 80043B9C..80043D7C and 800441BC..800444B0).
+// spyro2_sector_rotation.h — a moby's orientation, composed onto the camera rotation by Spyro 2's
+// moby visibility walk (SCUS_944.25 0x80043858, 80043B9C..80043D7C and 800441BC..800444B0; "sector"
+// in the name is a misreading, see spyro2_sector_visibility.h).
 //
-// A sector record carries three 8-bit angles (bytes 2, 1, 0 of its rotation word, 256 steps per
+// A moby carries three 8-bit angles (bytes 2, 1, 0 of its rotation word, 256 steps per
 // turn). For each non-zero angle the walk rotates the current GTE rotation matrix about one axis:
 // it feeds (cos, sin) through two `RT * V0` products and repacks the six results into the five
 // halfword-paired RT words, which it then loads back into CR0..CR4 so the next angle composes onto
 // this one. The sine table is at 0x80061BD8 and the cosine table is the same table a quarter turn
 // on (+0x80 bytes).
 //
-// TWO ANGLE SOURCES, one composition. A plain sector reads the tables directly with `lhu`, so the
-// values are zero-extended. A sector whose flags set bit 30 adds a 4-bit fraction per angle from
+// TWO ANGLE SOURCES, one composition. A plain moby reads the tables directly with `lhu`, so the
+// values are zero-extended. A moby whose flags set bit 30 adds a 4-bit fraction per angle from
 // its flags word and interpolates between neighbouring entries with `lh`, so its values are
 // sign-extended. The two are not interchangeable: a negative cosine packed as the low half of a
 // GTE word sets the high half to 0xFFFF only in the interpolated case, which changes the product.

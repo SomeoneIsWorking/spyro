@@ -1,9 +1,15 @@
-// spyro2_sector_visibility.h — Spyro 2's terrain sector walk, SCUS_944.25 0x80043858..0x80044503,
+// spyro2_sector_visibility.h — Spyro 2's moby visibility walk, SCUS_944.25 0x80043858..0x80044503,
 // as a native override.
 //
-// WHAT RETAIL DOES. Once per drawn frame (one caller, FUN_8004C534 at 0x8004C55C, immediately
-// before the sector drawer FUN_80044504) the walk visits every terrain sector record of the level
-// and decides what the drawer will draw. It is hand-written assembly that saves every callee-saved
+// NAMING. The file and its identifiers say "sector" because the walk was first misread as the
+// terrain's; it walks the level's mobys (the 0x58-byte object records at *0x80066F14), and the
+// terrain is FUN_80023BB4 (spyro2_terrain_drawer.h), called from the other half of the frame's
+// draw, FUN_8004C4FC. Read "record" below as one moby.
+//
+// WHAT RETAIL DOES. Once per drawn frame (one caller, the object half of the frame's draw
+// FUN_8004C534 at 0x8004C55C, immediately before the moby drawers FUN_80044504, FUN_80046FD8 and
+// the close-moby drawer FUN_800499D4) the walk visits every moby of the level and decides what
+// those drawers will draw. It is hand-written assembly that saves every callee-saved
 // register (and gp, sp, fp, ra) to 0x8006A9EC, borrows them all, and parks list cursors in HI/LO
 // and in unused GTE light-matrix registers. For each record it:
 //
@@ -18,8 +24,8 @@
 //      matrix, the projected centre and the classification.
 //
 // WHY IT IS OWNED. Step 4's horizontal test is the 4:3 half-angle (spyro2_sector_frustum.h). At
-// 16:9 the projection centre is widened (spyro2_widescreen.h) and the sectors left of the authored
-// window are culled here, so the left margin's ground ends in a staircase of sector edges. The
+// 16:9 the projection centre is widened (spyro2_widescreen.h) and the mobys past the authored
+// window are culled here, so the margins would show the scene without its objects. The
 // override applies the widescreen plan's slope to every horizontal plane test; at 4:3 it is
 // retail's.
 //

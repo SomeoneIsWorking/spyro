@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "native_execution.h"
+#include "spyro2_render_globals.h"
 #include "spyro2_sector_frustum.h"
 #include "spyro2_sector_gte.h"
 #include "spyro2_sector_rotation.h"
@@ -18,21 +19,15 @@ using sector_frustum::ViewPoint;
 using sector_rotation::RotationWords;
 
 // ── Guest globals, each named by the instruction that reaches it ─────────────────────────────────
-constexpr std::uint32_t kRegisterSaveArea = 0x8006A9ECu; // 80043858: s0..s7, gp, sp, fp, ra
-constexpr std::uint32_t kScratchBaseWord = 0x80067034u;  // 80043898: the frame's scratch block end
-constexpr std::uint32_t kFirstRecordWord = 0x80066F14u;  // 800438A4: the level's sector records
-constexpr std::uint32_t kDrawerParameter = 0x80066FA4u;  // 800438B0: parked in VZ1 for the drawer
-constexpr std::uint32_t kCameraRotation = 0x80067E84u;   // 80043908: five RT words
-constexpr std::uint32_t kCameraPosition = 0x80067EACu;   // 800438FC: x, y, z words
-constexpr std::uint32_t kMeshSlotTable = 0x80068C94u;    // 800438E4 ($sp): per-mesh slot arrays
-constexpr std::uint32_t kGroupVisible = 0x8006B300u;     // 800438EC ($gp): visibility-group bytes
-constexpr std::uint32_t kOverlayTable = 0x80062868u;     // 80043F0C: overlay byte per record kind
-constexpr std::uint32_t kShadeBase = 0x80066FFCu;        // 80043FE0
-constexpr std::uint32_t kShadeMark = 0x80067168u;        // 80043FF0: far-shade high-water mark
-constexpr std::uint32_t kCloseCursorHome = 0x80068214u;  // 800440D8: close-list cursor, at exit
-constexpr std::uint32_t kExitV0 = 0x8006820Cu;           // 800440D0: v0 on return
+constexpr std::uint32_t kFirstRecordWord = 0x80066F14u; // 800438A4: the level's moby array
+constexpr std::uint32_t kDrawerParameter = 0x80066FA4u; // 800438B0: parked in VZ1 for the drawer
+constexpr std::uint32_t kMeshSlotTable = 0x80068C94u;   // 800438E4 ($sp): per-mesh slot arrays
+constexpr std::uint32_t kOverlayTable = 0x80062868u;    // 80043F0C: overlay byte per record kind
+constexpr std::uint32_t kCloseCursorHome = 0x80068214u; // 800440D8: close-list cursor, at exit
+constexpr std::uint32_t kExitV0 = 0x8006820Cu;          // 800440D0: v0 on return
 
-// The scratch block's regions, as offsets below [kScratchBaseWord] (800438B4..800438E0).
+// The scratch block's regions, as offsets below [render_globals::kScratchBaseWord]
+// (800438B4..800438E0).
 constexpr std::uint32_t kDrawerScratchBelow = 0x3000; // VXY1
 constexpr std::uint32_t kCloseListBelow = 0x1C00;     // LO
 constexpr std::uint32_t kDeferredBelow = 0x1400;      // CR8
@@ -106,8 +101,6 @@ constexpr std::uint32_t asWord(std::int32_t value) {
 }
 
 // The register numbers retail saves, in save-area order.
-constexpr std::array<std::uint32_t, 12> kSavedRegisters = {
-    16, 17, 18, 19, 20, 21, 22, 23, 28, 29, 30, 31};
 
 // The horizontal slope the walk culls with: retail's unless the widescreen plan widens.
 HorizontalSlope slopeFor(Core &core) {
@@ -171,11 +164,8 @@ private:
 };
 
 void SectorWalk::run() {
-  for (std::size_t i = 0; i < kSavedRegisters.size(); ++i) {
-    core_.mem_w32(kRegisterSaveArea + static_cast<std::uint32_t>(4 * i),
-                  core_.r[kSavedRegisters[i]]);
-  }
-  const std::uint32_t base = core_.mem_r32(kScratchBaseWord);
+  render_globals::spillBorrowedRegisters(core_);
+  const std::uint32_t base = core_.mem_r32(render_globals::kScratchBaseWord);
   const std::uint32_t firstRecord = core_.mem_r32(kFirstRecordWord);
   gte_write_data(gte::kVxy1, base - kDrawerScratchBelow);
   gte_write_data(gte::kVz1, core_.mem_r32(kDrawerParameter));
@@ -184,11 +174,11 @@ void SectorWalk::run() {
   closeCursor_ = base - kCloseListBelow;
   gte_write_ctrl(gte::kDeferredCursor, base - kDeferredBelow);
   gte_write_ctrl(gte::kDeferredEnd, base - kDeferredEndBelow);
-  cameraX_ = asSigned(core_.mem_r32(kCameraPosition));
-  cameraY_ = asSigned(core_.mem_r32(kCameraPosition + 4));
-  cameraZ_ = asSigned(core_.mem_r32(kCameraPosition + 8));
+  cameraX_ = asSigned(core_.mem_r32(render_globals::kCameraPosition));
+  cameraY_ = asSigned(core_.mem_r32(render_globals::kCameraPosition + 4));
+  cameraZ_ = asSigned(core_.mem_r32(render_globals::kCameraPosition + 8));
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
-    camera_[i] = core_.mem_r32(kCameraRotation + 4 * i);
+    camera_[i] = core_.mem_r32(render_globals::kCameraRotation + 4 * i);
   }
 
   std::uint32_t rec = firstRecord;
@@ -250,7 +240,7 @@ SectorWalk::Step SectorWalk::visit(std::uint32_t rec) {
     return Step::Next;
   }
   const std::uint32_t group = core_.mem_r8(rec + record::kGroup);
-  if (group < 0xFE && core_.mem_r8(kGroupVisible + group) == 0) {
+  if (group < 0xFE && core_.mem_r8(render_globals::kVisibilityGroups + group) == 0) {
     return Step::Next;
   }
   const MeshSlots mesh = meshSlots(rec);
@@ -454,9 +444,10 @@ SectorWalk::finishEntry(std::uint32_t rec, std::uint32_t mesh, const MeshSlots &
   if (shade - 0x110 >= 0) {
     shade += 0x20;
     if (shade - 0x1C0 >= 0) {
-      const std::uint32_t mark = core_.mem_r32(kShadeBase) + asWord(shade << 3) + 0x200;
-      if (asSigned(core_.mem_r32(kShadeMark) - mark) < 0) {
-        core_.mem_w32(kShadeMark, mark);
+      const std::uint32_t mark =
+          core_.mem_r32(render_globals::kOrderingTable) + asWord(shade << 3) + 0x200;
+      if (asSigned(core_.mem_r32(render_globals::kOrderingTableMark) - mark) < 0) {
+        core_.mem_w32(render_globals::kOrderingTableMark, mark);
       }
     }
   }

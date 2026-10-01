@@ -376,14 +376,39 @@ Recipe derive(Core *core) {
       previousBehindCamera = q0.raw_view[2] <= 0.0f || q1.raw_view[2] <= 0.0f;
       havePrevious = true;
 
+      // RETAIL'S COUNT, WHICH IS TWO PER PASS, NOT ONE. At 0x80059298 the ribbon loop is
+      //
+      //     blez   $t8, next_part      ; tests remaining as it stands
+      //     addi   $t8, $t8, -1       ; DELAY SLOT of the blez — always executes
+      //     bgtz   $t8, body          ; tests the ALREADY-decremented value
+      //     addi   $t8, $t8, -1       ; DELAY SLOT of the bgtz — always executes
+      //     addi   $s7, $s7, 8        ; closing setup: cursor forward, half step, half shade
+      //   body:
+      //     lw     $a3, ($s7)
+      //     ...
+      //     addi   $s7, $s7, -0x10
+      //
+      // Both decrements are DELAY SLOTS, so they run on every pass — including the pass where the
+      // `bgtz` is TAKEN and the closing setup is branched over. Retail therefore spends TWO of the
+      // descriptor's count per cross-section, and applies the closing setup only on the pass whose
+      // `bgtz` falls through. Reading the count as one-per-pass made this port walk roughly TWICE
+      // as far back through the array as retail does, which is how it ended up projecting guest
+      // memory that is not a cross-section at all: the screen-spanning coloured streak. The forward
+      // clamp at 0x80059220 and both descriptor extractions above it already matched retail
+      // exactly.
+      //
+      // Retail has NO lower bound on the cursor: it is stopped by this COUNT alone, and the tip's
+      // guard at 0x80058F18 is the only `arrayEnd` test in the routine. Adding one here would have
+      // hidden this count error rather than fixed it.
       if (remaining <= 0) {
-        break;
+        break; // blez: on to the next part
       }
-      --remaining;
-      if (remaining <= 0) {
+      --remaining;                             // delay slot of the blez — always executes
+      const bool closingPass = remaining <= 0; // bgtz tests the value the delay slot just made
+      --remaining;                             // delay slot of the bgtz — always executes
+      if (closingPass) {
         // The final two steps close the ribbon at half the texture advance and half the shading
         // step, and skip a cross-section forward rather than continuing to walk backward.
-        --remaining;
         cursor += 8u;
         vStep = kClosingVStep;
         darken = kClosingDarken;

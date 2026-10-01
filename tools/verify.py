@@ -8,12 +8,13 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import run
 
 
-def verify_cpp_quality(build: Path) -> None:
+def verify_cpp_quality(build: Path, jobs: int) -> None:
     """Check the first-party code compiled by the current product and its tests."""
     entries = json.loads((build / "compile_commands.json").read_text())
     sources = sorted({
@@ -31,7 +32,12 @@ def verify_cpp_quality(build: Path) -> None:
         if lines > 1200:
             raise run.Refusal(f"{path.relative_to(run.ROOT)}: {lines} lines exceeds the 1200-line structure limit")
     run.command([sys.executable, run.ROOT / "tools/format.py", "--check", *files])
-    run.command(["clang-tidy", "-p", build, *sources])
+    # clang-tidy is single-threaded per process; one shard per job keeps the whole tree checked
+    # without serialising hundreds of translation units through one process.
+    shards = [sources[index::jobs] for index in range(min(jobs, len(sources)))]
+    with ThreadPoolExecutor(max_workers=len(shards)) as pool:
+        for future in [pool.submit(run.command, ["clang-tidy", "--quiet", "-p", build, *shard]) for shard in shards]:
+            future.result()
     print(f"[verify] C++ quality: {len(sources)} translation units, {len(files)} source/header files")
 
 
@@ -82,7 +88,7 @@ def verify(jobs: int) -> None:
         build_testing=True,
     )
     run.command(["cmake", "--build", run.MAINTAINER_BUILD, "-j", str(jobs)])
-    verify_cpp_quality(run.MAINTAINER_BUILD)
+    verify_cpp_quality(run.MAINTAINER_BUILD, jobs)
     verify_every_test_is_registered()
     run.command(
         ["ctest", "--test-dir", run.MAINTAINER_BUILD, "--output-on-failure"]

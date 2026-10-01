@@ -52,6 +52,14 @@ constexpr std::uint32_t kSetGeomScreen = 0x80057AE8u;
 // signature the framework's stock command owner consumes.
 constexpr std::uint32_t kCdCommand = 0x80058858u;
 
+// libcd CdControlB(com, param, result) at 0x80058994: it sends the command through the controller
+// leaf 0x8005CB80 and then waits in CD_sync (0x8005C900) on the guest's own interrupt-set status
+// byte 0x800669DC to reach Complete. The game calls it for the XA Setmode 0xC8 at 0x800131B0. With
+// CdRead and CdCommand native nothing ever raises that byte, so the retail body runs out its
+// 0x3C0 vblank deadline ("CD timeout", 0x8005C9CC) before every such call. Spyro 1 binds the same
+// leaf to the same synchronous owner. See docs/issues/0161.
+constexpr std::uint32_t kCdControlB = 0x80058994u;
+
 // libcd's synchronisation wait. 0x80058810 is called with a0=1 and polled until it returns 2
 // (0x8001372C-0x80013738 and 0x80013778-0x80013784), which is CdSync(noblock) reporting CS_SELF.
 constexpr std::uint32_t kCdSync = 0x80058810u;
@@ -149,9 +157,10 @@ const PlatformHlePlan Spyro2Runtime::platformHlePlan_{
     .vsyncAddress = kVSync,
     .vsyncQueryCounterAddress = kVSyncQueryCounter,
     .bindings = {{kCdInit, cdInitSuccess},
+                 {kCdControlB, cd_control_sync},
                  {kGpuTimeoutArm, armGpuTimeout},
                  {kGpuTimeoutCheck, completeDrawSync}},
-    .bindingCount = 3,
+    .bindingCount = 4,
     // Three windows, because the framework admits four and every address this title binds lies in
     // one of these three regions of the image:
     //   libetc  0x80058EDC  VSync

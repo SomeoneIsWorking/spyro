@@ -214,6 +214,8 @@ psxport's vendored copy), and until it lands Spyro 2 cannot claim zero interpret
 the fallback budget raised the boot proceeds past it, which is how the CD frontier above was reached;
 that is a diagnostic budget and is not product evidence.
 
+**RESOLVED 2026-10-01 (issue 0168):** `shared/lightrec` `4696481` compares the store's resolved address; Spyro 2 now runs with 0 fallback blocks and no allowance.
+
 ## 5. Measurement instrument, and the defect it had
 
 `tools/probe_guest_word.py` answers "which instruction reads or writes this guest word" over a

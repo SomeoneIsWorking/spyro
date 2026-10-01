@@ -39,13 +39,8 @@ intro cutscenes (gamestate 6) are real authored presentation and are skipped by 
 ## Not claimed
 
 - No oracle comparison was attempted for either title (no independent state to diff against yet).
-- Spyro 2: the first walk forward (Up, 40 fields) enters a conversation (gamestate 1); its two text boxes drew
-  as dark rounded rectangles with no glyphs in the capture. Not investigated. The route walks backward to avoid it.
-- Spyro 2 still needs the diagnostic Lightrec fallback budget (59 fallback blocks, all `self_modifying_code`, the
-  `0x8005FFFC` false positive in the shared Lightrec rule, issue 0092 section 4). The root cause is in
-  `shared/lightrec` (its store rule compares the base register's value, `lui $at,0x8006` = `0x80060000`, to the block's
-  own range `[0x8005FFFC, 0x80060058)` and ignores the displacement), a separate repository and fork pin, so it was not
-  changed here; `title_route.py` prints that the Spyro 2 run is diagnostic.
-- The first level is identified only by the picture, not by a guest level word; the brief expected Summer Forest for
-  Spyro 2 and Sunrise Spring for Spyro 3. Spyro 3's picture is Sunrise Spring; Spyro 2's has not been matched to a name.
+- Spyro 2: the first walk forward enters a conversation (gamestate 1). SUPERSEDED by issue 0168: the text draws; the
+  early capture caught the box before its typewriter reveal. `tools/title_conversation.py` exercises it.
+- Spyro 2's 59 diagnostic fallback blocks (`0x8005FFFC` false positive) are fixed in `shared/lightrec` `4696481` (issue 0168).
+- The first level was identified only by the picture; issue 0168 reads it from guest words: Glimmer, id 11.
 - No frame-time, audio, widescreen or interpolation evidence; Spyro 3's 4740 fields spend about 20 seconds of wall time.

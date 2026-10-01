@@ -33,7 +33,7 @@ PickerSession::Result PickerSession::run() {
   const int frameCap = game->dbg_server.attach(&core, frameCap_);
   gpu_vk_ensure_device(&core);
 
-  psx::ui::ChoiceScreen *screen = game->rml_overlay.showChoiceScreen(content_.content());
+  psx::ui::ChoiceView *screen = game->rml_overlay.showChoiceScreen(content_.content());
   if (!screen) {
     lucent::error("picker", "the selector screen could not be created");
     return {};

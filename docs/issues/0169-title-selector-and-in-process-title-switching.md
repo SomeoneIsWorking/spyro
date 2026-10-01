@@ -41,7 +41,7 @@ selector and runs that one title; the launcher no longer has a title flag or pos
 
 `tools/title_switch.py --pair A B --frames N` (headless, `agent_environment`, one process at a time): two fresh B
 processes agree (control), then B started after A in one process has identical guest RAM and scratchpad at frame
-N. Spyro 1<->Spyro 2 and Spyro 2<->Spyro 3 at N=300, both orders each, on framework 41373bc0 plus the
+N. All three pairs (1<->2, 2<->3, 1<->3) at N=300, both orders each, on framework 41373bc0 plus the
 picker branch (Spyro 1<->2 also under an ASan build): IDENTICAL. Captures read: selector (selection moves with Down), Spyro 2 Insomniac logo, Spyro 1
 Universal logo, Spyro 3 Universal/Insomniac legal screen, selector after return.
 

@@ -75,6 +75,10 @@ class WidescreenOwner final : public GuestWidescreenProjection,
                               public spyro::FieldObserver,
                               public spyro::FrameTailObserver {
 public:
+  // This Core's owner, published by `registerProjectionOverrides`. Native overrides are plain
+  // function pointers, so they reach the owner through the context rather than a back-pointer.
+  static WidescreenOwner &of(Core &core);
+
   PresentationAspect presentationAspect(const Core &core) const override;
 
   // Bind the two measured library publication sites for this Core. Each runs the retail effect

@@ -8,6 +8,7 @@
 #include "game.h"
 #include "guest_cd_stream_callback_layout.h"
 #include "spyro2_boot_facts.h"
+#include "spyro2_sector_visibility.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
 #include "stock_read_publication.h"
@@ -173,8 +174,10 @@ void Spyro2Runtime::registerOverrides(Game &game) {
   // the plan above or the framework's own stock CD path, and that is still said rather than left
   // implied: a reader must be able to tell which overrides exist and why.
   widescreen_.registerProjectionOverrides(game.core);
+  registerSectorVisibilityOverride(game.core);
   lucent::info("boot",
-               "installed Spyro 2 native overrides for the two measured libgte projection leaves; "
+               "installed Spyro 2 native overrides for the two measured libgte projection leaves "
+               "and the terrain sector walk; "
                "every other boot service remains a measured library leaf or the framework's stock "
                "CD seam");
 }

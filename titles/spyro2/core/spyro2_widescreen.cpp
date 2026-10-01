@@ -37,17 +37,6 @@ constexpr std::uint32_t kSetGeomScreenLeaf = 0x80057AE8u;
 // 80057B08  03e00008  jr   $ra
 constexpr std::uint32_t kSetGeomOffsetLeaf = 0x80057AF8u;
 
-WidescreenOwner &ownerOf(Core &core) {
-  GuestProjectionOwner *hook = spyro_context(core).projectionHook;
-  if (hook == nullptr) {
-    // Both overrides are installed by the same call that publishes this pointer, so a null here
-    // means the publication did not happen. Continuing would draw a 4:3 projection silently.
-    lucent::error("wide", "Spyro 2 projection leaf reached with no projection owner published");
-    std::abort();
-  }
-  return *static_cast<WidescreenOwner *>(hook);
-}
-
 // ── THE TWO RETAIL BODIES
 // ──────────────────────────────────────────────────────────────────────────── Each runs retail's
 // own effect FIRST and asks the owner afterwards, so the widened value is what the rest of the
@@ -58,7 +47,7 @@ WidescreenOwner &ownerOf(Core &core) {
 // this body is that handler with the plan applied afterwards.
 void setGeomScreen(Core *core) {
   libgte_set_geom_screen(core, static_cast<std::int32_t>(core->r[4]));
-  ownerOf(*core).published(*core, ProjectionSite::SetGeomScreenLeaf);
+  WidescreenOwner::of(*core).published(*core, ProjectionSite::SetGeomScreenLeaf);
 }
 
 // SetGeomOffset(x, y). Retail shifts both arguments into 16.16 and moves them into CR24/CR25, and
@@ -70,10 +59,22 @@ void setGeomOffset(Core *core) {
   core->r[4] = static_cast<std::uint32_t>(x) << 16;
   core->r[5] = static_cast<std::uint32_t>(y) << 16;
   libgte_set_geom_offset(core, x, y);
-  ownerOf(*core).published(*core, ProjectionSite::SetGeomOffsetLeaf);
+  WidescreenOwner::of(*core).published(*core, ProjectionSite::SetGeomOffsetLeaf);
 }
 
 } // namespace
+
+WidescreenOwner &WidescreenOwner::of(Core &core) {
+  GuestProjectionOwner *hook = spyro_context(core).projectionHook;
+  if (hook == nullptr) {
+    // The projection overrides are installed by the same call that publishes this pointer, so a
+    // null here means the publication did not happen. Continuing would draw a 4:3 projection
+    // silently.
+    lucent::error("wide", "Spyro 2 projection owner reached before it was published");
+    std::abort();
+  }
+  return *static_cast<WidescreenOwner *>(hook);
+}
 
 PresentationAspect WidescreenOwner::presentationAspect(const Core &core) const {
   if (core.game == nullptr) {

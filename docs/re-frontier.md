@@ -91,3 +91,10 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - where: titles/spyro3/executable.json; titles/spyro3/core/spyro3_runtime.*
 - gap: Disc provenance and dynamic product execution remain unverified.
 - notes: Spyro 3 implementation waits for Spyro 1's representative gameplay gate.
+
+### spyro2.sector-visibility — Own Spyro 2's terrain sector walk natively
+- status: re-verified
+- deps: spyro2.identity
+- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored sector rotations), RAM, GTE and v0/v1 included
+- where: titles/spyro2/render/spyro2_sector_*
+- gap: none at 4:3; at 16:9 the widened plane test is not what stops the left-margin ground: with horizontal sector culling disabled the staircase is unchanged, so it lives downstream (sector drawer FUN_80044504's 512-wide vertex outcodes or later)

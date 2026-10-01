@@ -42,10 +42,14 @@ namespace spyro3 {
 //
 // The libcd and libgpu leaves are named in the runtime's measured plan, where they are owned.
 //
-// Bounds: the shared defaults stand. MEASURED 2026-10-01: once the loaded modules are published as
-// images (game/core/stock_read_publication.*) the boot prefix returns after 546 fields in 336
-// steps, inside both. The first field bound was 64, a guess made while the boot stopped at the
-// module load, and it ended a healthy boot mid-fade.
+// Bounds: the field bound stands, the step bound is this title's own. MEASURED 2026-10-01: once the
+// loaded modules are published as images (game/core/stock_read_publication.*) and the framework paces
+// each stock CdRead by the drive's seek and sector time (psxport issue on paced stock completions), the
+// boot prefix returns after 887 fields in 669 steps; with instantaneous reads it was 546 fields in 336
+// steps, which is why the shared 480-step bound no longer holds. 1024 steps is the measured 669 plus half
+// again: a guest that polls without ever asking for a field still ends the run long before the turn
+// budget, and the 887 fields stay under the shared 1024 field bound. The first field bound was 64, a
+// guess made while the boot stopped at the module load, and it ended a healthy boot mid-fade.
 inline constexpr spyro::BootPrefixFacts kBootPrefixFacts{
     .titleName = "Spyro 3",
     .callName = "spyro3-step",
@@ -70,6 +74,7 @@ inline constexpr spyro::BootPrefixFacts kBootPrefixFacts{
             // number. It is stated here rather than left to look measured.
             .fieldsPerLogicFrame = 2,
         },
+    .bootStepLimit = 1024,
 };
 
 } // namespace spyro3

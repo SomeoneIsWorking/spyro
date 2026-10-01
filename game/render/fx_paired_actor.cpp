@@ -304,7 +304,7 @@ SpyroPairedRebuildResult emit_faces(Core *c,
                    RQ_WORLD,
                    RQ_OM_DEPTH,
                    (int)nv,
-                   0,
+                   face.material.semiTransparent() ? 1 : 0,
                    0,
                    xs,
                    ys,
@@ -329,7 +329,7 @@ SpyroPairedRebuildResult emit_faces(Core *c,
                    destination.da_y0,
                    destination.da_x1,
                    destination.da_y1,
-                   (tpage >> 5) & 3u,
+                   (int)face.blendMode(),
                    nullptr,
                    -1,
                    0.0f,
@@ -645,10 +645,8 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   const int twMx = current.s_tw_mx, twMy = current.s_tw_my, twOx = current.s_tw_ox,
             twOy = current.s_tw_oy;
   for (const auto &face : faces.faces) {
-    if (face.material.command & 2u) {
-      return refuse_shipping(state, "semi-transparent face in opaque group");
-    }
-    if ((face.material.command & ~2u) != (face.quad ? 0x3Cu : 0x34u)) {
+    if ((face.material.command & ~ResolvedMaterial::kSemiTransparentBit) !=
+        (face.quad ? 0x3Cu : 0x34u)) {
       return refuse_shipping(state, "untextured or unsupported primitive command");
     }
     const uint16_t tpage = (uint16_t)(face.packet_attr[1] >> 16);
@@ -699,17 +697,30 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   spyro_paired_actor_log_frame_compatibility(
       state.previous, state.current, state.endpoints_compatible);
   uint32_t grouped = 0;
+  uint32_t groupedSemi = 0;
   for (int i = 0; i < rq.n; ++i) {
     if (rq.items[i].painter_object == 0x80023AC4u) {
       ++grouped;
       const RqItem &item = rq.items[i];
-      if (item.semi || item.painter_flags || item.layer != RQ_WORLD ||
-          item.order_mode != RQ_OM_DEPTH || item.mode == 3) {
+      groupedSemi += item.semi ? 1u : 0u;
+      if (item.painter_flags || item.layer != RQ_WORLD || item.order_mode != RQ_OM_DEPTH ||
+          item.mode == 3) {
         lucent::error("pairedactor",
                       "FATAL: emitted painter item violates prevalidated planner contract");
         abort();
       }
     }
+  }
+  const auto expectedSemi =
+      (uint32_t)std::count_if(faces.faces.begin(), faces.faces.end(), [](const ResolvedFace &face) {
+        return face.material.semiTransparent();
+      });
+  if (groupedSemi != expectedSemi) {
+    lucent::error("pairedactor",
+                  "FATAL: painter semi accounting grouped={} expected={} after atomic emit",
+                  groupedSemi,
+                  expectedSemi);
+    abort();
   }
   if (grouped != faces.faces.size()) {
     lucent::error("pairedactor",

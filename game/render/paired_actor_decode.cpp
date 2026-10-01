@@ -53,7 +53,7 @@ OverlapDepthStats analyze_overlap_depth(std::span<const ResolvedFace> faces) {
       const auto &A = faces[i];
       const auto &B = faces[j];
       A.quad ? (B.quad ? ++s.quad_quad : ++s.tri_quad) : (B.quad ? ++s.tri_quad : ++s.tri_tri);
-      const bool as = A.material.command & 2, bs = B.material.command & 2;
+      const bool as = A.material.semiTransparent(), bs = B.material.semiTransparent();
       as &&bs ? ++s.semi_semi : (as || bs ? ++s.opaque_semi : ++s.opaque_opaque);
       int ax0 = A.vertex[0].x, ax1 = ax0, ay0 = A.vertex[0].y, ay1 = ay0;
       int bx0 = B.vertex[0].x, bx1 = bx0, by0 = B.vertex[0].y, by1 = by0;

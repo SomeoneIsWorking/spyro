@@ -62,6 +62,13 @@ struct MaterialTables {
 struct ResolvedMaterial {
   uint32_t rgb[4]{};   // low 24 bits, in primitive vertex order
   uint8_t command = 0; // GT3/GT4, with semi-transparency bit
+
+  // The GP0 command's bit 1, which the renderer adds to the packet word at 0x80024E44 (quad) and
+  // 0x80024FE0 (triangle) from bit 0 of the face's second stream word.
+  static constexpr uint8_t kSemiTransparentBit = 0x02;
+  bool semiTransparent() const {
+    return (command & kSemiTransparentBit) != 0;
+  }
 };
 
 bool resolve_material(const Primitive &primitive,
@@ -84,6 +91,12 @@ struct ResolvedFace {
   uint32_t ot_raw = 0;
   uint32_t ot_bin = 0;
   double continuous_ot_key = 0; // temporal midpoint only; exact endpoints use integer ot_bin
+
+  // The blend mode of a semi-transparent face. The renderer never touches the TPAGE word, so ABR is
+  // whatever the model's own packet attribute holds in bits 5..6 of its high half.
+  uint32_t blendMode() const {
+    return (packet_attr[1] >> 21) & 3u;
+  }
 };
 
 struct OverlapDepthStats {

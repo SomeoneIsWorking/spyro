@@ -142,6 +142,27 @@ int main() {
   require(faces.faces[0].vertex[1].x == 20 && faces.faces[0].material.rgb[2] == 0x070809 &&
               faces.faces[0].packet_attr[1] == 0x33334444u,
           "resolved face did not join projection, material and packet attributes");
+  // Retail adds GP0 bit 1 from word-1 bit 0 and never edits the TPAGE (0x80024E3C..0x80024E44,
+  // 0x80024FD8..0x80024FE0), so the blend mode is the model's own ABR field.
+  require(faces.faces[0].material.command == 0x36 && faces.faces[0].material.semiTransparent() &&
+              faces.faces[0].blendMode() == 1u,
+          "semi-transparent triangle lost its flag or its model ABR");
+  require(faces.faces[1].material.command == 0x3C && !faces.faces[1].material.semiTransparent() &&
+              faces.faces[1].blendMode() == 0u,
+          "opaque quad was marked semi-transparent");
+  Primitive semi_quad = decoded.primitives[1];
+  semi_quad.semi_transparent = true;
+  const std::array<Primitive, 1> semi_quad_only{semi_quad};
+  const ResolveResult semi_quad_faces =
+      resolve_normal_faces(semi_quad_only, projected, {base}, 4u, 1u);
+  require(semi_quad_faces.faces.size() == 1 && semi_quad_faces.faces[0].material.command == 0x3E &&
+              semi_quad_faces.faces[0].material.semiTransparent(),
+          "semi-transparent quad did not become GP0 0x3E");
+  ResolvedFace abr_face{};
+  for (uint32_t abr = 0; abr < 4; ++abr) {
+    abr_face.packet_attr[1] = (0xFFFF0000u & ~(3u << 21)) | (abr << 21);
+    require(abr_face.blendMode() == abr, "blend mode is not TPAGE bits 5..6");
+  }
 
   // Negative discriminator: the previous accept-all resolver emitted a clockwise triangle.
   auto culled_projected = projected;

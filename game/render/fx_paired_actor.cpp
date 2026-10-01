@@ -635,6 +635,10 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
       primitives.primitives, projected, {base}, transform.depth_origin, transform.ot_shift);
   state.candidates = faces.candidates;
   state.faces = (uint32_t)faces.faces.size();
+  state.semiFaces =
+      (uint32_t)std::count_if(faces.faces.begin(), faces.faces.end(), [](const ResolvedFace &face) {
+        return face.material.semiTransparent();
+      });
   if (!faces || faces.candidates != primitives.primitives.size()) {
     return refuse_shipping(state, "normal face census incomplete");
   }
@@ -719,7 +723,7 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
     lucent::error("pairedactor",
                   "FATAL: painter semi accounting grouped={} expected={} after atomic emit",
                   groupedSemi,
-                  expectedSemi);
+                  state.semiFaces);
     abort();
   }
   if (grouped != faces.faces.size()) {
@@ -812,7 +816,7 @@ void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
     state.endpoints_compatible = false;
   }
   state.was_state2 = state2 && !reference_leg;
-  state.invocations = state.groups = state.candidates = state.faces = 0;
+  state.invocations = state.groups = state.candidates = state.faces = state.semiFaces = 0;
   state.culled = false;
   state.refusal = nullptr;
 }
@@ -953,12 +957,13 @@ bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState &state,
   lucent::log(ok ? lucent::Level::Debug : lucent::Level::Error,
               "pairedactor",
               lucent::format("ownership gate: leg={} armed_groups={}/{} invocations={} faces={} "
-                             "culled={} refusal={} => {}",
+                             "semi={} culled={} refusal={} => {}",
                              reference_leg ? "reference" : "native",
                              state.groups,
                              expected,
                              state.invocations,
                              state.faces,
+                             state.semiFaces,
                              state.culled,
                              state.refusal ? state.refusal : "none",
                              ok ? "PASS" : "FAIL"));

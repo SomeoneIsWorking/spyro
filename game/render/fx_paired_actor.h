@@ -49,6 +49,7 @@ struct SpyroPairedActorFrameState {
   uint32_t groups = 0;
   uint32_t candidates = 0;
   uint32_t faces = 0;
+  uint32_t semiFaces = 0; // of `faces`, the ones drawn semi-transparent
   bool culled = false;
   const char *refusal = nullptr;
   SpyroPairedFrame previous{};

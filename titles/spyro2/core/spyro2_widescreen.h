@@ -88,7 +88,7 @@ public:
 
   // The two step boundaries, and they are DIFFERENT jobs, which is measured rather than assumed.
   //
-  //   onFieldDelivered — once per delivered field, before the guest resumes drawing. The widened
+  //   onField — once per delivered field, before the guest resumes drawing. The widened
   //   horizontal centre is asserted HERE. Measured: at the frame tail CR24 already reads the
   //   widened centre on 2299 of 2513 steps, which says the guest does NOT restate it mid-frame --
   //   and that is precisely why asserting it at the tail is too LATE. The tail assert widens the
@@ -107,9 +107,9 @@ public:
   // `GuestProjectionOwner`. The projection half; the drawing rectangle is not guest projection and
   // is deliberately NOT routed through this interface.
   void onProjectionPublished(Core &core) override;
-  void onFieldDelivered(Core &core) override;
 
-  // `spyro::FieldObserver` — the same per-field half, reached through the field owner's own hook.
+  // `spyro::FieldObserver` — the per-field boundary.
+  //
   // `startEdge` is ignored ON PURPOSE and that is the whole point: this owner has no boot edge to
   // distinguish, and a guard of the form `if (!startEdge) return;` — the natural reading of the
   // flag as "skip the first field" — silently disables the entire widening while every other line

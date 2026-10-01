@@ -144,10 +144,6 @@ void WidescreenOwner::onProjectionPublished(Core &core) {
   published(core, ProjectionSite::SetGeomOffsetLeaf);
 }
 
-void WidescreenOwner::onFieldDelivered(Core &core) {
-  onField(core, /*startEdge=*/false);
-}
-
 void WidescreenOwner::onField(Core &core, bool startEdge) {
   (void)startEdge; // See the header: this owner has no boot edge, and guarding on it disables the
                    // widening.

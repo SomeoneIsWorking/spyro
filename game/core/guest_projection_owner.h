@@ -5,9 +5,9 @@
 // owner is the only one today — therefore needs a way back to that object from the Core alone, and
 // `spyro_context(core).projectionHook` is it.
 //
-// It is deliberately NOT a general "call back into the title" door. It is two narrow events: a
-// guest projection was just restated, and a display field was just delivered. A title with no
-// projection of its own leaves the pointer null and nothing reads it.
+// It is deliberately NOT a general "call back into the title" door. It is ONE narrow event: a
+// guest projection was just restated. A title with no projection of its own leaves the pointer null
+// and nothing reads it. The per-field boundary is `spyro::FieldObserver`.
 #pragma once
 
 class Core;
@@ -19,7 +19,4 @@ public:
   // The guest has just written CR24/CR25/CR26 through one of the sites the owner registered. The
   // retail write has already happened; the owner may re-assert whatever its plan requires.
   virtual void onProjectionPublished(Core &core) = 0;
-
-  // One display field was delivered and the guest is about to resume. The owner's per-field half.
-  virtual void onFieldDelivered(Core &core) = 0;
 };

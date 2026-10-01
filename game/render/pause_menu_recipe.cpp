@@ -116,13 +116,7 @@ std::int32_t directionIndex(std::int32_t dx, std::int32_t dy, std::span<const st
 }
 
 void addBorder(Recipe &recipe, const State &state, Segment segment) {
-  segment.shade0 =
-      foldShade(directionIndex(segment.x0 - kCentreX, segment.y0 - kCentreY, state.directionRamp),
-                state.lightingPhase);
-  segment.shade1 =
-      foldShade(directionIndex(segment.x1 - kCentreX, segment.y1 - kCentreY, state.directionRamp),
-                state.lightingPhase);
-  recipe.border.push_back(segment);
+  recipe.border.push_back(litSegment(segment, state.directionRamp, state.lightingPhase));
 }
 
 Caption caption(
@@ -278,6 +272,14 @@ Recipe derive(const State &state) {
                                     valueDepth,
                                     kOptionsCaptionLength));
   return recipe;
+}
+
+Segment litSegment(Segment segment, std::span<const std::uint8_t> ramp, std::uint32_t phase) {
+  segment.shade0 =
+      foldShade(directionIndex(segment.x0 - kCentreX, segment.y0 - kCentreY, ramp), phase);
+  segment.shade1 =
+      foldShade(directionIndex(segment.x1 - kCentreX, segment.y1 - kCentreY, ramp), phase);
+  return segment;
 }
 
 PanelRect placePanel(const Recipe &recipe, DrawOffset offset) {

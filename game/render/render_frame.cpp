@@ -6,6 +6,7 @@
 #include "core.h"
 #include "cutscene_scene_recipe.h"
 #include "demo_text_scene.h"
+#include "fairy_menu_scene.h"
 #include "field_2d_overlay.h"
 #include "field_moby_lists.h"
 #include "field_model_chain.h"
@@ -117,8 +118,9 @@ bool pairedActorScene(Core *core, const Scene &scene) {
   // 0x8001A40C — the pause / inventory / old-dragon handler — reaches the same whole 0x80019698
   // chain on its world path, so it arms the same gate through the same field-player question. The
   // menu's own frames carry no separate ownership: the world behind the menu is the field's world.
+  // 0x8001D718 (GS_Fairy) runs the same world calls under its dialogue.
   const bool menuArm = scene.stage == kStagePauseMenu || scene.stage == kStageInventoryMenu ||
-                       scene.stage == kStageOldDragon;
+                       scene.stage == kStageOldDragon || scene.stage == kStageFairy;
   return frontend || dragon || levelTransition ||
          ((isFieldStage(scene.stage) || menuArm) && !respawnFading &&
           spyro_field_player_visible(core));
@@ -304,6 +306,13 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
     const auto refusal = spyro::pause_menu_scene::submit(mC, cx + cw - 1);
     if (refusal != spyro::pause_menu_scene::Refusal::None) {
       abortUnimplemented(sc, spyro::pause_menu_scene::refusalName(refusal));
+    }
+    return;
+  }
+  if (sc.stage == kStageFairy) {
+    const auto refusal = spyro::fairy_menu_scene::submit(mC, cx + cw - 1);
+    if (refusal != spyro::fairy_menu_scene::Refusal::None) {
+      abortUnimplemented(sc, spyro::fairy_menu_scene::refusalName(refusal));
     }
     return;
   }

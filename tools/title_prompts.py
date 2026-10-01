@@ -110,7 +110,14 @@ def title_menu_prompt(screen: Screen) -> Prompt:
             and screen.title.sub_state in ANSWERABLE_MENU_PROMPTS:
         # One press per MENU SCREEN, named by its sub-state: the front end walks through several in a
         # row, so a single target for the whole menu would answer exactly one of them and stall.
-        return Prompt(("cross",), target=f"title_menu_{screen.title.sub_state}")
+        # REPEATABLE, unlike the picker's confirms. These sub-states gate their own decision on
+        # `m_SubTick >= 8` (TSM_Menu's CreateSaveConfirm, titlescreen.c:625), so a press delivered
+        # before the gate opens changes nothing; measured on a blank card, one press at frame 1760
+        # into TS_SubState_CreateSaveConfirm left the guest asking the same question for the rest of
+        # the 12000-field budget, and repeating the press carried it through to gameplay in 40. The
+        # screen is modal and the press is idempotent on it: either the sub-state advances and the
+        # target changes with it, or nothing happened at all.
+        return Prompt(("cross",), target=f"title_menu_{screen.title.sub_state}", repeatable=True)
     return Prompt()
 
 
@@ -126,10 +133,10 @@ def new_game_prompt(screen: Screen) -> Prompt:
         # option word reads NEW GAME, while the confirm is a single decision. Keyed as one target the
         # picker either loses its navigation (one Left, then never again) or repeats its confirm.
         if screen.title.option == 0:
-            return Prompt(("cross",), target="new_game_confirm")
+            return Prompt(("cross",), target="new_game_confirm", repeatable=True)
         return Prompt(("left",), target="new_game_select", repeatable=True)
     if screen.title.mode == TSM_LOADING and screen.title.state == SLOT_PROMPT:
-        return Prompt(("cross",), target="slot_prompt")
+        return Prompt(("cross",), target="slot_prompt", repeatable=True)
     return Prompt()
 
 
@@ -245,21 +252,28 @@ def _selftest() -> int:
           Prompt(("left",), target="new_game_select", repeatable=True))
     picker_new = Screen(gamestate=GS_TITLE_SCREEN, title=TitleState(TSM_LOADING, 4, 0, 0, 0, 0))
     check("NEW GAME selected -> confirm", new_game_prompt(picker_new),
-          Prompt(("cross",), target="new_game_confirm"))
+          Prompt(("cross",), target="new_game_confirm", repeatable=True))
     slot = Screen(gamestate=GS_TITLE_SCREEN, title=TitleState(TSM_LOADING, 1, 0, 0, 0, 0))
     check("the slot picker -> confirm", new_game_prompt(slot),
-          Prompt(("cross",), target="slot_prompt"))
+          Prompt(("cross",), target="slot_prompt", repeatable=True))
     # Moving the selection and confirming are DIFFERENT targets on purpose, and this pins it: keyed as
     # one target, the driver either loses the navigation (one Left and never again, so the picker
     # never commits) or repeats its confirm, and neither failure looks like a driver bug from the
-    # outside -- the first is a refusal with a 12000-field budget, which is what it cost.
+    # screen. BOTH may repeat: every press the picker takes is gated on its own `m_SubTick >= 8`
+    # (titlescreen.c:930 and :944), so an edge delivered before the gate opens changes nothing, and a
+    # single-shot rule turns one mistimed press into the rest of the budget's stall. Measured on a
+    # blank card: one Cross at frame 1760 into TS_SubState_CreateSaveConfirm left the guest asking
+    # the same question for 12000 fields; repeating carried it through to GS_Playing. The one picker
+    # screen whose repeat would be WRONG -- TSM_Loading state 2, "this slot already has a save",
+    # whose Cross cancels back to the slot picker -- has no prompt here at all, so nothing can reach it.
     check("select and confirm are different targets",
           new_game_prompt(picker_load).target != new_game_prompt(picker_new).target, True)
-    # And the selection is marked repeatable while the confirm is not, because only the first is a
-    # navigation whose repetition is the whole point.
-    check("the picker's selection may repeat, its confirm may not",
-          (new_game_prompt(picker_load).repeatable, new_game_prompt(picker_new).repeatable),
-          (True, False))
+    # Every picker press may repeat, for the sub-tick reason above, and each is a decision about a
+    # screen that either advances (and the target changes with it) or was not taken at all.
+    check("every picker press may repeat",
+          (new_game_prompt(picker_load).repeatable, new_game_prompt(picker_new).repeatable,
+           new_game_prompt(slot).repeatable),
+          (True, True, True))
     # The destructive prompts are absent on purpose: answering a FORMAT prompt erases the
     # operator's card to reach a screenshot, and the overwrite prompt only appears over a save. The
     # answer is an EMPTY prompt and not an arrival, so the driver keeps sampling and eventually
@@ -322,6 +336,13 @@ def _selftest() -> int:
            title_menu_prompt(Screen(gamestate=GS_TITLE_SCREEN,
                                     title=TitleState(TSM_MENU, 0, 0, 0, 15, 0))).target),
           ("title_menu_4", "title_menu_15"))
+    # The front end's screens may repeat, for the same sub-tick reason as the picker's: every press
+    # these sub-states take is gated on `m_SubTick >= 8` (titlescreen.c:625 and the select screen
+    # beside it), so an edge that lands early changes nothing. Pinned because the difference is
+    # invisible in a run that never meets a blank card.
+    check("the title-menu screens may repeat",
+          title_menu_prompt(Screen(gamestate=GS_TITLE_SCREEN,
+                                   title=TitleState(TSM_MENU, 0, 0, 0, 10, 0))).repeatable, True)
     # And a prompt that is NOT one press of one screen must say so by having no target: the pause
     # menu is walked entry by entry, so its Down/Up must stay free to repeat.
     check("the menu navigation prompt carries no target, so it may repeat",

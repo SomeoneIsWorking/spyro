@@ -1,17 +1,14 @@
 #include "pause_menu_scene.h"
 
 #include "core.h"
-#include "cutscene_scene_recipe.h"
-#include "field_moby_lists.h"
-#include "field_model_chain.h"
 #include "fx_field_actor_composition.h"
-#include "fx_field_cyclorama.h"
-#include "fx_field_environment.h"
-#include "fx_field_particles.h"
 #include "game.h"
 #include "guest_call.h"
 #include "guest_globals.h"
 #include "hud_text_builder.h"
+#include "menu_lighting.h"
+#include "menu_panel_submit.h"
+#include "menu_world_pass.h"
 #include "pause_menu_recipe.h"
 #include "producer_scope.h"
 #include "render_queue.h"
@@ -59,16 +56,6 @@ constexpr std::uint32_t kMusicRowCount = 0x80075754u;
 constexpr std::uint32_t kStereoAvailable = 0x80076240u;
 constexpr std::uint32_t kVibrationEnabled = 0x800757A4u;
 constexpr std::uint32_t kCameraMode = 0x80075914u;
-constexpr std::uint32_t kBorderLightingPhase = 0x800770F4u;
-// s_8006d82c, the ramp 0x800169AC indexes at `ratio + 0xDC`. 0xDC = 220 and the ratio's largest
-// value is 64, so 65 bytes is the whole domain the guest can ask for.
-constexpr std::uint32_t kDirectionRampBase = 0x8006D82Cu;
-constexpr std::uint32_t kDirectionRampOffset = 0xDCu;
-constexpr std::size_t kDirectionRampLength = 65;
-// 0x80019698's lifecycle clear, at the guest's own position immediately before the moby build: it
-// terminates the previous screen's shaded queue. The FIELD arm reproduces the same write at
-// 0x800720F4, and omitting it leaves the field HUD capacity consumed by a stale screen.
-constexpr std::uint32_t kShadedMobyList = 0x800720F4u;
 // 0x80018880, the guest's own "append the HUD mobys I just built to the shaded queue" leaf. The
 // level-transition tally reaches the picture through exactly this pair, so there is one route for
 // HUD text in this port rather than a second transcription of it.
@@ -104,12 +91,9 @@ constexpr std::uint32_t kMenuMobyBaseAdjust = 0xFFFE3E00u;
 constexpr std::uint32_t kPanelPrimBytes = 6u * 4u;
 constexpr std::uint32_t kLinePrimBytes = 5u * 4u;
 
-State readState(Core *core) {
-  std::array<std::uint8_t, kDirectionRampLength> ramp{};
-  for (std::size_t i = 0; i < ramp.size(); ++i) {
-    ramp[i] =
-        core->mem_r8(kDirectionRampBase + kDirectionRampOffset + static_cast<std::uint32_t>(i));
-  }
+// `lighting` is borrowed by the returned State's ramp span, so the caller keeps it alive for as
+// long as the State is used.
+State readState(Core *core, const menu_lighting::Lighting &lighting) {
   State state;
   state.frameCounter = core->mem_r32(kMenuFrameCounter);
   state.page = static_cast<Page>(core->mem_r32(kMenuPage));
@@ -122,8 +106,8 @@ State readState(Core *core) {
   state.stereoAvailable = core->mem_r32(kStereoAvailable) != 0u;
   state.vibrationEnabled = core->mem_r32(kVibrationEnabled) != 0u;
   state.cameraMode = core->mem_r32(kCameraMode);
-  state.lightingPhase = core->mem_r32(kBorderLightingPhase);
-  state.directionRamp = ramp;
+  state.lightingPhase = lighting.phase;
+  state.directionRamp = lighting.ramp;
   return state;
 }
 
@@ -175,122 +159,16 @@ std::int32_t panelShift(Core *core, const Recipe &recipe) {
       .offset;
 }
 
-void submitPanel(Core *core,
-                 RenderQueue &queue,
-                 const Recipe &recipe,
-                 std::uint8_t colourByte,
-                 std::int32_t shift) {
+// The panel's three colour bytes are the one `$s4` byte stored three times, read here as the 5-bit
+// fields of a BGR555 word and expanded the way the PSX expands them.
+menu_panel::Colour expandPanelColour(std::uint8_t colourByte) {
   const std::uint32_t word = static_cast<std::uint32_t>(colourByte) |
                              (static_cast<std::uint32_t>(colourByte) << 8) |
                              (static_cast<std::uint32_t>(colourByte) << 16);
   const auto expand = [](std::uint32_t v) {
     return static_cast<unsigned char>((v << 3) | (v >> 2));
   };
-  const unsigned char r = expand(word & 0x1Fu);
-  const unsigned char g = expand((word >> 5) & 0x1Fu);
-  const unsigned char b = expand((word >> 10) & 0x1Fu);
-  const GpuState gpu = core->game->gpu;
-  auto panel = spyro::pause_menu::placePanel(recipe, {gpu.s_off_x, gpu.s_off_y});
-  panel.x0 += shift;
-  panel.x1 += shift;
-  const int xs[4] = {panel.x0, panel.x1, panel.x0, panel.x1};
-  const int ys[4] = {panel.y0, panel.y0, panel.y1, panel.y1};
-  const int us[4] = {};
-  const int vs[4] = {};
-  const unsigned char rs[4] = {r, r, r, r};
-  const unsigned char gs[4] = {g, g, g, g};
-  const unsigned char bs[4] = {b, b, b, b};
-  queue.emitOrQueue(core,
-                    1,
-                    RQ_HUD,
-                    RQ_OM_2D_FG,
-                    4,
-                    spyro::pause_menu::kPanelStp,
-                    0,
-                    xs,
-                    ys,
-                    nullptr,
-                    nullptr,
-                    us,
-                    vs,
-                    rs,
-                    gs,
-                    bs,
-                    nullptr,
-                    3,
-                    0,
-                    0,
-                    0,
-                    0,
-                    gpu.s_tw_mx,
-                    gpu.s_tw_my,
-                    gpu.s_tw_ox,
-                    gpu.s_tw_oy,
-                    gpu.s_da_x0,
-                    gpu.s_da_y0,
-                    panel.x1,
-                    gpu.s_da_y1,
-                    gpu.s_tp_blend);
-}
-
-void submitBorder(Core *core,
-                  RenderQueue &queue,
-                  const Recipe &recipe,
-                  std::int32_t drawAreaX1,
-                  std::int32_t shift) {
-  const GpuState gpu = core->game->gpu;
-  for (const Segment &authored : recipe.border) {
-    Segment segment = spyro::pause_menu::placeSegment(authored, {gpu.s_off_x, gpu.s_off_y});
-    segment.x0 += shift;
-    segment.x1 += shift;
-    // NO endpoint-ordering test. A line is a line: the guest's box walks right-to-left on its
-    // bottom edge and bottom-to-top on its left one, and an x0<x1 / y0<y1 guard here refused two of
-    // the five edges while letting the other three through, which is how a box came out with one
-    // side. Only the clip is a real constraint.
-    if (segment.x1 >= drawAreaX1 || segment.x0 < gpu.s_da_x0 || segment.y1 < gpu.s_da_y0) {
-      continue;
-    }
-    const spyro::pause_menu::Rgb start = spyro::pause_menu::borderColour(segment.shade0);
-    const spyro::pause_menu::Rgb end = spyro::pause_menu::borderColour(segment.shade1);
-    const int xs[4] = {segment.x0, segment.x1, segment.x0, segment.x1};
-    const int ys[4] = {segment.y0, segment.y1, segment.y0, segment.y1};
-    const int us[4] = {};
-    const int vs[4] = {};
-    const unsigned char rs[4] = {start.r, end.r, start.r, end.r};
-    const unsigned char gs[4] = {start.g, end.g, start.g, end.g};
-    const unsigned char bs[4] = {start.b, end.b, start.b, end.b};
-    queue.emitOrQueue(core,
-                      1,
-                      RQ_HUD,
-                      RQ_OM_2D_FG,
-                      2,
-                      0,
-                      0,
-                      xs,
-                      ys,
-                      nullptr,
-                      nullptr,
-                      us,
-                      vs,
-                      rs,
-                      gs,
-                      bs,
-                      nullptr,
-                      0,
-                      0,
-                      0,
-                      0,
-                      0,
-                      gpu.s_tw_mx,
-                      gpu.s_tw_my,
-                      gpu.s_tw_ox,
-                      gpu.s_tw_oy,
-                      gpu.s_da_x0,
-                      gpu.s_da_y0,
-                      drawAreaX1 - 1,
-                      gpu.s_da_y1,
-                      0);
-  }
+  return {expand(word & 0x1Fu), expand((word >> 5) & 0x1Fu), expand((word >> 10) & 0x1Fu)};
 }
 
 // The captions, through the two owners this port already has for the guest's own text: the layout
@@ -327,34 +205,25 @@ bool submitText(Core *core, const Recipe &recipe) {
 } // namespace
 
 Refusal submit(Core *core, std::int32_t drawAreaX1) {
-  // ── The zero path: 0x800521C0, 0x80019698, 0x800573C8, 0x80050BD0, 0x8002B9CC ─────────────────
-  // The same frame preparation the FIELD arm performs, because the two arms call the same
-  // producers over the same world state; only the 2D layers differ, and the handler calls none of
-  // them. g_SonyImage's shaded list is terminated at the guest's own position before the moby build
-  // so the level transition's HUD mobys cannot leak into this screen.
-  const auto background = spyro::cutscene_scene_recipe::read(core);
-  spyro::cutscene_scene_recipe::prepareFrame(core, background);
-  core->mem_w32(kShadedMobyList, 0u);
-  spyro_field_build_moby_lists(core);
-  if (const auto refusal = spyro_field_model_chain_submit(core)) {
-    lucent::debug("render", "REFUSED 0x80019698: {}", refusal.detail);
+  // ── The zero path: the world, through the producers the field arm also calls ──────────────────
+  switch (spyro::menu_world::submit(core)) {
+  case spyro::menu_world::Refusal::None:
+    break;
+  case spyro::menu_world::Refusal::ActorChain:
     return Refusal::ActorChain;
-  }
-  if (const auto refusal = spyro_field_particles_submit(core)) {
-    lucent::debug("render", "REFUSED 0x800573C8: {}", refusal.detail);
+  case spyro::menu_world::Refusal::Particles:
     return Refusal::Particles;
-  }
-  if (!spyro_field_cyclorama_submit(core)) {
+  case spyro::menu_world::Refusal::Cyclorama:
     return Refusal::Cyclorama;
-  }
-  if (!spyro_field_environment_submit(core)) {
+  case spyro::menu_world::Refusal::Environment:
     return Refusal::Environment;
   }
 
   // ── The non-zero path: the panel, the border, the captions ─────────────────────────────────────
   // Read BEFORE the epilogue write below, so this frame's gate is the counter as the guest's own
   // epilogue left it at the end of the previous one.
-  const State state = readState(core);
+  const menu_lighting::Lighting lighting = menu_lighting::read(core);
+  const State state = readState(core, lighting);
   const Recipe recipe = spyro::pause_menu::derive(state);
   lucent::debug("render",
                 "pause-menu: frameCounter={} page={} gui={} panel=({},{})..({},{}) border={} "
@@ -405,8 +274,12 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
                   *panelColour,
                   spyro::pause_menu::kPanelColourDefinitionPc);
     const std::int32_t shift = panelShift(core, recipe);
-    submitPanel(core, core->game->rq, recipe, *panelColour, shift);
-    submitBorder(core, core->game->rq, recipe, drawAreaX1, shift);
+    menu_panel::submitPanel(core,
+                            core->game->rq,
+                            {recipe.panelX0, recipe.panelY0, recipe.panelX1, recipe.panelY1},
+                            expandPanelColour(*panelColour),
+                            shift);
+    menu_panel::submitBorder(core, core->game->rq, recipe.border, drawAreaX1, shift);
     // The guest's AddPrim (0x800168DC) advances the prim cursor by each record it links: 6 words
     // for the GP0(0x2A) panel and 5 for each 0x8001844C line. Reproduced so the pool position the
     // next frame starts from is the one the guest would leave.

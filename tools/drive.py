@@ -67,6 +67,16 @@ SHIPPING_SETTINGS = ROOT / "tools" / "shipping_settings.ini"
 # and stalls on a blank one (never reaches TSM_Loading), and it never writes that card.
 ROUTE_CARD = ROOT / "scratch" / "saves" / "route.mcr"
 
+# The card a SCENE route runs on, and it is its own file for the reason issue 0169 measured: a route
+# that must repeat cannot share a card another route writes. The fairy's scene WRITES a save (that
+# is the whole point), so on the shared card it left BASCUS-94228SPYRO with a filled first slot; the
+# next run then booted into the picker's "this slot has a save" screen (TSM_Loading state 2), which
+# refuses to answer the overwrite because that screen is the operator's card, and the run refused at
+# "the save picker never committed a slot". Deleted before each run by the framework's
+# blank_card_environment, so a scene starts from the binary and the disc alone and its own write
+# stays inside its own file.
+SCENE_CARD = ROOT / "scratch" / "saves" / "scene.mcr"
+
 # Guest addresses. The shared ones come from the shipping owner, game/core/guest_globals.h, through
 # tools/guest_globals.py, so this driver and the product cannot read different memory. The two
 # level-transition words below are read here and nowhere else, so they stay with their only reader.
@@ -748,6 +758,14 @@ def main() -> int:
         "for its own commands and declines the rest, so a diagnostic owner can be read without this "
         "tool knowing what it prints.",
     )
+    parser.add_argument(
+        "--card",
+        default=None,
+        help="memory-card image this run opens, DELETED first so the product makes a blank one; a "
+        "--scene run defaults to the scene's own card (" + str(SCENE_CARD.relative_to(ROOT))
+        + ") because the fairy's scene writes a save and a shared card would carry it into the next "
+        "run's boot (issue 0169)",
+    )
     parser.add_argument("--shot", default="", help="capture here once the route and inputs are done")
     parser.add_argument(
         "--dumpram",
@@ -773,7 +791,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    env = environment(disc_path())
+    env = environment(disc_path(), card=SCENE_CARD if args.scene and not args.card else args.card)
     if args.debug:
         env["PSXPORT_DEBUG"] = args.debug
     if args.settings:

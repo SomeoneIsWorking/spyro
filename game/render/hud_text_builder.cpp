@@ -168,9 +168,17 @@ std::vector<std::uint32_t> append(Core *core, const Layout &layout, std::uint8_t
 }
 
 void wobble(Core *core, std::span<const std::uint32_t> glyphs, std::int32_t phase) {
+  wobbleScaled(core, glyphs, phase, kPlainWobble);
+}
+
+void wobbleScaled(Core *core,
+                  std::span<const std::uint32_t> glyphs,
+                  std::int32_t phase,
+                  WobbleScale scale) {
   for (std::size_t i = 0; i < glyphs.size(); ++i) {
     const std::uint32_t index = (std::uint32_t)((phase + (std::int32_t)i * 12) & 0xFF);
-    const std::int32_t wobble = (std::int32_t)core->mem_r16s(kCosineTable + index * 2u) >> 7;
+    const std::int32_t cosine = (std::int32_t)core->mem_r16s(kCosineTable + index * 2u);
+    const std::int32_t wobble = (cosine * scale.multiplier) >> scale.shift;
     core->mem_w8(glyphs[i] + kRotationZ, (std::uint8_t)(std::int8_t)wobble);
   }
 }

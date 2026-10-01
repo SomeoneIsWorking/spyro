@@ -874,6 +874,36 @@ in the real run it printed `NO PROOF FILE: the scene did not reach its target` f
 fields and the lowest Z reached was **6,399 against a 1,024 death plane** — the hub is bounded — and
 `save-fairy` abandoned all four fairies, the nearest **740** away, with the cutscene never opening.
 
+**SUPERSEDED ON TWO OF THE FOUR (2026-10-01, issue
+[0170](issues/0170-two-of-the-four-scene-routes-reach-their-scene-and-two-cannot.md)).** With the
+scene routes recorded against the guest's own waypoints, **`death-respawn` and `save-fairy` now reach
+their states and prove them**, and the other two still refuse:
+
+* `death-respawn`: `g_Gamestate` 0 → **4 (GS_Respawn)** walking at the flight portal, body state
+  **0x1D**, lowest Z **5,674** against the 1,024 death plane, `g_SpyroLifeCount` **4 → 3**, back at
+  GS_Playing in 2,774 fields.
+* `save-fairy`: `g_Gamestate` 11 (GS_Fairy) with `m_MenuDialoguePage` walking **2 → 7** and the
+  card-machine stage word reaching 4. Page 2 is the only `jtbl_80010E08` entry whose handler reaches
+  `SaveCreate` (0x800321F4) and `MemCardWriteFile` (0x80032230); page 7 is the page the guest
+  captions **"GAME SAVED"**, which the captured picture shows (a lit dialogue box over the level,
+  "SLOT 1" and "GAME SAVED", `scratch/screenshots/fairy-menu.png`, 684x240 at 93.3% non-black) and
+  the `GS_Fairy` draw handler 0x8001D718 now has a native owner (`game/render/fairy_menu_*`) that
+  shares the pause menu's world pass, lighting, panel and outline rather than copying them.
+  **The previous revision had success and failure inverted** — it read page 7 as "the card
+  refusing" and page 4 as the write, and refused a run that had in fact saved.
+* `boss-level` still refuses: the recorded `portal-14` route reaches **waypoint 66 of 74** and
+  stalls 258 view units short of waypoint 67, which is recorded at z 7042 while the guest's own
+  position word has Spyro at z **5090** — a terrace 1,952 units up.
+* `flight-level` still refuses: **no route for `portal-15` is recorded at all**, so the scene falls
+  back to the straight-line seeker and stalls **5,395** from the portal.
+
+The fairy's scene also exposed two card defects, both fixed at their cause: it wrote the shared
+`scratch/saves/card.mcr`, so the next run booted into the picker's never-answered "this slot has a
+save" screen (a `--scene` run now opens its own card), and on a blank card a single mistimed press
+was permanent, because every front-end and picker press is gated on the screen's own
+`m_SubTick >= 8` while the driver pressed once per target (blank-card boot now reaches GS_Playing at
+field 6380).
+
 **The corpus union grew 352/547 (64.4%) to 367/547 (67.1%), and the +15 is NOT these states.**
 `death-respawn` reached 332/547, the most of any route, purely by walking ground the other routes
 missed on its way to a refusal. A wider union is not a wider set of states.

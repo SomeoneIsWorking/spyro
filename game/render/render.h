@@ -39,6 +39,8 @@ constexpr uint32_t kStageOldDragon = 6u;
 constexpr uint32_t kStageDragon = 8u;
 // GS_EntranceAnimation. draw.c:2693 dispatches it to func_8001A050, the same producer as stage 1.
 constexpr uint32_t kStageEntranceAnimation = 9u;
+// GS_Fairy: draw.c:2696 dispatches it to func_8001D718, which fairy_menu_scene owns.
+constexpr uint32_t kStageFairy = 11u;
 constexpr uint32_t kStageFrontEnd = 13u;
 constexpr uint32_t kStageCutscene = 14u;
 

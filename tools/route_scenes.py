@@ -70,6 +70,8 @@ G_IS_FLIGHT_LEVEL = 0x80075690
 G_LIFE_COUNT = 0x8007582C
 # g_Spyro + 0x8. g_Spyro is the shipping owner's 0x80078A58; +0x8 is m_Position.z, the third word
 # of the Vector3D m_Position that starts the struct.
+G_SPYRO_X = 0x80078A58
+G_SPYRO_Y = 0x80078A58 + 0x04
 G_SPYRO_Z = 0x80078A58 + 0x08
 # g_Spyro + 0x80 is m_health: func_8004A4B0 `lw $v0,%lo(g_Spyro + 0x80)($v0)` then
 # `slti $v0,$v0,0x65`, and the fairy trigger refuses to open when it is not positive
@@ -81,7 +83,14 @@ G_SPYRO_STATE = 0x80078A58 + 0x78
 # g_FairyCutscene (fairy.h) starts at 0x80078D00 -- asm/data/game.bss.s places it immediately
 # after g_Spyro, which it also sizes: "Total size from 80078A58 to 80078D00".
 G_FAIRY_STATE = 0x80078D00
-G_FAIRY_OPTION = 0x80078D00 + 0x08   # m_MenuSelectedOption (0=SAVE, 1=RETRY, 2=CONTINUE)
+# +0x08 is BOTH the menu selection on page 0 and the memory-card machine's stage afterwards. The
+# guest proves it: the page-0 handler increments it and wraps at 3 (0x80031E74 / 0x80031E80) as the
+# option, and the page-2 handler loads it as $s1's base and stores 1..4 into it (0x800320C8 and
+# 0x800320F8 / 0x80032168 / 0x80032240) as the card stage. So it is only read as an option while the
+# page is 0, and only read as a stage after the page has left 0; measured, the very same word read
+# 4 on a run whose save then succeeded, which is the card machine four steps in and not a selection.
+G_FAIRY_OPTION = 0x80078D00 + 0x08   # m_MenuSelectedOption (0=SAVE, 1=RETRY, 2=CONTINUE) on page 0
+G_FAIRY_CARD_STAGE = 0x80078D00 + 0x08  # the card machine's stage on pages 1..7, the same word
 G_FAIRY_PAGE = 0x80078D00 + 0x0C     # m_MenuDialoguePage, the 0..7 page the update dispatches on
 G_FAIRY_HAS_CARD = 0x80078D00 + 0x14  # m_HasMemoryCard; 0 sends the menu to CONTINUE, not SAVE
 
@@ -97,14 +106,17 @@ GS_GAME_OVER = 5
 GS_FAIRY = 11
 # func_8004A4F4 `slti $v0,$v0,0x400`: below this Z the guest calls func_8002C85C.
 DEATH_PLANE_Z = 0x400
-# jtbl_80010E08 in func_800314B4 dispatches on m_MenuDialoguePage. Page 4 is the only predecessor
-# of SaveCreate (0x800321F4) and MemCardWriteFile (0x80032230); page 7 is where the same block
-# lands when the card's contents do not match (0x8003231C, reached from the checksum compare at
-# 0x80032314). 3 is where the write leaves the page machine, so it is what "the write was issued"
-# looks like from guest state.
-SAVE_PAGE_WRITE = 4
-SAVE_PAGE_AFTER_WRITE = 3
-SAVE_PAGE_REFUSED = 7
+# jtbl_80010E08 in func_800314B4 dispatches on m_MenuDialoguePage, one entry per page. Page 2
+# (.L800320C0) is the only page that reaches SaveCreate (0x800321F4) and MemCardWriteFile
+# (0x80032230); its handler is also the memory-card machine, which walks the card-stage word from 0
+# through 4 across a handful of fields. Page 7 (.L8003245C's jtbl entry) is the page that ends the
+# cutscene, and it is the SUCCESS page, not a refusal: the guest's own caption for it is the string
+# "GAME SAVED" at 0x80010CC4, which the native fairy menu owner lays out for page 7
+# (game/render/fairy_menu_recipe.cpp, `case 7`). Pages 3, 4, 5 and 6 are the failures -- "NO
+# MEMORY CARD", "NO SAVE FILE", "SAVE ERROR" and "SAVE FAILED" -- and are the ones a refusal names.
+SAVE_PAGE_WRITE = 2
+SAVE_PAGE_SAVED = 7
+SAVE_PAGE_FAILED_FIRST = 3
 
 # Artisans' portals, by the level ids common.h's layout gives: g_LevelId/10-1 is the homeworld and
 # g_LevelId%10 the slot, where 0=home 1..3=levels 4=boss 5=flight. 14 is Toasty, 15 Sunny Flight
@@ -127,7 +139,7 @@ class Proof:
     scene: str
     target: str
     frames: int
-    words: dict[str, int] = field(default_factory=dict)
+    words: dict[str, int | str] = field(default_factory=dict)
     detail: str = ""
 
     def as_json(self) -> dict:
@@ -135,7 +147,8 @@ class Proof:
             "scene": self.scene,
             "target": self.target,
             "frames": self.frames,
-            "words": {name: f"0x{value:08X}" for name, value in self.words.items()},
+            "words": {name: (f"0x{value:08X}" if isinstance(value, int) else value)
+                     for name, value in self.words.items()},
             "detail": self.detail,
         }
 
@@ -190,7 +203,8 @@ class ScenePort:
 
 
 def _walk_until(port: ScenePort, what: str, targets, predicate, description: str,
-                budget: int, arrived: int | None = 0, route: str | None = None) -> int:
+                budget: int, arrived: int | None = 0, route: str | None = None,
+                from_player: bool = False) -> int:
     """Walk to a place and keep going until `predicate` says the thing HAPPENED.
 
     `arrived=0` is the important part: a proximity radius would report a walk that stopped next to
@@ -199,13 +213,16 @@ def _walk_until(port: ScenePort, what: str, targets, predicate, description: str
     `route` names a recorded waypoint route (tools/routes) to follow first, for destinations a
     straight line cannot reach. The level has to be one the route was recorded in; a level with no
     recording for it keeps the plain seek, so the absence of a route is visible rather than faked.
+
+    `from_player` measures distances from Spyro, not from the trailing camera: a proximity trigger
+    (the fairy) is a distance from Spyro, and the camera sits about 3000 units behind him.
     """
     if route is not None:
         recorded = repl_route.Route.find(port.word(guest_globals.kLevelId), route)
         if recorded is not None:
             repl_route.follow(port.raw, recorded, stop=predicate, stop_is=description)
     return repl_walk.Seeker(port.raw, what, targets, budget=budget, arrived=arrived,
-                            stop=predicate, stop_is=description).walk()
+                            stop=predicate, stop_is=description, from_player=from_player).walk()
 
 
 def flight_level(port: ScenePort) -> Proof:
@@ -215,6 +232,14 @@ def flight_level(port: ScenePort) -> Proof:
     and each carries the level it leads to, so the route asks the level for its flight portal
     rather than assuming one exists. A homeworld that does not have one is REFUSED with the level
     ids it does have, which is a fact about the level and not a driver bug.
+
+    MEASURED 2026-10-01, still failing, and this is where: no route for `portal-15` is recorded in
+    tools/routes, so `Route.find` answers None and the scene falls back to the straight-line seeker,
+    which stalls 5570 view units from the portal to level 15 at (52656, 43245, 8865). The same
+    portal is where death-respawn drowns, so the direct line crosses the west pond. Reaching 3000
+    view units of that portal needs a route that goes around it, and the level-10 walkable graph
+    (scratch-only A* over the render mesh) reaches no closer than 6000 world units at any climb
+    bound tried. docs/issues/0170 carries the numbers and what would unblock it.
     """
     portals = spyro1_steering.portal_targets(port.words, level=FLIGHT_LEVEL_ID)
     if not portals:
@@ -275,6 +300,14 @@ def boss_level(port: ScenePort) -> Proof:
     on ("for artisans, check if the Toasty conditions have been met", g_LevelId == 10 is the home
     world and props->m_CutsceneId == 1 is the boss). So the proof is the level id the product
     itself loaded, plus the boss arena's own overlay being the resident code image.
+
+    MEASURED 2026-10-01, still failing, and this is where: the recorded `portal-14` route reaches
+    waypoint 66 of 74 and then stalls 258 view units short of waypoint 67, which is recorded at
+    (129225, 81975, z 7042) while the guest's own position word has Spyro at (128933, 80464, z 5090)
+    -- a terrace 1952 units above the ground he is standing on. The route crosses a ledge; the
+    walker is refusing to walk into a wall. Regenerating the route from the same mesh with a
+    clearance margin does reach every one of its own waypoints, so the last 2900 units are the
+    whole gap. docs/issues/0170 carries the numbers.
     """
     portals = spyro1_steering.portal_targets(port.words, level=BOSS_LEVEL_ID)
     if not portals:
@@ -405,20 +438,69 @@ def _death_proof(port: ScenePort, sector: str, fields: int, lives_before: int,
 
 
 # The fairy's menu, read off func_800314B4 and driven as a closed loop over the guest's own words.
-# On page 0 the handler takes SQUARE to move m_MenuSelectedOption up and TRIANGLE to move it down
-# (0x80031E40 `andi $v0,$v1,0x4000`, 0x80031E9C `andi $v0,$v1,0x1000`, wrapping at 3), and DOWN
-# (0x80031F14 `andi $v0,$v1,0x40`) on option 0 is what sets m_MenuDialoguePage to 2 (0x80031F60
-# `addiu $v0,$zero,2` -> 0x80031F68). Page 2 is the card work. The button NAMES are the port REPL's
-# own (external/psxport/runtime/psx/repl.cpp repl_btn), and the bit values are the PSX digital pad's:
-# square 0x8000, triangle 0x1000, down 0x0040 -- so the immediates above name SQUARE and TRIANGLE,
-# not the CROSS that a PSX face-bit reading would guess.
-# The loop presses what the READ option calls for rather than a fixed script, because the menu only
-# accepts input once the cutscene has finished moving the camera, and how long that takes is the
-# guest's business, not the driver's.
+# On page 0 the handler takes the guest pad word's 0x4000 bit to move m_MenuSelectedOption up and
+# 0x1000 to move it down (0x80031E40 `andi $v0,$v1,0x4000`, 0x80031E9C `andi $v0,$v1,0x1000`,
+# wrapping at 3), and 0x40 (0x80031F14 `andi $v0,$v1,0x40`) on option 0 is what sets
+# m_MenuDialoguePage to 2 (0x80031F60 `addiu $v0,$zero,2` -> 0x80031F68). Those are the standard
+# PSX pad bits, DOWN 0x4000, UP 0x1000 and CROSS 0x40; the port REPL's button names (repl.cpp
+# repl_btn) carry the byte-swapped masks, so the REPL's "down" is the guest's 0x4000. MEASURED, not
+# read off the table: "down" on option 0 left the option at 1, and the earlier names (SQUARE moves
+# it, DOWN confirms) were wrong. The handler ignores input until its own timer reaches 8
+# (0x80031EF4 `slti $v0,$v0,0x8`), which is why the loop waits on the guest and reads the option
+# back instead of pressing on a schedule.
 FAIRY_MENU_OPTION = 0
 FAIRY_MENU_FIELDS_PER_STEP = 60
 FAIRY_CARD_FIELDS = 1800
 FAIRY_MENU_STEPS = 24
+# The card machine's own steps, watched this finely because it finishes inside one menu step
+# (measured: page 0 -> 2 -> 7 across 26 fields, with the card stage climbing 0..4 every two or three
+# fields), so a sample coarser than this walks over page 2 and cannot prove the write was entered.
+FAIRY_WATCH_FIELDS = 2
+
+
+# The fairy's trigger radius is 0x400 world units and a view unit is a quarter of one, so 150 view
+# units (600 world) is well inside it. The stand is the guest's own idle wait, in fields; the fairy
+# wanders, so the approach is repeated against her current position.
+FAIRY_STAND_VIEW_DISTANCE = 150
+FAIRY_STAND_FIELDS = 45
+FAIRY_APPROACH_ATTEMPTS = 30
+FAIRY_APPROACH_FIELDS = 900
+
+
+def _approach_fairy(port: ScenePort, opened, fairies) -> None:
+    """Get Spyro standing still inside the fairy's trigger, which is a moving target.
+
+    The fairy hovers and wanders (measured: 84992,52224,10087 then 85204,52498,9831 then
+    84799,51964,10041 over the same level visit), and the trigger needs OctDistance < 0x400 AND
+    |dz| < 0x200 against a Spyro in body state 0 or 0xD. So a walk to where she WAS parks Spyro out
+    of range. This follows her CURRENT position, stands still for a short guest wait, and repeats;
+    the guest's own gamestate is the only success. The recorded route gets Spyro to her first.
+    """
+    route = f"fairy-{FAIRY_MOBY_CLASS}"
+    for attempt in range(FAIRY_APPROACH_ATTEMPTS):
+        targets = moby_class_targets(port.words, FAIRY_MOBY_CLASS) or fairies
+        try:
+            _walk_until(port, f"class {FAIRY_MOBY_CLASS} (the fairy)", targets, opened,
+                        "the fairy cutscene opened", budget=FAIRY_APPROACH_FIELDS,
+                        arrived=FAIRY_STAND_VIEW_DISTANCE, route=route if attempt == 0 else None,
+                        from_player=True)
+        except Refusal:
+            if opened():
+                return
+            raise
+        if opened() or _await(port, opened, "the fairy cutscene to open once Spyro stands still",
+                              budget=FAIRY_STAND_FIELDS):
+            return
+        print(f"fairy: attempt {attempt + 1} stood still without the trigger firing", file=sys.stderr)
+    fairy = moby_class_targets(port.words, FAIRY_MOBY_CLASS)[0].position
+    raise Refusal(
+        f"{FAIRY_APPROACH_ATTEMPTS} approach(es) to within {FAIRY_STAND_VIEW_DISTANCE} view units of "
+        f"the fairy, each followed by {FAIRY_STAND_FIELDS} field(s) standing still, and g_Gamestate "
+        f"stayed {port.word(guest_globals.kGamestate)}: the trigger (OctDistance < 0x400, |dz| < "
+        f"0x200, body state 0 or 0xD, health > 0) was not met; Spyro is at "
+        f"({port.signed(G_SPYRO_X)}, {port.signed(G_SPYRO_Y)}, {port.signed(G_SPYRO_Z)}) in body "
+        f"state {port.word(G_SPYRO_STATE):#x}; the fairy is now at {fairy}"
+    )
 
 
 def save_fairy(port: ScenePort) -> Proof:
@@ -434,10 +516,8 @@ def save_fairy(port: ScenePort) -> Proof:
             f"this level carries no Moby of class {FAIRY_MOBY_CLASS}, which is the class the level "
             "overlay's own dispatcher calls InitFairyCutscene for, so there is nobody here to save"
         )
-    _walk_until(port, f"class {FAIRY_MOBY_CLASS} (the fairy)", fairies,
-                lambda: port.word(guest_globals.kGamestate) == GS_FAIRY,
-                "the fairy cutscene opened", budget=9000,
-                route=f"fairy-{FAIRY_MOBY_CLASS}")
+    opened = lambda: port.word(guest_globals.kGamestate) == GS_FAIRY
+    _approach_fairy(port, opened, fairies)
     has_card = port.word(G_FAIRY_HAS_CARD)
     page_before, option = _answer_menu(port, has_card)
     return _await_write(port, page_before, option, has_card)
@@ -445,70 +525,101 @@ def save_fairy(port: ScenePort) -> Proof:
 
 def _answer_menu(port: ScenePort, has_card: int) -> tuple[int, int]:
     """Put the fairy's menu on SAVE with the guest's own controls, and return the page and option
-    it was on when the card work started.
+    the guest was on when it took the choice.
 
     InitFairyCutscene already chooses SAVE when a card is present (init.c:401) and CONTINUE when
     one is not, so on a card the menu is on SAVE before any input. Either way the option is READ
     BACK and the button pressed is the one the handler gives that option, and the loop ends on the
     page leaving 0 -- which is the guest saying it took the choice, not the driver assuming it did.
+
+    Two things the loop must not do, both measured. The option word must be re-checked against the
+    PAGE first, because from page 1 on that word is the card machine's stage: pressing DOWN to "fix"
+    a selection of 4 while the guest is already saving presses a button the guest's page does not
+    read. And the choice must be followed by FAIRY_WATCH_FIELDS-sized steps rather than one long
+    run, because the guest ignores CROSS until its own m_AnimationTimer reaches 8 (0x80031EF4) and
+    the whole card machine then finishes inside one 60-field step -- measured: page 0 -> 2 -> 7 in
+    26 fields, the stage word climbing 0..4 every two or three fields. A route that ran a coarse
+    step after pressing CROSS walked straight over page 2 and could not prove the write at all.
     """
-    page, option = port.word(G_FAIRY_PAGE), port.signed(G_FAIRY_OPTION)
+    option = port.signed(G_FAIRY_OPTION)
     for step in range(FAIRY_MENU_STEPS):
+        page = port.word(G_FAIRY_PAGE)
         if page != 0:
             return page, option
-        port.run(FAIRY_MENU_FIELDS_PER_STEP)
         option = port.signed(G_FAIRY_OPTION)
-        if page != 0:
-            break
         if option != FAIRY_MENU_OPTION:
             print(f"save: menu option is {option}, moving it to {FAIRY_MENU_OPTION}", file=sys.stderr)
-            port.tap("square", 8)
-            port.run(FAIRY_MENU_FIELDS_PER_STEP)
-            option = port.signed(G_FAIRY_OPTION)
-            if option != FAIRY_MENU_OPTION:
-                raise Refusal(
-                    f"the fairy's menu option is {option} after moving it towards "
-                    f"{FAIRY_MENU_OPTION} with SQUARE; m_MenuSelectedOption (0x{G_FAIRY_OPTION:08X}) "
-                    "is the word the guest's own page-0 handler increments, so that is what the "
-                    "guest believes and the route will not press DOWN on a menu it did not set"
-                )
-            continue
-        print(f"save: pressing DOWN on option {option} (step {step})", file=sys.stderr)
-        port.tap("down", 8)
-        port.run(FAIRY_MENU_FIELDS_PER_STEP)
-        page = port.word(G_FAIRY_PAGE)
+            port.tap("down", 8)
+        else:
+            print(f"save: pressing CROSS on option {option} (step {step})", file=sys.stderr)
+            port.tap("cross", 8)
+        # Watch at the card machine's own resolution until the page leaves the menu.
+        for _ in range(FAIRY_MENU_FIELDS_PER_STEP // FAIRY_WATCH_FIELDS):
+            port.run(FAIRY_WATCH_FIELDS)
+            if port.word(G_FAIRY_PAGE) != 0:
+                return port.word(G_FAIRY_PAGE), option
+    page = port.word(G_FAIRY_PAGE)
+    if page == 0:
+        raise Refusal(
+            f"the fairy's menu stayed on page 0 with m_MenuSelectedOption {option} after "
+            f"{FAIRY_MENU_STEPS} step(s) of {FAIRY_MENU_FIELDS_PER_STEP} field(s): DOWN moves the "
+            f"option towards {FAIRY_MENU_OPTION} and CROSS takes it, and the guest took neither"
+        )
     return page, option
 
 
 def _await_write(port: ScenePort, page_before: int, option: int, has_card: int) -> Proof:
     """The proof, or a refusal that says which page the guest stopped on.
 
-    Page 4 is the only value from which SaveCreate (0x800321F4) and MemCardWriteFile (0x80032230)
-    are reached, and the block that reaches them leaves the page machine on 3. So "reached 4" and
-    "left 4" are the two halves of the claim, and a route that only got the first would be claiming
-    a card write that may never have completed.
+    Page 2 is the only page whose handler reaches SaveCreate (0x800321F4) and MemCardWriteFile
+    (0x80032230), and page 7 is the page the guest ends the cutscene on, captioned "GAME SAVED"
+    (the string at 0x80010CC4, laid out for page 7 by game/render/fairy_menu_recipe.cpp). So the
+    proof is the page SEQUENCE the guest walked -- it must contain 2 and end on 7 -- and not a
+    sample of the page alone, because the machine finishes inside one 60-field step.
+
+    Every other page it can land on (3, 4, 5, 6) is a failure the guest words for itself: "NO
+    MEMORY CARD", "NO SAVE FILE", "SAVE ERROR", "SAVE FAILED". They are named, never folded into a
+    success.
     """
-    if not _await(port, lambda: port.word(G_FAIRY_PAGE) == SAVE_PAGE_WRITE,
-                  f"m_MenuDialoguePage to reach {SAVE_PAGE_WRITE}", budget=FAIRY_CARD_FIELDS):
-        stopped = port.word(G_FAIRY_PAGE)
+    seen: list[int] = []
+    spent = 0
+    while spent < FAIRY_CARD_FIELDS:
+        page = port.word(G_FAIRY_PAGE)
+        if not seen or seen[-1] != page:
+            seen.append(page)
+            print(f"save: m_MenuDialoguePage {page} at field {port.spent()}", file=sys.stderr)
+        if page == SAVE_PAGE_SAVED:
+            break
+        if page in range(SAVE_PAGE_FAILED_FIRST, SAVE_PAGE_FAILED_FIRST + 4):
+            break
+        if page == 0:
+            break
+        port.run(FAIRY_WATCH_FIELDS)
+        spent += FAIRY_WATCH_FIELDS
+    walked = " -> ".join(dict.fromkeys(
+        [str(page_before), str(SAVE_PAGE_WRITE)] + [str(page) for page in seen]))
+    if SAVE_PAGE_WRITE not in seen:
         raise Refusal(
-            f"the fairy menu is on page {stopped} (it was {page_before} when DOWN was pressed, with "
-            f"option {option} and m_HasMemoryCard={has_card}) and never reached page "
-            f"{SAVE_PAGE_WRITE}, the only page SaveCreate and MemCardWriteFile are reached from. "
-            f"Page {SAVE_PAGE_REFUSED} is the card refusing and page 1 is the no-save-file page; "
-            "the route did not get a card write and it names the page the guest stopped on instead "
-            "of calling itself a success"
+            f"the fairy's page machine walked {' -> '.join(str(page) for page in seen)} and never "
+            f"entered page {SAVE_PAGE_WRITE}, "
+            f"the only page SaveCreate and MemCardWriteFile are reached from (it was on page "
+            f"{page_before} when CROSS was pressed, with option {option} and "
+            f"m_HasMemoryCard={has_card}). Pages {SAVE_PAGE_FAILED_FIRST}-"
+            f"{SAVE_PAGE_FAILED_FIRST + 3} are the guest's own failure pages and page 0 is the "
+            "menu, so this is the route not getting a card write and naming where it stopped"
         )
-    if not _await(port, lambda: port.word(G_FAIRY_PAGE) != SAVE_PAGE_WRITE,
-                  f"the write to leave page {SAVE_PAGE_WRITE}", budget=600):
+    if port.word(G_FAIRY_PAGE) != SAVE_PAGE_SAVED:
         raise Refusal(
-            f"m_MenuDialoguePage is still {SAVE_PAGE_WRITE} after {port.spent()} field(s): the "
-            "write was entered and never completed"
+            f"m_MenuDialoguePage walked {walked}: the write page {SAVE_PAGE_WRITE} was entered and "
+            f"the guest ended on {port.word(G_FAIRY_PAGE)} after {port.spent()} field(s) instead "
+            f"of page {SAVE_PAGE_SAVED} ('GAME SAVED'), so the guest did not report the save"
         )
     return Proof(
         "save-fairy",
-        f"GS_Fairy with g_FairyCutscene.m_MenuDialoguePage {page_before} -> {SAVE_PAGE_WRITE} -> "
-        f"{port.word(G_FAIRY_PAGE)}, the page SaveCreate and MemCardWriteFile are reached from",
+        f"GS_Fairy with g_FairyCutscene.m_MenuDialoguePage {walked}, page "
+        f"{SAVE_PAGE_WRITE} being the only one SaveCreate (0x800321F4) and MemCardWriteFile "
+        f"(0x80032230) are reached from and page {SAVE_PAGE_SAVED} the one the guest captions "
+        f"'GAME SAVED', the card machine's stage word reaching {port.word(G_FAIRY_CARD_STAGE)}",
         port.spent(),
         {
             "g_Gamestate": port.word(guest_globals.kGamestate),
@@ -516,6 +627,8 @@ def _await_write(port: ScenePort, page_before: int, option: int, has_card: int) 
             "m_MenuSelectedOption": option,
             "m_HasMemoryCard": has_card,
             "m_MenuDialoguePage": port.word(G_FAIRY_PAGE),
+            "pages_walked": walked,
+            "card_stage_at_end": port.word(G_FAIRY_CARD_STAGE),
             "g_LevelId": port.word(guest_globals.kLevelId),
         },
     )

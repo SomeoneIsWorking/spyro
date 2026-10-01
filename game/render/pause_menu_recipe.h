@@ -144,6 +144,11 @@ struct Rgb {
 // 0xE0-shade, 0x80-shade), and the 5-bit fields expand the way the PSX expands them.
 Rgb borderColour(std::uint8_t shade);
 
+// 0x8001844C's endpoint lighting, which every menu line the guest draws goes through: each
+// endpoint's shade is 0x80017908 over 0x800169AC's direction index from the frame centre. Shared by
+// the fairy menu, whose box edges are the same builder's lines.
+Segment litSegment(Segment segment, std::span<const std::uint8_t> ramp, std::uint32_t phase);
+
 // The panel's colour byte: the guest stores `$s4` with `sb` at 0x8001A7D8-0x8001A7E0, and the one
 // reaching definition is `addiu $s4,$zero,imm` at kPanelColourDefinitionPc. Returns the immediate's
 // low byte, or nothing when the word is not that exact instruction.

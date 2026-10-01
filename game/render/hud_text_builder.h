@@ -72,6 +72,18 @@ std::vector<std::uint32_t> append(Core *core, const Layout &layout, std::uint8_t
 // completed-gem tally `g_Hud` steady ticks * 4, the level-transition tally its tick * 2.
 void wobble(Core *core, std::span<const std::uint32_t> glyphs, std::int32_t phase);
 
+// The wobble's amplitude: rotation = (COSINE_8 * multiplier) >> shift. Every caller above uses the
+// plain `>> 7`; the fairy's menu (0x8001D718) scales by 3 and shifts by 9.
+struct WobbleScale {
+  std::int32_t multiplier = 1;
+  std::int32_t shift = 7;
+};
+inline constexpr WobbleScale kPlainWobble{1, 7};
+void wobbleScaled(Core *core,
+                  std::span<const std::uint32_t> glyphs,
+                  std::int32_t phase,
+                  WobbleScale scale);
+
 // Whether the shaded-Moby queue can take that many more entries and its terminator. Exposed for the
 // same reason as `fits`: a producer that must refuse before writing anything asks the question
 // `enqueueShaded` answers.

@@ -139,6 +139,22 @@ void test_wobble_applies_the_phase_and_the_per_glyph_step() {
   CHECK(h.core->mem_r8(glyphs[0] + 0x46u) == 0x20u);
 }
 
+// The fairy menu's amplitude, `COSINE_8(...) * 3 >> 9` (draw.c:2094): the multiply happens before
+// the shift, so a cosine that the plain `>> 7` maps to 32 maps to 0x1000 * 3 >> 9 == 24.
+void test_scaled_wobble_multiplies_before_it_shifts() {
+  Harness h;
+  constexpr std::uint32_t kCosine = 0x8006CC78u;
+  for (std::uint32_t i = 0; i < 256u; ++i) {
+    h.core->mem_w16(kCosine + i * 2u, (std::uint16_t)(std::int16_t)(i < 128u ? 0x1000 : -0x1000));
+  }
+  const std::vector<std::uint32_t> glyphs = {0x80100000u, 0x80100058u};
+  spyro::hud_text::wobbleScaled(h.core.get(), glyphs, 124, {3, 9});
+  CHECK(h.core->mem_r8(glyphs[0] + 0x46u) == 24u);
+  CHECK(h.core->mem_r8(glyphs[1] + 0x46u) == 0xE8u); // -0x1000 * 3 >> 9 == -24
+  spyro::hud_text::wobbleScaled(h.core.get(), glyphs, 124, spyro::hud_text::kPlainWobble);
+  CHECK(h.core->mem_r8(glyphs[0] + 0x46u) == 0x20u); // the default scale is the shared wobble
+}
+
 void test_enqueue_appends_after_the_entries_and_terminates() {
   Harness h;
   h.core->mem_w32(kQueue, 0x80077FECu);
@@ -176,6 +192,7 @@ int main() {
   RUN(append_writes_the_arena_downward_and_moves_the_cursor);
   RUN(append_refuses_atomically_when_the_arena_cannot_hold_the_string);
   RUN(wobble_applies_the_phase_and_the_per_glyph_step);
+  RUN(scaled_wobble_multiplies_before_it_shifts);
   RUN(enqueue_appends_after_the_entries_and_terminates);
   RUN(enqueue_refuses_when_the_terminator_would_not_fit);
   return pt_summary();

@@ -26,17 +26,25 @@ archive_transfer::Decision refuse(Core &core, const ArchiveRead &request, std::s
 
 } // namespace
 
-archive_transfer::Decision
-ArchiveTransfer::read(Core &core, const ArchiveRead &request, bool deferred) {
-  return read(core, request, deferred, [&core](std::uint32_t lba, auto sector) {
-    return core.game != nullptr && disc_read_sector(&core.game->disc, lba, sector.data()) != 0;
-  });
+archive_transfer::Decision ArchiveTransfer::read(Core &core,
+                                                 const ArchiveRead &request,
+                                                 bool deferred,
+                                                 const PayloadObserver &onPayload) {
+  return read(
+      core,
+      request,
+      deferred,
+      [&core](std::uint32_t lba, auto sector) {
+        return core.game != nullptr && disc_read_sector(&core.game->disc, lba, sector.data()) != 0;
+      },
+      onPayload);
 }
 
 archive_transfer::Decision ArchiveTransfer::read(Core &core,
                                                  const ArchiveRead &request,
                                                  bool deferred,
-                                                 const SectorReader &reader) {
+                                                 const SectorReader &reader,
+                                                 const PayloadObserver &onPayload) {
   completionPending_ = false;
   const auto destination = request.destination & 0x1fffffffu;
   if (request.destination == 0u || destination >= sizeof core.ram ||
@@ -75,6 +83,9 @@ archive_transfer::Decision ArchiveTransfer::read(Core &core,
     const auto content = image_publication::digest(bytes);
     if (!content) {
       return refuse(core, request, "SHA-256 calculation failed");
+    }
+    if (onPayload) {
+      onPayload(content->hex);
     }
     for (std::uint32_t offset = 0; offset < request.length; ++offset) {
       // The canonical memory writer owns executable invalidation and diagnostic write guards.

@@ -3,6 +3,7 @@
 #include "core.h"
 #include "game.h"
 #include "lightrec_executor.h"
+#include "load_ledger.h"
 #include "paired_actor_temporal_evidence.h"
 #include "render_stats.h" // render_depth_coverage_report — instrument I051
 #include "spyro_context.h"
@@ -60,5 +61,11 @@ void reportRuntimeRun(Core &core, std::uint64_t completedSteps) {
   // whose path never executes its counters.
   core.rsub.census.report("spyro run-complete");
   spyro_paired_actor_temporal_finish(&core);
+  // Every CD read this run issued, with its issuer site out of the 31 the census names, and the
+  // fields each one cost. The unreached sites are printed BY NAME: a route that never dies and
+  // never pauses exercises a dozen of the 31, and a coverage number without its denominator would
+  // read like full coverage (issue 0155 section 7, M3).
+  spyro_context(core).loadLedger.logSummary();
+  writeReportIfRequested(spyro_context(core).loadLedger);
 }
 } // namespace spyro

@@ -7,6 +7,7 @@
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
 #include "interp_census.h"
+#include "load_ledger.h"
 #include "margin_object_census.h"
 #include "moby_shadow_list.h"
 #include "presentation_owner.h"
@@ -23,6 +24,10 @@ class Core;
 // subsystem does not turn its renderer state into the definition of the whole game context.
 struct SpyroContext {
   spyro::ArchiveTransfer archiveTransfer{};
+  // One record per CD read the transfer above performed, and the coverage denominator for the
+  // 31-site issuer census. It lives beside the transfer because it records that transfer's work,
+  // and per-Core because two Cores in one process must not pool their operations.
+  spyro::load_ledger::Ledger loadLedger{};
   spyro::RuntimeRun run{};
   // The selected title's field owner, published by its frame driver. Non-owning: the driver
   // holds it and is installed into the Game before the first host turn can arrive, so the

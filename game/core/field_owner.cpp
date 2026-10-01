@@ -276,6 +276,10 @@ FieldOwner &fieldOwner(Core &core) {
   return *owner;
 }
 
+const FieldOwner *fieldOwnerIfPublished(const Core &core) {
+  return spyro_context(core).fieldOwner;
+}
+
 const FieldOwner &fieldOwner(const Core &core) {
   const FieldOwner *owner = spyro_context(core).fieldOwner;
   if (owner == nullptr) {

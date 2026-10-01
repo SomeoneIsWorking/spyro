@@ -480,3 +480,154 @@ button-agnostic); a press on a real controller; retail's own logo duration under
   unmatched function (`func_8002EDF0`) is invisible to a source-level grep.
 * The lui-paired store scan cannot see accesses through a materialised pointer; the gate's three
   stores are complete, its loads are not claimed.
+
+## M3 measured (2026-10-01) — the `LoadLedger` exists and the residual latency is 0 to 2 fields
+
+**What landed.** `spyro::load_ledger::Ledger` (`game/core/load_ledger.{h,cpp}`), one member of
+`SpyroContext` beside the `ArchiveTransfer` whose reads it records, fed by the two CD overrides in
+`cd_queue.cpp` and reported once at run end by `reportRuntimeRun`. The per-operation table goes to
+the path named by `PSXPORT_LOAD_LEDGER`; the one-line summary is always logged as `[load-ledger]`.
+It is **diagnostics only** — it reads `g_LoadStage` (`0x80075864`) and `g_CdMusic.m_Flags`
+(`0x800774B4`) and writes neither, and no pending operation is ever read to make a decision. The
+digest is the one `image_publication::digest` already computed for the image identity, handed over
+through a `PayloadObserver` the transfer calls: **a second SHA-256 over the same bytes was not
+written**, because two digests over one payload are two facts that can disagree and the one that
+names the image is the one the guest's code will execute. [S]
+
+**Coverage denominator.** `0x80016500` and `0x80016698` are entered by the port itself as well as by
+the guest: `BootSequence::loadAssets` (`titles/spyro1/core/spyro1_boot_sequence.cpp:104-135`)
+performs four of the census's own blocking reads — S02, S03, S04, S05 — by **dispatching
+`0x80016500` directly**, not by letting the guest's boot code reach it. That is the port replacing
+retail's blocking boot loop with one call per read, and it is why the run below reads `16/31`
+exercised: those four operations have no guest `jal` to name. See "the `$ra - 8` failure mode"
+below; the site column is instrumented, not asserted. [S]+[B]
+
+### The M3 table
+
+`tools/drive.py gameplay` to `GS_Playing` (frame 6360 route, `PSXPORT_LOAD_LEDGER=scratch/load_ledger_m3.txt`),
+offscreen, one instance. **26 operations, 7 blocking and 19 streaming, 0 pending at run end, worst
+measured latency 2 fields, no operation over 2 fields.** The first ten rows are cut off at
+`nocounter` because they are issued before the title's field owner is published — they are counted
+as such rather than reported as a free load. The `pc` column is the guest PC the override was
+entered with and is `0x80016500` or `0x80016698` in every row, which is the falsifier that the tap is
+on the loader and not somewhere that merely looks like it.
+
+| # | site | lba | bytes | dest | kind | `g_LoadStage`@issue | field@issue | field@done | latency (fields) | XA bit clear @issue | sha256[0:16] |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | **S01** `0x8001253C` | 0x25 | 2,048 | `0x8007AA38` | blocking | 0 | nocounter | nocounter | 0 | no | `15d3e9c45f07e27a` |
+| 1 | host dispatch | 0x25 | 2,048 | `0x8007AA38` | blocking | 0 | nocounter | nocounter | 0 | no | `229efedc2014e753` |
+| 2 | host dispatch | 0x25 | 262,144 | `0x801BF800` | blocking | 0 | nocounter | nocounter | 0 | no | `2209002b8c4f8754` |
+| 3 | host dispatch | 0x25 | 14,336 | `0x8007AA38` | blocking | 0 | nocounter | nocounter | 0 | no | `8ee66fe644407bf1` |
+| 4 | host dispatch | 0x25 | 110,592 | `0x801A4800` | blocking | 0 | nocounter | nocounter | 0 | no | `6f82c9e7efacbe5f` |
+| 5 | **A10** `0x80014740` | 0x25 | 292,864 | `0x8007DDE8` | stream | 3 | nocounter | nocounter | 0 | no | `8e744bf40bd05b3a` |
+| 6 | **A11** `0x800147C8` | 0x25 | 137,216 | `0x8007DDE8` | stream | 4 | nocounter | nocounter | 0 | no | `fe0ade3114ed19f5` |
+| 7 | **A12** `0x800148AC` | 0x25 | 262,144 | `0x8009F20C` | stream | 8 | nocounter | nocounter | 0 | no | `ca2313f64c15214c` |
+| 8 | **A14** `0x80014A08` | 0x25 | 26,624 | `0x800DF20C` | stream | 8 | nocounter | nocounter | 0 | no | `c6d12694330e58f6` |
+| 9 | host dispatch | 0x25 | 237,568 | `0x8018B800` | blocking | 10 | nocounter | nocounter | 0 | no | `b73da4852629d203` |
+| 10 | **T01** `0x8007ADFC` | 0x25 | 262,144 | `0x80147BB0` | stream | 10 | 436 | 438 | **2** | no | `e082fe407e99012f` |
+| 11 | **A08** `0x80014608` | 0x25 | 2,048 | `0x8007AA38` | stream | 0 | 1861 | 1861 | 0 | no | `c90a76a360501288` |
+| 12 | **A09** `0x80014680` | 0x25 | 524,288 | `0x8007AA38` | stream | 1 | 1861 | 1861 | 0 | no | `ab614e10145406fd` |
+| 13 | **A10** `0x80014740` | 0x25 | 491,520 | `0x8007AA38` | stream | 3 | 1863 | 1865 | **2** | no | `68fc72ba5bcf30a1` |
+| 14 | **A11** `0x800147C8` | 0x25 | 75,776 | `0x8007AA38` | stream | 4 | 1865 | 1867 | **2** | no | `503b741f825c334b` |
+| 15 | **A12** `0x800148AC` | 0x25 | 851,968 | `0x8008D020` | stream | 6 | 1867 | 1869 | **2** | no | `c20a3b2e49e41d86` |
+| 16 | **A13** `0x80014920` | 0x25 | 393,216 | `0x8015D020` | stream | 7 | 2629 | 2629 | 0 | no | `93e94b3be96a25bd` |
+| 17 | **A14** `0x80014A08` | 0x25 | 81,920 | `0x801BD020` | stream | 8 | 2629 | 2629 | 0 | no | `49028e7ae021a14c` |
+| 18 | `0x8002D4A4` (unattributed) | 0x25 | 237,568 | `0x8018B800` | blocking | 10 | 5571 | 5571 | 0 | no | `b73da4852629d203` |
+| 19 | **A01** `0x8001569C` | 0x25 | 57,344 | `0x8007AA38` | stream | 2 | 5573 | 5573 | 0 | no | `7df6cf2f3ed4a71a` |
+| 20 | **A02** `0x800156E4` | 0x25 | 2,048 | `0x80088620` | stream | 3 | 5573 | 5573 | 0 | no | `ebc99669a4ca0d3c` |
+| 21 | **A03** `0x80015750` | 0x25 | 524,288 | `0x80088620` | stream | 4 | 5573 | 5573 | 0 | no | `a96e0f2471697a57` |
+| 22 | **A04** `0x8001582C` | 0x25 | 450,560 | `0x80088620` | stream | 6 | 5573 | 5575 | **2** | no | `321a0cecbb0b163a` |
+| 23 | **A05** `0x800158C8` | 0x25 | 579,584 | `0x80088620` | stream | 8 | 5579 | 5581 | **2** | no | `0a670f58d08e1f86` |
+| 24 | **A06** `0x80015A3C` | 0x25 | 317,440 | `0x8011593C` | stream | 9 | 5581 | 5583 | **2** | no | `71aeec6c579796aa` |
+| 25 | **A07** `0x80015BC0` | 0x25 | 83,968 | `0x8016313C` | stream | 11 | 5585 | 5587 | **2** | no | `6ca481a134fa5e28` |
+
+**Fields per stage, `LoadLevel` (rows 19-25), which is the form §7 M3 asks for:** one read per
+stage, stages 2, 3, 4 and 6 issued in the **same field 5573**, and stages 8, 9 and 11 at 5579, 5581
+and 5585. Per-stage cost 0, 0, 0, 2, 2, 2, 2 fields. **Stage 12 issues no read at all**, which is
+§2.3's walk-in alignment gate and is not an I/O wait — the ledger showing no operation there is the
+positive control that the tap is on CD reads and not on stage transitions. A cutscene's seven reads
+(rows 11-17) behave the same way: 0, 0, 2, 2, 2, 0, 0.
+
+**The 2 fields are the guest's own call cadence, not a host cost and not R6.** A streaming read
+completes at the next `cd_retry_step`, which happens when the guest next calls `CDLoadTime`; the
+measured 2 is the gap between one loader call and the next, and the 0 rows are the calls that land
+twice inside one field. Nothing in the table scales with the read size — 524,288 bytes cost 0
+fields in row 12 and 2 fields in row 21, and 851,968 bytes cost 2 in row 15 — which is the
+discriminator: a host cost proportional to bytes would order the table by size, and this one is not
+ordered by size. That also retires §6 R1's arithmetic worry ("a whole level about 55 ms") as
+unnecessary at the field granularity, though it does not measure sub-field host time.
+
+**R6, the XA readiness gate: the bit was SET in 26 of 26 operations, including the ten issued
+before the field counter exists and before any music is audible.** The gate's own bytes confirm the
+address and the shape: `0x800153D8 lw $v0,0x74B4($v0)` with `$v0 = 0x80070000` from
+`0x800153D8`'s `lui`, `0x800153E4 andi $v0,$v0,0x40`, `0x800153E8 beq $v0,$zero,+0x3F4` — a branch
+AWAY to `0x800157E0`, inside stage 5's range, when the bit is CLEAR. So the bit reads as a
+"CD music stream is active" flag and the loaders branch around the music-aware path when it is
+clear; with music active every load took the music-aware path and it still cost at most 2 fields.
+**What this does NOT establish is that the gate can never cost anything** — a constant reading
+across 26 operations is what a permanently-set flag looks like and also what a wrong address looks
+like, and the two are not separable from this measurement. R6 stays open with a named next step: a
+run with the music stopped (attract demo, `PSXPORT_XA` silent) should show the bit clear at issue on
+some operations, and if the latency column does not move, the gate is free.
+
+**Nothing here is over a few fields, so the R6-sized fix in §6 (a prefetching reader in
+`ArchiveTransfer`) is not justified by this measurement** and was not built.
+
+### The `$ra - 8` failure mode, named because the site column looked fine
+
+`$ra - 8` recovers the `jal` site only when the **caller** was guest code. 6 of the 26 operations
+record an address outside the census: five are the port's own host dispatches (`ra` = `0xDEACFFF8`,
+and the byte-identical payloads identify them as S02, S03, S04, S05 and S06 by the sizes §2.1
+tabulated), and **one is a guest path that recorded `0x8002D4A4` — a real guest address, and the
+exact trap the workspace map warns about: a lead that MATCHES when nothing should.** `0x8002D4A4`
+is, per §2.1, a *caller of* `0x8005B7D8`, not the `jal 0x80016500` site (`0x8005B83C`, S06) inside
+it, so the framework entered that override without setting `ra` to the intercepted call's return
+address. The ledger's answer is to record the guest PC **beside** the site and to print
+`outside the 0155 census` for anything it cannot name, which is why the coverage line reads
+`16/31` for a route that in fact exercised 20 of the census's sites. The honest coverage number for
+this route is therefore **20 of 31, 11 unreached, with 6 of the 20 unattributed by site**; the
+instrument's own number is 16 and the difference is the six.
+
+### Shown the other answer
+
+`tests/test_load_ledger.cpp` (CTest `load_ledger`) drives the **real** `Ledger` with a stage machine
+built to §2.3's shape. The positive leg completes every read in the field it was issued: 12
+operations, every latency 0, and the report says `issuer sites exercised 2 of 31` and names
+`S09@0x8002EEC4 UNREACHED`. The negative leg is the same machine with the completion **withheld** —
+the guest never calls the retry step that dispatches `0x80016490` — and the machine stops after its
+first streaming read: **2 operations, 1 pending**, and the stalled operation's latency is
+`kPendingFields` (`~0ull`) rather than 0, because a report that printed 0 for an unfinished operation
+would claim the removal is free. Also covered: a refusal that stays visible in the record (a route
+that failed and a route that never ran are different reports), a measured 3-field latency, and an
+operation issued before any field owner existed being excluded from the latency maximum.
+
+**A live withheld run was NOT done, and the reason is the product, not the schedule:** withholding
+it live needs a new conditional in the shipping completion path, i.e. a product flag that can stall
+the game forever, in exchange for evidence the unit test already produces from the same class. If
+that run is wanted, the honest form is a fault-injection knob owned next to the latch in
+`ArchiveTransfer` and a drive that refuses on `pending > 0` rather than waiting 12,000 fields.
+
+### What M1 and M2 would still need (not attempted)
+
+The ledger now records the payload multiset M1 compares — `(issuer site, LBA, length, destination,
+SHA-256)` per operation, with the digest taken from the image identity rather than recomputed — and
+carries the guest words M2's field list names, so both legs have their input. **Neither was run:**
+M1 needs the oracle core with real CD timing, and M2 needs `tools/ram_compare.py` from the `skips`
+worktree, and both are longer than this change. The one thing the table above already says about
+M1 is that within one run every operation at the same site can be compared operation-by-operation
+(row 9 and row 18 are the same PETE payload by digest, `b73da4852629d203`, read at boot end and
+again at the cutscene end).
+
+### The instruction-field form the census scan used (method note, and a trap)
+
+Re-deriving §2's site list in this worktree found **zero** loader call sites under the plain MIPS
+rule (`target = pc + 4 * imm`) and exactly **11 / 19 / 5** for `CDLoadSync` / `CDLoadAsync` /
+`CDLoadTime` under `target = 0x80000000 + 4 * imm` (103,936 main-image words). The absolute form
+reproduces every address §1 and §2 quote — `0x800165A8` → `0x80063C48` (CdControl), `0x800165E0` →
+`0x80064094` (CdIntToPos), `0x80016758` → `0x8006606C` (CdRead), `0x80016584` → `0x800163E4` (the
+Loop A `CDLoadTime` call), `0x80016594` → `0x8002BBE0` (CDMusicUpdate), `0x8001658C` → `0x8005637C`
+(SoundsUpdate) — and 0 indirect references still holds. **So the ledger's site table is the census
+re-measured, not transcribed, and it is the only tool in this issue that would have caught the
+plain-relative reading silently reporting an empty corpus.** What that says about the image is not
+settled here and is not claimed; what matters for the ledger is that the table's 31 addresses are
+the ones the image actually contains, checked against the file itself.

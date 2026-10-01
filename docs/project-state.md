@@ -49,7 +49,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S028 | Spyro 2 presents interpolated 60fps from captured source geometry | missing | S024 | G003 |
 | S029 | Spyro 3 presents interpolated 60fps from captured source geometry | missing | S025 | G003 |
 | S036 | The zero-argument product opens on an in-window title selector; entries are enabled only for provisioned, authenticated executables; a title can return to the selector and another can start in the same process | verified headless, both orders, for all three pairs (1<->2, 2<->3, 1<->3) at frame 300, partial overall — selector rendered by the psxport RmlUi screen and captured from the present image; `tools/title_switch.py` runs selector -> A (frame N) -> `session return` -> selector -> B (frame N) and compares B's full guest RAM and scratchpad with two fresh-process B runs (the two fresh runs agree first, as the control): identical in both orders (the control also differs between titles: 36f2a838 / 3ab8187f / 74f52d7f). Defects found and fixed on the way are in issue 0169. a pad-driven (not control-channel) selection of every title, and any windowed run, are not recorded; the picker window has no title (the pinned framework has no HostIdentity); the explicit executable argument remains a maintainer override that skips the selector |
-| S033 | Spyro 1: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S011 | G005 |
+| S033 | Spyro 1: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing — M3 measured: 26 operations, 0 pending, worst 2 fields, 20 of 31 census sites; M1/M2 oracle comparison and M4 still open | S008, S011 | G005 |
 | S034 | Spyro 2: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S024 | G005 |
 | S035 | Spyro 3: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S025 | G005 |
 
@@ -2181,15 +2181,43 @@ Related goals: G003.
 
 ### S033 — Spyro 1 loading removal
 
-Missing. Censused statically in `docs/issues/0155`: 31 CD read issuer sites (11 blocking, 20
-streaming), no loading screen exists, and the port's CD overrides already remove storage latency.
-Gap: per-operation payload and terminal-state comparison against retail, measurement of residual
-per-stage and XA-gate latency, with the absence of loading presentation captured. The logo-hold
-press latch is done (2026-10-01): a Start/Cross press made in any boot fade or in the stage 3->10
-loader is honoured at the next hold through the existing hold-skip route, measured as the first hold
-202 -> 0 fields (first-fade press) and the second hold 198 -> 0 fields (loader press) with the fade
-and load-state field counts unchanged (`docs/issues/0155`, "Latch measured"; `press_latch` in CTest).
-The flyby card and tally are authored and stay, cancellable.
+Missing, and now MEASURED rather than asserted. Censused statically in `docs/issues/0155`: 31 CD read
+issuer sites (11 blocking, 20 streaming), no loading screen exists, and the port's CD overrides
+already remove storage latency.
+
+**M3 is done (2026-10-01, `docs/issues/0155` "M3 measured", instrument I058).** The `LoadLedger`
+(`game/core/load_ledger.{h,cpp}`, one member of `SpyroContext` beside the `ArchiveTransfer` it
+records, fed by `cd_queue.cpp`, reported at run end) records one entry per CD operation: issuer
+site, guest PC, LBA, length, destination, the SHA-256 the image identity already computed, blocking
+or streaming, `g_LoadStage` at issue and completion, the XA bit, and the field at issue and
+completion. `tools/drive.py gameplay` to `GS_Playing`: **26 operations (7 blocking, 19 streaming),
+0 pending, worst measured latency 2 fields, nothing over 2.** Per stage, `LoadLevel` issues one
+read per stage and three stages in the same field; stage 12 issues no read, which is the census's
+walk-in gate and the positive control that the tap is on CD reads. The 2 fields are the guest's own
+per-field call cadence, not a host cost: the column is not ordered by byte size (524,288 bytes cost
+0 fields once and 2 another time), which a byte-proportional host cost would be. The XA readiness
+bit `[0x800774B4] & 0x40` was SET in 26 of 26 operations, so every load took the music-aware path
+and it still cost at most 2 fields — but a constant reading cannot separate "always set" from "wrong
+address", so R6 stays open with the named next step (a silent-music run must show it clear on some
+operations). Coverage is **20 of the 31 census sites, 11 unreached, 6 of the 20 unattributed by
+site**: `$ra - 8` names a `jal` site only when the CALLER was guest code, and the port's native
+`BootSequence::loadAssets` performs S02-S05 by dispatching the loader directly. Shown the other
+answer: CTest `load_ledger` drives the real class with the completion withheld and the stage machine
+stops at 2 operations, 1 pending, with the unfinished operation's latency reported as no latency at
+all rather than 0.
+
+**Still missing: M1 and M2.** The ledger now records the payload multiset M1 compares and carries
+the guest words M2's field list names, so both legs have their input, but **neither was run** — M1
+needs the oracle core with real CD timing and M2 needs `tools/ram_compare.py` from the `skips`
+worktree. Nor is M4 (absence of loading presentation) done. Until M1/M2 land this item stays
+**missing**, not partial: the port's own path is measured, and nothing has been compared against
+retail.
+
+The logo-hold press latch is done (2026-10-01): a Start/Cross press made in any boot fade or in the
+stage 3->10 loader is honoured at the next hold through the existing hold-skip route, measured as the
+first hold 202 -> 0 fields (first-fade press) and the second hold 198 -> 0 fields (loader press) with
+the fade and load-state field counts unchanged (`docs/issues/0155`, "Latch measured"; `press_latch`
+in CTest). The flyby card and tally are authored and stay, cancellable.
 
 ### S034 — Spyro 2 loading removal
 

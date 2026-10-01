@@ -180,6 +180,12 @@ private:
 // host turn can arrive before the driver exists, so this refuses by name instead of guessing.
 FieldOwner &fieldOwner(Core &core);
 const FieldOwner &fieldOwner(const Core &core);
+// The non-aborting view. A CD read is issued from inside the guest, and the boot prefix issues the
+// first one (the WAD header read at 0x8001253C) from a step that runs before the title's field
+// owner is published. A diagnostic that needs a field count there must be able to say "no field
+// counter yet" instead of killing the process, so this returns nullptr and the two accessors
+// above keep their refusal.
+const FieldOwner *fieldOwnerIfPublished(const Core &core);
 
 // One field delivered by a title-owned native tail, outside the boot and guest paths.
 bool deliverNativeField(Core &core, const char *site, bool fps60CommitPending);

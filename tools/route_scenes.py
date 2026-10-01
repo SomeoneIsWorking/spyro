@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 import guest_globals
+import repl_route
 import repl_walk
 import spyro1_steering
 from spyro1_steering import Refusal, moby_class_targets
@@ -74,6 +75,9 @@ G_SPYRO_Z = 0x80078A58 + 0x08
 # `slti $v0,$v0,0x65`, and the fairy trigger refuses to open when it is not positive
 # (0x8007D7E8 `blez $v0`), so it is read here as corroboration, never as the death condition.
 G_SPYRO_HEALTH = 0x80078A58 + 0x80
+# g_Spyro + 0x78 is the body state func_8004A200 switches on (0x1D/0x1E/0x1F are the liquid states
+# whose +0x80 timer reaches 0x65/0x7D before func_8002C85C runs).
+G_SPYRO_STATE = 0x80078A58 + 0x78
 # g_FairyCutscene (fairy.h) starts at 0x80078D00 -- asm/data/game.bss.s places it immediately
 # after g_Spyro, which it also sizes: "Total size from 80078A58 to 80078D00".
 G_FAIRY_STATE = 0x80078D00
@@ -186,12 +190,20 @@ class ScenePort:
 
 
 def _walk_until(port: ScenePort, what: str, targets, predicate, description: str,
-                budget: int, arrived: int | None = 0) -> int:
+                budget: int, arrived: int | None = 0, route: str | None = None) -> int:
     """Walk to a place and keep going until `predicate` says the thing HAPPENED.
 
     `arrived=0` is the important part: a proximity radius would report a walk that stopped next to
     a portal for a walk that entered one, which is the failure `Seeker` was given `stop` to avoid.
+
+    `route` names a recorded waypoint route (tools/routes) to follow first, for destinations a
+    straight line cannot reach. The level has to be one the route was recorded in; a level with no
+    recording for it keeps the plain seek, so the absence of a route is visible rather than faked.
     """
+    if route is not None:
+        recorded = repl_route.Route.find(port.word(guest_globals.kLevelId), route)
+        if recorded is not None:
+            repl_route.follow(port.raw, recorded, stop=predicate, stop_is=description)
     return repl_walk.Seeker(port.raw, what, targets, budget=budget, arrived=arrived,
                             stop=predicate, stop_is=description).walk()
 
@@ -214,7 +226,8 @@ def flight_level(port: ScenePort) -> Proof:
         )
     _walk_until(port, f"portal to level {FLIGHT_LEVEL_ID}", portals,
                 lambda: port.word(guest_globals.kLevelId) == FLIGHT_LEVEL_ID,
-                f"left the homeworld for level {FLIGHT_LEVEL_ID}", budget=9000)
+                f"left the homeworld for level {FLIGHT_LEVEL_ID}", budget=9000,
+                route=f"portal-{FLIGHT_LEVEL_ID}")
     if not _await(port, lambda: port.word(G_IS_FLIGHT_LEVEL) != 0, "g_IsFlightLevel to be set",
                   budget=1800):
         raise Refusal(
@@ -273,7 +286,8 @@ def boss_level(port: ScenePort) -> Proof:
         )
     _walk_until(port, f"portal to level {BOSS_LEVEL_ID}", portals,
                 lambda: port.word(guest_globals.kLevelId) == BOSS_LEVEL_ID,
-                f"left the homeworld for level {BOSS_LEVEL_ID}", budget=9000)
+                f"left the homeworld for level {BOSS_LEVEL_ID}", budget=9000,
+                route=f"portal-{BOSS_LEVEL_ID}")
     if not _await(port, lambda: port.word(guest_globals.kGamestate) == 0,
                   "GS_Playing in the boss level", budget=1800):
         raise Refusal(
@@ -305,17 +319,22 @@ def boss_level(port: ScenePort) -> Proof:
     )
 
 
-# Walking in one fixed direction off a hub is what a player does when they want to see what is over
-# the edge, but it stops working the moment a wall or a hedge is in the way, so the route sweeps
-# the eight compass sectors in turn instead of trusting one bearing. Each sector gets a slice of
-# the budget; the walk stops at the first death, wherever it happens.
-FALL_SECTORS = ("up", "up right", "right", "down right", "down", "down left", "left", "up left")
-FALL_FIELDS_PER_SECTOR = 900
-FALL_SAMPLE = 10
+# WHERE THE DEATH IS. Level 10's collision data has 279 triangles of special-surface type 0 at
+# z=5888 over x 56000..68000, y 36000..52000 (decoded from the terrain collision at g_Environment
+# + 0x2C: 12-byte triangles, flags byte per triangle, surface table type 0 = the damaging floor
+# func_8004DF.. applies as m_DamageFlags 0x400). That is the west pond, and walking into it kills
+# Spyro through the guest's own drowning. The previous route swept the eight compass sectors off the
+# spawn hill for 900 fields each and never reached it (the corpus ledger: "the guest never died",
+# 7,200 fields): a fixed bearing from the hub walks into a rim long before it walks into water. The
+# recorded "pond" route (tools/routes) crosses the plain to the pond's east shore and wades in; if
+# a level carries no such recording the walk falls back to the westernmost portal, whose approach
+# in this homeworld also crosses water. The walk ends on the guest's own decision, GS_Respawn or
+# GS_GameOver, wherever on the way it comes.
+DEATH_BUDGET = 12000
 
 
 def death_respawn(port: ScenePort) -> Proof:
-    """Walk Spyro off the island until the guest kills him, then let the respawn complete.
+    """Walk toward the westernmost portal until the guest kills Spyro, then let the respawn finish.
 
     The death is the guest's own: func_8004A4F4 `slti $v0,$v0,0x400` on m_Position.z branches to
     0x8004A4D8 `jal func_8002C85C`, which decrements g_SpyroLifeCount and sets GS_Respawn (or
@@ -323,40 +342,39 @@ def death_respawn(port: ScenePort) -> Proof:
     keeps walking, and stops when the gamestate says the guest decided Spyro died.
     """
     lives_before = port.signed(G_LIFE_COUNT)
-    height_before = port.signed(G_SPYRO_Z)
-    lowest = height_before
-    fields = 0
-    for sector in FALL_SECTORS:
-        buttons = tuple(sector.split())
-        for button in buttons:
-            port.press(button)
-        spent = 0
-        while spent < FALL_FIELDS_PER_SECTOR:
-            port.run(FALL_SAMPLE)
-            spent += FALL_SAMPLE
-            fields += FALL_SAMPLE
-            lowest = min(lowest, port.signed(G_SPYRO_Z))
-            state = port.word(guest_globals.kGamestate)
-            if state in (GS_RESPAWN, GS_GAME_OVER):
-                # Read health HERE, on the field the death was seen. The respawn restores it, so
-                # reading it after the wait would report a full bar for a route whose whole point
-                # is that the guest decided Spyro was finished.
-                health = port.word(G_SPYRO_HEALTH)
-                for button in buttons:
-                    port.release(button)
-                return _death_proof(port, sector, fields, lives_before, lowest, state, health)
-        for button in buttons:
-            port.release(button)
-    raise Refusal(
-        f"walked {len(FALL_SECTORS)} compass sectors off the hub for {fields} field(s) and the "
-        f"guest never died: g_Gamestate stayed {port.word(guest_globals.kGamestate)} and the "
-        f"lowest Z reached was {lowest} against a death plane of {DEATH_PLANE_Z}. This homeworld "
-        "is bounded, so a death route needs a level with a fall in it, not more walking"
-    )
+    portals = spyro1_steering.portal_targets(port.words)
+    if not portals:
+        raise Refusal("this level carries no portal table, so the death route has no water to cross")
+    target = min(portals, key=lambda portal: portal.position[0])
+    lowest = port.signed(G_SPYRO_Z)
+    died = lambda: port.word(guest_globals.kGamestate) in (GS_RESPAWN, GS_GAME_OVER)
+    try:
+        _walk_until(port, target.what, [target], died, "the guest killed Spyro",
+                    budget=DEATH_BUDGET, route="pond")
+    except Refusal as refusal:
+        raise Refusal(
+            f"walking at {target.what} {target.position} the guest never killed Spyro: "
+            f"g_Gamestate stayed {port.word(guest_globals.kGamestate)} (death plane Z "
+            f"{DEATH_PLANE_Z}; refusal: {refusal})"
+        ) from refusal
+    state = port.word(guest_globals.kGamestate)
+    if not died():
+        raise Refusal(
+            f"the walk at {target.what} ended with g_Gamestate {state}, which is not the guest's "
+            f"GS_Respawn ({GS_RESPAWN}) or GS_GameOver ({GS_GAME_OVER}): arriving is not dying"
+        )
+    # Read health HERE, on the field the death was seen. The respawn restores it, so reading it
+    # after the wait would report a full bar for a route whose whole point is that the guest
+    # decided Spyro was finished.
+    health = port.word(G_SPYRO_HEALTH)
+    body_state = port.word(G_SPYRO_STATE)
+    lowest = min(lowest, port.signed(G_SPYRO_Z))
+    return _death_proof(port, target.what, port.spent(), lives_before, lowest, state, health,
+                         body_state)
 
 
 def _death_proof(port: ScenePort, sector: str, fields: int, lives_before: int,
-                 lowest: int, state: int, health: int) -> Proof:
+                 lowest: int, state: int, health: int, body_state: int) -> Proof:
     """A death is only proved once the guest has put Spyro back in the world, so this waits for
     GS_Playing and reports the life count the guest decremented."""
     if not _await(port, lambda: port.word(guest_globals.kGamestate) == 0,
@@ -375,12 +393,14 @@ def _death_proof(port: ScenePort, sector: str, fields: int, lives_before: int,
         {
             "death_gamestate": state,
             "death_health": health,
+            "death_body_state": body_state,
             "death_z": lowest,
             "lives_before": lives_before,
             "lives_after": port.signed(G_LIFE_COUNT),
             "g_LevelId": port.word(guest_globals.kLevelId),
         },
-        detail=f"fell walking {sector}; lowest Z {lowest} against the death plane {DEATH_PLANE_Z}",
+        detail=(f"the guest killed Spyro walking {sector} in body state {body_state:#x}; lowest Z {lowest} "
+                f"(death plane {DEATH_PLANE_Z}, liquid timers in func_8004A200)"),
     )
 
 
@@ -416,7 +436,8 @@ def save_fairy(port: ScenePort) -> Proof:
         )
     _walk_until(port, f"class {FAIRY_MOBY_CLASS} (the fairy)", fairies,
                 lambda: port.word(guest_globals.kGamestate) == GS_FAIRY,
-                "the fairy cutscene opened", budget=9000)
+                "the fairy cutscene opened", budget=9000,
+                route=f"fairy-{FAIRY_MOBY_CLASS}")
     has_card = port.word(G_FAIRY_HAS_CARD)
     page_before, option = _answer_menu(port, has_card)
     return _await_write(port, page_before, option, has_card)

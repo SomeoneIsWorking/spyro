@@ -423,6 +423,11 @@ if(BUILD_TESTING)
   # path would pass for a route that walks off the edge of the map and calls it a boss fight.
   add_test(NAME route_scenes_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/route_scenes.py --selftest)
+  # The walker and the recorded-route follower against a fake product: a cutscene is not a wall, a
+  # distance is Spyro's and not the trailing camera's, a jump keeps its direction, and a route
+  # refuses in a level it was not recorded in.
+  add_test(NAME repl_walk_unit
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_repl_walk.py)
   # The widened-capture margin census (issue 0152). Gated for the same reason as the probes above:
   # its whole job is to say whether a widening revealed anything, and a margin counter that can only
   # return 0 measures a widening perfectly while reporting that nothing appeared. The selftest

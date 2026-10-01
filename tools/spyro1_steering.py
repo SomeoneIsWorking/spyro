@@ -134,6 +134,18 @@ def camera(words: Words) -> View:
     return View(matrix, tuple(signed(observed[10 + i]) for i in range(3)))
 
 
+def player_view(words: Words) -> View:
+    """The camera's orientation seen from Spyro's own position.
+
+    The pad is camera-relative, so the matrix decides which button points where; but the camera
+    trails Spyro by thousands of units, and a distance measured from it is off by that much. A
+    route through a narrow causeway has to know where Spyro is, so it measures from him.
+    """
+    view = camera(words)
+    position = tuple(signed(v) for v in words(guest_globals.kSpyro, 3))
+    return View(view.matrix, position)
+
+
 def portal_targets(words: Words, level: int | None = None) -> list[Target]:
     """Centres of this level's portals, which are a loaded table rather than Mobys.
 
@@ -226,13 +238,23 @@ class Walk:
     # straight line, so an unobstructed walk never detours.
     DETOURS = (0, 60, -60, 120, -120)
 
-    def __init__(self, what: str, targets: list[Target], arrived: int | None = None):
+    def __init__(self, what: str, targets: list[Target], arrived: int | None = None,
+                 step_scale: float = 1.0, detour: bool = True):
         if not targets:
             raise Refusal(
                 f"nothing to walk at: this level carries no {what}, so the destination is wrong or "
                 "this is not the level that carries it"
             )
         self.what = what
+        # A recorded route is already a path around the obstacles, so a leg that is slow to turn
+        # must keep its bearing: a detour mid-turn steers the other way and undoes the turn.
+        self.detours = self.DETOURS if detour else (0,)
+        # The thresholds below are tuned for a 24-field decision. A driver deciding every 8 fields
+        # moves a third as far per decision, so progress is a third and the patience is three times
+        # the decisions: the same distance and the same number of fields.
+        self.progress = self.PROGRESS * step_scale
+        self.stall_steps = max(1, round(self.STALL_STEPS / step_scale))
+        self.jump_after = max(1, round(self.JUMP_AFTER / step_scale))
         # A driver that must make something HAPPEN at the destination — walking into a portal, not
         # standing near it — passes arrived=0 so the walk keeps closing the gap until its own
         # predicate fires, and the stall rule moves it to the next destination if nothing does.
@@ -256,11 +278,11 @@ class Walk:
             self.closest = distance
             if distance <= self.arrived:
                 return None
-            if self.best is None or distance < self.best - self.PROGRESS:
+            if self.best is None or distance < self.best - self.progress:
                 self.best, self.stalled = distance, 0
                 break
             self.stalled += 1
-            if self.stalled < self.STALL_STEPS:
+            if self.stalled < self.stall_steps:
                 break
             # Blocked by geometry or standing under a ledge. Retail levels put several destinations
             # around one hub, so taking the next nearest is a real route; pressing harder into the
@@ -268,10 +290,16 @@ class Walk:
             self.abandoned.append(f"{self.remaining[index].what} stuck at {distance}")
             self.remaining.pop(index)
             self.best, self.stalled = None, 0
-        detour = self.DETOURS[self.stalled % len(self.DETOURS)] if self.stalled else 0
+        detour = self.detours[self.stalled % len(self.detours)] if self.stalled else 0
         steered = (bearing + detour + 180.0) % 360.0 - 180.0
         self.decisions += 1
-        return Decision(sector(steered), self.stalled >= self.JUMP_AFTER, distance, bearing, detour)
+        return Decision(sector(steered), self.stalled >= self.jump_after, distance, bearing, detour)
+
+    def rebase(self) -> None:
+        """Forget the progress made so far. A cutscene can move Spyro (the opening dragon puts him
+        back at the start of the approach), and a distance that grew because the guest moved him is
+        not a wall the walk ran into."""
+        self.best, self.stalled = None, 0
 
     def exhausted(self, steps: int) -> Refusal:
         """The refusal a driver raises when its own budget runs out, with the distance reached."""

@@ -36,6 +36,7 @@ def render(*, root: pathlib.Path = ROOT) -> str:
                     f"        .title = SpyroTitle::{enum_name},",
                     f"        .displayName = {_cpp_string(manifest['title'])},",
                     f"        .serial = {_cpp_string(manifest['serial'])},",
+                    f"        .slug = {_cpp_string(slug)},",
                     f"        .fileSize = {facts['size']}u,",
                     f"        .sha256 = {_cpp_string(facts['sha256'])},",
                     f"        .entry = 0x{facts['entry']:08X}u,",

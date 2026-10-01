@@ -22,6 +22,18 @@ SPYRO3 = provision_title.SPECS["spyro3"]
 
 
 class ProvisionTest(unittest.TestCase):
+    def test_provisioning_directory_is_the_slug_the_selector_probes(self) -> None:
+        # The selector looks for `<scratch/assets>/<slug>/<serial>` using the slug the catalog generator
+        # emits; the provisioner publishes into `spec.cache_dir`. Two spellings of one directory would
+        # leave every title provisioned and every selector entry disabled.
+        slugs = [slug for slug, _enum in generate_title_catalog.TITLE_ENUMS]
+        self.assertEqual(sorted(slugs), sorted(provision_title.SPECS))
+        for slug in slugs:
+            spec = provision_title.SPECS[slug]
+            self.assertEqual(spec.slug, slug)
+            self.assertEqual(spec.cache_dir, ROOT / "scratch" / "assets" / slug)
+            self.assertEqual(spec.cache_dir.name, slug)
+
     def setUp(self) -> None:
         (ROOT / "scratch").mkdir(exist_ok=True)
         self.temporary = tempfile.TemporaryDirectory(dir=ROOT / "scratch")

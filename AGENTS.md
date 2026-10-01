@@ -69,6 +69,14 @@ facts, but do not extend their retired generated bring-up paths.
 - Spyro 3 is `SCUS_944.67`, entry `0x80059444`, game main `0x8001200C`, and libetc VSync
   `0x8005956C`. Disc provenance and product execution remain unverified.
 
+## Title selector
+
+The zero-argument `spyro_port` opens an in-window selector over Spyro 1/2/3 (`game/host/`); `./run.sh` provisions every
+title whose disc is configured and launches it. `spyro_port <executable>` is a maintainer override that skips the
+selector and runs that one serial-identified executable (drivers such as `tools/drive.py` use it). Headless:
+`pick <slug>` / `session return` on the control channel; `tools/title_switch.py` proves a switch is the same run as a
+fresh process. Issue 0169.
+
 ## Working discipline
 
 - Never guess an address, image identity, or load base. Query the project registry and committed

@@ -17,6 +17,7 @@ Success conditions:
 - Each title owns its runtime image, native policy, and image-aware overrides without borrowing
   another title's facts.
 - All three titles reach representative interactive gameplay through their own measured boundaries.
+- The zero-argument product opens on an in-window title selector over all three titles, enables an entry only when that title's executable is provisioned and authenticates, and can return to the selector and start another title in the same process.
 
 Constraints and non-goals:
 
@@ -24,7 +25,7 @@ Constraints and non-goals:
 - Shared lineage behavior is extracted only after measured equivalence.
 - The repository distributes no copyrighted executable, disc, BIOS, or game asset.
 
-Related state: S001, S006, S008, S009, S010.
+Related state: S001, S006, S008, S009, S010, S036.
 
 ## G002 — Native/Lightrec gameplay architecture
 

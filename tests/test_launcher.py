@@ -66,42 +66,93 @@ class LauncherTest(unittest.TestCase):
                 self.assertIn("usage:", output.getvalue().lower())
                 execute.assert_not_called()
 
-    def test_no_argument_sequence_reaches_current_target(self):
+    def test_no_argument_sequence_provisions_every_title_then_opens_the_selector(self):
         events = []
         psxport = ROOT / "external/psxport"
-        disc = ROOT / "disc.chd"
         discdump = ROOT / "build/player-tools/tools/discdump"
-        executable = launcher.provision_title.SPECS["spyro1"].cache_dir / "SCUS_942.28"
+        specs = list(launcher.provision_title.SPECS.values())
 
         launcher.execute(
-            None,
             preflight_step=lambda: events.append("preflight")
             or ["-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++"],
             sync_step=lambda: events.append("framework") or psxport,
             submodule_step=lambda framework: events.append(("submodules", framework)),
             resolve_step=lambda spec, explicit: events.append(("resolve", spec.slug, explicit))
-            or disc,
+            or ROOT / f"{spec.slug}.chd",
             discdump_step=lambda framework, compiler_options: events.append(
                 ("discdump", framework, compiler_options)
             )
             or discdump,
             provision_step=lambda spec, media, framework, tool: events.append(
                 ("provision", spec.slug, media, framework, tool)
-            )
-            or executable,
-            build_step=lambda framework, compiler_options, spec: events.append(
-                ("build", framework, compiler_options, spec.slug)
             ),
-            launch_step=lambda framework, media, spec, executable: events.append(
-                ("launch", framework, media, spec.slug, executable)
+            build_step=lambda framework, compiler_options: events.append(
+                ("build", framework, compiler_options)
             ),
+            launch_step=lambda framework, discs: events.append(("launch", framework, discs)),
         )
 
         self.assertEqual(events[0:2], ["preflight", "framework"])
         self.assertEqual(events[2], ("submodules", psxport))
-        self.assertEqual(events[3], ("resolve", "spyro1", None))
-        self.assertEqual(events[-1], ("launch", psxport, disc, "spyro1", executable))
+        resolved = [event[1] for event in events if event[0] == "resolve"]
+        provisioned = [event[1] for event in events if event[0] == "provision"]
+        self.assertEqual(resolved, [spec.slug for spec in specs])
+        self.assertEqual(provisioned, [spec.slug for spec in specs])
+        self.assertTrue(all(event[2] is None for event in events if event[0] == "resolve"))
+        self.assertEqual(events[-2][0], "build")
+        self.assertEqual(events[-1][0], "launch")
+        self.assertEqual(list(events[-1][2]), specs)
         self.assertEqual(launcher.PLAYER_BUILD, ROOT / "build/player")
+
+    def test_a_title_without_a_disc_is_skipped_and_the_others_still_launch(self):
+        events = []
+        specs = launcher.provision_title.SPECS
+
+        def resolve(spec, _explicit):
+            if spec.slug == "spyro2":
+                raise launcher.Refusal("no disc image")
+            return ROOT / f"{spec.slug}.chd"
+
+        launcher.execute(
+            preflight_step=list,
+            sync_step=lambda: ROOT / "external/psxport",
+            submodule_step=lambda _framework: None,
+            resolve_step=resolve,
+            discdump_step=lambda *_args: ROOT / "build/player-tools/tools/discdump",
+            provision_step=lambda spec, *_args: events.append(("provision", spec.slug)),
+            build_step=lambda *_args: events.append("build"),
+            launch_step=lambda _framework, discs: events.append(
+                ("launch", sorted(spec.slug for spec in discs))
+            ),
+        )
+
+        self.assertEqual(
+            events,
+            [("provision", "spyro1"), ("provision", "spyro3"), "build",
+             ("launch", ["spyro1", "spyro3"])],
+        )
+        self.assertIn("spyro2", specs)
+
+    def test_a_title_whose_media_is_another_title_is_skipped_not_fatal(self):
+        events = []
+
+        def provision(spec, *_args):
+            if spec.slug != "spyro1":
+                raise launcher.Refusal("SYSTEM.CNF boots another executable")
+
+        launcher.execute(
+            preflight_step=list,
+            sync_step=lambda: ROOT / "external/psxport",
+            submodule_step=lambda _framework: None,
+            resolve_step=lambda _spec, _explicit: ROOT / "only-spyro1.chd",
+            discdump_step=lambda *_args: ROOT / "build/player-tools/tools/discdump",
+            provision_step=provision,
+            build_step=lambda *_args: None,
+            launch_step=lambda _framework, discs: events.append(
+                sorted(spec.slug for spec in discs)
+            ),
+        )
+        self.assertEqual(events, [["spyro1"]])
 
     def test_explicit_missing_disc_refuses(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(
@@ -111,63 +162,34 @@ class LauncherTest(unittest.TestCase):
                 launcher.provision_title.SPECS["spyro1"], ROOT / "missing-disc.chd"
             )
 
-    def test_refusal_stops_before_build_and_launch(self):
+    def test_no_provisionable_title_refuses_naming_each_before_build_and_launch(self):
         events = []
 
-        def refuse(_spec, _explicit):
-            events.append("refuse")
+        def refuse(spec, _explicit):
+            events.append(f"refuse {spec.slug}")
             raise launcher.Refusal("missing media")
 
-        with self.assertRaisesRegex(launcher.Refusal, "missing media"):
+        with self.assertRaisesRegex(launcher.Refusal, "spyro1: missing media.*spyro3: missing media"):
             launcher.execute(
-                None,
                 preflight_step=list,
                 sync_step=lambda: ROOT / "external/psxport",
                 submodule_step=lambda _framework: None,
                 resolve_step=refuse,
-                discdump_step=lambda *_args: events.append("discdump"),
+                discdump_step=lambda *_args: events.append("discdump")
+                or ROOT / "build/player-tools/tools/discdump",
                 provision_step=lambda *_args: events.append("provision"),
                 build_step=lambda *_args: events.append("build"),
                 launch_step=lambda *_args: events.append("launch"),
             )
-        self.assertEqual(events, ["refuse"])
-
-    def test_title_codeword_reaches_only_its_manifest_and_executable(self):
-        events = []
-        spec = launcher.provision_title.SPECS["spyro3"]
-        disc = ROOT / "spyro3.chd"
-        executable = spec.cache_dir / spec.serial
-
-        launcher.execute(
-            str(disc),
-            title="spyro3",
-            preflight_step=list,
-            sync_step=lambda: ROOT / "external/psxport",
-            submodule_step=lambda _framework: None,
-            resolve_step=lambda selected, explicit: events.append(
-                ("resolve", selected.slug, explicit)
-            )
-            or disc,
-            discdump_step=lambda *_args: ROOT / "build/player-tools/tools/discdump",
-            provision_step=lambda selected, *_args: events.append(
-                ("provision", selected.slug)
-            )
-            or executable,
-            build_step=lambda *_args: events.append(("build", spec.slug)),
-            launch_step=lambda _framework, _media, selected, selected_executable: events.append(
-                ("launch", selected.slug, selected_executable)
-            ),
-        )
-
         self.assertEqual(
-            events,
-            [
-                ("resolve", "spyro3", str(disc)),
-                ("provision", "spyro3"),
-                ("build", "spyro3"),
-                ("launch", "spyro3", executable),
-            ],
+            events, ["discdump", "refuse spyro1", "refuse spyro2", "refuse spyro3"]
         )
+
+    def test_the_launcher_has_no_title_selector_flag_or_positional_disc(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            launcher.parse_args(["--title", "spyro2"])
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            launcher.parse_args(["disc.chd"])
 
     def test_player_launch_environment_strips_ambient_agent_policy(self):
         psxport = ROOT / "external/psxport"
@@ -183,7 +205,9 @@ class LauncherTest(unittest.TestCase):
             },
             clear=True,
         ):
-            env = launcher.launch_environment(psxport, disc)
+            env = launcher.launch_environment(
+                psxport, {launcher.provision_title.SPECS["spyro1"]: disc}
+            )
         self.assertEqual(env["PSXPORT_VK_WINDOW"], "1")
         for key in (
             "PSXPORT_NOWINDOW",
@@ -195,7 +219,10 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(env["PSXPORT_DEBUG_SERVER"], "0")
         self.assertEqual(env["PSXPORT_ASSET_DIR"], str(psxport))
         self.assertEqual(env["PSXPORT_SPYRO_DISC"], str(disc))
-        self.assertEqual(env["PSXPORT_DISC"], str(disc))
+        self.assertEqual(env["PSXPORT_SPYRO1_DISC"], str(disc))
+        # One disc must never answer for a title it was not provisioned for.
+        self.assertNotIn("PSXPORT_DISC", env)
+        self.assertNotIn("PSXPORT_SPYRO2_DISC", env)
 
     def test_submodule_sync_avoids_unresolvable_recursive_oracle_gitlink(self):
         commands = []
@@ -232,15 +259,13 @@ class LauncherTest(unittest.TestCase):
     def test_prepare_only_never_launches_or_runs_tests(self):
         events = []
         launcher.execute(
-            None,
             prepare_only=True,
             preflight_step=list,
             sync_step=lambda: ROOT / "external/psxport",
             submodule_step=lambda _framework: None,
             resolve_step=lambda _spec, _explicit: ROOT / "disc.chd",
             discdump_step=lambda *_args: ROOT / "build/player-tools/tools/discdump",
-            provision_step=lambda *_args: launcher.provision_title.SPECS["spyro1"].cache_dir
-            / "SCUS_942.28",
+            provision_step=lambda *_args: None,
             build_step=lambda *_args: events.append("build"),
             launch_step=lambda *_args: events.append("launch"),
         )
@@ -343,9 +368,7 @@ class LauncherTest(unittest.TestCase):
             "command",
             side_effect=lambda args, **_kwargs: commands.append(args),
         ), mock.patch.object(launcher.os, "access", return_value=True):
-            launcher.configure_and_build(
-                ROOT / "external/psxport", [], launcher.provision_title.SPECS["spyro2"]
-            )
+            launcher.configure_and_build(ROOT / "external/psxport", [])
 
         self.assertEqual(
             commands[1][0:5],

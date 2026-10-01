@@ -91,6 +91,12 @@ set(SPYRO_RUNTIME_SOURCES
   game/core/spyro_runtime.cpp
   game/core/title_runtime_registry.cpp
   game/core/title_selection.cpp
+  game/host/title_availability.cpp
+  game/host/picker_content.cpp
+  game/host/picker_runtime.cpp
+  game/host/picker_session.cpp
+  game/host/title_session.cpp
+  game/host/product_host.cpp
   game/render/actor_billboard_face.cpp
   game/render/actor_draw_recipe.cpp
   game/render/actor_emit.cpp
@@ -273,6 +279,7 @@ add_library(spyro_runtime STATIC ${SPYRO_RUNTIME_SOURCES})
 add_dependencies(spyro_runtime spyro_title_catalog)
 target_include_directories(spyro_runtime PUBLIC
   game/core
+  game/host
   game/render
   titles/spyro1/core
   titles/spyro2/core
@@ -349,6 +356,9 @@ if(BUILD_TESTING)
   target_include_directories(test_title_selection PRIVATE game/core)
   target_link_libraries(test_title_selection PRIVATE spyro_runtime OpenSSL::Crypto)
   add_test(NAME title_selection COMMAND test_title_selection)
+  add_executable(test_title_picker tests/test_title_picker.cpp)
+  target_link_libraries(test_title_picker PRIVATE spyro_runtime)
+  add_test(NAME title_picker COMMAND test_title_picker)
   add_executable(test_spyro3_runtime
     tests/test_spyro3_runtime.cpp)
   target_include_directories(test_spyro3_runtime PRIVATE game/core)

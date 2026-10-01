@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision, build, and launch the current Spyro the Dragon port target."""
+"""Provision, build, and launch the native Spyro port at its title selector."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PLAYER_BUILD = ROOT / "build/player"
 FRAMEWORK_BUILD = ROOT / "build/player-tools"
 MAINTAINER_BUILD = ROOT / "build"
+GENERIC_DISC_KEY = "PSXPORT_DISC"
 
 
 class Refusal(RuntimeError):
@@ -421,7 +422,7 @@ def provision(spec, disc, _psxport, discdump):
         raise Refusal(str(error)) from error
 
 
-def configure_and_build(psxport, compiler_options, spec=provision_title.SPECS["spyro1"]):
+def configure_and_build(psxport, compiler_options):
     jobs = str(os.cpu_count() or 4)
     say(f"building the native port (CMake -j{jobs})…")
     configure(ROOT, PLAYER_BUILD, compiler_options, f"-DPSXPORT_DIR={psxport}")
@@ -432,7 +433,13 @@ def configure_and_build(psxport, compiler_options, spec=provision_title.SPECS["s
         raise Refusal(f"build produced no executable at {product.relative_to(ROOT)}")
 
 
-def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
+def launch_environment(psxport, discs):
+    """The player environment, with each provisioned title's disc under that title's own key.
+
+    `discs` maps a ProvisionSpec to its disc. The generic PSXPORT_DISC fallback key is never set: one disc
+    answering for every title is exactly the ambiguity the title selector exists to remove, and a title with
+    no configured disc must say so rather than boot another title's media.
+    """
     policy = runpy.run_path(str(Path(psxport) / "tools/port/launch_environment.py"))
     # Name the TRACKED shipping configuration. Without this the player build resolved
     # `PSXPORT_SETTINGS` by working-directory discovery, so the shipping picture was whatever
@@ -440,31 +447,47 @@ def launch_environment(psxport, disc, spec=provision_title.SPECS["spyro1"]):
     # `aspect=1` gives `render_width=684` and an untracked `aspect=3` (ASPECT_AUTO, which resolves to
     # the sink) gives `render_width=512`, i.e. no widescreen at all, while every agent measurement used
     # the tracked file and reported 16:9. An explicit PSXPORT_SETTINGS in the environment still wins.
-    env = policy["player_environment"](os.environ, product=spec.slug,
+    env = policy["player_environment"](os.environ, product="spyro",
                                       settings=ROOT / "tools" / "shipping_settings.ini")
     env.setdefault("PSXPORT_ASSET_DIR", str(psxport))
     env.setdefault("PSXPORT_DEBUG_SERVER", "1")
-    env["PSXPORT_DISC"] = str(disc)
-    for key in spec.env_keys:
-        env[key] = str(disc)
+    for spec, disc in discs.items():
+        for key in spec.env_keys:
+            if key != GENERIC_DISC_KEY:
+                env[key] = str(disc)
     return env
 
 
-def launch(psxport, disc, spec, executable):
-    target = "spyro_port"
-    product = PLAYER_BUILD / "bin" / target
-    say(f"launching {spec.title} (native PC port)…")
-    os.execve(
-        product,
-        [str(product), str(executable)],
-        launch_environment(psxport, disc, spec),
-    )
+def launch(psxport, discs):
+    """Replace this process with the zero-argument product: its first screen is the title selector."""
+    product = PLAYER_BUILD / "bin" / "spyro_port"
+    say("launching the native PC port (title selector)…")
+    os.execve(product, [str(product)], launch_environment(psxport, discs))
+
+
+def provision_titles(specs, discdump, psxport, *, resolve_step, provision_step):
+    """Provision every title whose disc can be found; a title that cannot be is reported, not fatal.
+
+    Returns (discs by spec, reasons by slug). The selector enables exactly the titles whose authenticated
+    executable is on disk, so one missing disc must not stop the others.
+    """
+    discs = {}
+    skipped = {}
+    for spec in specs:
+        try:
+            disc = resolve_step(spec, None)
+            say(f"{spec.slug} disc: {disc}")
+            provision_step(spec, disc, psxport, discdump)
+        except Refusal as refusal:
+            skipped[spec.slug] = str(refusal)
+            say(f"{spec.slug} not provisioned: {refusal}")
+            continue
+        discs[spec] = disc
+    return discs, skipped
 
 
 def execute(
-    disc,
     *,
-    title="spyro1",
     preflight_step=preflight,
     sync_step=sync_framework,
     submodule_step=sync_submodules,
@@ -476,36 +499,35 @@ def execute(
     prepare_only=False,
 ):
     """Run the shipping sequence; injectable steps let tests exercise refusal ordering."""
-    spec = provision_title.SPECS[title]
     compiler_options = preflight_step()
     psxport = sync_step()
     submodule_step(psxport)
-    resolved_disc = resolve_step(spec, disc)
-    say(f"disc: {resolved_disc}")
     discdump = discdump_step(psxport, compiler_options)
-    executable = provision_step(spec, resolved_disc, psxport, discdump)
-    build_step(psxport, compiler_options, spec)
+    discs, skipped = provision_titles(
+        provision_title.SPECS.values(), discdump, psxport,
+        resolve_step=resolve_step, provision_step=provision_step,
+    )
+    if not discs:
+        raise Refusal(
+            "no Spyro title could be provisioned: "
+            + "; ".join(f"{slug}: {reason}" for slug, reason in skipped.items())
+        )
+    build_step(psxport, compiler_options)
     if prepare_only:
-        say(f"{spec.title} is built and ready.")
+        say(f"built and ready; titles provisioned: {', '.join(spec.slug for spec in discs)}.")
         return
-    launch_step(psxport, resolved_disc, spec, executable)
+    launch_step(psxport, discs)
 
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(
-        description="Provision, build, and launch a serial-identified Spyro native PC port."
+        description="Provision every Spyro title whose disc is configured, build the native PC port, and "
+        "open it at the title selector."
     )
-    parser.add_argument(
-        "--title",
-        choices=sorted(provision_title.SPECS),
-        default="spyro1",
-        help="engine-lineage title codeword (default: spyro1)",
-    )
-    parser.add_argument("disc", nargs="?", help="Spyro (USA) CHD; otherwise use env/.env/drop-in")
     parser.add_argument(
         "--prepare-only",
         action="store_true",
-        help="provision and build the selected target without launching it",
+        help="provision and build without launching",
     )
     return parser.parse_args(argv)
 
@@ -513,7 +535,7 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        execute(args.disc, title=args.title, prepare_only=args.prepare_only)
+        execute(prepare_only=args.prepare_only)
     except (OSError, Refusal) as error:
         print(f"[run] error: {error}", file=sys.stderr)
         return 2

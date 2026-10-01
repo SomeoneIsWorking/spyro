@@ -28,20 +28,26 @@
 
 namespace {
 
-// The counter a negative VSync answers with in both executables: the framework's derived root
-// counter 1, named by each image's own initialised data.
-constexpr std::uint32_t kVBlankCounter = 0x1F801110u;
-
 struct ExpectedTitle {
   const char *name;
   std::uint32_t bootPrefix;
   std::uint32_t frameUpdate;
   std::uint32_t frameDraw;
   std::uint32_t vsync;
+  // The guest vblank word retail VSync(-1) returns (libetc's callback increments it); never the
+  // HBlank root counter 0x1F801110, which wraps and stalls the title's frame limiter (issue 0160).
+  std::uint32_t vsyncQueryCounter;
+  // libcd CdInit: retail runs it so libcd registers its interrupt handler (issue 0159).
+  std::uint32_t cdInit;
+  // libcd CdControlB, bound to the synchronous owner when the title's body would wait out libcd's
+  // deadline (issue 0161); zero when the title does not bind it.
+  std::uint32_t boundCdControlB;
 };
 
-constexpr ExpectedTitle kSpyro2{"Spyro 2", 0x80011E9Cu, 0x8001B140u, 0x800156FCu, 0x80058EDCu};
-constexpr ExpectedTitle kSpyro3{"Spyro 3", 0x8002AB38u, 0x80055400u, 0x8001E638u, 0x8005956Cu};
+constexpr ExpectedTitle kSpyro2{"Spyro 2", 0x80011E9Cu, 0x8001B140u, 0x800156FCu, 0x80058EDCu,
+                                     0x80066618u, 0x800582B8u, 0x80058994u};
+constexpr ExpectedTitle kSpyro3{"Spyro 3", 0x8002AB38u, 0x80055400u, 0x8001E638u, 0x8005956Cu,
+                                     0x8006B480u, 0x8005DB1Cu, 0u};
 
 // Half-open, and a zero high disables the slot, exactly as the framework reads the plan.
 bool windowAdmits(const PlatformHlePlan &plan, std::uint32_t address) {
@@ -92,7 +98,7 @@ void checkPlan(const GameRuntime &runtime, const ExpectedTitle &expected) {
     return;
   }
   CHECK_EQ(plan->vsyncAddress, expected.vsync);
-  CHECK_EQ(plan->vsyncQueryCounterAddress, kVBlankCounter);
+  CHECK_EQ(plan->vsyncQueryCounterAddress, expected.vsyncQueryCounter);
 
   struct Declared {
     const char *name;
@@ -126,8 +132,14 @@ void checkPlan(const GameRuntime &runtime, const ExpectedTitle &expected) {
     }
     CHECK(admitted);
   }
-  CHECK(plan->bindingCount >= 1);
+  CHECK(plan->bindingCount >= 0);
   CHECK(plan->bindingCount <= PlatformHlePlan::kMaxBindings);
+  bool boundCdControlB = false;
+  for (int index = 0; index < plan->bindingCount; ++index) {
+    CHECK(plan->bindings[index].addr != expected.cdInit);
+    boundCdControlB = boundCdControlB || plan->bindings[index].addr == expected.boundCdControlB;
+  }
+  CHECK_EQ(boundCdControlB, expected.boundCdControlB != 0u);
   for (int index = 0; index < plan->bindingCount; ++index) {
     const bool admitted = windowAdmits(*plan, plan->bindings[index].addr);
     if (!admitted) {

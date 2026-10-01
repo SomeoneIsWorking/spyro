@@ -98,6 +98,10 @@ inline constexpr std::uint32_t kUnprocessedFrames = 0x80075760u;
 inline constexpr std::uint32_t kDeltaTime = 0x800756CCu;
 inline constexpr std::uint32_t kStateSwitch = 0x8007579Cu;
 
+// g_DemoMode (gamepad.h): DEMO_MODE_NONE/PLAY/RECORD. GamestateDraw's stage-0 arm tests it at
+// 0x8001EFF0 (`lw $v0, 0x5714($v0) ; beqz`) before calling the demo text builder 0x80018908.
+inline constexpr std::uint32_t kDemoMode = 0x80075714u;
+
 // g_Pad (gamepad.h): m_Down at +0, m_Released at +4, m_Held at +8.
 inline constexpr std::uint32_t kPad = 0x80077378u;
 

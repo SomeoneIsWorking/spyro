@@ -5,6 +5,7 @@
 // presentation route.
 #include "core.h"
 #include "cutscene_scene_recipe.h"
+#include "demo_text_scene.h"
 #include "field_2d_overlay.h"
 #include "field_moby_lists.h"
 #include "field_model_chain.h"
@@ -239,6 +240,11 @@ void SpyroRenderer::renderScene(const Scene &sc) const {
               *mC, mC->game->rq, spyro::field_2d_overlay::Part::Sprite, overlay.overlay())) {
         abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
       }
+    }
+    // 0x8001F000: the attract demo's "DEMO MODE" caption, between the collectables and the actor
+    // pass, so the shaded pass the model chain runs finds it in the queue.
+    if (!spyro::demo_text_scene::submit(mC)) {
+      abortUnimplemented(sc, "demo-mode text producer 0x80018908 refused its atomic recipe");
     }
     if (const auto refusal = spyro_field_model_chain_submit(mC)) {
       abortUnimplemented(sc, refusalMessage(modelChainRefusal(refusal.producer), refusal).c_str());

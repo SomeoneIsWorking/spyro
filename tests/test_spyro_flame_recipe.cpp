@@ -136,13 +136,18 @@ void test_ribbon_shade_and_texture_row_advance_together() {
   }
 }
 
-void test_ring_scale_is_narrow_until_the_ribbon_is_established() {
-  // Retail sets the scale to 8 by default and only widens it once a previous cross-section has been
-  // projected, so the tip and the two closing steps stay narrow.
-  CHECK_EQ(spyro::flame_recipe::ringScale(false, false), 8);
-  CHECK_EQ(spyro::flame_recipe::ringScale(false, true), 8);
-  CHECK_EQ(spyro::flame_recipe::ringScale(true, false), 0x2c);
-  CHECK_EQ(spyro::flame_recipe::ringScale(true, true), 0x40);
+void test_tip_ring_widens_only_for_a_superflame() {
+  CHECK_EQ(spyro::flame_recipe::tipRingScale(false), 0x2c);
+  CHECK_EQ(spyro::flame_recipe::tipRingScale(true), 0x40);
+}
+
+void test_ribbon_ring_is_narrow_unless_a_wide_superflame() {
+  // 0x800592E8: 8 always lands first; 0x2C is a dead store killed by the next delay slot, so only a
+  // wide superflame ribbon reaches 0x40.
+  CHECK_EQ(spyro::flame_recipe::ribbonRingScale(false, false), 8);
+  CHECK_EQ(spyro::flame_recipe::ribbonRingScale(false, true), 8);
+  CHECK_EQ(spyro::flame_recipe::ribbonRingScale(true, false), 8);
+  CHECK_EQ(spyro::flame_recipe::ribbonRingScale(true, true), 0x40);
 }
 
 void test_ramp_grey_darkens_five_steps_per_texture_row() {
@@ -159,7 +164,8 @@ int main() {
   RUN(one_active_part_is_counted_once);
   RUN(ribbon_emits_one_quad_fewer_than_its_cross_sections);
   RUN(ribbon_shade_and_texture_row_advance_together);
-  RUN(ring_scale_is_narrow_until_the_ribbon_is_established);
+  RUN(tip_ring_widens_only_for_a_superflame);
+  RUN(ribbon_ring_is_narrow_unless_a_wide_superflame);
   RUN(ramp_grey_darkens_five_steps_per_texture_row);
   return pt_summary();
 }

@@ -266,22 +266,22 @@ set(SPYRO_RUNTIME_SOURCES
   titles/spyro1/core/native_spu_key_status.cpp
   titles/spyro1/core/native_spu_transfer_mode.cpp
   titles/spyro1/core/native_spu_common_attr.cpp
+  game/core/guest_widescreen_owner.cpp
+  game/render/guest_moby_rotation.cpp
+  game/render/guest_moby_visibility.cpp
+  game/render/guest_terrain_classify.cpp
+  game/render/guest_terrain_coarse.cpp
+  game/render/guest_terrain_detail.cpp
+  game/render/guest_terrain_drawer.cpp
+  game/render/guest_terrain_far.cpp
+  game/render/guest_terrain_fine.cpp
+  game/render/guest_terrain_fog.cpp
+  game/render/guest_terrain_mesh.cpp
+  game/render/guest_terrain_resplit.cpp
+  game/render/guest_terrain_split.cpp
+  game/render/guest_terrain_translucent.cpp
   titles/spyro2/core/spyro2_runtime.cpp
-  titles/spyro2/core/spyro2_widescreen.cpp
   titles/spyro2/render/spyro2_hud_anchor.cpp
-  titles/spyro2/render/spyro2_moby_rotation.cpp
-  titles/spyro2/render/spyro2_moby_visibility.cpp
-  titles/spyro2/render/spyro2_terrain_classify.cpp
-  titles/spyro2/render/spyro2_terrain_coarse.cpp
-  titles/spyro2/render/spyro2_terrain_detail.cpp
-  titles/spyro2/render/spyro2_terrain_drawer.cpp
-  titles/spyro2/render/spyro2_terrain_far.cpp
-  titles/spyro2/render/spyro2_terrain_fine.cpp
-  titles/spyro2/render/spyro2_terrain_fog.cpp
-  titles/spyro2/render/spyro2_terrain_mesh.cpp
-  titles/spyro2/render/spyro2_terrain_resplit.cpp
-  titles/spyro2/render/spyro2_terrain_split.cpp
-  titles/spyro2/render/spyro2_terrain_translucent.cpp
   titles/spyro3/core/spyro3_runtime.cpp)
 
 add_library(spyro_runtime STATIC ${SPYRO_RUNTIME_SOURCES})
@@ -294,6 +294,7 @@ target_include_directories(spyro_runtime PUBLIC
   titles/spyro2/core
   titles/spyro2/render
   titles/spyro3/core
+  titles/spyro3/render
   ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(spyro_runtime PUBLIC psxport OpenSSL::Crypto)
 
@@ -315,7 +316,7 @@ if(BUILD_TESTING)
   add_executable(test_archive_transfer tests/test_archive_transfer.cpp)
   target_link_libraries(test_archive_transfer PRIVATE spyro_runtime)
   add_test(NAME archive_transfer COMMAND test_archive_transfer)
-  foreach(test_name IN ITEMS actor_billboard_face actor_prefix_builder actor_mesh_scratch actor_model_codec archive_transfer_contract cutscene_scene_recipe cyclorama_mask_recipe cyclorama_scene_recipe field_collectables_recipe field_2d_overlay_recipe pause_menu_recipe fairy_menu_recipe field_environment_recipe field_environment_scene field_scene_recipe field_tracers_recipe memcard_event_stack paired_actor_decode screen_border_recipe screen_fade_recipe secondary_actor_scene spu_hardware_init spu_pio_upload spyro_gate_debug stage13_scene_recipe text_sprites title_menu_recipe wide_clip_plan world_chunk_codec world_material_codec world_recipe world_scene_oracle actor_draw_recipe native_render_producers face_light_program shaded_moby_light secondary_actor_recipe secondary_actor_temporal temporal_scene interp_census world_animation world_source_pair world_temporal actor_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix glow_recipe sparkle_recipe dragon_scene_recipe dragon_burst_recipe actor_scale_translation field_particles_recipe field_particle_endpoint margin_object_census wide_screen_space field_particle_oriented paired_actor_color_fade actor_global_order field_scheduler transition_skip press_latch cyclorama_portal_mesh_recipe hud_text_builder demo_text_scene level_transition_tally_recipe field_shaded_queue_recipe field_shaded_queue_scene field_shaded_queue_temporal terrain_recipe terrain_temporal spyro2_moby_frustum spyro2_hud_anchor spyro2_terrain_screen gpu_packet_decode ui_anchor hud_layout load_ledger)
+  foreach(test_name IN ITEMS actor_billboard_face actor_prefix_builder actor_mesh_scratch actor_model_codec archive_transfer_contract cutscene_scene_recipe cyclorama_mask_recipe cyclorama_scene_recipe field_collectables_recipe field_2d_overlay_recipe pause_menu_recipe fairy_menu_recipe field_environment_recipe field_environment_scene field_scene_recipe field_tracers_recipe memcard_event_stack paired_actor_decode screen_border_recipe screen_fade_recipe secondary_actor_scene spu_hardware_init spu_pio_upload spyro_gate_debug stage13_scene_recipe text_sprites title_menu_recipe wide_clip_plan world_chunk_codec world_material_codec world_recipe world_scene_oracle actor_draw_recipe native_render_producers face_light_program shaded_moby_light secondary_actor_recipe secondary_actor_temporal temporal_scene interp_census world_animation world_source_pair world_temporal actor_temporal world_scene_prepare world_hq_refinement field_shadow_recipe moby_shadow_recipe actor_shadow_staging spyro_flame_recipe spyro_flame_matrix glow_recipe sparkle_recipe dragon_scene_recipe dragon_burst_recipe actor_scale_translation field_particles_recipe field_particle_endpoint margin_object_census wide_screen_space field_particle_oriented paired_actor_color_fade actor_global_order field_scheduler transition_skip press_latch cyclorama_portal_mesh_recipe hud_text_builder demo_text_scene level_transition_tally_recipe field_shaded_queue_recipe field_shaded_queue_scene field_shaded_queue_temporal terrain_recipe terrain_temporal guest_moby_frustum spyro2_hud_anchor guest_terrain_screen gpu_packet_decode ui_anchor hud_layout load_ledger)
 
     add_executable(test_${test_name} tests/test_${test_name}.cpp)
     target_include_directories(test_${test_name} PRIVATE ${PSXPORT_DIR}/tests)
@@ -375,14 +376,15 @@ if(BUILD_TESTING)
   target_include_directories(test_spyro3_runtime PRIVATE game/core)
   target_link_libraries(test_spyro3_runtime PRIVATE spyro_runtime)
   add_test(NAME spyro3_runtime COMMAND test_spyro3_runtime)
-  # Spyro 2's horizontal widening arithmetic, plus the two addresses the owner binds: the widened
-  # centre, the widened clipping rectangle, and the fact that neither ever narrows.
-  add_executable(test_spyro2_widescreen
-    tests/test_spyro2_widescreen.cpp)
-  target_include_directories(test_spyro2_widescreen PRIVATE
-    game/core titles/spyro2/core)
-  target_link_libraries(test_spyro2_widescreen PRIVATE spyro_runtime)
-  add_test(NAME spyro2_widescreen COMMAND test_spyro2_widescreen)
+  # The shared horizontal widening arithmetic and the per-title sites each image binds: the widened
+  # centre, the widened clipping rectangle, the fact that neither ever narrows, and both titles'
+  # measured leaves against their own bytes.
+  add_executable(test_guest_widescreen
+    tests/test_guest_widescreen.cpp)
+  target_include_directories(test_guest_widescreen PRIVATE
+    game/core titles/spyro2/core titles/spyro3/core)
+  target_link_libraries(test_guest_widescreen PRIVATE spyro_runtime)
+  add_test(NAME guest_widescreen COMMAND test_guest_widescreen)
   # The phase a Spyro 1 pad recording is keyed on. Gated for the two properties a recording's
   # meaning rests on: the same guest words give the same key (so presses are interchangeable within
   # a phase), and the framework's reserved "no phase" is unreachable (so a keyed file can never

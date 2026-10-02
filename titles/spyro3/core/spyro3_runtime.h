@@ -1,7 +1,9 @@
 #pragma once
 
 #include "guest_cd_stream_callback_layout.h"
+#include "guest_widescreen_owner.h"
 #include "platform_hle.h"
+#include "spyro3_widescreen_facts.h"
 #include "spyro_runtime.h"
 
 namespace spyro3 {
@@ -27,10 +29,23 @@ public:
   std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
   void pacePresentation(Core &core, int fields, int parts) override;
 
+  // THE TITLE'S ANSWER to the configured aspect, and the only place `gpu_vk_latch_guest_projection`
+  // can learn one. Without it every plan resolves 4:3 whatever the settings file says.
+  const GuestWidescreenProjection *guestWidescreenProjection() const override;
+
+  [[nodiscard]] spyro::GuestWidescreenOwner &widescreen() {
+    return widescreen_;
+  }
+
 private:
   static const GuestProgramImage programImage_;
   static const PlatformHlePlan platformHlePlan_;
   static const GuestCdStreamCallbackLayout cdStreamCallbackLayout_;
+
+  // Process-lifetime, and reached from a native override through
+  // `spyro_context(core).projectionHook` rather than through this member: an override is a plain
+  // function pointer with nowhere to hang a back-pointer.
+  spyro::GuestWidescreenOwner widescreen_{spyro3::kWidescreenFacts};
 };
 
 } // namespace spyro3

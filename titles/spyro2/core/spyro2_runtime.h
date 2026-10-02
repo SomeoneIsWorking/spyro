@@ -1,7 +1,8 @@
 #pragma once
 
+#include "guest_widescreen_owner.h"
 #include "platform_hle.h"
-#include "spyro2_widescreen.h"
+#include "spyro2_widescreen_facts.h"
 #include "spyro_runtime.h"
 
 #include <memory>
@@ -34,7 +35,7 @@ public:
   // `requested = Standard4x3` and every plan was 4:3 whatever the settings file said.
   const GuestWidescreenProjection *guestWidescreenProjection() const override;
 
-  [[nodiscard]] WidescreenOwner &widescreen() {
+  [[nodiscard]] spyro::GuestWidescreenOwner &widescreen() {
     return widescreen_;
   }
 
@@ -46,7 +47,7 @@ private:
   // Process-lifetime, and reached from a native override through
   // `spyro_context(core).projectionHook` rather than through this member: an override is a plain
   // function pointer with nowhere to hang a back-pointer.
-  WidescreenOwner widescreen_{};
+  spyro::GuestWidescreenOwner widescreen_{spyro2::kWidescreenFacts};
 };
 
 } // namespace spyro2

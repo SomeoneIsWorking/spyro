@@ -1,21 +1,29 @@
 #include "spyro2_hud_anchor.h"
 
 #include "core.h"
+#include "guest_widescreen_math.h"
+#include "guest_widescreen_owner.h"
 #include "native_execution.h"
-#include "spyro2_widescreen.h"
-#include "spyro2_widescreen_math.h"
 
 namespace spyro2::hud_anchor {
 namespace {
 
-// The guest's authored frame and the presented one, from Spyro 2's one widening decision. Equal
-// before the plan latches and whenever it does not widen, which makes every correction zero.
+// The guest's authored frame and the presented one, from this title's own widening decision (the
+// shared owner in guest_widescreen_owner.h). Equal before the plan latches and whenever it does not
+// widen, which makes every correction zero -- and the authored width is the title's own fact rather
+// than a constant, so a HUD anchored against the wrong window would be a compile error here rather
+// than a misplaced element in a capture.
+//
+// A Core whose projection leaves are not bound has no owner and is not widening: both frame widths
+// are then the title's authored window and every correction below is zero, which is what an
+// unlatched owner already returns.
 spyro::ui_anchor::Frame frame(Core &core) {
-  const WidescreenOwner &widescreen = WidescreenOwner::of(core);
-  if (!widescreen.latched() || !widescreen.plan().widescreen()) {
-    return {.authored = widescreen_math::kNativeWidth, .drawn = widescreen_math::kNativeWidth};
+  const spyro::GuestWidescreenOwner *widescreen = spyro::GuestWidescreenOwner::of(core);
+  if (widescreen == nullptr || !widescreen->latched() || !widescreen->plan().widescreen()) {
+    const auto native = widescreen == nullptr ? 0 : widescreen->facts().nativeWidth;
+    return {.authored = native, .drawn = native};
   }
-  const GuestProjectionPlan &plan = widescreen.plan();
+  const GuestProjectionPlan &plan = widescreen->plan();
   return {.authored = plan.nativeExtent.width, .drawn = plan.presentationExtent.width};
 }
 

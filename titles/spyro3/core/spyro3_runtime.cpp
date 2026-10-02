@@ -6,6 +6,8 @@
 #include "frame_pacer.h"
 #include "game.h"
 #include "spyro3_boot_facts.h"
+#include "spyro3_render_facts.h"
+#include "spyro3_widescreen_facts.h"
 #include "spyro_context.h"
 #include "stock_read_publication.h"
 
@@ -180,14 +182,19 @@ void Spyro3Runtime::destroyContext(void *context) {
   delete static_cast<SpyroContext *>(context);
 }
 
-void Spyro3Runtime::registerOverrides(Game &) {
-  // Every hardware service this title's boot reaches is either a measured library leaf in the plan
-  // above or the framework's own stock CD path. A title override installed here would be a claim
-  // about SCUS_944.67's own code, and boot has produced no evidence for one yet; the log says so
-  // rather than implying a set was installed.
-  lucent::info("boot",
-               "installed no Spyro 3 native overrides: every boot service is a measured library "
-               "leaf or the framework's stock CD seam");
+void Spyro3Runtime::registerOverrides(Game &game) {
+  // The libgte projection leaf this title's own geometry init states its 512-dot window through,
+  // and through it the title's widening decision; and the two hand-written render routines whose
+  // horizontal culls would otherwise cull everything the widening reveals -- the moby visibility
+  // walk and the terrain drawer. Every OTHER hardware service this title's boot reaches is either
+  // a measured library leaf in the plan above or the framework's own stock CD path.
+  widescreen_.registerProjectionOverrides(game.core);
+  registerRenderOverrides(game.core);
+  lucent::info(
+      "boot",
+      "installed Spyro 3 native overrides for the measured libgte projection offset leaf, "
+      "the moby visibility walk and the terrain drawer; every other boot service remains a "
+      "measured library leaf or the framework's stock CD seam");
 }
 
 void Spyro3Runtime::bootInit(Core &core) {
@@ -195,7 +202,12 @@ void Spyro3Runtime::bootInit(Core &core) {
 }
 
 std::unique_ptr<FrameDriver> Spyro3Runtime::createFrameDriver(Game &game) {
-  return std::make_unique<spyro::BootPrefixFrameDriver>(game, kBootPrefixFacts);
+  // The widescreen owner is this title's field observer AND its frame-tail hook, for the two
+  // measured reasons spyro2_runtime.cpp states: the widened horizontal centre must be in CR24
+  // before the guest resumes drawing, and the GPU drawing rectangle must be widened after the
+  // guest's last command and before the queue rasterises.
+  return std::make_unique<spyro::BootPrefixFrameDriver>(
+      game, kBootPrefixFacts, &widescreen_, &widescreen_);
 }
 
 const PlatformHlePlan *Spyro3Runtime::platformHlePlan() const {
@@ -208,6 +220,10 @@ const char *Spyro3Runtime::discEnvVar() const {
 
 const GuestCdStreamCallbackLayout *Spyro3Runtime::guestCdStreamCallbackLayout() const {
   return &cdStreamCallbackLayout_;
+}
+
+const GuestWidescreenProjection *Spyro3Runtime::guestWidescreenProjection() const {
+  return &widescreen_;
 }
 
 void Spyro3Runtime::pacePresentation(Core &core, int fields, int parts) {

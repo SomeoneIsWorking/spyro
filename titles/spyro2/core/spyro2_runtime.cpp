@@ -9,8 +9,8 @@
 #include "guest_cd_stream_callback_layout.h"
 #include "spyro2_boot_facts.h"
 #include "spyro2_hud_anchor.h"
-#include "spyro2_moby_visibility.h"
-#include "spyro2_terrain_drawer.h"
+#include "spyro2_render_facts.h"
+#include "spyro2_widescreen_facts.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
 #include "stock_read_publication.h"
@@ -176,8 +176,7 @@ void Spyro2Runtime::registerOverrides(Game &game) {
   // the plan above or the framework's own stock CD path, and that is still said rather than left
   // implied: a reader must be able to tell which overrides exist and why.
   widescreen_.registerProjectionOverrides(game.core);
-  registerMobyVisibilityOverride(game.core);
-  registerTerrainDrawerOverride(game.core);
+  registerRenderOverrides(game.core);
   hud_anchor::registerOverrides(game.core);
   lucent::info("boot",
                "installed Spyro 2 native overrides for the two measured libgte projection leaves, "

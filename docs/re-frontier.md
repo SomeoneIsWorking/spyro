@@ -87,16 +87,44 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 ### spyro3.identity — Preserve Spyro 3's independent executable facts
 - status: re-partial
 - deps: boot.provision
-- evidence: `SCUS_944.67` has its own manifest, serial, entry, size, and digest facts.
+- evidence: `SCUS_944.67` has its own manifest, serial, entry, size, and digest facts. It now also executes: `tools/title_route.py --title spyro3` reaches the guest's playing state from its own title screen (observed states 0,11,5,6,5,6,5,6,5,3,0; arrival at 4890 fields) and the guest's own position words move under pad input (walk 1405 units, jump z 18513 -> 18710), with 0 faults and 0 interpreter fallback.
 - where: titles/spyro3/executable.json; titles/spyro3/core/spyro3_runtime.*
-- gap: Disc provenance and dynamic product execution remain unverified.
+- gap: Disc provenance remains unverified; no level words are recorded for this title, so the route proves MOVEMENT but not which level it is in.
 - notes: Spyro 3 implementation waits for Spyro 1's representative gameplay gate.
+
+### spyro3.widescreen — Widen Spyro 3's own guest projection
+- status: re-partial
+- deps: spyro3.identity
+- evidence: every site was measured in Spyro 3's own image, not copied from Spyro 2: `SetGeomOffset` leaf `0x8005D35C`, whose sole CR26 publication is `0x8005955C` (that one writes the projection distance H and is deliberately NOT intercepted), plus four inline CR24/CR25 restatements at `0x80033EF8`, `0x80033EFC`, `0x80034B30`, `0x80034B38` that the per-field re-assertion carries. Authored window 512x240, OFX 256, OFY 120, H `0x155`. The shared owner latches from the guest's own published display mode and reports `aspect=16:9 presentation 684x240 (margin 86px), projection 512x240 (margin 86px, centre X 342)`, and a presented in-level capture shows the widened scene with the player unchanged in size.
+- where: titles/spyro3/core/spyro3_widescreen_facts.h; game/core/guest_widescreen_owner.*
+- gap: the single `SetGeomOffset` call the route makes is INCOMPARABLE under the override differential ("original path performed platform-service @0x8005D35C"), so the leaf is not yet shown equal to retail; it is also called only once in the whole route.
+
+### spyro3.moby-visibility — Own Spyro 3's moby visibility walk natively
+- status: re-partial
+- deps: spyro3.identity
+- evidence: `0x80030478` (811 insns, matching Spyro 2's `0x80043858` in size) walks the same 0x58-byte records through the same sphere-frustum logic, including the `4*x - 3*z` term. Override differential at 4:3 over the in-level route: 26/26 sampled calls match retail, 0 mismatches.
+- where: game/render/guest_moby_*; titles/spyro3/render/spyro3_render_facts.h
+- gap: none on this route.
+
+### spyro3.terrain-drawer — Own Spyro 3's terrain drawer natively
+- status: re-partial
+- deps: spyro3.identity
+- evidence: `0x80022378` (5487 insns, matching Spyro 2's `0x80023BB4`), with the sector-visibility leaf `0x8002D0D8` called from `0x800223C8`, the visible-sector count at `0x8006D078`, outcodes `0x000D0000`/`0x00E40000`/`0xFE00`/`0x02000000`, and the caller analogue at `0x8001EC24`. Override differential at 4:3 over the in-level route: 26/26 sampled calls match retail, 0 mismatches.
+- where: game/render/guest_terrain_*; titles/spyro3/render/spyro3_render_facts.h
+- gap: the margin objects the widening reveals are not shown to be ANIMATED from object memory; only their rendering is covered.
+
+### spyro3.hud-anchor — Anchor Spyro 3's in-level HUD at the widened edges
+- status: re-partial
+- deps: spyro3.widescreen
+- evidence: the HUD pass is `0x80029E48`, called from `0x8001E460` under bit `0x20`; the widget table base is `0x80067248` with stride `0x54` and eight callbacks at `0x8006727C`, registered through `0x8002803C` and stepped by `0x800285A4`. Candidate callbacks `0x80027A60`, `0x80027B0C`, `0x80027E40`, `0x80029904`, `0x80029BB0`, with draw helpers `0x8002798C` and `0x80027D60`. The emitters observed so far are CENTRED (`0xFA`/`0x100` style positioning), so no edge-anchored element has been identified.
+- where: titles/spyro3/core/spyro3_runtime.*
+- gap: no producer has yet been shown to be edge-anchored, so no `ui_anchor` correction is installed for Spyro 3 and its HUD at 16:9 is not yet shown to be anchored.
 
 ### spyro2.moby-visibility — Own Spyro 2's moby visibility walk natively
 - status: re-verified
 - deps: spyro2.identity
-- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored rotations), RAM, GTE and v0/v1 included; 684/684 again after its globals moved to spyro2_render_globals.h. It walks the 0x58-byte moby records at *0x80066F14 and is called only from the object half of the frame draw FUN_8004C534, ahead of the moby drawers FUN_80044504, FUN_80046FD8 and the close-moby drawer FUN_800499D4; the terrain is FUN_80023BB4, called from FUN_8004C4FC
-- where: titles/spyro2/render/spyro2_moby_*
+- evidence: FUN_80043858 (811 insns) is native: the framework override differential (PSXPORT_OVERRIDE_DIFF, every call) matched retail on 4074 of 4074 calls at 4:3 over Glimmer, the attract demos and the page-turn loader (interpolated and mirrored rotations), RAM, GTE and v0/v1 included; 684/684 again after its globals moved to spyro2_render_facts.h, and 25/25 again after the walk, its frustum, GTE, rotation and globals were lifted to the shared game/render/guest_moby_* with only per-image facts left in the title. It walks the 0x58-byte moby records at *0x80066F14 and is called only from the object half of the frame draw FUN_8004C534, ahead of the moby drawers FUN_80044504, FUN_80046FD8 and the close-moby drawer FUN_800499D4; the terrain is FUN_80023BB4, called from FUN_8004C4FC
+- where: game/render/guest_moby_*; titles/spyro{2,3}/render/spyro{2,3}_render_facts.h
 - gap: none
 
 ### spyro2.hud-anchor — Anchor Spyro 2's in-level HUD at the widened edges
@@ -109,6 +137,6 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 ### spyro2.terrain-drawer — Own Spyro 2's terrain drawer natively
 - status: re-verified
 - deps: spyro2.identity
-- evidence: FUN_80023BB4 (5487 insns, every pass: classify 80023C0C, detail 80024534, translucent 80025434, coarse split 80025CC8, fine split 80026C74, GPU-size re-split 80028504, far 80028B14) is native with no guest hand-off; override differential at 4:3, every call: 0 mismatches over the Glimmer route (683/684, 1 incomparable interrupt), the long Glimmer route (1060/1062, 2 incomparable) and 60000 attract-demo fields (12886/12886). Its horizontal outcodes test [-margin, 512+margin) at 16:9, so the ground fills both margins in presented captures
-- where: titles/spyro2/render/spyro2_terrain_*
+- evidence: FUN_80023BB4 (5487 insns, every pass: classify 80023C0C, detail 80024534, translucent 80025434, coarse split 80025CC8, fine split 80026C74, GPU-size re-split 80028504, far 80028B14) is native with no guest hand-off; override differential at 4:3, every call: 0 mismatches over the Glimmer route (683/684, 1 incomparable interrupt), the long Glimmer route (1060/1062, 2 incomparable) and 60000 attract-demo fields (12886/12886), and 25/25 again after the drawer was lifted to the shared game/render/guest_terrain_* with only per-image facts left in the title. Its horizontal outcodes test [-margin, 512+margin) at 16:9, so the ground fills both margins in presented captures
+- where: game/render/guest_terrain_*
 - gap: the re-split pass (GT3/GT4 too large for the GPU) is not shown to have run on the routes measured. FUN_80046FD8's OFX/OFY = 256/120 restore at LAB_80047EA8 changes nothing visible at 16:9 (patched live to 342 and to 0 in Glimmer: frames identical to the unpatched timeline)

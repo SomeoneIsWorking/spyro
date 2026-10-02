@@ -99,6 +99,13 @@ Statuses: ✅ re-verified · 🟡 re-partial · 🔬 in-progress · ⬜ todo · 
 - where: titles/spyro2/render/spyro2_moby_*
 - gap: none
 
+### spyro2.hud-anchor — Anchor Spyro 2's in-level HUD at the widened edges
+- status: re-verified
+- deps: spyro2.identity
+- evidence: the HUD is FUN_80053E78 (object-draw pass bit 0x20 of FUN_800155A0), emitting 2D textured quads/sprites through FUN_800520CC(image, x, y, size): gem counter FUN_8005251C(0x8006765C, x 0x28), orb counter FUN_8005251C(0x80067664, x 0x198), right-edge meter FUN_80052D84 (x 0x200 - slide, emitter calls 80052E8C/EA0/EB4/F0C/F34), lives FUN_80052B88 (head x 0xD0). Select toggles it in Glimmer. Native entry overrides apply ui_anchor::correction to the counters' x argument and to the meter's emitter x; override differential at 4:3: 59/59 counter and 108/108 emitter calls match
+- where: titles/spyro2/render/spyro2_hud_anchor.*
+- gap: the meter path is not exercised on the measured route (no meter shown)
+
 ### spyro2.terrain-drawer — Own Spyro 2's terrain drawer natively
 - status: re-verified
 - deps: spyro2.identity

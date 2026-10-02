@@ -8,6 +8,7 @@
 #include "game.h"
 #include "guest_cd_stream_callback_layout.h"
 #include "spyro2_boot_facts.h"
+#include "spyro2_hud_anchor.h"
 #include "spyro2_moby_visibility.h"
 #include "spyro2_terrain_drawer.h"
 #include "spyro_context.h"
@@ -177,9 +178,10 @@ void Spyro2Runtime::registerOverrides(Game &game) {
   widescreen_.registerProjectionOverrides(game.core);
   registerMobyVisibilityOverride(game.core);
   registerTerrainDrawerOverride(game.core);
+  hud_anchor::registerOverrides(game.core);
   lucent::info("boot",
                "installed Spyro 2 native overrides for the two measured libgte projection leaves, "
-               "the moby visibility walk and the terrain drawer; "
+               "the moby visibility walk, the terrain drawer and the HUD anchor; "
                "every other boot service remains a measured library leaf or the framework's stock "
                "CD seam");
 }

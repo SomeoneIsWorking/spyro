@@ -1,5 +1,7 @@
 #include "guest_widescreen_owner.h"
 
+#include "ui_anchor.h"
+
 #include "core.h"
 #include "game.h"
 #include "gpu_native_internal.h"
@@ -175,6 +177,14 @@ int GuestWidescreenOwner::horizontalMargin() const {
     return 0;
   }
   return math::guestWindowLeft(plan_.projectionExtent.width, facts_.guestOffsetX);
+}
+
+ui_anchor::Frame GuestWidescreenOwner::uiFrame() const {
+  if (!latched_ || !plan_.widescreen()) {
+    const auto native = facts_.nativeWidth;
+    return {.authored = native, .drawn = native};
+  }
+  return {.authored = plan_.nativeExtent.width, .drawn = plan_.presentationExtent.width};
 }
 
 bool GuestWidescreenOwner::latch(Core &core) {

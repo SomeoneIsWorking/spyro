@@ -6,6 +6,7 @@
 #include "frame_pacer.h"
 #include "game.h"
 #include "spyro3_boot_facts.h"
+#include "spyro3_hud_anchor.h"
 #include "spyro3_render_facts.h"
 #include "spyro3_widescreen_facts.h"
 #include "spyro_context.h"
@@ -184,17 +185,20 @@ void Spyro3Runtime::destroyContext(void *context) {
 
 void Spyro3Runtime::registerOverrides(Game &game) {
   // The libgte projection leaf this title's own geometry init states its 512-dot window through,
-  // and through it the title's widening decision; and the two hand-written render routines whose
+  // and through it the title's widening decision; the two hand-written render routines whose
   // horizontal culls would otherwise cull everything the widening reveals -- the moby visibility
-  // walk and the terrain drawer. Every OTHER hardware service this title's boot reaches is either
-  // a measured library leaf in the plan above or the framework's own stock CD path.
+  // walk and the terrain drawer; and the HUD emitters, whose edge widgets would otherwise ride the
+  // widened centre instead of holding their distance from the frame's edges. Every OTHER hardware
+  // service this title's boot reaches is either a measured library leaf in the plan above or the
+  // framework's own stock CD path.
+  spyro3::hud_anchor::registerOverrides(game.core);
   widescreen_.registerProjectionOverrides(game.core);
   registerRenderOverrides(game.core);
   lucent::info(
       "boot",
       "installed Spyro 3 native overrides for the measured libgte projection offset leaf, "
-      "the moby visibility walk and the terrain drawer; every other boot service remains a "
-      "measured library leaf or the framework's stock CD seam");
+      "the moby visibility walk, the terrain drawer and the HUD anchor; every other boot "
+      "service remains a measured library leaf or the framework's stock CD seam");
 }
 
 void Spyro3Runtime::bootInit(Core &core) {

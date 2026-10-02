@@ -38,6 +38,7 @@
 #include "field_owner.h"
 #include "guest_projection_owner.h"
 #include "guest_widescreen_projection.h"
+#include "ui_anchor.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -181,6 +182,13 @@ public:
   // while the plan has not latched or does not widen. Every horizontal cull in the title asks this
   // one question rather than re-deriving the margin from the plan.
   [[nodiscard]] int horizontalMargin() const;
+
+  // The frame `spyro::ui_anchor` relates for THIS title: its authored window against the width it
+  // presents into. It is the one adapter between the widening plan and the anchoring policy, and it
+  // lives here rather than in each title's HUD owner so two titles cannot answer "how wide is this
+  // title's HUD frame" two different ways. A Core with no owner, or one that has not latched or
+  // does not widen, returns equal widths, which makes every anchor correction zero.
+  [[nodiscard]] ui_anchor::Frame uiFrame() const;
 
 private:
   [[nodiscard]] const char *siteName(ProjectionSite site) const;

@@ -7,6 +7,7 @@
 #include "field_shaded_queue_temporal.h"
 #include "fx_paired_actor.h"
 #include "guest_projection_owner.h"
+#include "hud_draw_context.h"
 #include "interp_census.h"
 #include "load_ledger.h"
 #include "margin_object_census.h"
@@ -39,6 +40,10 @@ struct SpyroContext {
   // runtime that registers its projection overrides. Non-owning, and null on every title that has
   // no projection of its own. See `guest_projection_owner.h` for why the seam exists at all.
   GuestProjectionOwner *projectionHook = nullptr;
+  // The screen-space widget whose draw is in progress, for the emitters a title's HUD shares
+  // between widgets. See `game/render/hud_draw_context.h` for why a return address is not
+  // enough to classify the widget reaching it.
+  spyro::hud_draw_context::Draw hudDraw{};
   SpyroPairedActorFrameState pairedActor{};
   spyro::world_temporal::History worldTemporal{};
   // The drawn half of the sector-visibility table the last world submission published; its guest

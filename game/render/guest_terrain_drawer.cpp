@@ -27,17 +27,38 @@ int horizontalMargin(Core &core) {
 
 } // namespace
 
-void draw(Core &core, const Facts &facts, const guest_render_globals::Globals &globals) {
-  guest_render_globals::spillBorrowedRegisters(core, globals);
-  TerrainFrame frame(core, facts, globals, ScreenBounds(facts.nativeWidth, horizontalMargin(core)));
-  frame.scratch = core.mem_r32(globals.scratchBaseWord) - facts.scratchListsBelowEnd;
-  gte_write_data(gte::kVxy1, frame.scratch);
-  {
-    spyro::PreservedReturnAddress returnAddress(core);
-    spyro::callGuestJumpedFrom(
-        core, facts.overrideName, facts.visibilityCallSite, facts.sectorVisibility, 0u);
+Drawer::Drawer(Core &core,
+               const Facts &facts,
+               const guest_render_globals::Globals &globals,
+               TerrainMemory &memory,
+               FrameMode mode)
+    : core_(core), facts_(facts), globals_(globals), memory_(memory), mode_(mode) {}
+
+void Drawer::run() {
+  const bool real = mode_ == FrameMode::RealField;
+  // 80023BCE: the borrowed registers are spilled to the save area, which is guest RAM the level's
+  // own code reads back at the drawer's own exit.
+  if (real) {
+    guest_render_globals::spillBorrowedRegisters(core_, globals_);
   }
-  core.mem_w32(facts.visibleSectorCount, core.r[2]);
+  TerrainFrame frame(core_,
+                     facts_,
+                     globals_,
+                     ScreenBounds(facts_.nativeWidth, horizontalMargin(core_)),
+                     memory_,
+                     mode_);
+  frame.scratch = core_.mem_r32(globals_.scratchBaseWord) - facts_.scratchListsBelowEnd;
+  gte_write_data(gte::kVxy1, frame.scratch);
+  if (real) {
+    // The drawer's one call out of its own body. Only the guest can answer it, so an in-between
+    // field is handed the sectors its visibility was decided for, not asked again.
+    {
+      spyro::PreservedReturnAddress returnAddress(core_);
+      spyro::callGuestJumpedFrom(
+          core_, facts_.overrideName, facts_.visibilityCallSite, facts_.sectorVisibility, 0u);
+    }
+    core_.mem_w32(facts_.visibleSectorCount, core_.r[2]);
+  }
   classifySectors(frame);
   drawDetailSectors(frame);
   drawTranslucentSectors(frame);
@@ -45,11 +66,20 @@ void draw(Core &core, const Facts &facts, const guest_render_globals::Globals &g
   splitFinePolygons(frame);
   resplitOversizedPrimitives(frame);
   drawFarSectors(frame);
-  // SCUS_944.25 80029118: the exit. Retail reloads the borrowed registers from the save area, which
-  // the native passes never changed, and returns with whatever its last pass left in v0 and v1.
-  core.mem_w32(globals.primitiveCursor, frame.primitive);
-  core.r[2] = frame.v0;
-  core.r[3] = frame.v1;
+  if (real) {
+    // SCUS_944.25 80029118: the exit. Retail reloads the borrowed registers from the save area,
+    // which the native passes never changed, and returns with whatever its last pass left in v0 and
+    // v1. Both are the guest's own state: the cursor word is where the next pass allocates from and
+    // v0/v1 are the O32 result registers the guest's caller reads.
+    core_.mem_w32(globals_.primitiveCursor, frame.primitive);
+    core_.r[2] = frame.v0;
+    core_.r[3] = frame.v1;
+  }
+}
+
+void draw(Core &core, const Facts &facts, const guest_render_globals::Globals &globals) {
+  GuestMemory memory(core);
+  Drawer(core, facts, globals, memory, FrameMode::RealField).run();
 }
 
 } // namespace spyro::guest_terrain

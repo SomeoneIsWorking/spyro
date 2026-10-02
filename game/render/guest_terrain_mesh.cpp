@@ -61,6 +61,7 @@ private:
 
   TerrainFrame &frame_;
   Core &core_;
+  TerrainMemory &memory_;
   NearPass pass_;
   SectorOrigin origin_{};
   std::uint32_t cursor_ = 0; // t7: the next vertex word to read
@@ -73,7 +74,7 @@ private:
 };
 
 SectorProjector::SectorProjector(TerrainFrame &frame, std::uint32_t sector, NearPass pass)
-    : frame_(frame), core_(frame.core), pass_(pass) {
+    : frame_(frame), core_(frame.core), memory_(frame.memory), pass_(pass) {
   const std::uint32_t zx = core_.mem_r32(sector + near_sector::kOriginZX);
   const std::uint32_t y = core_.mem_r32(sector + near_sector::kOriginY);
   origin_.z = (zx >> 14) - gte_read_ctrl(gte::kLight0);
@@ -115,8 +116,8 @@ void SectorProjector::advance() {
 }
 
 void SectorProjector::store(std::uint32_t word, std::uint32_t depth) {
-  core_.mem_w32(slot_, word);
-  core_.mem_w16(depthSlot_, static_cast<std::uint16_t>(depth));
+  memory_.w32(slot_, word);
+  memory_.w16(depthSlot_, static_cast<std::uint16_t>(depth));
   slot_ += 4;
   depthSlot_ += 2;
 }

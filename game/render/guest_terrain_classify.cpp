@@ -105,7 +105,8 @@ PackedVector unpack(std::uint32_t word) {
 
 class SectorClassifier {
 public:
-  explicit SectorClassifier(TerrainFrame &frame) : frame_(frame), core_(frame.core) {}
+  explicit SectorClassifier(TerrainFrame &frame)
+      : frame_(frame), core_(frame.core), memory_(frame.memory) {}
 
   void run();
 
@@ -127,6 +128,7 @@ private:
 
   TerrainFrame &frame_;
   Core &core_;
+  TerrainMemory &memory_;
   std::int32_t cameraX_ = 0;
   std::int32_t cameraY_ = 0;
   std::int32_t cameraZ_ = 0;
@@ -142,9 +144,9 @@ void SectorClassifier::run() {
   gte_write_ctrl(gte::kTranslationX, 0);
   gte_write_ctrl(gte::kTranslationY, 0);
   gte_write_ctrl(gte::kTranslationZ, 0);
-  cameraX_ = asSigned(core_.mem_r32(frame_.globals.cameraPosition)) >> 4;
-  cameraY_ = asSigned(core_.mem_r32(frame_.globals.cameraPosition + 4)) >> 4;
-  cameraZ_ = asSigned(core_.mem_r32(frame_.globals.cameraPosition + 8)) >> 4;
+  cameraX_ = asSigned(frame_.positionWord(0)) >> 4;
+  cameraY_ = asSigned(frame_.positionWord(1)) >> 4;
+  cameraZ_ = asSigned(frame_.positionWord(2)) >> 4;
   const std::uint32_t count = core_.mem_r32(frame_.facts.classify.sectorCount);
   std::uint32_t slot = core_.mem_r32(frame_.facts.classify.sectorTable);
   const std::uint32_t end = kScratchpad + count;
@@ -154,31 +156,34 @@ void SectorClassifier::run() {
 
   for (std::uint32_t byte = kScratchpad; byte != end; ++byte) {
     slot += 4;
-    if (core_.mem_r8(byte) != 0) {
-      classify(core_.mem_r32(slot - 4), byte);
+    if (memory_.r8(byte) != 0) {
+      classify(memory_.r32(slot - 4), byte);
     }
   }
-  core_.mem_w32(translucentCursor_, 0);
-  core_.mem_w32(farCursor_, 0);
-  core_.mem_w32(detailCursor_, 0);
+  memory_.w32(translucentCursor_, 0);
+  memory_.w32(farCursor_, 0);
+  memory_.w32(detailCursor_, 0);
 
   // 800244F0: the visibility bytes, in whole 16-byte rows, for the moby visibility walk (each
-  // moby's group byte, +0x52).
-  const std::uint32_t copyEnd = (end + kGroupCopyEnd) & ~kGroupCopyEnd;
-  std::uint32_t from = kScratchpad;
-  std::uint32_t to = frame_.globals.visibilityGroups;
-  do {
-    for (std::uint32_t word = 0; word < 16; word += 4) {
-      core_.mem_w32(to + word, core_.mem_r32(from + word));
-    }
-    from += 16;
-    to += 16;
-  } while (from != copyEnd);
+  // moby's group byte, +0x52). The walk is the guest's own, so publishing the bytes is a write the
+  // guest must see; an in-between field classifies from the bytes it was handed instead.
+  if (frame_.realField()) {
+    const std::uint32_t copyEnd = (end + kGroupCopyEnd) & ~kGroupCopyEnd;
+    std::uint32_t from = kScratchpad;
+    std::uint32_t to = frame_.globals.visibilityGroups;
+    do {
+      for (std::uint32_t word = 0; word < 16; word += 4) {
+        core_.mem_w32(to + word, memory_.r32(from + word));
+      }
+      from += 16;
+      to += 16;
+    } while (from != copyEnd);
+  }
 }
 
 // 80023CB0..80023E88.
 void SectorClassifier::classify(std::uint32_t sector, std::uint32_t visibilityByte) {
-  core_.mem_w8(visibilityByte, 0);
+  memory_.w8(visibilityByte, 0);
   const std::uint32_t centreXY = core_.mem_r32(sector + sector::kCentreXY);
   const std::uint32_t centreZ = core_.mem_r32(sector + sector::kCentreZ);
   gte_write_data(gte::kIr3, asWord(asSigned(centreXY >> 16) - cameraX_));
@@ -229,7 +234,7 @@ void SectorClassifier::classify(std::uint32_t sector, std::uint32_t visibilityBy
     if (asSigned(z + r - asWord(farDepth)) > 0) {
       const std::uint32_t farEntry =
           asSigned(z - r - asWord(kFarListDepth)) > 0 ? entry : entry | kClose;
-      core_.mem_w32(farCursor_, farEntry);
+      memory_.w32(farCursor_, farEntry);
       farCursor_ += 4;
       taken |= kTakenFar;
       claim = 0xFFFF0000u;
@@ -241,7 +246,7 @@ void SectorClassifier::classify(std::uint32_t sector, std::uint32_t visibilityBy
       if (asSigned(nearSide - asWord(kCloseDepth)) < 0) {
         entry += kClose;
       }
-      core_.mem_w32(detailCursor_, entry);
+      memory_.w32(detailCursor_, entry);
       detailCursor_ += 4;
       taken |= kTakenNear;
       claim &= 0xFFFFu;
@@ -253,14 +258,17 @@ void SectorClassifier::classify(std::uint32_t sector, std::uint32_t visibilityBy
           entry += kClose;
         }
         translucentCursor_ += 4;
-        core_.mem_w32(translucentCursor_ - 4, entry);
+        memory_.w32(translucentCursor_ - 4, entry);
         taken |= kTakenNear;
       }
     }
   }
   marks |= claim;
-  core_.mem_w8(visibilityByte, static_cast<std::uint8_t>(taken));
-  if (marks == 0xFFFFFFFFu) {
+  memory_.w8(visibilityByte, static_cast<std::uint8_t>(taken));
+  // 80023E8C..80024314: each slot whose mark byte is still clear animates once. Every one of those
+  // four writes a WORD of the level's own sector data, so an in-between field classifies and draws
+  // the data the guest last animated rather than advancing it a second time inside one field.
+  if (!frame_.realField() || marks == 0xFFFFFFFFu) {
     return;
   }
   // 80023E8C..80024314: each slot whose mark byte is still clear animates once.

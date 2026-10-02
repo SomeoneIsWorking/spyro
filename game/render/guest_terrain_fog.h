@@ -9,6 +9,7 @@
 
 #include "core.h"
 #include "guest_terrain_facts.h"
+#include "guest_terrain_memory.h"
 
 #include <cstdint>
 
@@ -20,7 +21,14 @@ void loadFogColour(Core &core, const Facts &facts);
 // Load the fog colour, then fade the colour words [colours, end - 4) by `fog` into
 // facts.foggedColours (SCUS_944.25 800249A0, 80028DB0). Like retail, the loop reads the word at end
 // - 4 into RGBC without fading it. Returns one past the last faded word written.
-std::uint32_t fogColours(
-    Core &core, const Facts &facts, std::uint32_t colours, std::uint32_t end, std::uint32_t fog);
+//
+// The colours it READS are the sector's own arrays in the level, and the buffer it WRITES is one of
+// the frame's working ranges, so the reads go through the guest and the writes through `memory`.
+std::uint32_t fogColours(TerrainMemory &memory,
+                         Core &core,
+                         const Facts &facts,
+                         std::uint32_t colours,
+                         std::uint32_t end,
+                         std::uint32_t fog);
 
 } // namespace spyro::guest_terrain

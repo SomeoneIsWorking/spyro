@@ -116,23 +116,26 @@ std::uint32_t colourMidpoint(std::uint32_t a, std::uint32_t b) {
 }
 
 template <std::size_t N>
-void storeComponent(Core &core, std::uint32_t offset, const std::array<std::uint32_t, N> &grid) {
+void storeComponent(TerrainMemory &memory,
+                    std::uint32_t offset,
+                    const std::array<std::uint32_t, N> &grid) {
   for (std::size_t i = 0; i < N; ++i) {
-    core.mem_w16(cellAddress(static_cast<std::uint32_t>(i)) + offset,
-                 static_cast<std::uint16_t>(grid[i]));
+    memory.w16(cellAddress(static_cast<std::uint32_t>(i)) + offset,
+               static_cast<std::uint16_t>(grid[i]));
   }
 }
 
-template <std::size_t N> void storeColours(Core &core, const std::array<std::uint32_t, N> &grid) {
+template <std::size_t N>
+void storeColours(TerrainMemory &memory, const std::array<std::uint32_t, N> &grid) {
   for (std::size_t i = 0; i < N; ++i) {
-    core.mem_w32(cellAddress(static_cast<std::uint32_t>(i)) + cell::kColour, grid[i]);
+    memory.w32(cellAddress(static_cast<std::uint32_t>(i)) + cell::kColour, grid[i]);
   }
 }
 
 class FineSplitPass final : public SplitPolygonPass {
 public:
   FineSplitPass(TerrainFrame &frame, bool triangles)
-      : frame_(frame), core_(frame.core), triangles_(triangles) {}
+      : frame_(frame), core_(frame.core), memory_(frame.memory), triangles_(triangles) {}
 
   void polygon(const SplitSector &sector, const SplitPolygon &polygon) override;
 
@@ -153,6 +156,7 @@ private:
 
   TerrainFrame &frame_;
   Core &core_;
+  TerrainMemory &memory_;
   bool triangles_;
 };
 
@@ -176,9 +180,9 @@ void FineSplitPass::quad(const SplitSector &sector, const SplitPolygon &polygon)
   const GridPoint d = unpackGridVertex(frame_, sector, vertices.third);
   const std::uint32_t links = core_.mem_r32(polygon.record + polygon::kLinks);
   const std::uint32_t draw = core_.mem_r32(polygon.record + polygon::kDraw);
-  storeComponent(core_, cell::kZ, quadGrid(a.z, b.z, c.z, d.z, coordinateMidpoint));
-  storeComponent(core_, cell::kX, quadGrid(a.x, b.x, c.x, d.x, coordinateMidpoint));
-  storeComponent(core_, cell::kY, quadGrid(a.y, b.y, c.y, d.y, coordinateMidpoint));
+  storeComponent(memory_, cell::kZ, quadGrid(a.z, b.z, c.z, d.z, coordinateMidpoint));
+  storeComponent(memory_, cell::kX, quadGrid(a.x, b.x, c.x, d.x, coordinateMidpoint));
+  storeComponent(memory_, cell::kY, quadGrid(a.y, b.y, c.y, d.y, coordinateMidpoint));
 
   // 8002713C: the corner colours, fogged, blended over the grid; the centre blends the second and
   // fourth corners, the diagonal, and the inner points average toward it.
@@ -186,11 +190,10 @@ void FineSplitPass::quad(const SplitSector &sector, const SplitPolygon &polygon)
   const std::uint32_t texture = frame_.textures + (draw & kTextureRecordMask) * kTextureRecordSize;
   const std::uint32_t page = core_.mem_r32(texture + 4);
   const std::uint32_t code = asSigned(page) > 0 ? kOpaqueQuadCode : kSemiQuadCode;
-  std::array<std::uint32_t, 4> colours = {
-      core_.mem_r32(sector.colours + colourIndices.first) + code,
-      core_.mem_r32(sector.colours + colourIndices.second) + code,
-      core_.mem_r32(sector.colours + colourIndices.fourth) + code,
-      core_.mem_r32(sector.colours + colourIndices.third) + code};
+  std::array<std::uint32_t, 4> colours = {memory_.r32(sector.colours + colourIndices.first) + code,
+                                          memory_.r32(sector.colours + colourIndices.second) + code,
+                                          memory_.r32(sector.colours + colourIndices.fourth) + code,
+                                          memory_.r32(sector.colours + colourIndices.third) + code};
   loadCornerColours(frame_, colours.data(), 4);
   std::array<std::uint32_t, kQuadGridCells> colourGrid =
       quadGrid(colours[0], colours[1], colours[2], colours[3], colourMidpoint);
@@ -205,7 +208,7 @@ void FineSplitPass::quad(const SplitSector &sector, const SplitPolygon &polygon)
   colourGrid[8] = blend(colours[1], colourGrid[12]);
   colourGrid[16] = blend(colours[2], colourGrid[12]);
   colourGrid[18] = blend(colours[3], colourGrid[12]);
-  storeColours(core_, colourGrid);
+  storeColours(memory_, colourGrid);
 
   projectGrid(frame_, kQuadGridCells, true);
   refineInnerPoints();
@@ -226,7 +229,7 @@ void FineSplitPass::refineInnerPoints() {
   std::array<std::uint32_t, 4> past{};
   for (std::size_t i = 0; i < kCorners.size(); ++i) {
     past[i] =
-        (core_.mem_r32(cellAddress(kCorners[i]) + cell::kDepth) & kDepthMask) - kInnerRefineDepth;
+        (memory_.r32(cellAddress(kCorners[i]) + cell::kDepth) & kDepthMask) - kInnerRefineDepth;
     if (asSigned(past[i]) <= 0) {
       return;
     }
@@ -239,7 +242,7 @@ void FineSplitPass::refineInnerPoints() {
   }
   for (std::uint32_t k = 0; k < 4; ++k) {
     const std::uint32_t point = core_.mem_r32(frame_.facts.fine.innerPoints + 4 * k);
-    if ((core_.mem_r32(point + cell::kDepth) & kOutcodeMask) != 0) {
+    if ((memory_.r32(point + cell::kDepth) & kOutcodeMask) != 0) {
       continue;
     }
     pullTowardPair(frame_,
@@ -277,12 +280,12 @@ void FineSplitPass::linkPiece(
     std::uint32_t sum, std::uint32_t draw, std::uint32_t tag, std::uint32_t bytes, bool resplit) {
   const std::uint32_t prim = frame_.primitive;
   if (resplit) {
-    const std::uint32_t cursor = core_.mem_r32(kSplitPrimitiveCursor);
-    core_.mem_w32(cursor, prim);
-    core_.mem_w32(kSplitPrimitiveCursor, cursor + 4);
+    const std::uint32_t cursor = memory_.r32(kSplitPrimitiveCursor);
+    memory_.w32(cursor, prim);
+    memory_.w32(kSplitPrimitiveCursor, cursor + 4);
   }
-  core_.mem_w32(prim, tag);
-  frame_.v0 = frame_.linkAndAdvance(polygonBin(sum, draw), bytes);
+  memory_.w32(prim, tag);
+  frame_.v0 = frame_.linkAndAdvance(polygonBin(sum, draw), bytes).primitive >> 16;
   frame_.v1 = prim >> 16;
 }
 
@@ -300,7 +303,7 @@ void FineSplitPass::drawQuadPieces(const SplitPolygon &polygon,
         first, first + kCellSize, first + kRowStride, first + kRowStride + kCellSize};
     std::array<std::uint32_t, 4> codes{};
     for (std::size_t i = 0; i < 4; ++i) {
-      codes[i] = core_.mem_r32(pieceCells[i] + cell::kDepth);
+      codes[i] = memory_.r32(pieceCells[i] + cell::kDepth);
     }
     const std::uint32_t pair = quadrants + ((quadrant & 0xCu) << 1);
     std::uint32_t uv = core_.mem_r32(pair);
@@ -314,16 +317,16 @@ void FineSplitPass::drawQuadPieces(const SplitPolygon &polygon,
       continue;
     }
     const std::uint32_t prim = frame_.primitive;
-    core_.mem_w32(prim + packet::kColour0, core_.mem_r32(pieceCells[0] + cell::kColour));
-    core_.mem_w32(prim + packet::kColour1, core_.mem_r32(pieceCells[1] + cell::kColour));
-    core_.mem_w32(prim + packet::kColour2, core_.mem_r32(pieceCells[2] + cell::kColour));
-    core_.mem_w32(prim + packet::kColour3, core_.mem_r32(pieceCells[3] + cell::kColour));
+    memory_.w32(prim + packet::kColour0, memory_.r32(pieceCells[0] + cell::kColour));
+    memory_.w32(prim + packet::kColour1, memory_.r32(pieceCells[1] + cell::kColour));
+    memory_.w32(prim + packet::kColour2, memory_.r32(pieceCells[2] + cell::kColour));
+    memory_.w32(prim + packet::kColour3, memory_.r32(pieceCells[3] + cell::kColour));
 
     // 800277F8: the CLUT and page halfwords, then the four corner UVs of the pair (remapped like
     // the coarse pass's) and the piece's UVs halfway from its own corner to each of them.
-    core_.mem_w16(prim + packet::kUv0 + 2, static_cast<std::uint16_t>(uv >> 16));
+    memory_.w16(prim + packet::kUv0 + 2, static_cast<std::uint16_t>(uv >> 16));
     uv &= 0xFFFFu;
-    core_.mem_w16(prim + packet::kUv1 + 2, static_cast<std::uint16_t>(page >> 16));
+    memory_.w16(prim + packet::kUv1 + 2, static_cast<std::uint16_t>(page >> 16));
     std::array<std::uint32_t, 4> corners = {uv, uv + 0x1Fu, uv + 0x1F00u, page & 0xFFFFu};
     const std::uint32_t remap = (page >> 25) & 0x38u;
     if (remap != 0) {
@@ -338,23 +341,23 @@ void FineSplitPass::drawQuadPieces(const SplitPolygon &polygon,
     const std::array<std::uint32_t, 4> slots = {
         packet::kUv0, packet::kUv1, packet::kUv2, packet::kUv3};
     for (std::size_t i = 0; i < 4; ++i) {
-      core_.mem_w16(prim + slots[i],
-                    static_cast<std::uint16_t>(((corners[i] & kUvAverageMask) + own) >> 1));
+      memory_.w16(prim + slots[i],
+                  static_cast<std::uint16_t>(((corners[i] & kUvAverageMask) + own) >> 1));
     }
 
     std::array<std::uint32_t, 4> screens{};
     for (std::size_t i = 0; i < 4; ++i) {
-      screens[i] = core_.mem_r32(pieceCells[i] + cell::kScreen);
+      screens[i] = memory_.r32(pieceCells[i] + cell::kScreen);
     }
     if (polygon.overflow &&
         !facesCamera(frame_, screens[0], screens[1], screens[2], screens[3], draw)) {
-      core_.mem_w32(prim + packet::kXy0, screens[0]);
+      memory_.w32(prim + packet::kXy0, screens[0]);
       continue;
     }
-    core_.mem_w32(prim + packet::kXy0, screens[0]);
-    core_.mem_w32(prim + packet::kXy1, screens[1]);
-    core_.mem_w32(prim + packet::kXy2, screens[2]);
-    core_.mem_w32(prim + packet::kXy3, screens[3]);
+    memory_.w32(prim + packet::kXy0, screens[0]);
+    memory_.w32(prim + packet::kXy1, screens[1]);
+    memory_.w32(prim + packet::kXy2, screens[2]);
+    memory_.w32(prim + packet::kXy3, screens[3]);
     linkPiece(sum, draw, kQuadTag, kQuadBytes, exceedsGpuSpan(screens));
   }
   // The loop's exit test reads one word past the table into v1.
@@ -370,21 +373,20 @@ void FineSplitPass::triangle(const SplitSector &sector, const SplitPolygon &poly
   const GridPoint c = unpackGridVertex(frame_, sector, vertices.third);
   const std::uint32_t links = core_.mem_r32(polygon.record + polygon::kLinks);
   const std::uint32_t draw = core_.mem_r32(polygon.record + polygon::kDraw);
-  storeComponent(core_, cell::kZ, triangleGrid(a.z, b.z, c.z, coordinateMidpoint));
-  storeComponent(core_, cell::kX, triangleGrid(a.x, b.x, c.x, coordinateMidpoint));
-  storeComponent(core_, cell::kY, triangleGrid(a.y, b.y, c.y, coordinateMidpoint));
+  storeComponent(memory_, cell::kZ, triangleGrid(a.z, b.z, c.z, coordinateMidpoint));
+  storeComponent(memory_, cell::kX, triangleGrid(a.x, b.x, c.x, coordinateMidpoint));
+  storeComponent(memory_, cell::kY, triangleGrid(a.y, b.y, c.y, coordinateMidpoint));
 
   const std::uint32_t colourWord = core_.mem_r32(polygon.record + polygon::kColours);
   const PackedIndices colourIndices(colourWord);
   const std::uint32_t texture = frame_.textures + (draw & kTextureRecordMask) * kTextureRecordSize;
   const std::uint32_t page = core_.mem_r32(texture + 4);
   const std::uint32_t code = asSigned(page) > 0 ? kOpaqueTriangleCode : kSemiTriangleCode;
-  std::array<std::uint32_t, 3> colours = {
-      core_.mem_r32(sector.colours + colourIndices.first) + code,
-      core_.mem_r32(sector.colours + colourIndices.second) + code,
-      core_.mem_r32(sector.colours + colourIndices.third) + code};
+  std::array<std::uint32_t, 3> colours = {memory_.r32(sector.colours + colourIndices.first) + code,
+                                          memory_.r32(sector.colours + colourIndices.second) + code,
+                                          memory_.r32(sector.colours + colourIndices.third) + code};
   loadCornerColours(frame_, colours.data(), 3);
-  storeColours(core_, triangleGrid(colours[0], colours[1], colours[2], colourMidpoint));
+  storeColours(memory_, triangleGrid(colours[0], colours[1], colours[2], colourMidpoint));
 
   projectGrid(frame_, kTriangleGridCells, true);
   const std::uint32_t uv = core_.mem_r32(texture);
@@ -424,22 +426,22 @@ void FineSplitPass::drawTrianglePieces(const SplitPolygon &polygon,
     const std::uint32_t delta = core_.mem_r32(deltas);
     const auto third = static_cast<std::int16_t>(core_.mem_r16(deltas + 4));
     const std::uint32_t prim = frame_.primitive;
-    core_.mem_w32(prim + packet::kUv0, (delta & 0xFFFFu) + uv);
-    core_.mem_w32(prim + packet::kUv1, static_cast<std::uint32_t>(asSigned(delta) >> 16) + page);
-    core_.mem_w32(prim + packet::kUv2, static_cast<std::uint32_t>(third) + uv);
+    memory_.w32(prim + packet::kUv0, (delta & 0xFFFFu) + uv);
+    memory_.w32(prim + packet::kUv1, static_cast<std::uint32_t>(asSigned(delta) >> 16) + page);
+    memory_.w32(prim + packet::kUv2, static_cast<std::uint32_t>(third) + uv);
 
     std::array<std::uint32_t, 3> codes{};
     for (std::size_t i = 0; i < 3; ++i) {
-      codes[i] = core_.mem_r32(pieceCells[i] + cell::kDepth);
+      codes[i] = memory_.r32(pieceCells[i] + cell::kDepth);
     }
     frame_.v0 = codes[1];
     frame_.v1 = codes[2];
     if ((codes[0] & codes[1] & codes[2] & kOutcodeMask) != 0) {
       continue;
     }
-    core_.mem_w32(prim + packet::kColour0, core_.mem_r32(pieceCells[0] + cell::kColour));
-    core_.mem_w32(prim + packet::kColour1, core_.mem_r32(pieceCells[1] + cell::kColour));
-    core_.mem_w32(prim + packet::kColour2, core_.mem_r32(pieceCells[2] + cell::kColour));
+    memory_.w32(prim + packet::kColour0, memory_.r32(pieceCells[0] + cell::kColour));
+    memory_.w32(prim + packet::kColour1, memory_.r32(pieceCells[1] + cell::kColour));
+    memory_.w32(prim + packet::kColour2, memory_.r32(pieceCells[2] + cell::kColour));
     const std::uint32_t sum =
         (codes[0] & kDepthMask) + (codes[1] & kDepthMask) + 2 * (codes[2] & kDepthMask);
     frame_.v0 = codes[1] & kDepthMask;
@@ -449,18 +451,18 @@ void FineSplitPass::drawTrianglePieces(const SplitPolygon &polygon,
     }
     std::array<std::uint32_t, 3> screens{};
     for (std::size_t i = 0; i < 3; ++i) {
-      screens[i] = core_.mem_r32(pieceCells[i] + cell::kScreen);
+      screens[i] = memory_.r32(pieceCells[i] + cell::kScreen);
     }
     frame_.v0 = screens[1];
     frame_.v1 = screens[2];
     if (polygon.overflow &&
         !triangleFacesCamera(frame_, screens[0], screens[1], screens[2], draw)) {
-      core_.mem_w32(prim + packet::kXy0, screens[0]);
+      memory_.w32(prim + packet::kXy0, screens[0]);
       continue;
     }
-    core_.mem_w32(prim + packet::kXy0, screens[0]);
-    core_.mem_w32(prim + packet::kXy1, screens[1]);
-    core_.mem_w32(prim + packet::kXy2, screens[2]);
+    memory_.w32(prim + packet::kXy0, screens[0]);
+    memory_.w32(prim + packet::kXy1, screens[1]);
+    memory_.w32(prim + packet::kXy2, screens[2]);
     linkPiece(sum, draw, kTriangleTag, kTriangleBytes, exceedsGpuSpan(screens));
   }
 }
@@ -468,7 +470,7 @@ void FineSplitPass::drawTrianglePieces(const SplitPolygon &polygon,
 } // namespace
 
 void splitFinePolygons(TerrainFrame &frame) {
-  frame.core.mem_w32(kSplitPrimitiveCursor, frame.scratch + kResplitQueue);
+  frame.memory.w32(kSplitPrimitiveCursor, frame.scratch + kResplitQueue);
   FineSplitPass quads(frame, false);
   walkSplitList(frame, frame.scratch + kFineSplitList, quads);
   FineSplitPass triangles(frame, true);

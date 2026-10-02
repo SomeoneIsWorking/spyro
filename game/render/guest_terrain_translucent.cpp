@@ -35,7 +35,8 @@ std::uint32_t fadeByDepth(std::uint32_t depth) {
 
 class TranslucentPass {
 public:
-  explicit TranslucentPass(TerrainFrame &frame) : frame_(frame), core_(frame.core) {}
+  explicit TranslucentPass(TerrainFrame &frame)
+      : frame_(frame), core_(frame.core), memory_(frame.memory) {}
 
   void run();
 
@@ -50,6 +51,7 @@ private:
 
   TerrainFrame &frame_;
   Core &core_;
+  TerrainMemory &memory_;
   std::uint32_t sectorWord_ = 0; // t9: the sector address, plus the split headers it has written
   bool clipped_ = false;         // s6
   std::uint32_t record_ = 0;     // s1: one past the current polygon record
@@ -59,7 +61,7 @@ private:
 void TranslucentPass::run() {
   std::uint32_t list = frame_.scratch + kTranslucentList;
   for (;;) {
-    const std::uint32_t word = core_.mem_r32(list);
+    const std::uint32_t word = memory_.r32(list);
     list += 4;
     if (word == 0) {
       break;
@@ -67,8 +69,8 @@ void TranslucentPass::run() {
     drawSector(word);
   }
   // 80025CC0: terminate the split lists for the subdivision passes.
-  core_.mem_w32(frame_.coarseSplitCursor, 0);
-  core_.mem_w32(frame_.fineSplitCursor, 0);
+  memory_.w32(frame_.coarseSplitCursor, 0);
+  memory_.w32(frame_.fineSplitCursor, 0);
 }
 
 // 80025440.
@@ -109,11 +111,11 @@ void TranslucentPass::drawSector(std::uint32_t listWord) {
 }
 
 std::uint32_t TranslucentPass::screenWord(std::uint32_t index) const {
-  return core_.mem_r32(kScratchpad + index);
+  return memory_.r32(kScratchpad + index);
 }
 
 std::uint32_t TranslucentPass::depth(std::uint32_t index) const {
-  return core_.mem_r16(kVertexDepths + (index >> 1));
+  return memory_.r16(kVertexDepths + (index >> 1));
 }
 
 // 80025884: the split lists, under a header that is the sector address / 4 with its top bit
@@ -122,13 +124,13 @@ void TranslucentPass::defer(bool fine, std::uint32_t sum, std::uint32_t entry) {
   const std::uint32_t header = (sectorWord_ << 1) >> 3;
   if (!fine) {
     deferToSplitList(
-        core_, frame_.coarseSplitCursor, sectorWord_, kCoarseHeaderWritten, header, entry);
+        memory_, frame_.coarseSplitCursor, sectorWord_, kCoarseHeaderWritten, header, entry);
     return;
   }
   if (sum == 0) {
     return;
   }
-  deferToSplitList(core_, frame_.fineSplitCursor, sectorWord_, kFineHeaderWritten, header, entry);
+  deferToSplitList(memory_, frame_.fineSplitCursor, sectorWord_, kFineHeaderWritten, header, entry);
 }
 
 std::uint32_t TranslucentPass::fadedColour(std::uint32_t depth) {
@@ -173,27 +175,27 @@ void TranslucentPass::drawQuad(const PackedIndices &vertices) {
   // 80025908: one semi-transparent GT4. Retail pairs the third vertex's colour with the fourth's
   // position and the fourth's colour with the third's (the detail pass pairs them correctly).
   const std::uint32_t prim = frame_.primitive;
-  core_.mem_w32(prim + packet::kXy0, xy0);
-  core_.mem_w32(prim + packet::kXy1, xy1);
-  core_.mem_w32(prim + packet::kXy2, xy3);
-  core_.mem_w32(prim + packet::kXy3, xy2);
+  memory_.w32(prim + packet::kXy0, xy0);
+  memory_.w32(prim + packet::kXy1, xy1);
+  memory_.w32(prim + packet::kXy2, xy3);
+  memory_.w32(prim + packet::kXy3, xy2);
   const std::uint32_t c0 = fadedColour(d0);
   const std::uint32_t c1 = fadedColour(d1);
   const std::uint32_t c2 = fadedColour(d2);
-  core_.mem_w32(prim + packet::kColour0, c0 | kSemiQuadCode);
-  core_.mem_w32(prim + packet::kColour1, c1);
-  core_.mem_w32(prim + packet::kColour2, c2);
+  memory_.w32(prim + packet::kColour0, c0 | kSemiQuadCode);
+  memory_.w32(prim + packet::kColour1, c1);
+  memory_.w32(prim + packet::kColour2, c2);
   const std::uint32_t c3 = fadedColour(d3);
-  core_.mem_w32(prim + packet::kColour3, c3);
+  memory_.w32(prim + packet::kColour3, c3);
   const std::uint32_t bin = polygonBin(sum, draw);
   const std::uint32_t record = frame_.textures + (draw & kTextureRecordMask) * kTextureRecordSize;
   const std::uint32_t uv = core_.mem_r32(record);
   const std::uint32_t page = core_.mem_r32(record + 4);
-  core_.mem_w32(prim, kQuadTag);
-  core_.mem_w32(prim + packet::kUv0, uv);
-  core_.mem_w32(prim + packet::kUv1, page - 0x1F00u);
-  core_.mem_w32(prim + packet::kUv2, uv + 0x1F00u);
-  core_.mem_w16(prim + packet::kUv3, static_cast<std::uint16_t>(page));
+  memory_.w32(prim, kQuadTag);
+  memory_.w32(prim + packet::kUv0, uv);
+  memory_.w32(prim + packet::kUv1, page - 0x1F00u);
+  memory_.w32(prim + packet::kUv2, uv + 0x1F00u);
+  memory_.w16(prim + packet::kUv3, static_cast<std::uint16_t>(page));
   frame_.v1 = uv + 0x1F00u;
   frame_.v0 = prim >> 16;
   frame_.linkAndAdvance(bin, kQuadBytes);
@@ -233,21 +235,21 @@ void TranslucentPass::drawTriangle(const PackedIndices &vertices) {
 
   // 80025B50: one semi-transparent GT3.
   const std::uint32_t prim = frame_.primitive;
-  core_.mem_w32(prim + packet::kXy0, xy0);
-  core_.mem_w32(prim + packet::kXy1, xy1);
-  core_.mem_w32(prim + packet::kXy2, xy2);
+  memory_.w32(prim + packet::kXy0, xy0);
+  memory_.w32(prim + packet::kXy1, xy1);
+  memory_.w32(prim + packet::kXy2, xy2);
   const std::uint32_t c0 = fadedColour(d0);
   const std::uint32_t c1 = fadedColour(d1);
-  core_.mem_w32(prim + packet::kColour0, c0 | kSemiTriangleCode);
-  core_.mem_w32(prim + packet::kColour1, c1);
+  memory_.w32(prim + packet::kColour0, c0 | kSemiTriangleCode);
+  memory_.w32(prim + packet::kColour1, c1);
   const std::uint32_t c2 = fadedColour(d2);
-  core_.mem_w32(prim + packet::kColour2, c2);
+  memory_.w32(prim + packet::kColour2, c2);
   const std::uint32_t bin = polygonBin(sum, draw);
   const std::uint32_t record = frame_.textures + (draw & kTextureRecordMask) * kTextureRecordSize;
   const std::uint32_t uv = core_.mem_r32(record);
   const std::uint32_t page = core_.mem_r32(record + 4);
-  core_.mem_w32(prim, kTriangleTag);
-  frame_.v1 = writeTriangleUvs(core_, prim, uv, page, draw & kTriangleCornerMask);
+  memory_.w32(prim, kTriangleTag);
+  frame_.v1 = writeTriangleUvs(memory_, prim, uv, page, draw & kTriangleCornerMask);
   frame_.v0 = prim >> 16;
   frame_.linkAndAdvance(bin, kTriangleBytes);
 }

@@ -12,8 +12,12 @@ void loadFogColour(Core &core, const Facts &facts) {
   gte_write_ctrl(gte::kFarBlue, core.mem_r32(facts.fogColour + 8));
 }
 
-std::uint32_t fogColours(
-    Core &core, const Facts &facts, std::uint32_t colours, std::uint32_t end, std::uint32_t fog) {
+std::uint32_t fogColours(TerrainMemory &memory,
+                         Core &core,
+                         const Facts &facts,
+                         std::uint32_t colours,
+                         std::uint32_t end,
+                         std::uint32_t fog) {
   loadFogColour(core, facts);
   std::uint32_t from = colours;
   gte_write_data(gte::kIr0, fog);
@@ -26,7 +30,7 @@ std::uint32_t fogColours(
     from += 4;
     const std::uint32_t faded = gte_read_data(gte::kRgb2);
     gte_write_data(gte::kRgbc, next);
-    core.mem_w32(to, faded);
+    memory.w32(to, faded);
     to += 4;
   } while (from != end);
   return to;

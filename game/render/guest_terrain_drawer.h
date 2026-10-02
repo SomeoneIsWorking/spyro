@@ -18,12 +18,43 @@
 #include "core.h"
 #include "guest_render_globals.h"
 #include "guest_terrain_facts.h"
+#include "guest_terrain_frame.h"
+#include "guest_terrain_memory.h"
 
 namespace spyro::guest_terrain {
+
+// One call of the drawer over one field's working memory.
+//
+// The SAME seven passes run either way. What differs is the working memory they read and write
+// (`GuestMemory` for the guest's own bytes, `HostMemory` for an in-between's), and the five things
+// only the guest's own field may do: spill retail's borrowed registers, ask the guest which sectors
+// are visible, animate the level's sector data, publish the visibility groups the moby walk reads,
+// and store the primitive cursor and v0/v1 the guest's caller will read. Those are the guards, and
+// they are the only difference between the two calls.
+class Drawer {
+public:
+  Drawer(Core &core,
+         const Facts &facts,
+         const guest_render_globals::Globals &globals,
+         TerrainMemory &memory,
+         FrameMode mode);
+
+  void run();
+
+private:
+  Core &core_;
+  const Facts &facts_;
+  const guest_render_globals::Globals &globals_;
+  TerrainMemory &memory_;
+  const FrameMode mode_;
+};
 
 // Run one call of the drawer against this image: spill retail's borrowed registers, ask the guest
 // for its visible sectors through the one `jal` the retail body executes, then run the passes in
 // retail order. No guest hand-off: the retail body never leaves itself.
+//
+// This is the real field, and it is the override entry: it owns a `GuestMemory` for its own length
+// and runs in `FrameMode::RealField`, so every guard inside the passes is open.
 void draw(Core &core, const Facts &facts, const guest_render_globals::Globals &globals);
 
 } // namespace spyro::guest_terrain

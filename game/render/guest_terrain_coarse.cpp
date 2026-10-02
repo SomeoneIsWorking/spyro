@@ -38,7 +38,7 @@ std::uint32_t cellAddress(std::uint32_t index) {
 
 // 8002654C: a sub-quad's four UV words from its texture pair. Page bits 28..30 select a remap that
 // rotates or mirrors the texture by moving its corners; zero is the identity.
-void writeQuadUvs(Core &core,
+void writeQuadUvs(TerrainMemory &memory,
                   std::uint32_t pageRemaps,
                   std::uint32_t prim,
                   std::uint32_t uv,
@@ -49,22 +49,23 @@ void writeQuadUvs(Core &core,
   std::uint32_t fourth = page;
   const std::uint32_t remap = (second >> 25) & 0x38u;
   if (remap != 0) {
-    const std::uint32_t rest = core.mem_r32(pageRemaps + remap + 4);
-    const std::uint32_t head = core.mem_r32(pageRemaps + remap);
+    const std::uint32_t rest = memory.r32(pageRemaps + remap + 4);
+    const std::uint32_t head = memory.r32(pageRemaps + remap);
     third = uv + (rest & 0xFFFFu);
     fourth = uv + (rest >> 16);
     first = uv + (head & 0xFFFFu);
     second += static_cast<std::uint32_t>(asSigned(head) >> 16);
   }
-  core.mem_w32(prim + packet::kUv0, first);
-  core.mem_w32(prim + packet::kUv1, second);
-  core.mem_w32(prim + packet::kUv2, third);
-  core.mem_w32(prim + packet::kUv3, fourth);
+  memory.w32(prim + packet::kUv0, first);
+  memory.w32(prim + packet::kUv1, second);
+  memory.w32(prim + packet::kUv2, third);
+  memory.w32(prim + packet::kUv3, fourth);
 }
 
 class CoarseSplitPass final : public SplitPolygonPass {
 public:
-  explicit CoarseSplitPass(TerrainFrame &frame) : frame_(frame), core_(frame.core) {}
+  explicit CoarseSplitPass(TerrainFrame &frame)
+      : frame_(frame), core_(frame.core), memory_(frame.memory) {}
 
   void run();
   void polygon(const SplitSector &sector, const SplitPolygon &polygon) override;
@@ -85,6 +86,7 @@ private:
 
   TerrainFrame &frame_;
   Core &core_;
+  TerrainMemory &memory_;
 };
 
 void CoarseSplitPass::run() {
@@ -101,7 +103,7 @@ void CoarseSplitPass::polygon(const SplitSector &sector, const SplitPolygon &pol
 }
 
 void CoarseSplitPass::setCellColour(std::uint32_t index, std::uint32_t colour) {
-  core_.mem_w32(cellAddress(index) + cell::kColour, colour);
+  memory_.w32(cellAddress(index) + cell::kColour, colour);
 }
 
 // 80025DC4: a quad cut 2x2. Its corners are cells 0, 2, 6, 8 (first, second, fourth, third).
@@ -131,11 +133,10 @@ void CoarseSplitPass::quad(const SplitSector &sector, const SplitPolygon &polygo
   const std::uint32_t texture = frame_.textures + (draw & kTextureRecordMask) * kTextureRecordSize;
   const std::uint32_t page = core_.mem_r32(texture + 4);
   const std::uint32_t code = asSigned(page) > 0 ? kOpaqueQuadCode : kSemiQuadCode;
-  std::array<std::uint32_t, 4> colours = {
-      core_.mem_r32(sector.colours + colourIndices.first) + code,
-      core_.mem_r32(sector.colours + colourIndices.second) + code,
-      core_.mem_r32(sector.colours + colourIndices.fourth) + code,
-      core_.mem_r32(sector.colours + colourIndices.third) + code};
+  std::array<std::uint32_t, 4> colours = {memory_.r32(sector.colours + colourIndices.first) + code,
+                                          memory_.r32(sector.colours + colourIndices.second) + code,
+                                          memory_.r32(sector.colours + colourIndices.fourth) + code,
+                                          memory_.r32(sector.colours + colourIndices.third) + code};
   loadCornerColours(frame_, colours.data(), 4);
   setCellColour(0, colours[0]);
   setCellColour(2, colours[1]);
@@ -164,7 +165,7 @@ void CoarseSplitPass::quad(const SplitSector &sector, const SplitPolygon &polygo
 // large near polygon does not bulge out of its plane.
 void CoarseSplitPass::refineCentre() {
   const std::uint32_t centre = cellAddress(4);
-  const std::uint32_t code = core_.mem_r32(centre + cell::kDepth);
+  const std::uint32_t code = memory_.r32(centre + cell::kDepth);
   if ((code & kOutcodeMask) != 0) {
     return;
   }
@@ -204,10 +205,10 @@ void CoarseSplitPass::drawSubQuads(const SplitPolygon &polygon,
     const std::uint32_t first = core_.mem_r32(frame_.facts.coarse.quadCells + 4 * k);
     frame_.v1 = first;
     const std::uint32_t pair = texture + 8 * k + 0x10;
-    const std::uint32_t c0 = core_.mem_r32(first + cell::kDepth);
-    const std::uint32_t c1 = core_.mem_r32(first + kCellSize + cell::kDepth);
-    const std::uint32_t c3 = core_.mem_r32(first + 3 * kCellSize + cell::kDepth);
-    const std::uint32_t c4 = core_.mem_r32(first + 4 * kCellSize + cell::kDepth);
+    const std::uint32_t c0 = memory_.r32(first + cell::kDepth);
+    const std::uint32_t c1 = memory_.r32(first + kCellSize + cell::kDepth);
+    const std::uint32_t c3 = memory_.r32(first + 3 * kCellSize + cell::kDepth);
+    const std::uint32_t c4 = memory_.r32(first + 4 * kCellSize + cell::kDepth);
     const std::uint32_t uv = core_.mem_r32(pair);
     if ((c0 & c1 & c3 & c4 & kOutcodeMask) != 0) {
       continue;
@@ -215,26 +216,26 @@ void CoarseSplitPass::drawSubQuads(const SplitPolygon &polygon,
     const std::uint32_t page = core_.mem_r32(pair + 4);
     const std::uint32_t sum =
         (c0 & kDepthMask) + (c1 & kDepthMask) + (c3 & kDepthMask) + (c4 & kDepthMask);
-    const std::uint32_t xy0 = core_.mem_r32(first + cell::kScreen);
-    const std::uint32_t xy1 = core_.mem_r32(first + kCellSize + cell::kScreen);
-    const std::uint32_t xy3 = core_.mem_r32(first + 3 * kCellSize + cell::kScreen);
-    const std::uint32_t xy4 = core_.mem_r32(first + 4 * kCellSize + cell::kScreen);
+    const std::uint32_t xy0 = memory_.r32(first + cell::kScreen);
+    const std::uint32_t xy1 = memory_.r32(first + kCellSize + cell::kScreen);
+    const std::uint32_t xy3 = memory_.r32(first + 3 * kCellSize + cell::kScreen);
+    const std::uint32_t xy4 = memory_.r32(first + 4 * kCellSize + cell::kScreen);
     const std::uint32_t prim = frame_.primitive;
     if (polygon.overflow && !facesCamera(frame_, xy0, xy1, xy3, xy4, draw)) {
-      core_.mem_w32(prim + packet::kXy0, xy0);
+      memory_.w32(prim + packet::kXy0, xy0);
       continue;
     }
-    core_.mem_w32(prim + packet::kXy0, xy0);
-    core_.mem_w32(prim + packet::kXy1, xy1);
-    core_.mem_w32(prim + packet::kXy2, xy3);
-    core_.mem_w32(prim + packet::kXy3, xy4);
-    core_.mem_w32(prim + packet::kColour0, core_.mem_r32(first + cell::kColour));
-    core_.mem_w32(prim + packet::kColour1, core_.mem_r32(first + kCellSize + cell::kColour));
-    core_.mem_w32(prim + packet::kColour2, core_.mem_r32(first + 3 * kCellSize + cell::kColour));
-    core_.mem_w32(prim + packet::kColour3, core_.mem_r32(first + 4 * kCellSize + cell::kColour));
-    writeQuadUvs(core_, frame_.facts.coarse.pageRemaps, prim, uv, page);
-    core_.mem_w32(prim, kQuadTag);
-    frame_.v1 = frame_.linkAndAdvance(polygonBin(sum, draw), kQuadBytes);
+    memory_.w32(prim + packet::kXy0, xy0);
+    memory_.w32(prim + packet::kXy1, xy1);
+    memory_.w32(prim + packet::kXy2, xy3);
+    memory_.w32(prim + packet::kXy3, xy4);
+    memory_.w32(prim + packet::kColour0, memory_.r32(first + cell::kColour));
+    memory_.w32(prim + packet::kColour1, memory_.r32(first + kCellSize + cell::kColour));
+    memory_.w32(prim + packet::kColour2, memory_.r32(first + 3 * kCellSize + cell::kColour));
+    memory_.w32(prim + packet::kColour3, memory_.r32(first + 4 * kCellSize + cell::kColour));
+    writeQuadUvs(memory_, frame_.facts.coarse.pageRemaps, prim, uv, page);
+    memory_.w32(prim, kQuadTag);
+    frame_.v1 = frame_.linkAndAdvance(polygonBin(sum, draw), kQuadBytes).primitive >> 16;
   }
   frame_.v0 = frame_.facts.coarse.quadCells + 0x10;
 }
@@ -260,35 +261,35 @@ void CoarseSplitPass::drawSubTriangles(const SplitPolygon &polygon,
     const std::uint32_t delta = core_.mem_r32(deltas);
     const auto third = static_cast<std::int16_t>(core_.mem_r16(deltas + 4));
     const std::uint32_t prim = frame_.primitive;
-    core_.mem_w32(prim + packet::kUv0, (delta & 0xFFFFu) + uv);
-    core_.mem_w32(prim + packet::kUv1, static_cast<std::uint32_t>(asSigned(delta) >> 16) + page);
-    core_.mem_w32(prim + packet::kUv2, static_cast<std::uint32_t>(third) + uv);
-    const std::uint32_t d0 = core_.mem_r32(c0 + cell::kDepth);
-    const std::uint32_t d1 = core_.mem_r32(c1 + cell::kDepth);
-    const std::uint32_t d2 = core_.mem_r32(c2 + cell::kDepth);
+    memory_.w32(prim + packet::kUv0, (delta & 0xFFFFu) + uv);
+    memory_.w32(prim + packet::kUv1, static_cast<std::uint32_t>(asSigned(delta) >> 16) + page);
+    memory_.w32(prim + packet::kUv2, static_cast<std::uint32_t>(third) + uv);
+    const std::uint32_t d0 = memory_.r32(c0 + cell::kDepth);
+    const std::uint32_t d1 = memory_.r32(c1 + cell::kDepth);
+    const std::uint32_t d2 = memory_.r32(c2 + cell::kDepth);
     frame_.v0 = d1;
     frame_.v1 = d2;
     if ((d0 & d1 & d2 & kOutcodeMask) != 0) {
       continue;
     }
     const std::uint32_t sum = (d0 & kDepthMask) + (d1 & kDepthMask) + 2 * (d2 & kDepthMask);
-    const std::uint32_t xy0 = core_.mem_r32(c0 + cell::kScreen);
-    const std::uint32_t xy1 = core_.mem_r32(c1 + cell::kScreen);
-    const std::uint32_t xy2 = core_.mem_r32(c2 + cell::kScreen);
+    const std::uint32_t xy0 = memory_.r32(c0 + cell::kScreen);
+    const std::uint32_t xy1 = memory_.r32(c1 + cell::kScreen);
+    const std::uint32_t xy2 = memory_.r32(c2 + cell::kScreen);
     frame_.v0 = xy1;
     frame_.v1 = xy2;
     if (polygon.overflow && !triangleFacesCamera(frame_, xy0, xy1, xy2, draw)) {
-      core_.mem_w32(prim + packet::kXy0, xy0);
+      memory_.w32(prim + packet::kXy0, xy0);
       continue;
     }
-    core_.mem_w32(prim + packet::kXy0, xy0);
-    core_.mem_w32(prim + packet::kXy1, xy1);
-    core_.mem_w32(prim + packet::kXy2, xy2);
-    core_.mem_w32(prim + packet::kColour0, core_.mem_r32(c0 + cell::kColour));
-    core_.mem_w32(prim + packet::kColour1, core_.mem_r32(c1 + cell::kColour));
-    core_.mem_w32(prim + packet::kColour2, core_.mem_r32(c2 + cell::kColour));
-    core_.mem_w32(prim, kTriangleTag);
-    frame_.v0 = frame_.linkAndAdvance(polygonBin(sum, draw), kTriangleBytes);
+    memory_.w32(prim + packet::kXy0, xy0);
+    memory_.w32(prim + packet::kXy1, xy1);
+    memory_.w32(prim + packet::kXy2, xy2);
+    memory_.w32(prim + packet::kColour0, memory_.r32(c0 + cell::kColour));
+    memory_.w32(prim + packet::kColour1, memory_.r32(c1 + cell::kColour));
+    memory_.w32(prim + packet::kColour2, memory_.r32(c2 + cell::kColour));
+    memory_.w32(prim, kTriangleTag);
+    frame_.v0 = frame_.linkAndAdvance(polygonBin(sum, draw), kTriangleBytes).primitive >> 16;
     frame_.v1 = prim >> 16;
   }
 }
@@ -313,10 +314,9 @@ void CoarseSplitPass::triangle(const SplitSector &sector, const SplitPolygon &po
   const std::uint32_t texture = frame_.textures + (draw & kTextureRecordMask) * kTextureRecordSize;
   const std::uint32_t page = core_.mem_r32(texture + 4);
   const std::uint32_t code = asSigned(page) > 0 ? kOpaqueTriangleCode : kSemiTriangleCode;
-  std::array<std::uint32_t, 3> colours = {
-      core_.mem_r32(sector.colours + colourIndices.first) + code,
-      core_.mem_r32(sector.colours + colourIndices.second) + code,
-      core_.mem_r32(sector.colours + colourIndices.third) + code};
+  std::array<std::uint32_t, 3> colours = {memory_.r32(sector.colours + colourIndices.first) + code,
+                                          memory_.r32(sector.colours + colourIndices.second) + code,
+                                          memory_.r32(sector.colours + colourIndices.third) + code};
   loadCornerColours(frame_, colours.data(), 3);
   setCellColour(0, colours[0]);
   setCellColour(2, colours[1]);

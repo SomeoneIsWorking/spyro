@@ -87,7 +87,7 @@ enum class Sector { Drawn, BufferFull };
 
 class FarPass {
 public:
-  explicit FarPass(TerrainFrame &frame) : frame_(frame), core_(frame.core) {}
+  explicit FarPass(TerrainFrame &frame) : frame_(frame), core_(frame.core), memory_(frame.memory) {}
 
   void run();
 
@@ -100,9 +100,14 @@ private:
 
   TerrainFrame &frame_;
   Core &core_;
-  std::uint32_t lastBin_ = 0;             // s2
-  std::uint32_t bufferEnd_ = 0;           // LO
-  std::uint32_t mark_ = 0;                // s3
+  TerrainMemory &memory_;
+  std::uint32_t lastBin_ = 0;   // s2
+  std::uint32_t bufferEnd_ = 0; // LO
+  // s3: the deepest bin any primitive has started in, as an ORDINAL. Retail holds the bin's slot
+  // address and compares addresses; the ordinal is the same ordering with no address in it, which
+  // is what lets this comparison be the same code over a table the guest owns and over one an
+  // in-between field owns in host memory.
+  std::uint32_t markBin_ = 0;
   std::array<std::uint32_t, 3> camera_{}; // s7, t8, t9
   std::array<std::uint32_t, 3> origin_{}; // s4, s5, s6
 };
@@ -111,20 +116,23 @@ private:
 void FarPass::run() {
   lastBin_ = (core_.mem_r32(frame_.facts.far.farDepth) >> 7) - 1;
   bufferEnd_ = frame_.scratch + kPrimitiveSpan;
-  mark_ = core_.mem_r32(frame_.globals.orderingTableMark);
+  markBin_ = frame_.markBinFrom(core_.mem_r32(frame_.globals.orderingTableMark));
   for (std::uint32_t i = 0; i < camera_.size(); ++i) {
-    camera_[i] = core_.mem_r32(frame_.globals.cameraPosition + 4 * i) >> 4;
+    camera_[i] = frame_.positionWord(i) >> 4;
   }
   std::uint32_t list = frame_.scratch + kFarList;
   for (;;) {
-    const std::uint32_t word = core_.mem_r32(list);
+    const std::uint32_t word = memory_.r32(list);
     list += 4;
     if (word == 0 || drawSector(word) == Sector::BufferFull) {
       break;
     }
   }
-  // 80029118: the drawer's exit stores the mark (the primitive cursor is the drawer's).
-  core_.mem_w32(frame_.globals.orderingTableMark, mark_);
+  // 80029118: the drawer's exit stores the mark in a guest word the next frame's draw starts from,
+  // so only the guest's own field publishes it.
+  if (frame_.realField()) {
+    core_.mem_w32(frame_.globals.orderingTableMark, frame_.markSlot(markBin_));
+  }
 }
 
 // 80028B80.
@@ -147,7 +155,7 @@ Sector FarPass::drawSector(std::uint32_t listWord) {
   const std::uint32_t fog = gte_read_ctrl(gte::kLight3);
   if (fog != 0 && !layout.fogExempt) {
     frame_.v0 = records + 4;
-    frame_.v1 = fogColours(core_, frame_.facts, colours, records + 4, fog);
+    frame_.v1 = fogColours(memory_, core_, frame_.facts, colours, records + 4, fog);
     colours = frame_.facts.foggedColours;
   }
   const bool clipped = sectorClass != 0;
@@ -208,8 +216,8 @@ bool FarPass::projectVertices(std::uint32_t data,
       }
       shared &= word;
     }
-    core_.mem_w32(cell, word);
-    core_.mem_w32(cell + 4, sz);
+    memory_.w32(cell, word);
+    memory_.w32(cell + 4, sz);
     cell += kVertexCellSize;
   } while (next != end);
   return (sectorClass & 1u) == 0 || (shared & kOutcodeMask) == 0;
@@ -228,7 +236,7 @@ Sector FarPass::drawPolygon(std::uint32_t record, std::uint32_t colours, bool cl
   std::array<std::uint32_t, 4> screens{};
   std::uint32_t shared = 0xFFFFFFFFu;
   for (std::uint32_t i = 0; i < corners; ++i) {
-    screens[i] = core_.mem_r32(cells[i]);
+    screens[i] = memory_.r32(cells[i]);
     shared &= screens[i];
   }
   frame_.v0 = screens[1];
@@ -249,7 +257,7 @@ Sector FarPass::drawPolygon(std::uint32_t record, std::uint32_t colours, bool cl
   gte_op(&core_, gte::kWinding);
   std::uint32_t depth = 0;
   for (std::uint32_t i = 0; i < corners; ++i) {
-    depth += core_.mem_r32(cells[i] + 4);
+    depth += memory_.r32(cells[i] + 4);
   }
   const bool twoSided = (vertices & kTwoSided) != 0;
   std::uint32_t bin = 0;
@@ -258,7 +266,7 @@ Sector FarPass::drawPolygon(std::uint32_t record, std::uint32_t colours, bool cl
     if (!twoSided && asSigned(gte_read_data(gte::kMac0)) <= 0) {
       return Sector::Drawn;
     }
-    depth += core_.mem_r32(cells[2] + 4);
+    depth += memory_.r32(cells[2] + 4);
     bin = (depth >> 5) + (colourWord & kBinBiasMask) + kBinBase;
   } else {
     // 80028ECC: a quad facing away gets a second test on its other half, (fourth, second, third).
@@ -281,14 +289,14 @@ Sector FarPass::drawPolygon(std::uint32_t record, std::uint32_t colours, bool cl
   constexpr std::array<std::uint32_t, 4> kColourShifts = {23, 16, 9, 2};
   const std::uint32_t prim = frame_.primitive;
   for (std::uint32_t i = 0; i < corners; ++i) {
-    std::uint32_t colour = core_.mem_r32(colours + ((colourWord >> kColourShifts[i]) & 0x1FCu));
+    std::uint32_t colour = memory_.r32(colours + ((colourWord >> kColourShifts[i]) & 0x1FCu));
     if (i == 0) {
       colour += triangle ? kG3Code : kG4Code;
     }
-    core_.mem_w32(prim + 4 + 8 * i, colour);
-    core_.mem_w32(prim + 8 + 8 * i, screens[i]);
+    memory_.w32(prim + 4 + 8 * i, colour);
+    memory_.w32(prim + 8 + 8 * i, screens[i]);
   }
-  core_.mem_w32(prim, triangle ? kG3Tag : kG4Tag);
+  memory_.w32(prim, triangle ? kG3Tag : kG4Tag);
   return link(bin, triangle ? kG3Bytes : kG4Bytes) ? Sector::Drawn : Sector::BufferFull;
 }
 
@@ -299,9 +307,9 @@ bool FarPass::link(std::uint32_t bin, std::uint32_t bytes) {
     return false;
   }
   const std::uint32_t prim = frame_.primitive;
-  const std::uint32_t slot = frame_.orderingTable + bin * 8;
-  if (frame_.linkAndAdvance(bin, bytes) == 0 && asSigned(slot - mark_) > 0) {
-    mark_ = slot;
+  const Linked linked = frame_.linkAndAdvance(bin, bytes);
+  if (linked.head == 0 && asSigned(linked.markKey - markBin_) > 0) {
+    markBin_ = linked.markKey;
   }
   frame_.v0 = prim >> 16;
   return true;

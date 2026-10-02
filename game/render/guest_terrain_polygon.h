@@ -16,7 +16,6 @@
 // once-per-sector header word the subdivision passes use to find the sector again.
 #pragma once
 
-#include "core.h"
 #include "guest_terrain_frame.h"
 
 #include <cstdint>
@@ -92,18 +91,18 @@ struct PackedIndices {
 
 // Append `entry` to the split list at `cursor`, first writing `header` if this sector has not yet
 // put anything on that list (`headerBit` in `sectorWord`).
-inline void deferToSplitList(Core &core,
+inline void deferToSplitList(TerrainMemory &memory,
                              std::uint32_t &cursor,
                              std::uint32_t &sectorWord,
                              std::uint32_t headerBit,
                              std::uint32_t header,
                              std::uint32_t entry) {
   if ((sectorWord & headerBit) == 0) {
-    core.mem_w32(cursor, header);
+    memory.w32(cursor, header);
     cursor += 4;
   }
   sectorWord |= headerBit;
-  core.mem_w32(cursor, entry);
+  memory.w32(cursor, entry);
   cursor += 4;
 }
 
@@ -111,31 +110,31 @@ inline void deferToSplitList(Core &core,
 // square as two words, `uv` (one corner's UV with the CLUT above it) and `page` (the opposite
 // corner's UV with the texture page above it); the triangle drops the corner its draw word names.
 // Returns the value retail leaves in v1.
-inline std::uint32_t writeTriangleUvs(Core &core,
+inline std::uint32_t writeTriangleUvs(TerrainMemory &memory,
                                       std::uint32_t primitive,
                                       std::uint32_t uv,
                                       std::uint32_t page,
                                       std::uint32_t corner) {
   switch (corner) {
   case 0x0000u:
-    core.mem_w32(primitive + 0x0C, uv);
-    core.mem_w32(primitive + 0x18, page - 0x1F00u);
-    core.mem_w32(primitive + 0x24, uv + 0x1F00u);
+    memory.w32(primitive + 0x0C, uv);
+    memory.w32(primitive + 0x18, page - 0x1F00u);
+    memory.w32(primitive + 0x24, uv + 0x1F00u);
     return uv + 0x1F00u;
   case 0x1000u:
-    core.mem_w32(primitive + 0x0C, uv + 0x1Fu);
-    core.mem_w32(primitive + 0x18, page);
-    core.mem_w32(primitive + 0x24, uv);
+    memory.w32(primitive + 0x0C, uv + 0x1Fu);
+    memory.w32(primitive + 0x18, page);
+    memory.w32(primitive + 0x24, uv);
     return uv + 0x1Fu;
   case 0x2000u:
-    core.mem_w32(primitive + 0x0C, uv + 0x1F1Fu);
-    core.mem_w32(primitive + 0x18, page - 0x1Fu);
-    core.mem_w32(primitive + 0x24, uv + 0x1Fu);
+    memory.w32(primitive + 0x0C, uv + 0x1F1Fu);
+    memory.w32(primitive + 0x18, page - 0x1Fu);
+    memory.w32(primitive + 0x24, uv + 0x1Fu);
     return uv + 0x1Fu;
   default:
-    core.mem_w32(primitive + 0x0C, uv + 0x1F00u);
-    core.mem_w32(primitive + 0x18, page - 0x1F1Fu);
-    core.mem_w32(primitive + 0x24, page);
+    memory.w32(primitive + 0x0C, uv + 0x1F00u);
+    memory.w32(primitive + 0x18, page - 0x1F1Fu);
+    memory.w32(primitive + 0x24, page);
     return page - 0x1F1Fu;
   }
 }

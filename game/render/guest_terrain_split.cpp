@@ -40,10 +40,10 @@ bool fitsScaled(std::int32_t coordinate) {
   return (((coordinate >> 8) + 1) >> 1) == 0;
 }
 
-GridVertex loadGridVertex(Core &core, std::uint32_t address) {
-  const std::int32_t z = static_cast<std::int16_t>(core.mem_r16(address + cell::kZ));
-  const std::int32_t x = static_cast<std::int16_t>(core.mem_r16(address + cell::kX));
-  const std::int32_t y = static_cast<std::int16_t>(core.mem_r16(address + cell::kY));
+GridVertex loadGridVertex(TerrainMemory &memory, std::uint32_t address) {
+  const std::int32_t z = static_cast<std::int16_t>(memory.r16(address + cell::kZ));
+  const std::int32_t x = static_cast<std::int16_t>(memory.r16(address + cell::kX));
+  const std::int32_t y = static_cast<std::int16_t>(memory.r16(address + cell::kY));
   const auto word = [](std::int32_t value) {
     return static_cast<std::uint32_t>(value);
   };
@@ -84,14 +84,14 @@ SplitSector readSplitHeader(TerrainFrame &frame, std::uint32_t header) {
 void walkSplitList(TerrainFrame &frame, std::uint32_t list, SplitPolygonPass &pass) {
   SplitSector sector;
   for (;;) {
-    std::uint32_t entry = frame.core.mem_r32(list);
+    std::uint32_t entry = frame.memory.r32(list);
     list += 4;
     if (entry == 0) {
       return;
     }
     if (asSigned(entry) >= 0) {
       sector = readSplitHeader(frame, entry);
-      entry = frame.core.mem_r32(list);
+      entry = frame.memory.r32(list);
       list += 4;
     }
     const std::uint32_t bits = entry & 3u;
@@ -111,9 +111,9 @@ unpackGridVertex(const TerrainFrame &frame, const SplitSector &sector, std::uint
 
 void storeGridPoint(TerrainFrame &frame, std::uint32_t cellIndex, const GridPoint &point) {
   const std::uint32_t address = kScratchpad + cellIndex * kCellSize;
-  frame.core.mem_w16(address + cell::kZ, static_cast<std::uint16_t>(point.z));
-  frame.core.mem_w16(address + cell::kX, static_cast<std::uint16_t>(point.x));
-  frame.core.mem_w16(address + cell::kY, static_cast<std::uint16_t>(point.y));
+  frame.memory.w16(address + cell::kZ, static_cast<std::uint16_t>(point.z));
+  frame.memory.w16(address + cell::kX, static_cast<std::uint16_t>(point.x));
+  frame.memory.w16(address + cell::kY, static_cast<std::uint16_t>(point.y));
 }
 
 void loadCornerColours(TerrainFrame &frame, std::uint32_t *colours, std::uint32_t count) {
@@ -137,17 +137,18 @@ void loadCornerColours(TerrainFrame &frame, std::uint32_t *colours, std::uint32_
 
 void projectGrid(TerrainFrame &frame, std::uint32_t count, bool markBehind) {
   Core &core = frame.core;
+  TerrainMemory &memory = frame.memory;
   const std::uint32_t end = kScratchpad + (count + 1) * kCellSize;
   // Retail zeroes the cell after the last so its one-ahead read of it is harmless.
-  core.mem_w32(end - kCellSize, 0);
-  GridVertex next = loadGridVertex(core, kScratchpad);
+  memory.w32(end - kCellSize, 0);
+  GridVertex next = loadGridVertex(memory, kScratchpad);
   gte_write_data(gte::kVz0, next.z);
   gte_write_data(gte::kVxy0, next.xy);
   std::uint32_t address = kScratchpad + kCellSize;
   do {
     gte_op(&core, gte::kProject);
     const bool scaled = next.scaled;
-    next = loadGridVertex(core, address);
+    next = loadGridVertex(memory, address);
     const std::uint32_t sxy = gte_read_data(gte::kSxy2);
     std::uint32_t code = gte_read_data(gte::kSz3);
     gte_write_data(gte::kVz0, next.z);
@@ -171,8 +172,8 @@ void projectGrid(TerrainFrame &frame, std::uint32_t count, bool markBehind) {
     if (frame.bounds.atOrRightOfRight(sxy)) {
       code |= kRight;
     }
-    core.mem_w32(address - 2 * kCellSize + cell::kScreen, sxy);
-    core.mem_w32(address - 2 * kCellSize + cell::kDepth, code);
+    memory.w32(address - 2 * kCellSize + cell::kScreen, sxy);
+    memory.w32(address - 2 * kCellSize + cell::kDepth, code);
   } while (address != end);
 }
 
@@ -183,30 +184,31 @@ void emitCrackTriangle(TerrainFrame &frame,
                        std::uint32_t page,
                        std::uint32_t draw) {
   Core &core = frame.core;
+  TerrainMemory &memory = frame.memory;
   const std::uint32_t cells = core.mem_r32(entry);
   const std::uint32_t uvFirst = core.mem_r32(entry + 4);
   const std::uint32_t uvRest = core.mem_r32(entry + 8);
   const std::uint32_t c0 = kScratchpad + (cells >> 16);
   const std::uint32_t c1 = kScratchpad + (cells & 0xFFFFu);
   const std::uint32_t c2 = kScratchpad + (uvFirst >> 16);
-  const std::uint32_t d0 = core.mem_r32(c0 + cell::kDepth);
-  const std::uint32_t d1 = core.mem_r32(c1 + cell::kDepth);
-  const std::uint32_t d2 = core.mem_r32(c2 + cell::kDepth);
+  const std::uint32_t d0 = memory.r32(c0 + cell::kDepth);
+  const std::uint32_t d1 = memory.r32(c1 + cell::kDepth);
+  const std::uint32_t d2 = memory.r32(c2 + cell::kDepth);
   if ((d0 & d1 & d2 & kOutcodeMask) != 0) {
     return;
   }
   const std::uint32_t sum = (d0 & kDepthMask) + (d1 & kDepthMask) + 2 * (d2 & kDepthMask);
   const std::uint32_t prim = frame.primitive;
-  core.mem_w32(prim + packet::kXy0, core.mem_r32(c0 + cell::kScreen));
-  core.mem_w32(prim + packet::kXy1, core.mem_r32(c1 + cell::kScreen));
-  core.mem_w32(prim + packet::kXy2, core.mem_r32(c2 + cell::kScreen));
-  core.mem_w32(prim + packet::kColour0, core.mem_r32(c0 + cell::kColour) - colourAdjust);
-  core.mem_w32(prim + packet::kColour1, core.mem_r32(c1 + cell::kColour));
-  core.mem_w32(prim + packet::kColour2, core.mem_r32(c2 + cell::kColour));
-  core.mem_w32(prim, kTriangleTag);
-  core.mem_w32(prim + packet::kUv0, (uvFirst & 0xFFFFu) + uv);
-  core.mem_w32(prim + packet::kUv1, static_cast<std::uint32_t>(asSigned(uvRest) >> 16) + page);
-  core.mem_w32(prim + packet::kUv2, (uvRest & 0xFFFFu) + uv);
+  memory.w32(prim + packet::kXy0, memory.r32(c0 + cell::kScreen));
+  memory.w32(prim + packet::kXy1, memory.r32(c1 + cell::kScreen));
+  memory.w32(prim + packet::kXy2, memory.r32(c2 + cell::kScreen));
+  memory.w32(prim + packet::kColour0, memory.r32(c0 + cell::kColour) - colourAdjust);
+  memory.w32(prim + packet::kColour1, memory.r32(c1 + cell::kColour));
+  memory.w32(prim + packet::kColour2, memory.r32(c2 + cell::kColour));
+  memory.w32(prim, kTriangleTag);
+  memory.w32(prim + packet::kUv0, (uvFirst & 0xFFFFu) + uv);
+  memory.w32(prim + packet::kUv1, static_cast<std::uint32_t>(asSigned(uvRest) >> 16) + page);
+  memory.w32(prim + packet::kUv2, (uvRest & 0xFFFFu) + uv);
   frame.linkAndAdvance(polygonBin(sum, draw), kTriangleBytes);
 }
 
@@ -245,18 +247,19 @@ void pullTowardPair(TerrainFrame &frame,
                     std::uint32_t ownWeight,
                     std::uint32_t pairWeight) {
   Core &core = frame.core;
+  TerrainMemory &memory = frame.memory;
   const auto low = [](std::uint32_t sxy) {
     return static_cast<std::uint32_t>(static_cast<std::int16_t>(sxy & 0xFFFFu));
   };
   const auto high = [](std::uint32_t sxy) {
     return static_cast<std::uint32_t>(asSigned(sxy) >> 16);
   };
-  const std::uint32_t own = core.mem_r32(point + cell::kScreen);
+  const std::uint32_t own = memory.r32(point + cell::kScreen);
   gte_write_data(gte::kIr0, ownWeight);
   gte_write_data(gte::kIr1, low(own));
   gte_write_data(gte::kIr2, high(own));
-  const std::uint32_t a = core.mem_r32(first + cell::kScreen);
-  const std::uint32_t b = core.mem_r32(second + cell::kScreen);
+  const std::uint32_t a = memory.r32(first + cell::kScreen);
+  const std::uint32_t b = memory.r32(second + cell::kScreen);
   gte_op(&core, gte::kScaleIr);
   gte_write_data(gte::kIr0, pairWeight);
   gte_write_data(gte::kIr1, low(a) + low(b));
@@ -266,8 +269,8 @@ void pullTowardPair(TerrainFrame &frame,
   gte_op(&core, gte::kScaleIr);
   const std::int32_t x = asSigned(ownX + gte_read_data(gte::kMac1)) >> 8;
   const std::int32_t y = asSigned(ownY + gte_read_data(gte::kMac2)) >> 8;
-  core.mem_w32(point + cell::kScreen,
-               (static_cast<std::uint32_t>(x) & 0xFFFFu) + (static_cast<std::uint32_t>(y) << 16));
+  memory.w32(point + cell::kScreen,
+             (static_cast<std::uint32_t>(x) & 0xFFFFu) + (static_cast<std::uint32_t>(y) << 16));
 }
 
 namespace {
@@ -323,12 +326,12 @@ std::uint32_t quadNeighbourEdges(TerrainFrame &frame,
                                  std::uint32_t links,
                                  std::uint32_t draw,
                                  std::uint32_t bit) {
-  Core &core = frame.core;
+  TerrainMemory &memory = frame.memory;
   const std::uint32_t flags = frame.scratch;
-  const std::uint32_t first = core.mem_r8(flags + (links >> 19)) & bit;
-  const std::uint32_t second = core.mem_r8(flags + ((links >> 6) & 0x1FFFu)) & bit;
-  const std::uint32_t third = core.mem_r8(flags + (links & 0x3Fu) + ((draw >> 6) & 0x1FC0u)) & bit;
-  const std::uint32_t fourth = core.mem_r8(flags + (draw >> 19)) & bit;
+  const std::uint32_t first = memory.r8(flags + (links >> 19)) & bit;
+  const std::uint32_t second = memory.r8(flags + ((links >> 6) & 0x1FFFu)) & bit;
+  const std::uint32_t third = memory.r8(flags + (links & 0x3Fu) + ((draw >> 6) & 0x1FC0u)) & bit;
+  const std::uint32_t fourth = memory.r8(flags + (draw >> 19)) & bit;
   return first + (second << 8) + (third << 16) + (fourth << 24);
 }
 
@@ -336,12 +339,12 @@ std::uint32_t triangleNeighbourEdges(TerrainFrame &frame,
                                      std::uint32_t links,
                                      std::uint32_t colourIndices,
                                      std::uint32_t bit) {
-  Core &core = frame.core;
+  TerrainMemory &memory = frame.memory;
   const std::uint32_t flags = frame.scratch;
-  const std::uint32_t first = core.mem_r8(flags + (links >> 19)) & bit;
-  const std::uint32_t second = core.mem_r8(flags + ((links >> 6) & 0x1FFFu)) & bit;
+  const std::uint32_t first = memory.r8(flags + (links >> 19)) & bit;
+  const std::uint32_t second = memory.r8(flags + ((links >> 6) & 0x1FFFu)) & bit;
   const std::uint32_t third =
-      core.mem_r8(flags + ((colourIndices & 0xFEu) << 5) + (links & 0x3Fu)) & bit;
+      memory.r8(flags + ((colourIndices & 0xFEu) << 5) + (links & 0x3Fu)) & bit;
   return first + (second << 8) + (third << 16);
 }
 

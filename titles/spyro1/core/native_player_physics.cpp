@@ -67,7 +67,7 @@ constexpr std::uint32_t kVectorFillWords = 6u;
 
 // The guest callees the two bodies below call, each named by the `jal` that reaches it. A callee
 // is a code address, so it is the 26-bit field of that instruction rather than a `lui`+immediate
-// pair, and tools/override_constants.py re-derives it from the `jal` itself. The targets are named
+// pair, and an address audit re-derives it from the `jal` itself. The targets are named
 // for the role each plays in the body that calls it.
 constexpr std::uint32_t kAddVectors = 0x80017758u; // `jal` at 0x8003E99C, 0x8003E9AC and 0x8004A8C8
 constexpr std::uint32_t kCopyVector = 0x80017700u; // `jal` at 0x8004A8B8

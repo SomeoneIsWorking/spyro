@@ -68,7 +68,7 @@ One plane, frame-wide, for the whole of gameplay. The instrument has shown both 
 
 ## REPRODUCED 2026-09-19 — and the console does not draw the object at all
 
-`tools/picture_oracle.py --route replays/gameplay/artisans-arrival.pad --route-from 1830 --play 4951`
+ --route replays/gameplay/artisans-arrival.pad --route-from 1830 --play 4951`
 drives BOTH cores with the same recorded pad from the `playing` checkpoint, which is the same-state
 gameplay comparison issue 0119 said was missing. At the end of the route the two pictures are
 recognisably the same moment — same dragon, same pose, same camera — so the route alignment holds.
@@ -217,7 +217,7 @@ coordinates until that path is reconciled with the render queue's frame and disp
 ## Next step
 
 1. Get the product picture from the trusted path instead: the picture oracle's own product PNG
-   (`tools/picture_oracle.py`, which captures through the product REPL's `shot`), and establish the
+ (, which captures through the product REPL's `shot`), and establish the
    frame it corresponds to, so a coordinate read off it can be fed to `PSXPORT_PRIMAT`/`PSXPORT_QROW`.
 2. Only then re-open the occlusion question. The depth buffer, the layer, the order mode and the
    near plane have each been measured correct here (see the falsified sections above); do NOT change
@@ -225,7 +225,7 @@ coordinates until that path is reconciled with the render queue's frame and disp
 
 ## REPRODUCED against the console, in the trusted capture path
 
-`tools/picture_oracle.py` captures both cores' framebuffers at 512x240 — the framebuffer itself, not
+ captures both cores' framebuffers at 512x240 — the framebuffer itself, not
 a presentation upscale — so a coordinate read off one of its PNGs needs no mapping at all. Comparing
 `scratch/picture/artisans-arrival-4951f-f2800.{native,console}.png` (route
 `replays/gameplay/artisans-arrival.pad`, `--route-from 1830 --play 2800`), censusing pixels with
@@ -320,14 +320,14 @@ shows red, or the gems on this row come from the paired-actor renderer rather th
 This is a denominator, not a verdict: the row is one scanline, and the captured frame is not
 guaranteed to be among the 10,615 reported (the row probe reports per render-queue frame, the
 capture is taken at the end of the play segment). Do not read it as "the shaded queue is innocent".
-Read it as: the next measurement should be `tools/actor_oracle_diff.py` on a
+Read it as: the next measurement should be on a
 `PSXPORT_ACTOR_SCENE_ORACLE=1 PSXPORT_ACTOR_SCENE_ORACLE_CLASS=83` run, which matches native and
 retail primitives by geometry and NAMES the producer of every unmatched one — exactly the question
 this row scan can only narrow.
 
 ## DECIDED by retail's own walker: the geometry is right, the DEPTH ORDER is wrong
 
-`tools/actor_oracle_diff.py` on a `PSXPORT_ACTOR_SCENE_ORACLE=1 PSXPORT_ACTOR_SCENE_ORACLE_CLASS=83`
+ on a `PSXPORT_ACTOR_SCENE_ORACLE=1 PSXPORT_ACTOR_SCENE_ORACLE_CLASS=83`
 run over `replays/gameplay/artisans-arrival.pad` (220 oracle frames parsed, reporting the last):
 
 ```
@@ -422,7 +422,7 @@ The earlier census showed 0 keyed faces here because every prim carries a painte
 that route means deciding how the painter-object path and the keyed-face path compose — a design
 decision, not a patch.
 
-**Falsifier for whichever route is taken:** re-run `tools/actor_oracle_diff.py` on a
+**Falsifier for whichever route is taken:** re-run on a
 `PSXPORT_ACTOR_SCENE_ORACLE=1 PSXPORT_ACTOR_SCENE_ORACLE_CLASS=83` log and require the
 disagreement rate to fall from 5.07% and the named pair (`8016F0C8` class 83 vs `8016FA10`
 class 10, bins 171 vs 105) to agree. Anything that hides the artefact without moving that number is
@@ -431,7 +431,7 @@ a bandaid.
 ## 2026-09-19: the symptom REPRODUCED AT THE FRAMEBUFFER, and the scope error in the claim above
 
 The "REPRODUCED against retail's own walker" line in this issue's `symptom:` overstated what that
-instrument can see. `tools/actor_oracle_diff.py` walks retail's MOBY LIST. It cannot see terrain at
+instrument can see. walks retail's MOBY LIST. It cannot see terrain at
 all, so it can establish an actor-vs-actor depth-order disagreement (it did: 5.07%, issue 0105) and
 it can NOT establish anything about a gem drawing over terrain. Those are two claims and only one of
 them had evidence.
@@ -831,7 +831,7 @@ proportion to 15197 vs 8336, and the 6.43% disagreement rate must fall.
 Measured on psxport `077f5d0c`, spyro `3b4fbe6`, over the full `artisans-arrival` replay with
 `PSXPORT_ACTOR_SCENE_ORACLE=1 PSXPORT_DEBUG=actororacle`, 833,749 native item lines in the tail.
 
-**The recipe is exonerated, by the tool's own words.** `tools/actor_oracle_diff.py`:
+**The recipe is exonerated, by the tool's own words.** :
 
 ```
   authored bin vs retail bin (independent of depth):
@@ -1076,7 +1076,7 @@ first=8004EBA8@2047/...  last=800573C8@3/...
 producer (`80022A2C`) are in ONE range, and the range runs from bin 2047 down to bin 3 -- retail's
 own far-to-near walk. So the faces ARE interleaved and no domain-composition fault remains.
 
-**The bins in that range are retail's.** `actor_oracle_diff.py` on the same scene: 513 native against
+**The bins in that range are retail's.** on the same scene: 513 native against
 513 retail primitives, 512 matched, and `512 of 512 (100.00%) identical to retail`.
 
 Bins are 100% retail, the bins are what the replay draws by, and the replay order is the sole
@@ -1087,7 +1087,7 @@ chasing a quantity that cannot reach the picture.
 
 ### The instrument that caused it, now fixed
 
-`actor_oracle_diff.py` leads with:
+ leads with:
 
 ```
   disagreeing with retail  : 12422

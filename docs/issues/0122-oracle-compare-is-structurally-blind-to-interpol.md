@@ -44,7 +44,7 @@ cannot adjudicate a 60fps output; there is nothing to compare the extra frame ag
 
 So "verify interpolated 60fps with oracle compare" cannot be satisfied as stated, for any route,
 by either oracle. `tools/oracle_compare.py` reads guest RAM, which presentation does not touch;
-`tools/picture_oracle.py` reads the picture at logic frames, which interpolation does not touch.
+ reads the picture at logic frames, which interpolation does not touch.
 Both report zero difference and both are structurally blind.
 
 ## What CAN be checked, and what each would actually establish

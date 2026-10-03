@@ -155,7 +155,7 @@ void sphericalToCartesian(Core *c) {
 // The guest helpers the collision body calls, named for what the decompilation's own listing says
 // each one does (external/spyro-1/asm/math.s, asm/collision.s and src/camera.c). They are `jal`
 // targets rather than the `lui`-plus-immediate data addresses above, so
-// tools/override_constants.py re-derives each one from the `jal` that reaches it.
+// an address audit re-derives each one from the `jal` that reaches it.
 constexpr std::uint32_t kVecSub = 0x8001778Cu;                       // `jal` at 0x800344C0
 constexpr std::uint32_t kVecMagnitude = 0x800171FCu;                 // `jal` at 0x800344CC
 constexpr std::uint32_t kVecCopy = 0x80017700u;                      // `jal` at 0x800344E0

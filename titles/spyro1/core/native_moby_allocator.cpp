@@ -11,7 +11,7 @@ namespace {
 constexpr std::uint32_t kDynMobyCount = 0x800756A4u;
 // g_MobyAllocPtr (moby.h:498), the dynamic Moby pool's cursor. It walks UP through 0x58-byte Moby
 // slots, and the byte at +0x48 of a slot is that pool's link byte; the same byte is the slot's
-// spawn/alive flag, which tools/probe_tick_divergence.py measures as live below 0x80.
+// spawn/alive flag, measured live below 0x80.
 constexpr std::uint32_t kMobyAllocCursor = 0x8007573Cu;
 constexpr std::uint32_t kMobySlotStride = 0x58u;
 constexpr std::uint32_t kMobyLinkByte = 0x48u;

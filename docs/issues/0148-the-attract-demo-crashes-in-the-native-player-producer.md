@@ -12,7 +12,7 @@ updated: 2026-09-29
 
 ## Reproduction
 
-`uv run --frozen python tools/demo_run.py --timeout 420` exits 139 in the same place every time. It
+`uv run --frozen python --timeout 420` exits 139 in the same place every time. It
 reproduced with the reach recorder and the differential armed, and with nothing armed.
 
     FATAL: UNMAPPED RAM read8 @ 0x01EEDE6C
@@ -47,16 +47,16 @@ native 06. So the instrument can give the other answer, and the per-job gate now
 ## Fix
 
 - `kStateDefaultAnimation` is now `0x8006C470`.
-- `tools/override_constants.py` now refuses any constant in an override module that no `lui` (alone or
+- now refuses any constant in an override module that no `lui` (alone or
   with its immediate) in that module's own retail functions computes. It needs no route: it decodes the
   functions from `SCUS_942.28`. It fails the pre-fix module on exactly `0x8007C470` and passes all 11
   modules after the fix (60 constants in total).
-- `tools/native_override_gate.py` runs it on every job.
+- runs it on every job.
 - The worker prompt now states the sign-extension rule.
 
 ## Verified
 
-On main at 4d08ce2 (and pinned in 7735458), `tools/reach_corpus.py`'s attract-demo route runs its
+On main at 4d08ce2 (and pinned in 7735458), 's attract-demo route runs its
 full 420-second clock and exits 0, with no `FATAL`. Before the fix it died about 3 minutes in, on every
 run. The differential run that armed only this override (every call shadowed) is the discriminator: 8 of
 395 calls mismatched before the fix, all on `0x80078A71`.

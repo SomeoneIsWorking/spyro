@@ -2,7 +2,7 @@
 // own entry point writes, owned natively.
 //
 // Each function here replaces the guest body of the same address in the decompilation's
-// initialization area and is held by the override differential (tools/native_override_gate.py).
+// initialization area and is held by the override differential .
 #pragma once
 
 #include "core.h"

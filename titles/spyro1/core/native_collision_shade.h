@@ -3,7 +3,7 @@
 // The body replaced here is the collision raycast's shade writer: it measures the surface normal
 // the raycast left in g_CollisionNormal and packs that orientation into the caller's own latch
 // word. Held by the override differential (psxport docs/issues/0138):
-// tools/native_override_gate.py.
+// the override differential.
 #pragma once
 
 #include "core.h"

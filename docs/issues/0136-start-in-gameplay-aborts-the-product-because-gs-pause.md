@@ -63,7 +63,7 @@ the press then "falls through to whatever reads input next rather than counting 
 next is the menu.** So the two operator reports are one defect: the press does not skip, and then it kills
 the process.
 
-**The tally skip itself is NOT broken, and that was measured rather than assumed.** `tools/probe_skip_start.py`
+**The tally skip itself is NOT broken, and that was measured rather than assumed.** 
 drives a real portal crossing and taps Start on the first frame stage 1 is up. Two arms, same walk:
 
 | arm | result |

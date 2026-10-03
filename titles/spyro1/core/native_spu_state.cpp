@@ -9,7 +9,7 @@ namespace spyro1::native {
 namespace {
 
 // The pointer the SCE library keeps to its own state structure. The body builds the address itself
-// — `lui $a0,0x8007` then `lw $a0,0x3568($a0)` — so tools/override_constants.py re-derives this
+// — `lui $a0,0x8007` then `lw $a0,0x3568($a0)` — so the address audit re-derives this
 // constant from those two instructions and refuses the module if it is not what retail computes.
 constexpr std::uint32_t kSpuStatePointer = 0x80073568u;
 // The word is rebuilt from two masks, so each is a constant of its own: the `lui $v1,0xF0FF` plus

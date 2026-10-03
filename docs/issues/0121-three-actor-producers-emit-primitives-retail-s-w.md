@@ -10,7 +10,7 @@ updated: 2026-09-19
 
 ## Symptom
 
-`tools/actor_oracle_diff.py`, `replays/gameplay/artisans-arrival.pad`, last of 220 oracle frames.
+, `replays/gameplay/artisans-arrival.pad`, last of 220 oracle frames.
 Primitives are matched against retail's own moby walker by the MULTISET of `(x,y,rgb)` vertices, so
 a match means retail drew that exact geometry in that exact colour.
 

@@ -60,7 +60,7 @@ channels={} direct={} blended={} writes={}")` at `game/render/field/field_enviro
 |---|---|---|---|---|---|---|---|
 | `scratch/logs/blended-a.log` | `drive.py gameplay --after 600` | 370 | 1 | 4 | 4 | **0** | 0 |
 | `scratch/logs/probe_blended_live2.log` | same route, `--watch-frames 1200` | 626 | 1 | 4 | 4 | **0** | 0 |
-| `scratch/logs/probe_blended_p1.log` | `probe_blended_anim.py --live --seek-portal` | 229 | 9 | 14 | 14 | **0** | 0 |
+| `scratch/logs/probe_blended_p1.log` | live run, seeking the portal | 229 | 9 | 14 | 14 | **0** | 0 |
 
 **22 channels decoded across 1,225 live submits over three runs; 22 direct, 0 blended.** The last
 run's per-submit distribution, which is the widest sample: six submits at `channels=1`, two at
@@ -69,7 +69,7 @@ payload writes plus one retire write per channel (`world_animation.cpp:264`), so
 writes=52` is 48 payload writes plus 4 retires — **four sectors each running one channel, not four
 channel indices on one sector**, because `Plan` accumulates across sectors.
 
-**The authored data, censused from live RAM.** `tools/probe_blended_anim.py --live` drives the
+**The authored data, censused from live RAM.** --live` drives the
 shipping route, wraps `drive.Port.run` so every guest frame is observed, and captures the full 2 MB
 RAM dump on every frame where the four animation-set pointers move. A dump is only censused when the
 dump's OWN pointers equal what the REPL read one command earlier.
@@ -113,7 +113,7 @@ Concretely: drive a route to a level whose `m_LowColorAnimationCount` / `m_HighC
 `m_LowPolyAnimationCount` / `m_HighPolyAnimationCount` is nonzero and whose keyframe byte 4 is
 nonzero, and
 
-    uv run --frozen python tools/probe_blended_anim.py --live --seek-portal
+ uv run --frozen python --live --seek-portal
 
 reports it in the `blend factors` field of the census line for that level, and the run's `fieldenv`
 line then reads `blended=N`. The tool is ready; the missing input is level coverage, not
@@ -126,7 +126,7 @@ entirely open for them.
 
 ## Instrument, and the four ways its zero can be manufactured
 
-`tools/probe_blended_anim.py --selftest`, 5 cases, registered as CTest
+ --selftest`, 5 cases, registered as CTest
 `probe_blended_anim_selftest`:
 
 | case | asserts | why it exists |
@@ -175,12 +175,12 @@ bucket and contribute nothing to this issue.
 factor (`docs/findings/level-blend-factor-census.md`, 26 of 35 entries do). Selected slot 0 is
 factor `0` across all 739 animations, so the route has to reach a level *and* let its own animation
 select a nonzero slot — the authored data is necessary and not sufficient. The live assertion remains
-`blended=N, N>0` read through `tools/probe_blended_anim.py`, and **no run has produced it.**
+`blended=N, N>0` read through , and **no run has produced it.**
 
 
 ## The live route was driven, and it answers both questions with denominators (2026-09-30)
 
-`tools/probe_blended_anim.py --live --seek-portal --watch-frames 900` observed **7,580 frames one
+ --live --seek-portal --watch-frames 900` observed **7,580 frames one
 at a time**, censused **3 distinct animation-set pointer tuples**, and took **40 RAM captures —
 0 refused on the pointer cross-check, 0 produced no file**. The tool reports its own coverage:
 "40 of 7580 frames captured (0.5%); the rest are the SAME pointer tuple already censused, not

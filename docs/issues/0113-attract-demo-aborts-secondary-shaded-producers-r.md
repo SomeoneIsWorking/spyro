@@ -130,7 +130,7 @@ directional arm gives all three the same value, and this one gives each vertex i
 `Status::Additive` is gone.
 
 It was first observed being reached on 2026-09-22, at frame 9,346 of the attract-demo route
-(`tools/demo_run.py`). Until that route existed, nothing had ever reached it.
+(). Until that route existed, nothing had ever reached it.
 
 The quad billboard at `0x8002256C` is likewise still refused, as `Reason::Ft4`.
 

@@ -83,8 +83,8 @@ constexpr uint32_t kStageFnPtr7 = 0x8007567Cu;        // stage 7's function poin
 // [0x80075690] g_IsFlightLevel, [0x80075714] g_DemoMode, [0x80075918] g_Fade,
 // [0x8007570C] g_ScreenBorderEnabled.
 //
-// WHICH LAYERS NEED A 3D PRODUCER was measured by COP2 traffic over each layer's OWN body
-// (tools/field_layers.py), not over its call closure: a call-graph walk scores the hand-written
+// WHICH LAYERS NEED A 3D PRODUCER was measured by COP2 traffic over each layer's OWN body,
+// not over its call closure: a call-graph walk scores the hand-written
 // assembly particle renderer 0x800573C8 at zero because it projects and emits inline and calls
 // nothing. On SCUS_942.28 over 779 function extents the 3D backlog is FIVE layers, and two of them
 // (environment, cyclorama) bottom out in renderers this port already owns byte-exactly.

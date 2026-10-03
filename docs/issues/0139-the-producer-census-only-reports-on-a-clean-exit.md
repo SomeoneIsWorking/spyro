@@ -23,7 +23,7 @@ exits and **`reportRuntimeRun` is never reached**. No `lucent::info`/`warn` ther
 - `tools/drive.py` sends the REPL `end` (`Port.end`, `tools/drive.py:221`) → **reaches it.**
 - `tools/shot.py` sends `end` explicitly, with a comment at `tools/shot.py:124` recording that `quit`
   merely detaches and left the capture to be SIGKILLed.
-- `tools/demo_run.py` **does not.** It pops `PSXPORT_REPL` (`:60`) because nothing will speak to it,
+- **does not.** It pops `PSXPORT_REPL` (`:60`) because nothing will speak to it,
   sets no cap, and waits with `subprocess.run(..., timeout=…)`; on expiry the process is killed and
   `report(log, "outlived its N s clock — still running when it was killed")` is printed instead.
 
@@ -52,7 +52,7 @@ only because a 3,052-field gameplay run happened to be on disk.
 
 ## The exact observation that would confirm or refute this
 
-`tools/demo_run.py` with a log no run has written to before, then `grep -c "row(s); prims seen"`
+ with a log no run has written to before, then `grep -c "row(s); prims seen"`
 against it. Zero confirms the kill path; non-zero refutes this analysis and means some other route
 reaches `reportRuntimeRun`. **Not performed — no product slot was free, and running the product was
 out of scope for this session.** The static reading above stands on the code, not on a run.

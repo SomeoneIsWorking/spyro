@@ -2,9 +2,9 @@
 id: 150
 title: Two native overrides differed from retail because a nested guest call ran with the override's own `$ra`
 status: resolved
-symptom: `tools/reach_corpus.py`'s attract-demo route reported one mismatching sampled call each in `camera_collision_update` (0x80034480) and `allocate_particle_slot` (0x80053570), identically at `7d7f2eb` and at `a915b23`
+symptom: 's attract-demo route reported one mismatching sampled call each in `camera_collision_update` (0x80034480) and `allocate_particle_slot` (0x80053570), identically at `7d7f2eb` and at `a915b23`
 root_cause: `psx::cpu::dispatchGuest` runs a nested guest call with `core.r[31]` as the callee's return address, and an override calling `psx::cpu::callGuestNow` left that register holding the OVERRIDE's caller address — a value the retail body never leaves there. `allocate_particle_slot` exits with `$ra` directly; `func_8004BE4C`, called by `camera_collision_update`, spills `$ra` into a global save area that outlives the call.
-fix: `spyro::callGuestJumpedFrom` (game/core/native_execution.h) sets `$ra` to the address the guest's own `jal` at the named site leaves, and every nested call in the two overrides names its `jal`. `tools/override_call_sites.py` re-derives all 29 of those sites and their callees from the provisioned executable.
+fix: `spyro::callGuestJumpedFrom` (game/core/native_execution.h) sets `$ra` to the address the guest's own `jal` at the named site leaves, and every nested call in the two overrides names its `jal`. re-derives all 29 of those sites and their callees from the provisioned executable.
 tags: overrides,differential,attract-demo,camera,particles,call-abi
 created: 2026-09-30
 updated: 2026-10-01
@@ -12,7 +12,7 @@ updated: 2026-10-01
 
 ## The measurement that opened it
 
-`tools/reach_corpus.py`'s attract-demo route reported one mismatching sampled call each in
+'s attract-demo route reported one mismatching sampled call each in
 `camera_collision_update` and `allocate_particle_slot`, identically at `7d7f2eb` and at `a915b23`:
 
 ```
@@ -111,8 +111,8 @@ cannot move the return — `NativeExecutionScope::continuation_` is read at scop
 | `game/core/native_execution.h` | `callGuestJumpedFrom` + `kJalReturnOffset`, with the contract and both measurements |
 | `titles/spyro1/core/native_particle_alloc.cpp` | the `rand` call names its `jal` at 0x80053598 |
 | `titles/spyro1/core/native_camera.cpp` | all 28 nested calls name their `jal`; `testSphericalRow` takes a per-pass `RowCallSites` table, because the three passes are three copies of the row body at three addresses; `SpilledRegisters` now restores `$ra` as well |
-| `tools/override_call_sites.py` | the gate that re-derives every such site and its callee from the executable, with a 13-case selftest |
-| `tools/override_constants.py` | a `jal`'s own address is now an accepted constant, next to its target and its return address |
+| | the gate that re-derives every such site and its callee from the executable, with a 13-case selftest |
+| | a `jal`'s own address is now an accepted constant, next to its target and its return address |
 | `CMakeLists.txt` | `override_call_sites_selftest` |
 
 29 call sites, all verified: `native_camera.cpp` 28 over 3 overrides with 38 `jal` decoded,
@@ -129,7 +129,7 @@ is the right one here.
 
 ## The gate
 
-`tools/override_call_sites.py` reads the provisioned executable, decodes every `jal` in every
+ reads the provisioned executable, decodes every `jal` in every
 overridden function the module registers, and requires each `callGuestJumpedFrom` site's address to
 be one of those `jal`s **and** the `jal`'s target to be the callee the call passes. Its negative set
 is the set of ways to get that wrong: a `jal`'s return address where the `jal` belongs, the callee
@@ -152,7 +152,7 @@ For scale: the same route at the same shadowing rate mismatched 40 of 44,000 all
 of 6,894 camera calls before the change, and the first mismatch of each fell at sampled call 17,671
 and call 3,324 — both inside this run's denominators.
 
-* `tools/reach_corpus.py` over all six routes, re-run 2026-10-01 on `f92ae0f` plus this change:
+* over all six routes, re-run 2026-10-01 on `f92ae0f` plus this change:
   **0 mismatches across all 85 owned overrides**; `allocate_particle_slot` 320 sampled, 320 match,
   `camera_collision_update` 130 sampled, 129 match, 1 incomparable (the original path serviced an
   interrupt). Sampled, not every-call: the every-call run above is the depth measurement.

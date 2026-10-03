@@ -11,7 +11,7 @@
 //
 // EVERY REGISTER THE BODY LEAVES IS PART OF THE CONTRACT, including ones that "cannot matter". The
 // first native function in this port matched for nine calls and then diverged on $at, which no
-// host code reads across a call (I019). Each body below therefore reproduces the
+// host code reads across a call. Each body below therefore reproduces the
 // exact final register state; recorded differential evidence checks that claim on real calls.
 #include "core.h"
 #include "native_execution.h"

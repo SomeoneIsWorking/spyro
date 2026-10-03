@@ -2,7 +2,7 @@
 id: 0142
 title: The terrain-noise probe had no gameplay gate and published a terrain verdict from a boot logo
 status: open
-symptom: `tools/probe_terrain_texture_noise.py` reported "16:9 legs ground 14.3% vs buildings 19.9%
+symptom: reported "16:9 legs ground 14.3% vs buildings 19.9%
   -- coherent" for the frame it captured, and the four-leg cross that verdict belongs to was
   recorded as evidence about the pool-water defect. The captured frame was the UNIVERSAL
   INTERACTIVE boot logo.
@@ -23,7 +23,7 @@ tool exists to perform — separating the projection from the temporal pass — 
 copies of a logo**, and its conclusion ("neither enhancement causes the noise") rested on that.
 
 **This is the workspace's recorded failure mode in its purest form: an instrument returning a
-confident number about the wrong thing.** `depth_cov.py` reported "0 primitives carried depth" for
+confident number about the wrong thing.** reported "0 primitives carried depth" for
 counters it never reached; a GTE reader returned garbage with no denominator; the boot-audit printed
 an undeclared knob. Here the shape is a *plausible ratio* — 14.3 vs 19.9 is within a factor of two
 and reads as a careful measurement — computed from scenery.
@@ -63,12 +63,12 @@ was not a weak result but a result about the wrong frame.
 between two regions, and the tool says so itself — but 22.2% vs 59.0% is a ratio of 2.7, so the
 4:3 legs read "coherent" only because the buildings are *noisier* than the ground, which is not a
 statement about the ground at all. **The factor-of-two threshold is arbitrary and this measurement
-does not resolve the defect.** The pool is measured by `tools/pool_water_probe.py` instead, and that
+does not resolve the defect.** The pool is measured by instead, and that
 is the instrument to read.
 
 ## What the pool probe found when pointed at the arrival route
 
-`pool_water_probe.py` **REFUSED** every frame the gameplay route produced at settle 60, 140 and 260
+ **REFUSED** every frame the gameplay route produced at settle 60, 140 and 260
 and after holding each of down/left/right: `no connected saturated-blue region of at least 2500 px
 and at least 0.45 box aspect. Largest found: 464 to 1465 px.` **The pool is not visible on the
 arrival route.** The captured frame shows Spyro in the Artisans courtyard facing the castle gate with

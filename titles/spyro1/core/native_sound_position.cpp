@@ -74,7 +74,7 @@ constexpr std::uint32_t kFrameSlotMaskWord = 0x10093u;
 
 // The guest callees, each named by the `jal` at the call site the comment gives. A callee is the
 // 26-bit field of that instruction rather than a `lui`+immediate pair, and
-// tools/override_constants.py re-derives it from the `jal` itself.
+// an address audit re-derives it from the `jal` itself.
 constexpr std::uint32_t kProbeActiveSound = 0x80056DC4u;
 constexpr std::uint32_t kSubtractPosition = 0x8001778Cu;
 constexpr std::uint32_t kSetVectorLimit = 0x800176C8u;
@@ -86,7 +86,7 @@ constexpr std::uint32_t kMarkSlotsChanged = 0x8005C7ACu;
 constexpr std::uint32_t kPositionalStereoVolume = 0x80056C84u;
 
 // The `jal` each nested call stands for (issue 0150): the callee runs with the `$ra` that `jal`
-// leaves, and tools/override_call_sites.py re-derives every one of these and its callee from the
+// leaves, and a call-site audit re-derives every one of these and its callee from the
 // executable. The probe is called from two arms, one per mode, and the wrap from three, one per
 // record kind.
 constexpr std::uint32_t kProbeModeJal = 0x80055AE0u;

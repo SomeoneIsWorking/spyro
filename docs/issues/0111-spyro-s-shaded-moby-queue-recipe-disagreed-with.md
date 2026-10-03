@@ -66,7 +66,7 @@ rejections are counted (`TipRingBehindCamera`, `RibbonBehindCamera`) and reporte
 `PSXPORT_ACTOR_SCENE_ORACLE=1` runs retail's own moby walker (`0x80019698`, which calls
 `func_8001F158`, `0x8001F798`, `0x800208FC`, `0x80020F34`, **`0x80022A2C`**, `0x80059F8C`,
 `0x80023AC4`, `0x80059A48`, `0x80058D64`, `0x80058BA8` — `src/gamestates/draw.c:606`) over the state
-the native producers just read, and `tools/actor_oracle_diff.py` matches the two streams on the
+the native producers just read, and matches the two streams on the
 multiset of `(x, y, rgb)` vertices. The oracle now logs each native record's painter object and the
 `g_SonyImage.m_ShadedMobys` (`0x800720F4`) length at the moment the retail body is dispatched, so an
 unmatched primitive names the producer that submitted it instead of only the total.

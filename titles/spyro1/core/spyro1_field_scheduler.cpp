@@ -28,8 +28,8 @@ constexpr std::uint32_t kTitleSubState = spyro::guest::kTitlescreenState + 0x10u
 // g_CutsceneLayout (loaders.c:955, the one writer of this word in the whole image), and
 // CutsceneLayout.m_CurrentTick, its first int (external/spyro-1/include/cutscene.h:20-27).
 //
-// RECOVERED FROM SCUS_942.28, not taken on trust. tools/probe_title_card.py --static prints the
-// words: 0x80075680 has exactly ONE `lui $rX,0x8007` + `sw 0x5680($rX)` writer in all 103,936
+// RECOVERED FROM SCUS_942.28, not taken on trust. Counting the words: 0x80075680 has exactly ONE
+// `lui $rX,0x8007` + `sw 0x5680($rX)` writer in all 103,936
 // instruction words of the main image, at 0x80014A38, and SEVENTEEN `lui`+`lw` reads of it as a
 // pointer base, three of them within 0x200 bytes of the writer (0x80014A84, 0x80014AE8, 0x80014B0C)
 // -- the PATCH_POINTER of m_CameraData and the Moby-pointer loop that read it straight back. The

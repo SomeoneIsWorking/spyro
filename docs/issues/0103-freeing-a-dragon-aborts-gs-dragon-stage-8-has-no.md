@@ -418,7 +418,7 @@ the asm and has not been observed on screen either.
 ## Oracle result: the arm is right in shape and 1 unit low in R/G
 
 Actor-scene oracle on the current build (`scratch/logs/actororacle_variant1.log`, diffed with
-`tools/actor_oracle_diff.py`):
+):
 
 ```
 first 1 recoloured primitives (retail -> native):

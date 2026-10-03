@@ -8,7 +8,7 @@
 // EVERY REGISTER THE BODY LEAVES IS PART OF THE CONTRACT, including scratch ones no caller can
 // read. Two of the three below leave $at holding an intermediate, and both reproduce it: the
 // differential compares all 31 GPRs, so a body allowed to differ "where it cannot matter" makes the
-// differential meaningless. This port has been bitten by exactly that once ($at, I019) and again by
+// differential meaningless. This port has been bitten by exactly that once ($at) and again by
 // a register holding a loop value one iteration stale (spin60, C107).
 //
 // DELAY SLOTS DECIDE THE EXIT STATE. dl_link's pointer store is a branch delay slot, so the new

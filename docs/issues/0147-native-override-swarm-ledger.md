@@ -4,7 +4,7 @@ title: Native override swarm ledger — which Spyro 1 functions are owned, which
 status: open
 symptom: Spyro 1 still runs most guest code through Lightrec. Owning leaf functions natively goes
   through bounded worker jobs, one function each. Each job is accepted only by
-  tools/native_override_gate.py, which ends with psxport's override differential on the gameplay route.
+ , which ends with psxport's override differential on the gameplay route.
 tags: native,override,swarm,differential
 created: 2026-09-29
 updated: 2026-10-01
@@ -12,7 +12,7 @@ updated: 2026-10-01
 
 ## The gate
 
-`tools/native_override_gate.py <name>` runs inside the job worktree. Its docstring has the full
+ <name>` runs inside the job worktree. Its docstring has the full
 contract. It fails an unchanged tree and any change outside `game/`, `titles/`, `tests/` or
 `CMakeLists.txt`. It builds with Clang and requires format, clang-tidy and the source policy to pass,
 plus CTest without the `slow` console-oracle label. Last, it runs a headless `drive.py gameplay` with
@@ -92,7 +92,7 @@ show at least one nonzero.
 ## Route corpus (2026-09-29)
 
 One gameplay route was too narrow. It both chose what to own and gated what was owned, so any
-function it never called was neither a candidate nor gated. `tools/reach_corpus.py` now runs every
+function it never called was neither a candidate nor gated. now runs every
 route it names with two instruments armed: psxport's function-reach recorder (`PSXPORT_REACH_REPORT`,
 which records every pc the dynarec dispatches, keyed by code image) and the override differential for
 every registered override. The denominator is the 547 statically called functions in `SCUS_942.28`
@@ -168,7 +168,7 @@ frame 21158. That is the render side, not a differential result, and it was not 
 ## Round d (2026-10-01): the four held overrides, root-caused and landed
 
 All four re-derived from `SCUS_942.28` bytes and fixed at the cause; none weakened the gate. Six-route
-corpus (`tools/reach_corpus.py --routes ...`), sampled / match / mismatch: `assign_active_sound_slot`
+corpus (--routes ...`), sampled / match / mismatch: `assign_active_sound_slot`
 139/139/0, `propagate_environment_light` 142/142/0, `update_flame_burst` 189/189/0,
 `update_hud_collectables` 142/142/0. The attract-demo route still dies at frame 21158 (exit 139, issue
 0128) and loses its report; its coverage was taken separately from a clean REPL prefix of 20,500 fields:
@@ -204,7 +204,7 @@ with a proof. `tools/route_scenes.py` owns the four states, the guest words each
 input plan that reaches them; `tools/repl_walk.py` owns the press/run/release stepper the fixed
 routes already used (it moved out of `drive.py` so `route_scenes` does not have to import the
 driver that imports it); `tools/drive.py` gained `--scene` and `--scene-proof`; and
-`tools/reach_corpus.py` judges the result. A scene route writes a proof FILE and only after it
+ judges the result. A scene route writes a proof FILE and only after it
 reached its target, so the corpus can require one and fail by name — the absence of a file is the
 failure signal, and a proof left by an earlier corpus run is refused rather than counted (that
 refusal is in the corpus selftest, on four inputs: absent, present, another scene's, unreadable).
@@ -327,7 +327,7 @@ it decides whether the boss and flight scenes need new traversal at all or only 
 ### MEASURED 2026-09-30 — ALL FOUR SCENES REFUSE, AND THREE OF THE FOUR SHARE ONE CAUSE
 
 **0 of 4 scenes reached their target.** Every refusal is by name and carries the guest words it
-read; none wrote a proof file, so `reach_corpus.py` reports them missing rather than covered. One
+read; none wrote a proof file, so reports them missing rather than covered. One
 run each, product build `build/bin/spyro_port` (716/716 targets), driven through the REPL with no
 guest RAM write:
 

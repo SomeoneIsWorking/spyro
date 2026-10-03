@@ -128,7 +128,7 @@ spyro::render::FrameRenderer::drawFrame
   ├─ [reference leg]  referenceOtWalk() the guest's own render driver, unmodified
   ├─ [native leg]     prepareScene() → frame_env nativeFrameBegin
   │                   renderScene()  → one producer per field layer
-  │                                     (fx_*_submit, spyro::render::FrameRenderer::titleMenuRender,
+  │                                     (the layer submit chain, spyro::render::FrameRenderer::titleMenuRender,
   │                                      ::stage13Mode3Render)
   └─ the ONE presentation fence        spyro::render::PresentationOwner (beginGuestFrame /
                                        beginNativeFrame) through the framework's RenderQueue
@@ -264,6 +264,7 @@ A new module goes in the directory of the subsystem it belongs to; nothing lands
 | `scene.{h,cpp}` | `spyro::render` | `Scene`, `StageArm`, `FieldLayer` and the stage selectors: the field arm's layer list is the native-renderer backlog, declared once here. |
 | `presentation_owner.{h,cpp}` | `spyro` | `PresentationOwner`: per-Game statement of which producer owns the next present. |
 | `frame_env.{h,cpp}` | `spyro` | The native leg's frame open/close and display environment. |
+| `guest_actor_pool.h` | `spyro::guest_actor_pool` | SCUS_942.28's actor pool: the cursor, the end, and one record's size. Four producers read or move it, so it is stated once here rather than as a literal in each. |
 | `draw_area.h`, `producer_refusal.h`, `scene_painter_order.*`, `painter_submission_preflight.*` | `spyro` | The draw-destination check, the refusal vocabulary, and the painter order and preflight shared by producers. |
 | `gpu_packet_decode.{h,cpp}`, `guest_gte.{h,cpp}`, `guest_trig.{h,cpp}`, `gte_color_ops.h`, `projection_stream.{h,cpp}`, `scene_camera_inputs.h` | `spyro::gpu_packet_decode`, `spyro::guest_gte`, `spyro::guest_trig`, `spyro::gte_color`, `spyro` | The packet and coprocessor vocabulary and the projection sampler the producers share. |
 
@@ -277,7 +278,7 @@ A new module goes in the directory of the subsystem it belongs to; nothing lands
 | `field_environment{,_recipe,_scene}`, `field_collectables{,_recipe}`, `field_shadow{,_recipe,_submitter}`, `field_tracers{,_recipe}`, `field_particles{,_recipe}`, `field_particle_endpoint`, `field_particle_*_submitter`, `particle_sine_table.h`, `face_light_{environment,program}` | `spyro::field_*`, `spyro::face_light_*` | The remaining field layers and their derivation. |
 | `sparkle_*`, `glow_*`, `moby_shadow{,_list,_recipe,_submitter}`, `spyro_flame{,_matrix,_recipe,_submitter}` | `spyro::sparkle_*`, `spyro::glow_*`, `spyro::moby_shadow_*`, `spyro::spyro_flame_*` | The half-drawn effect layers and their recipes. |
 | `field_shaded_queue_{scene,recipe,emit,submitter}`, `shaded_moby_light` | `spyro::field_shaded_queue_*`, `spyro::shaded_light` | The world-shaded sprite queue and its GTE lighting program. |
-| `sprite_queue.{h,cpp}` | `spyro::render` | `SpriteQueueOffsetObserver` and `emitScreenQueue`: the screen-space sprite queue every screen-space producer submits through. |
+| `sprite_queue.{h,cpp}` | `spyro::render` | `SpriteQueueOffsetObserver` and `emitScreenQueue`: the screen-space sprite queue every screen-space producer submits through, and the mode-3 handler that rebuilds it. |
 | `guest_moby_visibility.cpp`, `guest_moby_{frustum,gte,rotation}.h`, `guest_render_globals.h`, `sector_visibility.{h,cpp}`, `moby_shadow_list.{h,cpp}` | `spyro::guest_moby*`, `spyro::guest_render_globals`, `spyro::sector_visibility`, `spyro::moby_shadow_list` | Native per-frame moby culling with its pure arithmetic, and the two drawn-half tables. |
 
 #### `game/render/actor/` — the actor layers
@@ -287,7 +288,10 @@ A new module goes in the directory of the subsystem it belongs to; nothing lands
 | `actor_producer`, `actor_recipe_capture`, `actor_model_codec`, `actor_prefix_builder`, `actor_transform_math`, `actor_scene_builder` | `spyro::actor_*` | The regular actor layer's guest entry point, model decode, prefix building, transform math and scene build. |
 | `actor_emit`, `actor_submission`, `actor_stage`, `actor_face_submitter`, `actor_billboard_face`, `actor_draw_recipe`, `actor_global_order`, `actor_ot_coalescer`, `actor_scene_oracle.{h,cpp}` | `spyro::actor_*`, `spyro::actor_scene_oracle` | The layer's route to the render queue: emit, preflight, publish, and the independent record oracle. |
 | `secondary_actor_{scene,recipe,emit}` | `spyro::secondary_actor_*` | The secondary layer's compose/preflight/publish owner. |
-| `paired_actor`, `paired_actor_{pose,decode,depth,color_fade}`, `paired_actor_temporal_evidence` | `spyro::paired_actor`, `spyro::paired_actor_depth`, `spyro::paired_actor_color_fade` | Spyro's own paired actor: pose decode, depth, colour fade, and the temporal evidence. |
+| `paired_actor.{h,cpp}`, `paired_actor_pose`, `paired_actor_decode`, `paired_actor_depth`, `paired_actor_color_fade`, `paired_actor_temporal_evidence`, `paired_actor_projection` | `spyro::paired_actor`, `spyro::paired_actor_projection`, `spyro::paired_actor_depth`, `spyro::paired_actor_color_fade` | The shared vocabulary of Spyro's own paired actor: the delta codec and `/16` blend, the projection three callers share, the depth rule, the colour-fade table transform, and the temporal evidence. `paired_actor.cpp` itself is the four-line composition — two pose forwarders and the two producer call sites. |
+| `paired_actor_producer` | `spyro::paired_actor_producer` | One live invocation of 0x80023AC4: decode the pose, read the guest's stream and material tables, apply the colour fade, capture the frame. Every step that cannot be satisfied refuses by name. |
+| `paired_actor_temporal` | `spyro::paired_actor` | The 60 fps half: the two captured endpoints, whether a pair may be rebuilt, the rebuild, and the per-frame lifecycle deciding which endpoint is which. `emitCapturedEndpoint` is the ONE emit both halves use. |
+| `paired_actor_selftest.cpp` | `spyro::paired_actor` | The hermetic checks over the pose codec, the projection, and the endpoint rules — the shipping rules, not a restatement of them. |
 
 #### `game/render/terrain/` — the native terrain producer
 
@@ -331,7 +335,7 @@ A new module goes in the directory of the subsystem it belongs to; nothing lands
 
 | Module | Namespace | Responsibility |
 | --- | --- | --- |
-| `field_scene_recipe`, `stage13_scene_recipe`, `cutscene_scene_recipe` | `spyro::<scene>_recipe` | The pure recipe behind each scene's native owner. |
+| `field_scene_recipe`, `stage13_scene_recipe`, `stage13_text_run`, `cutscene_scene_recipe` | `spyro::<scene>_recipe`, `spyro::stage13_text_run` | The pure recipe behind each scene's native owner, and stage 13's caption run — which string, how far along it is, and how a string becomes a row of mobys in the actor pool. |
 | `demo_text_scene`, `title_menu`, `title_menu_{recipe,state}`, `pause_menu_{recipe,scene}`, `fairy_menu_{recipe,scene}`, `level_transition_{scene,tally_recipe}` | `spyro::<scene>` and owners | Each front-end scene's native owner and its own state. |
 | `dragon_{burst,scene}_producer`, `dragon_{burst,scene}_recipe` | `spyro::dragon_*` | The dragon reward's burst star and scene producers. |
 

@@ -208,7 +208,7 @@ and looked at (684×240, 93.3% non-black, ~3,186 distinct colours — real frame
   `scratch/assets/spyro1/`, both take `--exe`/`--ovdir`/`--img`, and a missing or non-PS-X-EXE image
   is a refusal with exit 2 instead of a traceback. `writers.py` also now reports how many images it
   scanned, because a corpus that silently scanned only `MAIN` is a different and weaker answer.
-  **Not** fixed: the same stale path remains in `tools/depth_cov.py`, `tools/field_layers.py` and
+ **Not** fixed: the same stale path remains in , and
   `tools/shot.py`, which are run-artifact tools and were not on this path.
 - `writers.py`'s docstring advertised an `--img` flag the code never had.
 - The pre-arrival press rule shipped wrong on its first live run and was corrected here; recorded
@@ -220,7 +220,7 @@ and looked at (684×240, 93.3% non-black, ~3,186 distinct colours — real frame
   scanned, and they are where this title's other Start handling lives (`OV_5B800` at `0x8007AA38`
   holds the title/attract Start tests the skip map quotes). Establishing it needs an overlay
   extractor, which this repository does not have — `tools/provision_title.py` extracts the boot
-  executable only, and `tools/wad_index.py` enumerates and scores members without writing them out.
+ executable only, and enumerates and scores members without writing them out.
   This is the one place a guest-owned skip for stage 9 could still be hiding, and it is the
   unblocking action if the operator wants the question closed rather than bounded.
 - Whether `g_Camera.m_SphericalPreset == &D_8006CA84` is reachable at all. No code in the resident

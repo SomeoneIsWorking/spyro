@@ -10,7 +10,7 @@ updated: 2026-09-19
 
 ## Symptom
 
-`tools/actor_oracle_diff.py` over a seeked Artisans capture reports a steady 9–15% depth
+ over a seeked Artisans capture reports a steady 9–15% depth
 disagreement rate across every frame of the walk, with the same worst pair recurring:
 
 ```
@@ -29,7 +29,7 @@ Reproduce:
 python3 tools/drive.py gameplay --seek-class 83 \
   --env PSXPORT_ACTOR_SCENE_ORACLE=1 --env PSXPORT_ACTOR_SCENE_ORACLE_CLASS=355 \
   --debug actororacle --log scratch/logs/gem-depth.log
-python3 tools/actor_oracle_diff.py scratch/logs/gem-depth.log
+python3 scratch/logs/gem-depth.log
 ```
 
 ## Why this is a port fault and not a granularity artefact
@@ -82,11 +82,11 @@ A user reported "Spyro looks like gems that should be behind terrain rendering o
 Chasing that symptom produced a new measurement of THIS issue: the same instrument, the same shape
 of disagreement, and this time the worst pair is a GEM.
 
-Do not treat 0120 as a duplicate of this issue. `actor_oracle_diff.py` walks retail's moby list and
+Do not treat 0120 as a duplicate of this issue. walks retail's moby list and
 cannot see terrain, so it can say nothing about an actor sorting against terrain -- which is what
 0120 reproduces at the framebuffer. The two may share a cause; nothing measured so far says they do.
 
-`tools/actor_oracle_diff.py` over `replays/gameplay/artisans-arrival.pad`, last of 220 oracle frames:
+ over `replays/gameplay/artisans-arrival.pad`, last of 220 oracle frames:
 
 ```
 comparable ordered pairs : 174417
@@ -250,5 +250,5 @@ the bin agreement has not fixed this and should be rejected.
 
 Run it with:
 
-    tools/actor_oracle_diff.py <log> --frame -1
-    tools/actor_oracle_diff.py --selftest x    # proves the report shows BOTH answers
+ <log> --frame -1
+ --selftest x # proves the report shows BOTH answers

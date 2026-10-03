@@ -247,7 +247,7 @@ This is an observation and not a gate, and it is not this issue's close. The use
 the attract demo takes. Four causes on this route are fixed at their causes; whether the crash the
 user saw was one of them is not established by an agent run that no longer reproduces it. See C228.
 
-`tools/demo_run.py` printed that survival as `[demo] REFUSED: ... timed out after 900 seconds` and
+ printed that survival as `[demo] REFUSED: ... timed out after 900 seconds` and
 nothing else, which is a diagnostic lying in the other direction — the outcome the route exists to
 produce, reported as a tool failure. It now reports both endings with the same census.
 
@@ -263,7 +263,7 @@ produce, reported as a tool failure. It now reports both endings with the same c
 
 ## 2026-10-01: frame 21,158 on the attract route — the regular layer asked for a program it does not have
 
-The 2026-09-22 observation above (900 s, no refusal) does not hold on main `7110d4f`: `tools/demo_run.py`
+The 2026-09-22 observation above (900 s, no refusal) does not hold on main `7110d4f`: 
 with no input exits 139 at frame 21,158 on a native render refusal. Whether that is a regression since
 2026-09-22 or a route that moved is NOT bisected (no earlier build was made).
 
@@ -346,10 +346,10 @@ with its model ABR, opaque quad stays `0x3C` with no semi flag, a semi quad beco
 the orange wing membranes with the blue/green background visible through them. Which model faces the 22 are was not
 checked against the model's own indices; the wing identification is from the picture, not from the bytes.
 
-**Result.** `tools/demo_run.py` (no input) passes 21,318 and was still running when its 900 s clock killed it:
+**Result.** (no input) passes 21,318 and was still running when its 900 s clock killed it:
 816 gate lines with `semi=` above zero, 64,459 `refusal=none => PASS`, zero `=> FAIL`, zero `NOT IMPLEMENTED`
 (same shape as the 2026-09-22 observation, which had not held on `7110d4f`). Not a clean exit and not a proof of the
-user's crash. `reach_corpus.py`: the attract-demo route now exits 0 (was 139), 90 owned overrides, 0 mismatches
+user's crash. : the attract-demo route now exits 0 (was 139), 90 owned overrides, 0 mismatches
 across 86 gated rows, union 367/547; four scene routes (flight, boss, death, save-fairy) exit 2 with "portal ...
 unreachable from here", identical on main `1a7371d` for flight-level, so unrelated. `drive.py gameplay` reaches
 GS_Playing at frame 6,360.

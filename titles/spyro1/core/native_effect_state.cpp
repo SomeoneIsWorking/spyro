@@ -108,7 +108,7 @@ constexpr std::uint32_t kExpectedCameraType = 0x80000009u;
 constexpr std::uint32_t kSurfaceProbeReturn = kUpdateGroundShadow + 0x174u;
 
 // The callees, each named by the `jal` at the call site the comment gives. A callee is the 26-bit
-// field of that instruction rather than a `lui`+immediate pair, and tools/override_constants.py
+// field of that instruction rather than a `lui`+immediate pair, and the address audit
 // re-derives it from the `jal` itself. The first seven are owned natively already; the two that
 // are not are reached only through this gate.
 constexpr std::uint32_t kVecNull = 0x800176F0u;
@@ -122,7 +122,7 @@ constexpr std::uint32_t kSurfaceProbe = 0x8004D5ECu; // func_8004D5EC
 constexpr std::uint32_t kSmoothHeadLook = 0x80049880u;
 
 // The `jal` each nested call in update_flame_burst stands for (issue 0150): the callee runs with
-// the `$ra` that `jal` leaves, and tools/override_call_sites.py re-derives every site and its
+// the `$ra` that `jal` leaves, and a call-site audit re-derives every site and its
 // callee from the executable. Two of the callees are reached from more than one site, one per arm.
 constexpr std::uint32_t kVecNullBlockedJal = 0x80049A08u;
 constexpr std::uint32_t kVecNullJal = 0x80049DBCu; // the arm, the reset and the mode-2 arm share it

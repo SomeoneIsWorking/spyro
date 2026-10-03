@@ -3,7 +3,7 @@
 //
 // One PsyQ libspu entry, reached once per boot from the SPU init routine at 0x8005BB78 with the
 // guest's own SPU IRQ routine. It is held by the override differential on the artisans-walk route
-// (tools/native_override_gate.py).
+// .
 #pragma once
 
 #include "core.h"

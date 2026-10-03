@@ -116,7 +116,7 @@ that process changed a conclusion are called out.
 ### The VSync query counter is measured, not inherited
 
 `0x8005956C` does not read a register; it reads a **pointer** and dereferences it. `lui`+displacement
-reaches `0x80069F28` and `0x80069F2C`, and `tools/probe_guest_word.py` resolves them to three and
+reaches `0x80069F28` and `0x80069F2C`, and resolves them to three and
 two access sites, **every one of them a `lw` inside VSync and its timeout helper**. No instruction
 in the resident text stores either word, so their values are the image's own initialised data —
 which is inside the mapped text range, because this executable declares `d_size == 0`. In it:
@@ -234,7 +234,7 @@ That is the same root cause the static reading reached, but the **mechanism is t
 not the in-progress word**, and the distinguishing measurement is the armed store at `0x800504CC`
 coming back zero.
 
-`tools/probe_guest_word.py` over the authenticated image gives the whole access set, and every
+ over the authenticated image gives the whole access set, and every
 resolved site is in this loader apart from one, so the word is the loader's and not a coincidence:
 
 | word | accesses | what it is |
@@ -453,7 +453,7 @@ dispatches. Nothing in the 15 upstream commits moved this title's behaviour.
 
 **Pre-rebase, for comparison:** build 324 targets, ctest **110 of 110**, format 386/386, source
 policy 498 files / 344 product paths, `GS_Playing at frame 6380`. The deltas are entirely upstream's
-— `93b49f1` added the shared field owner, its tests and `probe_guest_word.py`; `route_trace` and the
+— `93b49f1` added the shared field owner, its tests and ; `route_trace` and the
 remaining commits added their own.
 
 **The oracle contention, recorded rather than deleted.** While `heavy.py` still queued behind other

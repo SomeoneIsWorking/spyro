@@ -5,7 +5,7 @@
 // the decompilation carries as a listing with no C body for these entries: the retail disassembly
 // is the only authority for what they do. Each function here replaces the guest body of the same
 // address and is held by the override differential (psxport docs/issues/0138):
-// tools/native_override_gate.py.
+// the override differential.
 #pragma once
 
 #include "core.h"

@@ -28,7 +28,7 @@ the obstacle:
   another agent had already extracted to `scratch/wad_census/`, so the corpus is authenticated against
   the disc rather than trusted from a peer. `tools/provision_title.py` was NOT re-run and
   `scratch/assets/spyro1/` was not touched.
-- `tools/wad_index.py` enumerates 79 index entries and scores 36 of them >= 90% on its code-opcode
+- enumerates 79 index entries and scores 36 of them >= 90% on its code-opcode
   share. Those 36 are the corpus: **501,760 aligned words**.
 
 The load base is `0x8007AA38`, and it is a claim that was checked rather than assumed:
@@ -39,7 +39,7 @@ The load base is `0x8007AA38`, and it is a claim that was checked rather than as
   that base, entry 2 (the `OV_5B800` title overlay) matches **3584/3584 words, 100.0%**. Four archived
   dumps show the same base carrying five different overlays at 97.5-99.9%, each deficit one
   contiguous tail run. The overlay formula is a DIFFERENT formula from the main image's and was not
-  copied from it; `tools/overlay_image.py` imports `probe_guest_disasm` for the executable, for the
+ copied from it; imports `probe_guest_disasm` for the executable, for the
   reason `tools/decomp_image.py` gives.
 - Every site this issue quotes was compared with the live dump and matches byte-for-byte.
 
@@ -109,7 +109,7 @@ worthless without knowing the instrument can say no.
   real bugs: it started at the instruction *after* the `andi` (always landing on the following
   branch, which it correctly refuses to cross), and it did not skip non-writing instructions, so the
   `nop` in a branch delay slot ended the run. Fixed; the site count then matched `0x8007AC48` and
-  `0x8007B88C` by hand. `tools/overlay_image.py --selftest` now pins the known-good word, the
+ `0x8007B88C` by hand. --selftest` now pins the known-good word, the
   discriminating wrong base, and both main-image positive controls.
 - **A Python precedence bug hid a 100% residency match as 0.03%.** `ARENA_BASE & 0x1FFFFF + k*4` is
   `ARENA_BASE & (0x1FFFFF + k*4)` — right for `k == 0`, wrong for every word after — and the tool

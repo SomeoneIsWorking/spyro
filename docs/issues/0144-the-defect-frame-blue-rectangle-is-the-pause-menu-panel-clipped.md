@@ -110,7 +110,7 @@ front-list `AddPrim`, the prim cursor advanced by 6 + 5·n words. Two things are
 **drawn** space, and the panel's vertices are emitted under
 `RenderQueue::Space2dScope(RQ_2D_AUTHORED_4_3)`, which **centres** rather than stretches — so at
 16:9 the vertices reach 458 while the clip still says 372. The 4:3 control, where the margin is 0
-and the two spaces coincide, is unaffected. Measured with `tools/overlay_extent.py`:
+and the two spaces coincide, is unaffected. Measured with :
 
 | leg | settings | presents | panel on | painted span | own extent |
 |---|---|---|---|---|---|
@@ -156,7 +156,7 @@ what put the rectangle on the screen.
 
 `pause2.png` and `pause3.png` (no rectangle) and `pause-final.png` and `field-16x9-interp.png`
 (rectangle) are the **same gamestate one present apart**. Measured over consecutive presents with
-`tools/drive.py --preseq` and read by `tools/overlay_extent.py`:
+`tools/drive.py --preseq` and read by :
 
 - the panel is submitted on **33 of 33** menu frames (`pause-menu: frameCounter=1..33`, all
   `gui=1`), and `PSXPORT_PRIMRGB` finds it on **every** census frame from 3460 to 3503;
@@ -190,7 +190,7 @@ display origin is 240 the quad is rasterised into the other buffer's rows. **I d
 
 ## What would settle it
 
-1. **D1's fix, measured:** after the queue-side clip transform lands, `tools/overlay_extent.py` over
+1. **D1's fix, measured:** after the queue-side clip transform lands, over
    a 16:9 `--preseq` strip must report span 232 on every present that carries the panel. Anything
    less is a partial fix.
 2. **D2's fix, measured:** `PSXPORT_PRIMRGB` over the pause route must then match `rgb(0,16,132)`±24
@@ -211,13 +211,13 @@ display origin is 240 the quad is rasterised into the other buffer's rows. **I d
     uv run --frozen python tools/drive.py gameplay --tap start --after 60 \
         --preseq 8 --preseq-dir scratch/sheet/strip \
         --debug render --env PSXPORT_PRIMRGB=0,56,192
-    uv run --frozen python tools/overlay_extent.py scratch/sheet/strip/p*.ppm
+ uv run --frozen python scratch/sheet/strip/p*.ppm
 
     # 4:3 control, same route
     rm -rf scratch/sheet/strip43 && mkdir -p scratch/sheet/strip43
     uv run --frozen python tools/drive.py gameplay --settings tools/narrow_only_control_settings.ini \
         --tap start --after 60 --preseq 16 --preseq-dir scratch/sheet/strip43
-    uv run --frozen python tools/overlay_extent.py scratch/sheet/strip43/p*.ppm
+ uv run --frozen python scratch/sheet/strip43/p*.ppm
 
     # the layer mute
     rm -rf scratch/sheet/stripnohud && mkdir -p scratch/sheet/stripnohud
@@ -242,6 +242,6 @@ stopgap was drafted and not landed without approval.
 `RenderQueue::emitOrQueue` now carries the `da_*` clip through the same `Rq2dXform` as the vertices
 (psxport `tests/test_rq_2d_clip.cpp`: 4:3 identity, 16:9 clip = `[shift, 372+shift]`, red before the
 fix). Measured at 16:9 with `drive.py gameplay --tap start --after 60 --preseq 8 --env
-PSXPORT_PRIMRGB=0,56,192` and `tools/overlay_extent.py`: the panel spans **columns 226..457, 232 of
+PSXPORT_PRIMRGB=0,56,192` and : the panel spans **columns 226..457, 232 of
 232**, on every present that carries it (4 of 8, peak 118.6). The 4-of-8 presence is the pre-existing
 alternation measured at both aspects in §4's table and is not part of D1.

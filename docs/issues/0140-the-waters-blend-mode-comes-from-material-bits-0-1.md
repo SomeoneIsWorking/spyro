@@ -72,7 +72,7 @@ The authored material bits 0..1 of real pool-water faces, read from the disc:
 - **If any water face sets bits 0..1** — the port blends it in a mode the guest never asked for, and
   that is a real visual defect that the colour fix does not address.
 
-`tools/census_level_blend.py` already walks the same `WAD.WAD` records and the same `materialWord`
+ already walks the same `WAD.WAD` records and the same `materialWord`
 field, so this is one added histogram over data already parsed.
 
 **Falsifier:** a water face with `(materialWord & 3) != 0` in the provisioned data refutes "the two

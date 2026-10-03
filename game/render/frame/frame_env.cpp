@@ -52,6 +52,7 @@
 #include "frame_env.h"
 #include "core.h"
 #include "gpu_native_internal.h"
+#include "guest_actor_pool.h"
 #include "guest_call.h"
 #include "spyro1_field_scheduler.h"
 #include <cstdlib>
@@ -69,8 +70,6 @@ constexpr uint32_t kEnvPoolPtrOfs = 0x70u;
 constexpr uint32_t kEnvOtPtrOfs = 0x74u;
 constexpr uint32_t kEnvFrontPtrOfs = 0x78u;
 constexpr uint32_t kPoolBase = 0x800757B0u;
-constexpr uint32_t kPoolEnd = 0x800756FCu;
-constexpr uint32_t kPoolCursor = 0x80075710u;
 constexpr uint32_t kPoolLimit = 0x80075780u;
 constexpr uint32_t kOtBase = 0x80075820u;
 constexpr uint32_t kFrontList = 0x8007581Cu;
@@ -190,8 +189,8 @@ std::uint32_t spyro::render::frameBegin(Core *c) {
   c->mem_w32(kFrontList, c->mem_r32(env + kEnvFrontPtrOfs));
   c->mem_w32(kPoolBase, pool);
   c->mem_w32(kPacketCount, 0);
-  c->mem_w32(kPoolEnd, actor_end);
-  c->mem_w32(kPoolCursor, actor_end);
+  c->mem_w32(spyro::guest_actor_pool::kEndAddress, actor_end);
+  c->mem_w32(spyro::guest_actor_pool::kCursorAddress, actor_end);
   c->mem_w32(kPoolLimit, actor_end);
   c->mem_w32(kActiveEnvPtr, env);
   psx::cpu::dispatchGuestToReturn0(*c,

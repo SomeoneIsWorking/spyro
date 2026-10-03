@@ -15,11 +15,13 @@
 #include "core.h"
 #include "frame_renderer.h"
 #include "game.h"
+#include "guest_actor_pool.h"
 #include "paired_actor.h"
 #include "producer_scope.h"
 #include "proj_params.h"
 #include "render_queue.h"
 #include "runtime_run.h"
+#include "stage13_text_run.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -31,16 +33,13 @@ void gte_write_ctrl(uint32_t reg, uint32_t v);
 
 namespace {
 
+using spyro::guest_actor_pool::kCursorAddress;
+using spyro::guest_actor_pool::kEndAddress;
+using spyro::guest_actor_pool::kRecordSize;
+
 constexpr uint32_t kQueue = 0x800720F4u;
 constexpr uint32_t kMeshTable = 0x80076378u;
-constexpr uint32_t kPoolCursor = 0x80075710u;
-constexpr uint32_t kPoolEnd = 0x800756FCu;
-constexpr uint32_t kStage13State = 0x80078D7Cu;
-constexpr uint32_t kStage13Timer = 0x80078D80u;
-constexpr uint32_t kStage13Text = 0x80078D94u;
-constexpr uint32_t kContinueFlag = 0x80078E78u;
 constexpr uint32_t kGuestProducer = 0x80022A2Cu;
-constexpr uint32_t kActorSize = 0x58u;
 constexpr uint32_t kQueueCapacity = 256u;
 // SCUS_942.28 0x800232A8 branches to 0x80023958 after the last queue entry. That exit arm writes
 // these values to CR24/25 at 0x8002395C/64 before continuing with the queue tail. They are not a
@@ -171,75 +170,17 @@ uint32_t flat_colour(Core *c, uint32_t actor_flags, uint32_t normal) {
   return colour;
 }
 
-void zero_actor(Core *c, uint32_t actor) {
-  for (uint32_t o = 0; o < kActorSize; o += 4u) {
-    c->mem_w32(actor + o, 0);
-  }
-}
-
-void build_text(Core *c,
-                uint32_t string,
-                int32_t &x,
-                const int32_t pos[3],
-                const int32_t scale[3],
-                int32_t digit_advance,
-                uint8_t style) {
-  bool previous_digit_or_punct = true;
-  for (uint32_t p = string; c->mem_r8(p); ++p) {
-    const uint8_t ch = c->mem_r8(p);
-    if (ch == 0x20u) {
-      x += (scale[0] * 3) / 4;
-      previous_digit_or_punct = true;
-      continue;
-    }
-    uint32_t actor = c->mem_r32(kPoolCursor) - kActorSize;
-    c->mem_w32(kPoolCursor, actor);
-    zero_actor(c, actor);
-    c->mem_w32(actor + 0x0Cu, (uint32_t)x);
-    c->mem_w32(actor + 0x10u, (uint32_t)pos[1]);
-    c->mem_w32(actor + 0x14u, (uint32_t)pos[2]);
-    if (ch == 0x21u || ch == 0x3Fu) {
-      previous_digit_or_punct = true;
-    }
-    if (!previous_digit_or_punct) {
-      c->mem_w32(actor + 0x10u, (uint32_t)((int32_t)c->mem_r32(actor + 0x10u) + scale[1]));
-      c->mem_w32(actor + 0x14u, (uint32_t)scale[2]);
-    }
-    uint16_t mesh = 0x4Cu;
-    if (ch >= '0' && ch <= '9') {
-      mesh = (uint16_t)(ch + 0xD4u);
-    } else if (ch >= 'A' && ch <= 'Z') {
-      mesh = (uint16_t)(ch + 0x169u);
-    } else if (ch == '!') {
-      mesh = 0x4Bu;
-    } else if (ch == '?') {
-      mesh = 0x116u;
-    } else if (ch == '.') {
-      mesh = 0x147u;
-    } else if (ch != ',') {
-      c->mem_w32(actor + 0x10u,
-                 (uint32_t)((int32_t)c->mem_r32(actor + 0x10u) - (scale[0] * 2) / 3));
-    }
-    c->mem_w16(actor + 0x36u, mesh);
-    c->mem_w8(actor + 0x47u, 0x7Fu);
-    c->mem_w8(actor + 0x4Fu, style);
-    c->mem_w8(actor + 0x50u, 0xFFu);
-    x += previous_digit_or_punct ? digit_advance : scale[0];
-    previous_digit_or_punct = ch >= '0' && ch <= '9';
-  }
-}
-
 void append_pending_actors(Core *c) {
   uint32_t qi = 0;
   while (qi < kQueueCapacity && c->mem_r32(kQueue + qi * 4u)) {
     ++qi;
   }
-  uint32_t p = c->mem_r32(kPoolCursor), end = c->mem_r32(kPoolEnd);
+  uint32_t p = c->mem_r32(kCursorAddress), end = c->mem_r32(kEndAddress);
   while (p != end && qi < kQueueCapacity) {
     c->mem_w32(kQueue + qi++ * 4u, p);
-    p += kActorSize;
+    p += kRecordSize;
   }
-  c->mem_w32(kPoolCursor, p);
+  c->mem_w32(kCursorAddress, p);
   if (qi < kQueueCapacity) {
     c->mem_w32(kQueue + qi * 4u, 0);
   } else {
@@ -362,7 +303,8 @@ bool spyro::render::emitScreenQueue(Core &core, SpriteQueueOffsetObserver *obser
         macb = (int32_t)gte_read_data(24);
         visible = macb < 0;
       }
-      if (cfg_str("PSXPORT_SPRITE_QUEUE_FACE_TRACE") && (int32_t)c->mem_r32(kStage13Timer) == 171) {
+      if (cfg_str("PSXPORT_SPRITE_QUEUE_FACE_TRACE") &&
+          (int32_t)c->mem_r32(spyro::stage13_text_run::kTimerAddress) == 171) {
         lucent::info("spriteface",
                      "leg=native qi={} mesh={} pi={} packed={:08X} count={} "
                      "sxy={}:{};{}:{};{}:{};{}:{} maca={} macb={} visible={}",
@@ -462,8 +404,8 @@ bool spyro::render::emitScreenQueue(Core &core, SpriteQueueOffsetObserver *obser
                 "{},quad {}) culled=(tri {},quad {}; nclip {},{} depth {},{}) rejected_world={} "
                 "rejected_variant={} bbox=({},{})..({},{})",
                 spyro::runtimeRun(*c).fields(),
-                c->mem_r32(kStage13State),
-                (int32_t)c->mem_r32(kStage13Timer),
+                c->mem_r32(spyro::stage13_text_run::kStateAddress),
+                (int32_t)c->mem_r32(spyro::stage13_text_run::kTimerAddress),
                 emitted,
                 candidate_tri,
                 candidate_quad,
@@ -490,7 +432,8 @@ bool spyro::render::emitScreenQueue(Core &core, SpriteQueueOffsetObserver *obser
 namespace {
 
 void trace_reference_faces(Core *c) {
-  if (!cfg_str("PSXPORT_SPRITE_QUEUE_FACE_TRACE") || (int32_t)c->mem_r32(kStage13Timer) != 171) {
+  if (!cfg_str("PSXPORT_SPRITE_QUEUE_FACE_TRACE") ||
+      (int32_t)c->mem_r32(spyro::stage13_text_run::kTimerAddress) != 171) {
     return;
   }
   uint64_t records = 0, candidates = 0;
@@ -586,50 +529,9 @@ void trace_reference_faces(Core *c) {
 
 bool spyro::render::FrameRenderer::stage13Mode3Render() const {
   Core *c = mC;
-  const uint32_t original_pool = c->mem_r32(kPoolCursor);
-  const uint32_t state = c->mem_r32(kStage13State);
-  const int32_t timer = (int32_t)c->mem_r32(kStage13Timer);
-  if (state == 2u && timer > 0x8B) {
-    int32_t x = 0;
-    const int32_t pos[3] = {0, 0x78, 0x1400};
-    const int32_t scale[3] = {0x0E, 1, 0x1600};
-    int32_t stop = 0;
-    const uint32_t text = c->mem_r32(kStage13Text);
-    if (text == 0u) {
-      x = 0x5C;
-      build_text(c, 0x80010CF0u, x, pos, scale, 0x10, 0x0B);
-      stop = 0xB8;
-    } else if (text == 1u && c->mem_r8(kContinueFlag) == 0u) {
-      x = 100;
-      build_text(c, 0x80010D28u, x, pos, scale, 0x10, 0x0B);
-      stop = 0xB6;
-    } else if (text == 1u) {
-      x = 0x50;
-      build_text(c, 0x80010D0Cu, x, pos, scale, 0x10, 0x0B);
-      stop = 0xBC;
-    } else {
-      x = 0x68;
-      build_text(c, 0x80010D40u, x, pos, scale, 0x10, 0x0B);
-      stop = 0xB2;
-    }
-    if (timer < stop) {
-      c->mem_w32(kPoolCursor,
-                 c->mem_r32(kPoolCursor) + (uint32_t)(((stop - timer) >> 1) * (int32_t)kActorSize));
-    }
-    uint32_t actor = original_pool - kActorSize;
-    for (int32_t i = 0; (int32_t)actor >= (int32_t)c->mem_r32(kPoolCursor);
-         ++i, actor -= kActorSize) {
-      const int32_t phase = timer - (i + 0x8C);
-      uint8_t value;
-      if (phase < 0x38) {
-        value = (uint8_t)(phase * 8 + 0x40);
-      } else {
-        const uint32_t angle = (uint32_t)(timer * 4 + i * 12) & 0xFFu;
-        value = (uint8_t)(c->mem_r16(0x8006CC78u + angle * 2u) >> 7);
-      }
-      c->mem_w8(actor + 0x46u, value);
-    }
-  }
+  const uint32_t originalPool = c->mem_r32(kCursorAddress);
+  const uint32_t state = c->mem_r32(spyro::stage13_text_run::kStateAddress);
+  spyro::stage13_text_run::present(c, originalPool);
 
   // The handler clears both draw-env background colours, then rebuilds the request queue.
   for (uint32_t a :

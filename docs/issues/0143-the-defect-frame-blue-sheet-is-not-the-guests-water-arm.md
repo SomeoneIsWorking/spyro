@@ -60,7 +60,7 @@ scanline. A sheet lying on the courtyard floor cannot tint the wall above its ow
 
 ## 2. The guest's water arm is DEAD in this level
 
-`tools/pool_viewpoint.py` walks the resident level's own sector list and reads every low-poly chunk
+ walks the resident level's own sector list and reads every low-poly chunk
 with the port's field layout (`game/render/world/world_chunk_codec.cpp:44`). Over **178 of 178** sectors,
 **1783 faces**:
 
@@ -83,7 +83,7 @@ camera.
 
 **SUPERSEDED IN SCOPE, 2026-09-28, by `docs/issues/0145`.** "Dead in this level" was correct and was
 not the whole question. Censusing every level DATA entry in `WAD.WAD`
-(`tools/census_level_face_material.py`) finds **1,592 translucent faces across 6 of 35 levels**, the
+() finds **1,592 translucent faces across 6 of 35 levels**, the
 largest population in level 17 (levelId 35, CRYSTAL FLIGHT) at 494 of 3,341 faces across 95 of its
 219 sectors. **The arm is live code in this game and unreachable only in Artisans' Home** -- so the
 fix is verifiable on a level nobody has driven to yet, and 0143's zero stands as a correct
@@ -135,7 +135,7 @@ exists to test, and the high-poly path reads a different field entirely
   constant-colour composite **and** that it is not the primitive `c229e45` changed.
 - **Not an attribution of the rectangle.** No producer is named for it. `func_80018F30` (two POLY_F4,
   front list, `g_ScreenBorderEnabled`, `D_800756C0 border bar height`) and `func_8001860C` (DR_MODE +
-  POLY_F4 + 4 lines) are the two screen-space candidates `tools/probe_field_2d_layer.py` names, and
+ POLY_F4 + 4 lines) are the two screen-space candidates names, and
   neither has been muted and tested. `PSXPORT_MUTE_FN` is the instrument.
 - **Not a claim about other levels.** Artisans is level 10 (`src/gamestates/init.c:222`). A level
   whose geometry does carry material bit 2 would exercise the fixed arm, and this census says nothing
@@ -153,4 +153,4 @@ exists to test, and the high-poly path reads a different field entirely
    (one 80-frame strip of 1200 fields at the arrival viewpoint, plus six repeats) produced it.
 3. The census of §2 re-run over `WAD.WAD`'s other level entries, to say whether ANY Spyro 1 level
    carries a face with material bit 2. That is the question `c229e45` actually needs answered, and
-   `tools/pool_viewpoint.py`'s reader already walks the resident form of it.
+ 's reader already walks the resident form of it.

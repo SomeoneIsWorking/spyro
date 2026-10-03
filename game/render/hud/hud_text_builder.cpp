@@ -1,6 +1,7 @@
 #include "hud_text_builder.h"
 
 #include "core.h"
+#include "guest_actor_pool.h"
 
 namespace spyro::hud_text {
 namespace {
@@ -35,7 +36,6 @@ constexpr std::uint32_t kCosineTable = 0x8006CC78u;
 
 // g_HudMobys. GamestateDraw points it at the transient pool's far end each frame and every builder
 // walks it DOWNWARD, so it is a bump allocator running backwards, not an array base.
-constexpr std::uint32_t kHudMobyCursor = 0x80075710u;
 
 constexpr std::uint32_t kRamBegin = 0x80010000u;
 constexpr std::uint32_t kRamEnd = 0x80200000u;
@@ -136,7 +136,7 @@ layoutCaption(std::string_view text, Point3 position, Point3 spacing, std::int32
 // The arena grows downward into the transient pool, so a string fits only when the cursor is inside
 // RAM and has that many bytes left below it.
 bool fits(Core *core, std::size_t glyphCount) {
-  const std::uint32_t cursor = core->mem_r32(kHudMobyCursor);
+  const std::uint32_t cursor = core->mem_r32(spyro::guest_actor_pool::kCursorAddress);
   const std::uint64_t bytes = (std::uint64_t)glyphCount * kMobySize;
   return cursor >= kRamBegin && cursor < kRamEnd && bytes <= cursor - kRamBegin;
 }
@@ -147,7 +147,7 @@ std::vector<std::uint32_t> append(Core *core, const Layout &layout, std::uint8_t
   if (!fits(core, layout.glyphs.size())) {
     return written;
   }
-  std::uint32_t moby = core->mem_r32(kHudMobyCursor);
+  std::uint32_t moby = core->mem_r32(spyro::guest_actor_pool::kCursorAddress);
   written.reserve(layout.glyphs.size());
   for (const Glyph &glyph : layout.glyphs) {
     moby -= kMobySize;
@@ -163,7 +163,7 @@ std::vector<std::uint32_t> append(Core *core, const Layout &layout, std::uint8_t
     core->mem_w8(moby + kRenderRadius, 0xFFu);
     written.push_back(moby);
   }
-  core->mem_w32(kHudMobyCursor, moby);
+  core->mem_w32(spyro::guest_actor_pool::kCursorAddress, moby);
   return written;
 }
 

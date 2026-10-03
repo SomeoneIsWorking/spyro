@@ -95,7 +95,7 @@ advanced once per field, and proposed `FieldOwnerFacts::displayCounter` for it; 
 is **removed** — the owner holds no writable counter word for it, and `psxport`'s host field clock
 is what advances the timer the query answers with.
 
-`0x80066394` was considered and rejected as a field counter: `tools/probe_guest_word.py` finds
+`0x80066394` was considered and rejected as a field counter: finds
 exactly one access to it, at `0x80057FB8`, which is libcd's own internal.
 
 **No guest field-counter word is claimed for this title.** `FieldOwnerFacts::fieldCounter` is 0
@@ -107,7 +107,7 @@ the framework's own interrupt path resumes. Both are stated rather than invented
 ## 3. THE FRONTIER — the CD completion the framework's synchronous read never raises
 
 The boot reaches the module load at `0x80013810` and stops there. The loader's state is three words
-in the image's arena, and `tools/probe_guest_word.py` gives their whole access set:
+in the image's arena, and gives their whole access set:
 
 | word | accesses | owner |
 |---|---|---|
@@ -218,7 +218,7 @@ that is a diagnostic budget and is not product evidence.
 
 ## 5. Measurement instrument, and the defect it had
 
-`tools/probe_guest_word.py` answers "which instruction reads or writes this guest word" over a
+ answers "which instruction reads or writes this guest word" over a
 mapped image, because the word is reached by `lui`+displacement and a literal scan reports nothing
 while reading as "no accesses".
 

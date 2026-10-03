@@ -6,6 +6,7 @@
 #include "fps60.h"
 #include "game.h"
 #include "paired_actor_depth.h"
+#include "paired_actor_temporal.h"
 #include "scene_painter_order.h"
 #include "spyro_context.h"
 #include "temporal_scene.h"

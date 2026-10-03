@@ -51,7 +51,7 @@ constexpr std::uint32_t kPublishedOrderingAnchorAlt = 0x80076FDCu;
 
 // The guest leaves these bodies reach with `jal`, named for the role each one plays here and not
 // for a guessed purpose. They are full branch targets, not `lui`-formed addresses, so they are
-// spelled with a digit separator: the address audit (tools/override_constants.py) only models the
+// spelled with a digit separator: the address audit (the address audit) only models the
 // `lui` forms and would otherwise read a correct `jal` target as an unexplained address.
 // 0x80016914 is the byte fill this port already owns as `fill`, and 0x800176F0 the three-word clear
 // it already owns as `zero3`; both leave v0, v1 and every s-register untouched.

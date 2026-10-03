@@ -177,6 +177,10 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/field/moby_shadow.cpp
   game/render/field/field_tracers.cpp
   game/render/actor/paired_actor.cpp
+  game/render/actor/paired_actor_producer.cpp
+  game/render/actor/paired_actor_projection.cpp
+  game/render/actor/paired_actor_selftest.cpp
+  game/render/actor/paired_actor_temporal.cpp
   game/render/hud/screen_border.cpp
   game/render/hud/screen_fade.cpp
   game/render/field/sprite_queue.cpp
@@ -210,6 +214,7 @@ set(SPYRO_RUNTIME_SOURCES
   game/render/actor/secondary_actor_scene.cpp
   game/render/temporal/secondary_actor_temporal.cpp
   game/render/scene/stage13_scene_recipe.cpp
+  game/render/scene/stage13_text_run.cpp
   game/render/scene/title_menu_recipe.cpp
   game/render/scene/title_menu_state.cpp
   game/render/world/world_animation.cpp
@@ -525,135 +530,31 @@ if(BUILD_TESTING)
   # out with triangle because that is where a fixed Down-count ends up.
   add_test(NAME title_prompts_selftest
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/title_prompts.py --selftest)
-  # The four instruments the tick-41 divergence rests on. Each one's answer is only worth reading if
-  # the instrument can be shown to produce the OTHER answer, which is what these selftests are for —
-  # and three of the four exist because the instrument was caught being wrong first:
+  # The two probes that remain, and why they are the two. Each answer is only worth reading if the
+  # instrument can be shown to produce the OTHER answer, which is what these selftests are for:
   #   probe_guest_disasm  the file-offset formula is verified against 62,183 decoded instructions, and
   #                       its selftest carries a byte-order discriminator that must separate the two
   #                       modes, since a big-endian slip would decode plausible nonsense.
-  #   probe_emitter_predicate  re-derives the six call-site rows and all ten listing claims the moby
-  #                       census rests on FROM THE LISTING TEXT, so the census cannot quietly disagree
-  #                       with the disassembly it claims to measure.
-  #   probe_store_sites   the call-site resolver's sign extension is load-bearing: the one REAL listing
-  #                       line the console recorded has a NEGATIVE displacement, and the suite fails if
-  #                       the resolver stops sign-extending. Three decoys sit one word away, carry a
-  #                       positive displacement, or have no `lui` base at all.
-  #   probe_tick_divergence  `dist2d`/`OctDistance` against 5 listing-derived values, including both
-  #                       asymmetric arms that a swapped transcription gets wrong.
-  #   probe_level_update_dispatch  the per-level update dispatch is DERIVED from the image (the switch's
-  #                       jump table, the `lui`/`addiu` pair feeding each store, the `jalr` on each
-  #                       reader) and cross-checked against external/spyro-1. Its selftest requires both
-  #                       answers -- a level id with a case body and one that shares the tail -- plus the
-  #                       derived values that must agree with the decompilation, so a derivation that
-  #                       silently stopped matching cannot pass. This is the instrument issue 0133's
-  #                       "the level update is never entered" conclusion needed and did not have.
-  #   probe_blended_anim  the census of the environment animation BLEND FACTOR, the one byte the image
-  #                       reads at 0x80025BF4 to choose INTPL/DPCS over a straight copy. Its zero is the
-  #                       load-bearing claim -- "no reachable nonzero blend factor in the levels these
-  #                       routes load" -- so the selftest covers the four ways that zero can be
-  #                       manufactured: a positive fixture that must be READ, a negative fixture that
-  #                       must read as zero, a set pointer outside the dump that must report NOT READ
-  #                       rather than zero, and an unauthored count of 0 that must scan nothing at all
-  #                       (the fixed 128-index scan that preceded it read 6 fabricated "entries" out of
-  #                       a table Artisans never authored, three carrying a nonzero factor byte).
-  #   census_level_blend  the OFFLINE census of that same blend-factor byte across every level in
-  #                       WAD.WAD, bounded by each channel's own authored count and each record's own
-  #                       base-offset word. Nine hermetic cases, and the load-bearing one is that it
-  #                       reports BOTH metrics at once: the SELECTED keyframe (the one the record's
-  #                       index byte names) and the AUTHORED table (every 8-byte slot). They disagree
-  #                       on real data -- every level authors 739 selected keyframes at factor 0 and
-  #                       47,932 of 51,042 authored keyframes at a nonzero factor -- so an
-  #                       instrument reporting only one of them could agree with a wrong conclusion
-  #                       forever. Its fixtures are built with `LoadLevelScene`'s own component
-  #                       arithmetic, so a fixture cannot pass by agreeing with itself about a
-  #                       convention the census invented. The refusal cases are the ones 0134 needed:
-  #                       a count of 0 scans nothing, a record resolving outside its entry is NOT
-  #                       READ and never factor 0, a payload claiming more than its component holds
-  #                       is flagged, a run shorter than seven has no channel attribution and is
-  #                       refused outright, and an authored count above the guest's own 0x80 index
-  #                       ceiling is refused rather than scanned.
-  #   probe_load_step  where `g_LoadStage`'s value at a checkpoint was TAKEN, decided by the image's
-  #                     own bytes: `LoadLevel`'s case 1 stores `stage + 1` at 0x800155E0, the next
-  #                     instruction is a `lui` and NOT a branch, and case 2's body writes nothing to
-  #                     `g_LoadStage` before the shared tail overwrites it at 0x800163B8 -- so stage 2
-  #                     exists only INSIDE one call and is not a resting value. The selftest re-reads
-  #                     every one of those words out of SCUS_942.28 and fails if they change, and
-  #                     requires the classifier to return the OTHER verdict on stage 1-vs-3 and on a
-  #                     differing `m_State`, so a classifier that can only ever exonerate cannot pass.
-  #                     Like `probe_guest_disasm`, it needs the provisioned image and REFUSES (exit 2)
-  #                     without it rather than passing vacuously; that refusal is the correct answer
-  #                     on a machine with no disc, not a green test.
+  # The census probes that answered ONE offline question -- which blend-factor byte any level
+  # authors, which material word any low-poly face carries -- were deleted with their answers already
+  # recorded in docs/project-state.md. What survives them is not a probe but a reusable reader:
+  # world_chunk_layout below reads the face layout out of the shipping codec instead of restating it,
+  # and that reader is gated. A question asked once is an answer; a rule that will be asked again is
+  # a gate.
+
   foreach(probe
       probe_guest_disasm
-      probe_emitter_predicate
-      probe_store_sites
-      probe_tick_divergence
-      probe_level_update_dispatch
-      probe_blended_anim
-      census_level_blend
-      #   census_level_face_material  the OFFLINE census of the material word on every low-poly
-      #                       face of every level in WAD.WAD, which is the question `c229e45`'s
-      #                       translucent arm turns on: does ANY level author a face whose material
-      #                       word has bit 2 set, the bit 0x8002651C `andi $a3,$t6,4` tests? It
-      #                       answers YES -- 1,592 of 83,401 faces across 6 of 35 levels -- so the
-      #                       arm is live in this game and unreachable only in the one resident
-      #                       level issue 0143 measured. Two things make that answer trustworthy
-      #                       rather than a plausible one. The face record's layout is EXTRACTED
-      #                       from the shipping game/render/world_chunk_codec.cpp by
-      #                       world_chunk_layout.py and refused if that text stops having the
-      #                       shape it reads, and the material bit censused is the bit
-      #                       world_lq_recipe.cpp itself tests, read from that file. And the
-      #                       selftest covers the four ways this answer could be manufactured: a
-      #                       positive fixture whose bit-2 face MUST be found, a negative over a
-      #                       corpus whose low bits span four combinations (0143's all-multiples-
-      #                       of-8 Artisans corpus could be reproduced by a broken mask), a sector
-      #                       pointer resolving outside the entry reported NOT READ rather than
-      #                       zero faces, and an authored sector count of 0 scanning nothing. The
-      #                       mis-stride case is the load-bearing one: reading past the declared
-      #                       face count FINDS bit-2 faces the narrow walk does not, so a reported
-      #                       narrow zero cannot be a runaway read in disguise.
-      census_level_face_material
-      #   world_chunk_layout  the reader the census above depends on, which reads the low-poly
-      #                       field layout out of the shipping codec instead of restating it. Its
-      #                       selftest requires four perturbed COPIES of the codec to each change
-      #                       or refuse the extracted layout, and requires the port's own
-      #                       `& 4u` translucent selector to be read from world_lq_recipe.cpp
-      #                       rather than taken on trust -- a second copy of a layout is a second
-      #                       unverified claim about the same guest bytes, and it drifts exactly
-      #                       where a re-port drifts.
+      #   world_chunk_layout  reads the low-poly face record layout out of the SHIPPING codec,
+      #                       game/render/world/world_chunk_codec.cpp, instead of restating it. Its
+      #                       selftest requires four perturbed COPIES of the codec to each change or
+      #                       refuse the extracted layout, and requires the port's own `& 4u`
+      #                       translucent selector to be read from world_lq_recipe.cpp rather than
+      #                       taken on trust -- a second copy of a layout is a second unverified
+      #                       claim about the same guest bytes, and it drifts exactly where a
+      #                       re-port drifts. This is why it stays a gate and the census that read
+      #                       through it does not: the reader is the reusable rule, the census was
+      #                       one question asked once.
       world_chunk_layout
-      # pool_water_probe measures whether the pool's per-block colour noise -- the defect the
-      # guest's discarded water colours caused -- is present in a captured frame. Its load-bearing
-      # selftest cases are the two WRONG-REGION failures this tool actually made in the wild, made
-      # permanent: a saturated blue DRAGON is larger in pixel count than the pool and is not a
-      # sheet, and a sky/gem sliver is blue and tiny. Both were measured and both produced a
-      # confident "this is the defect" verdict about something that was not in the picture. The
-      # positive case -- a broad noisy sheet IS located -- is asserted alongside them so the shape
-      # guard cannot be satisfied by refusing everything.
-      pool_water_probe
-      probe_load_stage
-      probe_load_step
-      # The HUD GLYPH reader. Its selftest is hermetic and covers the three ways the read can lie
-      # about what it was asked for -- the 64-word transport cap, a short answer, and an answer that
-      # echoes a DIFFERENT address, which is the one that bit this probe in a real run: taking the
-      # first word-list on the wire reads one request late, still returns plausible words, and put
-      # a record's fields in disagreement with a hex dump of the very same words.
-      probe_hud_glyph
-      # The TITLE CARD reader. Its selftest covers the two ways this class of report lies: a
-      # precondition reported as satisfied when it is not (five negative cases against one positive,
-      # including the exact 0xFFFF0800 m_Held word a real run produces, which a sibling probe once
-      # misread as "no button held"), and a `lui` immediate read as a low displacement -- the bug
-      # that made this file's first module map print an arena of 0x80082A40 and still agree with
-      # itself, because both of its cross-checks went through the same wrong decoder.
-      probe_title_card
-      # The SCREEN-SPACE OVERLAY EXTENT reader: how many columns of a submitted 2D quad actually
-      # reach the picture, over a strip of consecutive presents. Hermetic, and its selftest is the
-      # negative set that matters for a detector: a clean frame (ABSENT), a 13-column world glow the
-      # same statistic also fires on (not the overlay), scattered hits (not a rectangle), an overlay
-      # clipped to 146 of its own 232 columns (NARROWER, with the short span), a strip whose overlay
-      # is on 3 of 6 presents (the cadence a single screenshot cannot see), and three refusals -- no
-      # frames, a non-P6 file, a truncated PPM -- none of which may read as a clean zero.
-      overlay_extent
       # The PAUSE PANEL COLOUR RECOVERY. docs/issues/0144 shipped a panel whose colour byte was the
       # port's own 0xE0 where retail stores 0x40, and the recovery is a reaching-definition dataflow
       # over all 2,212 words of the handler: 29 writes to $s4 exist and exactly ONE of them reaches the
@@ -664,38 +565,7 @@ if(BUILD_TESTING)
       # `jr` that must refuse, the `sw` in place of the `sb`, and the perturbed immediate that must
       # move the answer. Hermetic: it builds bodies, never reads the image, so it cannot pass by
       # having a corpus.
-      probe_pause_panel_colour
-      # The swarm acceptance gate for one native override; its selftest pins the scope rule.
-      native_override_gate
-      # Override constants must be addresses the retail code computes (docs/issues/0148): the
-      # selftest pins a sign-extended table accepted and its unsigned-immediate twin refused.
-      override_constants
-      # A nested guest call runs with the `$ra` the guest's own `jal` left, so the address an
-      # override writes at a call site is the `jal` it stands for (docs/issues/0150). The gate
-      # re-derives every such site and its callee from the provisioned executable; its selftest is
-      # the negative set a "the sites are retail's" claim needs — a `jal`'s return address where
-      # the `jal` belongs, the callee of a different `jal`, a site from another function, one wrong
-      # row in a three-pass table and a table whose row count disagrees with its declaration are
-      # all refused, while an address named in a comment is prose.
-      override_call_sites
-      # The route corpus's jal-target denominator, image split, registration parse and the scene
-      # proof reader (absent / present / stale / unreadable).
-      reach_corpus
-      # The per-FIELD route trace and the first divergence between two builds' runs of one route.
-      # Its selftest is the negative set a "these two runs agree" claim needs: a log with no field
-      # lines, a field index that skips and a state line that moves backwards are all REFUSED
-      # instead of reading as an empty trace, and a truncated second log is reported as truncated
-      # rather than as agreement over the prefix.
-      route_trace
-      # The GUEST WORD reader. Its selftest is the negative set that matters for a reachability
-      # claim: an `ori`-built base, a base invalidated by a call, a base that survives a COP2 (GTE)
-      # instruction and an undefined SPECIAL encoding must all be REFUSED, because this class of
-      # report reads as a clean measurement of access when it is really a measurement of nothing.
-      # The third negative is the defect this tool had: it carried a constant across a GTE block
-      # and reported `sll` and `bltz` sites as stores over a guest word. Two positives guard the
-      # fix -- a fresh base after every barrier, and two stores through one base, which a probe
-      # that treated a store as a register clobber would report once.
-      probe_guest_word)
+      probe_pause_panel_colour)
     add_test(NAME ${probe}_selftest
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/${probe}.py --selftest)
   endforeach()

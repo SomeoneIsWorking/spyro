@@ -81,7 +81,7 @@ one settled state under two settings, which is enough because widescreen is *def
 deterministic horizontal extension about the same centre: the central 512 columns must survive, and
 the margins must contain scene.
 
-`tools/widescreen_check.py`, over psxport's `oracle/widescreen.py`:
+, over psxport's `oracle/widescreen.py`:
 
 ```
 [widescreen] narrow: native picture: aspect=0 wide_engine=0 native_width=512 render_width=512

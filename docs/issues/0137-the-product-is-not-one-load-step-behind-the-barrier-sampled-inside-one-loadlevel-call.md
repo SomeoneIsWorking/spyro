@@ -23,7 +23,7 @@ this issue names it exactly. That change is not mine to make — see "What I did
 `%lo` = **+0x5864**. It is positive: `0x80075864 - 0x80070000`. Two wrong guesses were available and
 both produce a *scanner that finds nothing* — `0x8584` addresses `0x80078584`, and reading `LUI`'s
 register out of bits 25..21 reads the field MIPS requires to be zero (a `LUI` names its register in
-bits 20..16, a `lw`/`sw` names its base in bits 25..21). `tools/probe_load_step.py --selftest` fails
+bits 20..16, a `lw`/`sw` names its base in bits 25..21). --selftest` fails
 if any of these stops being true of `SCUS_942.28`, so none of the rest of this file can go stale
 silently.
 
@@ -115,7 +115,7 @@ is a per-field sample of a value that is mid-transition by construction.
 
 ## 2. The measurement: both cores, same instruction, same registers
 
-`tools/probe_load_step.py` (new, `--selftest` 20 checks: 6 read out of the image, 14 on the
+ (new, `--selftest` 20 checks: 6 read out of the image, 14 on the
 classifier) drives both cores with the ROUTE's own `advance` and the ROUTE's own
 `_demo_owns_title` predicate, so its samples are the comparator's samples. It arms the reference's
 read-only PC observer on `LoadLevel`'s entry, on `0x800155E0`, on the shared tail `0x800163B8`, and
@@ -208,7 +208,7 @@ a given field boundary sees. The stage index is not the divergence; the sample p
 
 `load_stage` is a **step index**. Its value is stable only *between* `LoadLevel` calls, and
 `demo_level_load`'s park is a *field* boundary that can and does land inside one — the route's own
-`docs` say so, and `tools/probe_load_stage.py` argues for exactly this at length. The correct change
+`docs` say so, and argues for exactly this at length. The correct change
 is to the route's decisive set, not to the loader:
 
 * **`tools/oracle_spyro1.py:63`** declares `DeclaredRange("load_stage", G_LOAD_STAGE, 4, True)`. That
@@ -271,10 +271,10 @@ all six runs, at `aspect=1` and `aspect=3` alike.
 
 | run | result |
 |---|---|
-| `tools/probe_load_step.py --selftest` | 20/20 checks (6 image facts, 14 classifier) |
+| --selftest` | 20/20 checks (6 image facts, 14 classifier) |
 | `tools/oracle_compare.py --policy demo` | **exit 1** — `demo_level_load` `load_stage` 1 vs 2 (unchanged), `gameplay[1]` tick 702 `player.position` diverges |
 | `tools/oracle_compare.py --policy artisans` | **exit 0** — 15/15 checkpoints MATCH, 0 decisive divergences (the regression gate, still green) |
-| `ctest --test-dir build` | **90/91**. The one failure is `spyro_psxport_pin_live`, and **it was already red before this change**: at 20:44, before I reconfigured anything, it reported `framework … configured 006eb917, current 9da9e96c`; after my reconfigure (below) the same test reports `you built against 9da9e96c … but this repo records 006eb917`. Either way the cause is the same and none of it is this issue: `psxport` HEAD moved twice while this work ran and `psxport.pin` still records `006eb917`. The fix is the operator's `reconfigure -> build -> gate -> --bump`, and bumping the pin is landing, so I did not do it. This change compiles nothing — `git status` shows `tools/probe_load_step.py`, this issue, and one `add_test` line in `CMakeLists.txt` as mine. |
+| `ctest --test-dir build` | **90/91**. The one failure is `spyro_psxport_pin_live`, and **it was already red before this change**: at 20:44, before I reconfigured anything, it reported `framework … configured 006eb917, current 9da9e96c`; after my reconfigure (below) the same test reports `you built against 9da9e96c … but this repo records 006eb917`. Either way the cause is the same and none of it is this issue: `psxport` HEAD moved twice while this work ran and `psxport.pin` still records `006eb917`. The fix is the operator's `reconfigure -> build -> gate -> --bump`, and bumping the pin is landing, so I did not do it. This change compiles nothing — `git status` shows , this issue, and one `add_test` line in `CMakeLists.txt` as mine. |
 | `probe_load_step_selftest` (new, registered in `CMakeLists.txt`) | Passed, 0.25 s |
 
 **A shared-build side effect I caused, stated rather than left to be discovered.** Registering the

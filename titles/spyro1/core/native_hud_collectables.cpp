@@ -77,7 +77,7 @@ constexpr std::uint32_t kGemCollectTarget = 0x8006F438u;
 constexpr std::uint32_t kModuloNine = 0x38E38E39u;
 
 // The guest helpers the body still reaches. Each is a `jal` operand of the body rather than an
-// address it assembles from a lui, so tools/override_constants.py re-derives it from that `jal`
+// address it assembles from a lui, so the address audit re-derives it from that `jal`
 // itself.
 constexpr std::uint32_t kPlayId = 0x80054400u;
 constexpr std::uint32_t kFadeId = 0x8005445Cu;
@@ -85,7 +85,7 @@ constexpr std::uint32_t kSetSubState = 0x800544A8u;
 constexpr std::uint32_t kStepCounter = 0x800542E4u;
 
 // The `jal` each nested call stands for (issue 0150): the callee runs with the `$ra` that `jal`
-// leaves, and tools/override_call_sites.py re-derives every site and its callee from the
+// leaves, and a call-site audit re-derives every site and its callee from the
 // executable. Several machines share one `jal`: the gem machine's playing and fading states both
 // reach 0x80054D1C, the dragon's reach 0x80054E98, the life's 0x8005517C, the egg's fades
 // 0x800554A8 and the key's 0x80055704, each through a `j` with the arguments already set.

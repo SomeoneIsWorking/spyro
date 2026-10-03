@@ -12,6 +12,12 @@ class RenderQueue;
 
 namespace spyro::paired_actor {
 
+// Guest renderer 0x80023AC4. It is the producer key every painter object this owner emits is
+// tagged with, the identity the duplicate-endpoint refusal tests, and the guest function whose
+// invocation count the ownership gate checks. Those are one fact, so it is stated once here
+// instead of as a literal at each of those sites.
+inline constexpr uint32_t kProducerAddress = 0x80023AC4u;
+
 struct GpuSnapshot {
   int off_x = 0, off_y = 0, da_x0 = 0, da_y0 = 0, da_x1 = 0, da_y1 = 0;
   int tw_mx = 0, tw_my = 0, tw_ox = 0, tw_oy = 0;
@@ -69,23 +75,20 @@ struct FrameState {
 
 bool buildTransform(Core *c, Transform &out);
 
-// Production normal opaque/textured arm of guest renderer 0x80023AC4.
+// Production normal opaque/textured arm of guest renderer 0x80023AC4. One live invocation each;
+// what the temporal half does with the captured frame is `paired_actor_temporal.h`.
 bool decodePose(Core *c);
 bool submit(Core *c, FrameState &state);
 void logFrameCompatibility(const Frame &previous, const Frame &current, bool compatible);
 bool submitField(Core *c, FrameState &state);
-enum class RebuildResult : uint8_t { Refused, NoOutput, Emitted };
-RebuildResult rebuildEndpoint(Core *c, RenderQueue &target, const Frame &frame);
-RebuildResult rebuildSample(
-    Core *core, RenderQueue &target, const Frame &previous, const Frame &current, float t);
-void frameBegin(FrameState &state, bool state2, bool reference_leg, bool fps60_active);
-FrameState &state(Core *c);
-void fps60Rotate(Core *c);
-void fps60WorldPass(Core *c, float t);
-bool fps60Eligible(FrameState &state);
-bool frameFinish(const FrameState &state, bool reference_leg, bool expect_group);
 
-// Hermetic checks for the shipping delta codec and /16 frame blend.
+enum class RebuildResult : uint8_t { Refused, NoOutput, Emitted };
+
+// The per-Core owner of the two endpoints this producer fills. Held here, next to `FrameState`,
+// because the producer and the temporal half are two views of one piece of state.
+FrameState &state(Core *c);
+
+// Hermetic checks for the shipping delta codec, /16 frame blend, projection and endpoint rules.
 int selftest();
 
 } // namespace spyro::paired_actor

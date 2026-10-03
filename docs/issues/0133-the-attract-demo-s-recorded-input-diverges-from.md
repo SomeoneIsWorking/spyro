@@ -286,7 +286,7 @@ counter was reset to 0 by the level load (`loaders.c:643`) after them.
 
 **This is the divergence's cause, and it explains every symptom above it in one fact.**
 
-Measured with `tools/probe_emitter_predicate.py`, both cores, at `g_GameTick` 41. The list base was
+Measured with, both cores, at `g_GameTick` 41. The list base was
 recovered from the guest itself rather than from the listing: `0x800522CC` is `addi $t9, $a0, 0x0`, the
 second instruction of `func_800522C0`, and its observer record carries `a0=800700F4` with
 `ra=8007DABC` and `v1=80077888` — the list cursor. (`0x800700F4` is `D_8006FCF4 + 0x400`, so the listing's
@@ -580,7 +580,7 @@ image, is the one thing that turns this into a located write.
 
 ## THE LEAD IS EARLIER STILL: `Moby+0x42` already differs at the FIRST sample (tick 3)
 
-Measured 2026-09-27 with `tools/probe_emitter_predicate.py`. **One byte**, on the two class-`0x71`
+Measured 2026-09-27 with **One byte**, on the two class-`0x71`
 mobies `0x80173B80` and `0x80173BD8`:
 
 | tick | `Moby+0x42` product / console |
@@ -658,7 +658,7 @@ But it also **killed the product**: `[executor:error] frame-update required a co
 execution exited as fault at 0x80083884 after 21662 cycles: Lightrec selected-store observer rejected
 unsupported translated PC` → `abort()`, REPL exit 139. So **a missing callback line is ambiguous
 between "the store never happened" and "the instrument refused it"**, separable only by reading the
-fault line. That is why `probe_tick_divergence.py` now prints it as a warning rather than as a zero.
+fault line. That is why now prints it as a warning rather than as a zero.
 
 ### The rand-count oracle does NOT agree, and no fix was made
 
@@ -667,7 +667,7 @@ cores with 0 unexplained, and **338/399 updates MISMATCH** (26,356 product calls
 console). First still-mismatching update is the one ending at `g_GameTick` 41. The oracle is the
 measurement here because nothing was changed.
 
-**What would prove a fix:** `tools/probe_tick_divergence.py --ticks 400 --rand-calls` agreeing on the
+**What would prove a fix:** --ticks 400 --rand-calls` agreeing on the
 per-update `rand()` count for 400 consecutive updates, with 0 unexplained and 0 mismatching. Nothing
 weaker counts — the seed chain needs no observer and no product edit.
 
@@ -748,7 +748,7 @@ freshly-zeroed local cannot produce.
 
 ### Known gaps in the current evidence
 
-- `SPYRO_FIELDS` in `tools/probe_tick_divergence.py` MISLABELS offsets: it calls `0x88`
+- `SPYRO_FIELDS` in MISLABELS offsets: it calls `0x88`
   `m_floorIdleTime` and `0x8C/0x90/0x94` `m_airTime`/…, while the value evidence and the header's own
   `// 0x8c` comment say `0x8C` is `m_previousPosition` and `0x88` is `m_touchingMoby`. Not rewritten:
   the header, the port's render offsets and the table disagree across the `0x28-0x40` band and guessing
@@ -815,9 +815,9 @@ lockstep fields. Both cores load the same 13 stages in the same order to the sam
 `load_stage` matches at all 554 later comparisons. A one-field shutter inside a blocking
 `while (g_LoadStage < 6)` loop can and does move that counter by a stage.
 
-## Per-word localisation (2026-09-26, `tools/probe_tick_divergence.py`)
+## Per-word localisation (2026-09-26,)
 
-The next measurement named above was made. The instrument is `tools/probe_tick_divergence.py`: it
+The next measurement named above was made. The instrument is : it
 drives both cores with the ROUTE's own predicates and advance, steps them in lockstep, and records
 for every watched guest word the first iteration at which it differs, so the answer is the smallest
 such tick read off a table rather than argued. `--ram-diff FIRST:LAST` widens the watch set to ALL
@@ -912,7 +912,7 @@ movement adjustment runs, and it is the one small integer that differs in the sa
 movement.
 
 Armed on the console for exactly the update at tick 556 (console field 7038) on `0x8003FE40`,
-`0x8003FE7C` and `0x80041670` (`uv run --frozen python tools/probe_tick_divergence.py --ticks 557
+`0x8003FE7C` and `0x80041670` (`uv run --frozen python --ticks 557
 --observe 0x8003FE7C,0x8003FE40,0x80041670:0x80078A80:16 --observe-at 556`), the observer reports
 **scanned 677,984 matched 3 retained 3 dropped 0 pairing_errors 0, observation complete**:
 
@@ -977,7 +977,7 @@ for the list base is therefore not the list base, which is consistent with
 `func_level_11_8007DA78` being a 10,832-line `nonmatchings` reconstruction.
 
 **The measurement that names the list, with no guess, is one PC and no RAM range:**
-`tools/probe_emitter_predicate.py --ticks 45 --observe-at 41 --observe 0x800522CC`. `0x800522CC` is
+ --ticks 45 --observe-at 41 --observe 0x800522CC`. `0x800522CC` is
 `addi $t9, $a0, 0x0`, `func_800522C0`'s second instruction, and it fires ONCE PER CALL (1-2 per
 update, against the updater's ~1,000 per update), so it fits the observer's 128-record ring where the
 per-moby instructions do not. The record's `$a0` is the list base the guest itself used; walk it to

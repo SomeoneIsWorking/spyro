@@ -40,7 +40,7 @@ interpolating path is for.
 
 ## The method, and the four ways it can lie
 
-`tools/census_level_blend.py`, run against the `WAD.WAD` extracted from the disc with
+, run against the `WAD.WAD` extracted from the disc with
 `external/psxport/build/tools/discdump get WAD.WAD <chd> <outdir>`.
 
 The archive format is read out of `external/spyro-1/src/loaders.c`, not guessed. A component is
@@ -100,7 +100,7 @@ table sits 8 bytes into its component, not 4.
     35 carried a seven-component environment-animation run
     44 carried none, and are reported UNKNOWN rather than zero
        37 of those 44 are the small code overlays (entries 2, 7, 9, 11 ... 77), 36 of which
-          tools/wad_index.py independently scores above 90% valid opcodes
+ independently scores above 90% valid opcodes
         7 are larger data entries this census did not identify (0, 1, 3, 4, 5, 6, 8)
     739 authored animations across the 35 levels; 739 records read, 0 NOT READ, 0 counts refused
     9 of the 35 author nothing on any of the four channels
@@ -172,9 +172,9 @@ coverage: 26 levels author the form, and the two the route reached pin their ind
 ## Reproducing
 
     external/psxport/build/tools/discdump get WAD.WAD "<disc>.chd" scratch/wad_census/
-    uv run --frozen python tools/census_level_blend.py --selftest
-    uv run --frozen python tools/census_level_blend.py --wad scratch/wad_census/WAD.WAD
-    uv run --frozen python tools/census_level_blend.py --wad scratch/wad_census/WAD.WAD \
+ uv run --frozen python --selftest
+ uv run --frozen python --wad scratch/wad_census/WAD.WAD
+ uv run --frozen python --wad scratch/wad_census/WAD.WAD \
         --only-entry 10 --control --ram scratch/live10.bin
 
 The selftest is registered as CTest `census_level_blend_selftest`. The census and the control need

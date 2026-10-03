@@ -8,7 +8,7 @@
 // saturation and flag rules. Reimplementing the GTE here would be a large, subtle piece of work
 // with no benefit: it is the platform's job, not the game's.
 //
-// This was only verifiable once the differential learned to compare COP2 state (I021). Before that
+// This was only verifiable once the differential learned to compare COP2 state. Before that
 // it would have reported "matches" on a body that left IR/MAC/FLAGS different, none of which is
 // guest RAM.
 #include "core.h"

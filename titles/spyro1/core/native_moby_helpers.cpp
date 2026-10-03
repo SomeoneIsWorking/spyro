@@ -117,8 +117,8 @@ void resetMobyDefaults(Core *c) {
   c->r[3] = 0xffu;
 }
 
-// The moby fields this body touches, at the offsets tools/probe_tick_divergence.py's measured
-// MOBY_FIELDS list records for asm/42CC4.s. The two flag bytes are cleared here but are named by
+// The moby fields this body touches, at the offsets the measured MOBY_FIELDS list records for
+// asm/42CC4.s. The two flag bytes are cleared here but are named by
 // nothing this repository has measured — that list names +0x40 and +0x42 and stops there — so they
 // carry their offset instead of a field name this port has not established.
 constexpr std::uint32_t kMobyCollisionGroup = 0x08u;
@@ -159,7 +159,7 @@ constexpr std::uint32_t kLagFourFields = 4u;
 
 // The guest callees the bodies below call, each named by the `jal` that reaches it. Every one is a
 // code address, so it is the 26-bit field of that instruction rather than a `lui`+immediate pair
-// the retail body assembles, and tools/override_constants.py re-derives it from the `jal` itself.
+// the retail body assembles, and an address audit re-derives it from the `jal` itself.
 //
 // kFindGroundHeightBelow is the highest world or actor triangle below a point, searched within a1.
 // It snapshots its CALLER's s0..s7, gp, sp, fp and ra into RAM at 0x3C017DD8 (the KUSEG mirror of
@@ -321,7 +321,7 @@ void mobyInterpolationCheck(Core *) {}
 
 // The globals the body below reaches, each spelled the way external/spyro-1/asm/42CC4.s annotates
 // its own `lui`/`addiu` pair for this very function, and each the full literal so
-// tools/override_constants.py can decode it back to those two instructions instead of trusting a
+// an address audit decodes it back to those two instructions instead of trusting a
 // comment.
 constexpr std::uint32_t kMobyCollisionChain = 0x80075778u;
 constexpr std::uint32_t kDynMobys = 0x80075890u;

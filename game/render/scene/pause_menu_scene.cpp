@@ -34,8 +34,8 @@ using spyro::pause_menu::State;
 // itself reads, not a name this repository invented for it.
 
 // [0x800758B8] IS THE MENU'S OWN FRAME COUNTER, and the port has to advance it because it took over
-// the half of the guest that used to. Measured, not inferred: tools/probe_pause_gate_writer.py asks
-// the IMAGE (not the sparse external/spyro-1/asm listing, which covers 17.2% of main RAM and
+// the half of the guest that used to. Measured, not inferred: over the IMAGE (not the sparse
+// external/spyro-1/asm listing, which covers 17.2% of main RAM and
 // reported "0 stores" for a word this very handler reads at 0x8001A410) and finds 23 lw sites and 6
 // sw sites. Five of the writes are `sw $zero` inside the world renderer 0x8002B9CC -> 0x800258F0,
 // at 0x8002C498, 0x8002C4B8, 0x8002C640 and 0x8002C79C. The sixth, and the only one that ever makes

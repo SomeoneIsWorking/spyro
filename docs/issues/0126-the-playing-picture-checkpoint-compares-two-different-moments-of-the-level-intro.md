@@ -2,7 +2,7 @@
 id: 126
 title: The `playing` picture checkpoint compares two different moments of the level intro, so its 18.49% ranks nothing
 status: resolved
-symptom: tools/picture_oracle.py reports 22717/122880 pixels (18.49%) differing at the `playing` checkpoint with EVERY picture-decisive range equal, so it reads as a rendering defect. It is not one — the reference is on the black "THE ADVENTURE BEGINS…" card and the product is already in the lit Artisans courtyard
+symptom: reports 22717/122880 pixels (18.49%) differing at the `playing` checkpoint with EVERY picture-decisive range equal, so it reads as a rendering defect. It is not one — the reference is on the black "THE ADVENTURE BEGINS…" card and the product is already in the lit Artisans courtyard
 state_items: S019, S020
 tags: oracle,picture,instrument,checkpoint
 created: 2026-09-19
@@ -10,7 +10,7 @@ created: 2026-09-19
 
 ## The number, and why it looks like a verdict
 
-`tools/picture_oracle.py --bios ../SCPH1001.BIN`, reproduced identically on three separate runs
+ --bios ../SCPH1001.BIN`, reproduced identically on three separate runs
 (2026-09-19):
 
 ```

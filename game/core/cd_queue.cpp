@@ -75,7 +75,7 @@ void transfer(Core &core, bool deferred) {
   // guest code: `BootSequence::loadAssets` dispatches the loader itself, and one guest PETE load
   // arrives with the return address of the call to the OUTER loader function. The guest PC is
   // recorded beside the site so those operations are visibly unattributed rather than carrying a
-  // plausible-looking guest address (instrument I058, and 0155's "$ra - 8 failure mode").
+  // plausible-looking guest address — the same "$ra - 8 failure mode" issue 0155 records.
   const uint32_t issuerSite = core.r[31] - 8u;
   const auto *owner = spyro::fieldOwnerIfPublished(core);
   const uint64_t field = owner != nullptr ? owner->fields() : 0u;

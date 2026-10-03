@@ -1,7 +1,7 @@
 # The actor-scene oracle: what the port draws vs what retail draws
 
 `PSXPORT_ACTOR_SCENE_ORACLE=1` makes one frame print both actor streams and
-`tools/actor_oracle_diff.py` compares them. It is a value-level oracle: no emulator, no screenshots,
+ compares them. It is a value-level oracle: no emulator, no screenshots,
 no pixel matching. It exists because "gems look wrong" cannot be acted on until the failing side is
 named.
 

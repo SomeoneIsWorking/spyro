@@ -2,7 +2,7 @@
 // natively.
 //
 // Each function here replaces the guest body of the same address in external/spyro-1/src/spu.c and
-// is held by the override differential (psxport docs/issues/0138): tools/native_override_gate.py.
+// is held by the override differential (psxport docs/issues/0138): the override differential.
 #pragma once
 
 #include "core.h"

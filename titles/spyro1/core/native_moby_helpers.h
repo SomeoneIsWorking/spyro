@@ -4,7 +4,7 @@
 // Each function here replaces the guest body of the same address in
 // external/spyro-1/src/moby_helpers.c, external/spyro-1/src/moby_interpolation_check.c or the
 // moby allocation and collision unit external/spyro-1/asm/42CC4.s, and is held by the override
-// differential (psxport docs/issues/0138): tools/native_override_gate.py.
+// differential (psxport docs/issues/0138): the override differential.
 #pragma once
 
 #include "core.h"

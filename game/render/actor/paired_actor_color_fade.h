@@ -15,6 +15,11 @@
 // word through the decoder as a mode.
 namespace spyro::paired_actor_color_fade {
 
+// g_Spyro + 0x28: the packed far colour and strength word this arm reads. A zero high byte is the
+// ordinary path. It belongs to this owner because the word has no meaning without the transform it
+// selects, and the producer that reads it is the only consumer.
+inline constexpr uint32_t kControlAddress = 0x80078A80u;
+
 // Whether the control word selects the fade at all. A zero high byte is the ordinary path, and the
 // renderer skips the whole transform rather than running an identity over the table.
 bool active(uint32_t control);

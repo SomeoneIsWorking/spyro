@@ -10,7 +10,7 @@ namespace spyro1::native {
 namespace {
 
 // Every guest global below is a lui plus an immediate the body at 0x8002E12C itself executes, so
-// tools/override_constants.py can decode each one and refuses the module if any of them is a
+// an address audit decodes each one and refuses the module if any of them is a
 // hand-typed address the retail code never builds.
 constexpr std::uint32_t kIsFlightLevel = 0x80075690u;
 constexpr std::uint32_t kNoButtonTicks = 0x8007568Cu;
@@ -57,7 +57,7 @@ constexpr std::uint32_t kHeadLookField = 0x80078BECu;
 
 // The guest callees the body calls, each named by the `jal` at the call site the comment gives. A
 // callee is the 26-bit field of that instruction rather than a `lui`+immediate pair, and
-// tools/override_constants.py re-derives it from the `jal` itself.
+// an address audit re-derives it from the `jal` itself.
 constexpr std::uint32_t kHudTick = 0x80054988u;            // `jal` at 0x8002E148
 constexpr std::uint32_t kSpecularUpdate = 0x80058CC0u;     // `jal` at 0x8002E18C
 constexpr std::uint32_t kPlaySound = 0x80055A78u;          // `jal` at 0x8002E1F4 and every menu row

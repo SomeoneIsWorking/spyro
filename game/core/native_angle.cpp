@@ -9,7 +9,7 @@
 // EVERY REGISTER THE BODY LEAVES IS PART OF THE CONTRACT. Both bodies below leave a scratch
 // register holding an intermediate no caller can legitimately read, and both reproduce it anyway: a
 // replacement allowed to differ "where it cannot matter" makes the differential meaningless, and
-// this port has already been bitten once by exactly that ($at, I019). Recorded differential
+// this port has already been bitten once by exactly that ($at). Recorded differential
 // evidence caught spin60's v1 on call #1.
 //
 // DELAY SLOTS DECIDE THE EXIT STATE, and they are where transcription goes wrong. In the angle

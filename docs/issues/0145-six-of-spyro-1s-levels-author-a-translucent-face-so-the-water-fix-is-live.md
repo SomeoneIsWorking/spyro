@@ -15,9 +15,9 @@ updated: 2026-09-28
 
 **Six of the thirty-five levels `WAD.WAD` carries author low-poly faces with material bit 2 set:
 1,592 faces of 83,401 read.** The fix is live code. The census is
-`tools/census_level_face_material.py` over `scratch/wad_census/WAD.WAD` (110,260,224 B, sha256
+ over `scratch/wad_census/WAD.WAD` (110,260,224 B, sha256
 `7ba8961c…54a1`, LBA 37), and it reads the level DATA entries -- the ones `LoadLevelData` walks --
-rather than the level SCENE entries `tools/census_level_blend.py` reads, because the sector tables
+rather than the level SCENE entries reads, because the sector tables
 that hold the geometry are in the data entry.
 
 | lvl | id | level | sectors | faces | bit 2 | in range | `material & 7` |

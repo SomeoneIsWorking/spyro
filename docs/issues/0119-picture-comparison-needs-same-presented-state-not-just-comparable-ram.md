@@ -2,7 +2,7 @@
 id: 119
 title: The picture oracle compares two cores that are at the same checkpoint but not the same presented frame
 status: open
-symptom: tools/picture_oracle.py reports 51.89% differing pixels at save_picker and 18.50% at playing, and both are state offsets rather than rendering defects — the console reaches save_picker after 748 game frames and the product after 687
+symptom: reports 51.89% differing pixels at save_picker and 18.50% at playing, and both are state offsets rather than rendering defects — the console reaches save_picker after 748 game frames and the product after 687
 state_items: S019, S020
 tags: oracle,picture,alignment
 created: 2026-09-19
@@ -10,7 +10,7 @@ created: 2026-09-19
 
 ## What landed
 
-`tools/picture_oracle.py` — the title entry point for psxport's `tools/oracle/picture.py`, sharing
+ — the title entry point for psxport's `tools/oracle/picture.py`, sharing
 title policy with `tools/oracle_spyro1.py` and the launch environment with `tools/drive.py`. It
 compares the frame each core PRESENTS, which `tools/oracle_compare.py` structurally cannot: a
 producer that draws nothing writes no different guest state, so a missing layer and a correct one

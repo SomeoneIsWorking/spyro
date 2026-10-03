@@ -16,8 +16,8 @@
 //
 // WHY THAT MATTERS HERE. A layer with its own ordering table, fed by a leaf that takes no
 // coordinates and no depth, and reached through producers whose OWN bodies contain no COP2 at all,
-// is a flat screen-space overlay. Measured over the 13 producer bodies that build it
-// (tools/probe_field_2d_layer.py): 1,451 instruction words scanned, 0 COP2/LWC2/SWC2, and the only
+// is a flat screen-space overlay. Measured over the 13 producer bodies that build it:
+// 1,451 instruction words scanned, 0 COP2/LWC2/SWC2, and the only
 // OT-link leaf reached is 0x800168DC for eight of them — 0x800189F0's tracer streaks being the one
 // member that links through 0x800168A0 because they carry a projected depth. So the three draws
 // modelled here need NO GTE state at all: they are derivable from pre-GTE game state, which is the

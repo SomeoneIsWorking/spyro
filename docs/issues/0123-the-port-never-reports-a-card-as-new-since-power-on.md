@@ -10,7 +10,7 @@ created: 2026-09-19
 
 ## The observation
 
-`tools/picture_oracle.py --bios ../SCPH1001.BIN` at `save_picker`, with the state check of issue
+ --bios ../SCPH1001.BIN` at `save_picker`, with the state check of issue
 0119 live and every picture-decisive range EQUAL:
 
 | | console reference | product |

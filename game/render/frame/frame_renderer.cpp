@@ -29,6 +29,7 @@
 #include "level_transition_scene.h"
 #include "native_terrain.h"
 #include "paired_actor.h"
+#include "paired_actor_temporal.h"
 #include "pause_menu_scene.h"
 #include "presentation_owner.h"
 #include "screen_border.h"

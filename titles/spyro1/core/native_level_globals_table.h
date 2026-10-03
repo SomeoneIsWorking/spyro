@@ -2,7 +2,7 @@
 //
 // Each function here replaces the guest body of the address it is named for (0x8005A470, which
 // external/open-spyro documents in include/funcs.h) and is held by the override differential
-// (tools/native_override_gate.py).
+// .
 #pragma once
 
 #include "core.h"

@@ -17,6 +17,7 @@
 #include "interp_census.h"
 #include "painter_object_layer.h"
 #include "paired_actor.h"
+#include "paired_actor_temporal.h"
 #include "render_queue.h"
 #include "secondary_actor_emit.h"
 #include "secondary_actor_temporal.h"

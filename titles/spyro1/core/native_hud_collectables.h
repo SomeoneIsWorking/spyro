@@ -1,7 +1,7 @@
 // native_hud_collectables.h — Spyro 1 (SCUS_942.28) HUD collectible update, owned natively.
 //
 // The body replaces the guest function of the same address in external/spyro-1's HUD tick and is
-// held by the override differential (tools/native_override_gate.py).
+// held by the override differential .
 #pragma once
 
 #include "core.h"

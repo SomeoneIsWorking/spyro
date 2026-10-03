@@ -367,10 +367,9 @@ def cmd_check(entries, order, args):
     if problems:
         print(f"\n{problems} problem(s) found.", file=sys.stderr)
         return 1
-    # ZERO ENTRIES IS A FAILURE, NOT A PASS (docs/info/instruments.md INST-14). Every check above is
-    # VACUOUSLY TRUE over an empty set, so printing OK after parsing nothing is the green-over-nothing
-    # that entry exists for — and it stayed alive here after being fixed elsewhere, because three
-    # copies of this file drifted. A roadmap that exists but yields no entries means the parser and the
+    # ZERO ENTRIES IS A FAILURE, NOT A PASS. Every check above is VACUOUSLY TRUE over an empty set,
+    # so printing OK after parsing nothing is a green-over-nothing that hides a broken document
+    # behind a clean exit code. A roadmap that exists but yields no entries means the parser and the
     # document disagree about the format: a broken instrument, not a clean roadmap.
     if not order:
         print("\u203c ZERO entries parsed — verified NOTHING, so this is a FAILURE, not a pass. Either "

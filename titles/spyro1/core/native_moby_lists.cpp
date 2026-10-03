@@ -68,7 +68,7 @@ constexpr std::uint32_t kEventQueue = 0x8006FCF4u;
 // The pass drains its own queue through the guest's own register-save area (kRegisterSpillArea),
 // because that is where a guest callee already leaves the caller's ra for it to read back.
 // Start one sound on a named channel; the `jal` at 0x80052490 is instruction word 0x0C01569E, so
-// its target is that J field rather than a lui/addiu pair, and tools/override_constants.py
+// its target is that J field rather than a lui/addiu pair, and the address audit
 // re-derives it from the `jal` itself.
 constexpr std::uint32_t kDispatchSound = 0x80055A78u;
 constexpr std::uint32_t kStagedScale = 0x1F800000u;

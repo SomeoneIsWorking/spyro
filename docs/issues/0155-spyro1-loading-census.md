@@ -17,7 +17,7 @@ overlays inside `WAD.WAD` (the 110,260,224-byte archive at `scratch/wad_census/`
 `7ba8961c3626bcec`, LBA 37 on the disc per `0x80012518`). Disassembly is
 `external/psxport/tools/disasm.py` over a 2 MiB RAM image built that way (Capstone, 0 unknown words
 in every range below). The WAD archive was **not** re-authenticated against the disc for this
-issue; it is the file `tools/overlay_image.py` already uses.
+issue; it is the file already uses.
 
 Evidence tags used throughout:
 

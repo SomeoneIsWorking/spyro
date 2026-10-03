@@ -19,7 +19,7 @@ on the route corpus. This issue measures that question directly.
 
 ## Why the corpus's number cannot answer it
 
-`tools/reach_corpus.py`'s mismatch tally is a count of *sampled override calls whose result differed
+'s mismatch tally is a count of *sampled override calls whose result differed
 from the original body*. Two properties of that instrument make it unable to answer "did the title's
 behaviour change":
 
@@ -38,7 +38,7 @@ So the route corpus is left as the aggregate it is, and the comparison below is 
 
 ## The instrument: a per-field trace of the no-input route
 
-`tools/route_trace.py` reads two channels the product already prints and needs no new one:
+ reads two channels the product already prints and needs no new one:
 
 * `[pace]`, one line per **delivered field**, carrying the delivered-field index `vbl`, the `site`
   that asked for it, and the guest 60 Hz counter the title's own root ticks — the delivery order and
@@ -46,7 +46,7 @@ So the route corpus is left as the aggregate it is, and the comparison below is 
 * `[skipmap]`, one line per **guest state change**, carrying the field it was observed on with the
   load stage, the gamestate and the title screen's mode/state/substate.
 
-`tools/demo_run.py --debug pace,skipmap` arms both. The attract demo takes no input, so its path is
+ --debug pace,skipmap` arms both. The attract demo takes no input, so its path is
 fixed by the guest and its field timing, which makes the trace a comparison rather than a sample.
 
 **The instrument's own control, which is the part that makes it trustworthy:** the same binary run
@@ -73,14 +73,14 @@ checked against their own sources: the new binary carries `host field clock arme
 
 ### 1. The delivery trace — identical over 35,734 delivered fields
 
-`tools/demo_run.py --debug pace,skipmap --timeout 240`, no input:
+ --debug pace,skipmap --timeout 240`, no input:
 
 | | delivered fields | guest state changes | presents | native-render refusals |
 |---|---:|---:|---:|---:|
 | main | 35,734 | 105 | 17,649 | **0** |
 | this tree | 40,752 (its clock ran out later) | 119 | 23,243 | **0** |
 
-`route_trace.py compare` over the 35,734 fields both runs delivered: **the field index, the delivery
+Comparing the 35,734 fields both runs delivered: **the field index, the delivery
 site and the 60 Hz counter are identical on every field, and the guest state changes are identical at
 every field both runs reported one.** The only difference reported is the truncation, which is the
 shorter run.

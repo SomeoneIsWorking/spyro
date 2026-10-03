@@ -3,7 +3,7 @@
 // rebuilds its 3x3 orientation matrix through the GTE. Owned natively.
 //
 // The function here replaces the guest body of the same address in external/spyro-1 and is held by
-// the override differential (psxport docs/issues/0138): tools/native_override_gate.py.
+// the override differential (psxport docs/issues/0138): the override differential.
 #pragma once
 
 #include "core.h"

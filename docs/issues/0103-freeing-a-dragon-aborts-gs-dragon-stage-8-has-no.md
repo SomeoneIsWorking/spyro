@@ -103,8 +103,8 @@ than one actor.
 
 ## `0x80059F8C` landed, and what the FIELD path was missing with it
 
-The producer is implemented (`game/render/moby_shadow_recipe.*`, `moby_shadow_submitter.*`,
-`fx_moby_shadow.*`) and wired into stage 0, since `0x80019698` draws Moby shadows between the shaded
+The producer is implemented (`game/render/field/moby_shadow_recipe.*`, `moby_shadow_submitter.*`,
+`moby_shadow.*`) and wired into stage 0, since `0x80019698` draws Moby shadows between the shaded
 pass and Spyro's own model and the port's FIELD composition had every other layer of that routine.
 Staging was independently broken — see `docs/project-state.md` for the `0x1200` sign — so no Moby had
 cast a shadow in this port at all.
@@ -114,7 +114,7 @@ Every layer of `0x80019698` is now owned and wired into FIELD, including glows/s
 
 ## Flame `0x80058D64` ported, wired, and the cross-producer publication it needed
 
-`game/render/spyro_flame_recipe.*`, `spyro_flame_submitter.*` and `fx_spyro_flame.*` port the
+`game/render/field/spyro_flame_recipe.*`, `spyro_flame_submitter.*` and `spyro_flame.*` port the
 handwritten routine: eight parts walked last to first, each a tip fan of four untextured Gouraud
 triangles followed by a ribbon of Gouraud textured quads walking backward through the part's
 cross-section array, with retail's own ring scales, five-per-row grey ramp, half-step closing pair,
@@ -133,7 +133,7 @@ position updated correctly, so every flame-local point projected onto the flame 
 ribbon collapsed onto one pixel — measured: all four tip triangles of all eight parts had `NCLIP == 0`
 at screen (342,117).
 
-`game/render/spyro_flame_matrix.*` now carries that publication and the FIELD composition calls the
+`game/render/field/spyro_flame_matrix.*` now carries that publication and the FIELD composition calls the
 flame after `0x80059A48`. The matrix published is the port's layer 1 matrix: retail loads the camera
 rotation into the GTE at `0x80023F18`, composes `g_Spyro+0x0C`, publishes, and only then composes
 `g_Spyro+0x10` for layer 1 — but layer 1 is computed from the same parent matrix and the same angle
@@ -162,7 +162,7 @@ and inventory, already recorded), 9 (GS_EntranceAnimation), 10 (GS_ExitLevel), 1
 
 `0x80058BA8` is a two-line C function: `func_800580F4()` then `func_800584C4(g_DeltaTime)`.
 
-`game/render/glow_recipe.*` and `glow_submitter.*` port the first. Sixteen records of 0x24 bytes at
+`game/render/field/glow_recipe.*` and `glow_submitter.*` port the first. Sixteen records of 0x24 bytes at
 `0x80078800`, cleared by `func_80058B68`, each holding a point count at `+0x00`, a screen-space
 direction table at `+0x04` (pairs of words, stride 8), a followed world position at `+0x08`, a colour
 at `+0x0C`, a radius at `+0x10`, a world offset at `+0x14`, and an ordering-table bias at `+0x20`.
@@ -179,7 +179,7 @@ centre and both ring points.
 Note the packed vector word is built with `or` over a masked low half here, not the `add` the world
 and actor paths use, so a negative X does not borrow into Y. Six focused tests pass.
 
-`game/render/sparkle_recipe.*` and `sparkle_submitter.*` port the second half. Eight records of 0x18
+`game/render/field/sparkle_recipe.*` and `sparkle_submitter.*` port the second half. Eight records of 0x18
 bytes at `g_Sparkles` = `0x80077108` (`asm/data/game.bss.s`), read as a life byte at `+0x0C`, a total
 lifetime at `+0x0D` used as the fade denominator, an angle at `+0x0E`, a signed spin rate at `+0x0F`,
 a colour at `+0x10`, a size multiplier at the low byte of `+0x14`, and a far-depth limit at its
@@ -203,7 +203,7 @@ so the corner 1-2 stroke is ahead of the corner 0-3 stroke. Bin is `(SZ3 >> 5) -
 and stepped 0x46 further back past 0x100.
 
 `0x800584C4` writes guest state, which no other producer in this port does. The derivation stays pure
-and returns the lifetime/angle writes; `fx_glow_sparkle.cpp` commits them at one named call, only
+and returns the lifetime/angle writes; `glow_sparkle.cpp` commits them at one named call, only
 once the frame is certain to be accepted, so a refused submission cannot silently age every sparkle.
 A zero total lifetime would be a hardware divide by zero, which is undefined rather than reproducible
 — that record keeps retail's advance and produces no line, counted as `no_lifetime`. Eight focused
@@ -216,24 +216,24 @@ word on the hardware and a textured line would be drawn with its material silent
 `25a432e3`, 145/145 tests, positive and negative cases plus one proving a queued line does not
 refuse the next producer's preflight).
 
-`fx_glow_sparkle.*` owns `0x80058BA8` and is called last in the FIELD sequence, with a new `Sparkle`
+`glow_sparkle.*` owns `0x80058BA8` and is called last in the FIELD sequence, with a new `Sparkle`
 link phase below `Glow`. Measured live in Artisans: one active glow record fanning 4–8 faces per
 field, one live sparkle emitting two lines and aging out to `alive=0` on its own schedule at `dt=2`,
 no refusal, and no Lightrec fallback across 20.5 M translated blocks.
 
 ## The stage-8 producer landed, and the four defects it uncovered
 
-`game/render/dragon_scene_recipe.*` derives the branch `0x8001CFDC` will take from
-`g_DragonCutscene` and `fx_dragon_scene.*` applies it. The recipe is a plan — a producer list, the
+`game/render/frame/scene/dragon_scene_recipe.*` derives the branch `0x8001CFDC` will take from
+`g_DragonCutscene` and `dragon_scene_producer.*` applies it. The recipe is a plan — a producer list, the
 two Moby lists to publish, and which source the regular actor pass reads from — so the eight-branch
 state table is one readable structure instead of eight copies of a composition. Fourteen focused
 tests cover it. State 0 shares FIELD's model chain through the extracted
-`game/render/field_model_chain.*` rather than a second copy of those seven layers.
+`game/render/field/field_model_chain.*` rather than a second copy of those seven layers.
 
 Two owners the branch needed and did not have:
 
 - `0x80058864`, the burst star, drawn before every branch when `D_80076248`'s enable word is set.
-  It is armed in the real cutscene. `dragon_burst_recipe.*` / `fx_dragon_burst.*` port it: eight
+  It is armed in the real cutscene. `dragon_burst_recipe.*` / `dragon_burst_producer.*` port it: eight
   spokes, an inner and an outer sine-table ring around one projected origin at shifts 12 and 10, the
   last inner point copied in front of the first so the ring closes, and two triangles per spoke — one
   out to the outer point, one back to the shared centre. It links into the HUD table, not the world

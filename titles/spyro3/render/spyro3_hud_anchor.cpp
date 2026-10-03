@@ -1,27 +1,22 @@
 #include "spyro3_hud_anchor.h"
 
 #include "core.h"
-#include "guest_widescreen_owner.h"
 #include "hud_draw_context.h"
 #include "native_execution.h"
 #include "spyro3_widescreen_facts.h"
 #include "spyro_context.h"
+#include "ui_anchor.h"
 
 #include <cstdint>
 
 namespace spyro3::hud_anchor {
 namespace {
 
-// The frame `ui_anchor` relates for this title, from this title's own widescreen owner. A Core
-// whose projection leaves are not bound has no owner and is not widening, which makes every
-// correction zero rather than a guess.
+// The frame this title's HUD anchors against, from the ONE shared rule: this Core's own widening
+// decision, or the title's authored window when it is not widening, which makes every correction
+// zero rather than a guess.
 spyro::ui_anchor::Frame frame(Core &core) {
-  const spyro::GuestWidescreenOwner *widescreen = spyro::GuestWidescreenOwner::of(core);
-  if (widescreen == nullptr) {
-    const auto native = spyro3::kWidescreenFacts.nativeWidth;
-    return {.authored = native, .drawn = native};
-  }
-  return widescreen->uiFrame();
+  return spyro::ui_anchor::widescreenFrame(core, spyro3::kWidescreenFacts.nativeWidth);
 }
 
 // Shift the X argument of an emitter ($a1) by the widget's anchor class, if the widget in progress

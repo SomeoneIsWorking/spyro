@@ -47,14 +47,14 @@ The chain, for channel 0:
 - the GTE arm sets `IR0 = factor << 4` at `0x80025C3C`/`0x80025C40` — a 12.4 fixed-point weight —
   then runs `INTPL` and repacks `MAC1..MAC3` (`0x80025CF0`-`0x80025D08`).
 
-So the form is selected by exactly one authored byte, and `game/render/world_animation.cpp` reads it
+So the form is selected by exactly one authored byte, and `game/render/world/world_animation.cpp` reads it
 the same way (`ir0 = header.factor << 4` at :171, `header.factor == 0 ? direct : blended` at :197
 and :225). The port's decode is not what stands between a live frame and the blended form.
 
 ## The measurement
 
 **The product's own counter, over three live runs.** `lucent::debug("fieldenv", "PASS animation
-channels={} direct={} blended={} writes={}")` at `game/render/fx_field_environment.cpp:69-74`:
+channels={} direct={} blended={} writes={}")` at `game/render/field/field_environment.cpp:69-74`:
 
 | run | route | `fieldenv` submits | submits that decoded a channel | channels decoded | direct | **blended** | refusals |
 |---|---|---|---|---|---|---|---|

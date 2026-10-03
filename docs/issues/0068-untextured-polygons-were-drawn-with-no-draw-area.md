@@ -8,7 +8,7 @@ created: 2026-08-19
 updated: 2026-08-19
 ---
 
-ROOT CAUSE (framework psxport 7782da9c). The PSX GPU clips EVERY primitive to the drawing area set by GP0(E3)/GP0(E4). `tritex.frag` enforced that with a discard; `tri.frag` had no clip at all — no da attribute, no test — and `render_queue.cpp` routes `mode==3` (untextured) to `gpu_vk_draw_tri`, whose signature did not carry the draw area. The irony is that `RqItem` had been carrying `da_*` the whole time and passing it to the textured call on the very next line.
+ROOT CAUSE (framework psxport 7782da9c). The PSX GPU clips EVERY primitive to the drawing area set by GP0(E3)/GP0(E4). `tritex.frag` enforced that with a discard; `tri.frag` had no clip at all — no da attribute, no test — and `frame_renderer_queue.cpp` routes `mode==3` (untextured) to `gpu_vk_draw_tri`, whose signature did not carry the draw area. The irony is that `RqItem` had been carrying `da_*` the whole time and passing it to the textured call on the very next line.
 
 HOW IT WAS PINNED DOWN, since the coordinates alone cannot do it. `PSXPORT_PRIMDUMP` showed prims at y=223 while the frame was drawing into the buffer at offset y=240 — but a bbox in post-offset VRAM space looks the same whether the guest asked for it there or the clip failed. Adding dax0/day0/dax1/day1/offx/offy columns to the dump settled it in one run: draw area (0,248)-(511,471), offset (0,240), and 30 prims reaching y=223 — 25 rows above their own clip. ALL 30 were tex=0. Not one textured prim escaped.
 

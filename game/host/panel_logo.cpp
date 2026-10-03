@@ -36,8 +36,8 @@ constexpr std::uint8_t expand5(std::uint32_t five) {
 
 // ONE 8-BYTE SPRITE RECORD, AS THE GAME KEEPS IT: tpage, clut, w, h, u, v — in that order. The
 // order is not a guess: the guest's emitter loads the two halfwords from the record's start and the
-// four bytes from its third word (game/render/fx_title_menu.cpp, whose SpriteRec::read is the port
-// of those loads), and Spyro 1's own table agrees at its first two records — 0x8006FACC holds
+// four bytes from its third word (game/render/scene/title_menu.cpp, whose SpriteRec::read is the
+// port of those loads), and Spyro 1's own table agrees at its first two records — 0x8006FACC holds
 // 0x7FE00098, which is tpage 0x0098 (8-bit indexed), clut 0x7FE0, 255x128 at (0,0).
 struct SpriteRecord {
   std::uint16_t tpage = 0;

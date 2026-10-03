@@ -39,7 +39,7 @@ its owned projection parameters rather than assume it publishes ambient guest GT
 
 `actor_ot_coalescer::map` owns the byte-chunk mapping without reading or mutating guest OT memory.
 Regular actors retain their record append and local FIFO policy in `actor_global_order`; paired
-endpoint and interior replay share one face emitter in `fx_paired_actor`. Isolated front-end actor
+endpoint and interior replay share one face emitter in `paired_actor`. Isolated front-end actor
 groups retain their isolated ordering contract and receive no shared FIELD key.
 
 `paired_actor_depth` derives both exact endpoint depths and the temporal extension from captured

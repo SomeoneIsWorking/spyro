@@ -59,7 +59,7 @@ colour/depth against a console capture at a matched phase.
 `native_projection`'s `pz` and is clamped to at least `h/2`, so that half of the guard could never
 fire. It now carries the previous cross-section's behind-camera state explicitly, and both new
 rejections are counted (`TipRingBehindCamera`, `RibbonBehindCamera`) and reported by
-`fx_spyro_flame`'s census instead of being silent skips.
+`spyro_flame`'s census instead of being silent skips.
 
 ## The live comparison now exists, and the shaded arm is the one producer retail does not echo
 

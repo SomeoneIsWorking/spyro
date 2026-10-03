@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-22
 tags: render,world,re
-depends: game/render/world_recipe.cpp#adaptiveSubdivide
+depends: game/render/world/world_recipe.cpp#adaptiveSubdivide
 ---
 
 ## Claim

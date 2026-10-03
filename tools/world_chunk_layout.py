@@ -2,7 +2,7 @@
 """world_chunk_layout.py — the low-poly face record layout, READ OUT OF the shipping codec.
 
 WHY THIS EXISTS, and it is the reason the census is allowed to report a number at all. A Python
-re-derivation of `game/render/world_chunk_codec.cpp`'s field layout would be a SECOND unverified
+re-derivation of `game/render/world/world_chunk_codec.cpp`'s field layout would be a SECOND unverified
 claim about the same guest bytes: two copies of a layout drift exactly where a re-port drifts, and
 the drift is invisible because both copies read the same plausible-looking words. The face record's
 layout is therefore not stated here at all -- it is EXTRACTED from the codec, and this module
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CODEC = ROOT / "game" / "render" / "world_chunk_codec.cpp"
+CODEC = ROOT / "game" / "render" / "world" / "world_chunk_codec.cpp"
 
 
 class Refusal(RuntimeError):
@@ -165,7 +165,7 @@ TRANSLUCENT_BIT = 0x04
 COLOUR_CONSTANT_MASK = 0x07
 
 
-def read_port_selector(cpp: Path = ROOT / "game" / "render" / "world_lq_recipe.cpp") -> tuple[int, int]:
+def read_port_selector(cpp: Path = ROOT / "game" / "render" / "world" / "world_lq_recipe.cpp") -> tuple[int, int]:
     """The `& 4u` selector and the `& 7u` colour-constant mask, read out of the shipping consumer."""
     if not cpp.is_file():
         raise Refusal(f"{cpp} does not exist; the material-bit selector is owned there")
@@ -280,7 +280,7 @@ def selftest() -> int:
               f"each changed or refused the extracted layout")
 
     # 4. The consumer's own selector, perturbed.
-    consumer = ROOT / "game" / "render" / "world_lq_recipe.cpp"
+    consumer = ROOT / "game" / "render" / "world" / "world_lq_recipe.cpp"
     original = consumer.read_text()
     try:
         read_port_selector(Path("/nonexistent/world_lq_recipe.cpp"))

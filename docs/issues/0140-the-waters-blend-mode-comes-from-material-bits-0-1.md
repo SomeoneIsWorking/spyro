@@ -28,11 +28,11 @@ So the comment's "50/50" is **right about the guest**.
 `psxport/runtime/psx/gpu_native_raster.cpp:50 blend555(bg, fr, fg, fb, mode)` with four named modes —
 `B/2+F/2` average, `B+F` additive, `B-F` subtractive, `B+F/4` additive/4 — where `mode` is
 `s_tp_blend`, taken from `(tp >> 5) & 3` at `gpu_native.cpp:362`. And the LQ world path supplies that
-texpage from a **port-invented encoding**, `game/render/world_lq_recipe.cpp:214`:
+texpage from a **port-invented encoding**, `game/render/world/world_lq_recipe.cpp:214`:
 
     face.material.tpage = (uint16_t)((material & 3u) << 5);
 
-consumed by `game/render/world_scene_submitter.cpp:196` as `(face.material.tpage >> 5) & 3u`.
+consumed by `game/render/world/world_scene_submitter.cpp:196` as `(face.material.tpage >> 5) & 3u`.
 
 **So the blend mode is `material & 3` — material bits 0 and 1 — while the colour constant consumes
 bits 0..2 via the `<< 5`.** The AR and the semi-transparency selector are read from one word but are

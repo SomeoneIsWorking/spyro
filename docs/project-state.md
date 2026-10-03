@@ -35,7 +35,7 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S017 | A WASM gameplay build is released through CI and deployed on GitHub Pages | missing | S008, S018 | G004 |
 | S018 | Packaged first launch selects, validates and persists user-supplied game files without a terminal | missing | S001 | G004 |
 | S019 | Widescreen renders additional horizontal scene coverage without stretching the original image: every horizontal cull or screen-rect limit the title owns (world sectors, Mobys, particles, glows, shadows, sky, per-object draw-distance or rect rejects) is overridden natively so the margins show what the view would: the native renderer draws margin objects from object memory and animates margin-only objects port-side, and guest memory is untouched so behaviour is unchanged (the `+0x51` byte `0x80051FEC` admits Mobys on stays native) | partial — projection widened and the drawn answer separated from the guest answer (issue 0152); the per-owner cull audit, port-side animation of margin Mobys, and a margin census (objects drawn at x < 0 or x > 512 at 16:9, animated, against a 4:3 run, with 0 bytes of RAM difference) are missing | S005 | G003 |
-| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | partial — one owner (`game/render/ui_anchor.*`, layout classes in `hud_layout.h`), draw-side only. MEASURED on the running product at 16:9: the pause panel and its border and the stage-13 title/menu elements move by exactly the 86 px margin with unchanged widths and a 4:3 identity, AND the gem/dragon/lives HUD Mobys are now drawn (screen-space path, `0x80022D1C`) and anchored: the census exercises `left-edge=2, centred=15, right-edge=2`, PASS. Their colours equal retail's packet colours for the faces shared with it (see S030 detail). the attract demo's "DEMO MODE" caption now draws at 4:3 and 16:9 and matches the full-console reference (issue 0163). NOT MEASURED: the treasure-row and life-orb sprites (zero entries on every reachable route), the key counter, the completed-gem text (and by code it is not anchored left); pause/tally captions now draw but are not compared against retail. See S030 detail | S019 | G003 |
+| S030 | Spyro 1 widescreen anchors the UI: edge HUD elements (gem count, lives, health/Sparx, menus, text boxes) sit at the widened edges or safe area, centred elements stay centred, nothing stretches | partial — one owner (`game/render/hud/ui_anchor.*`, layout classes in `hud_layout.h`), draw-side only. MEASURED on the running product at 16:9: the pause panel and its border and the stage-13 title/menu elements move by exactly the 86 px margin with unchanged widths and a 4:3 identity, AND the gem/dragon/lives HUD Mobys are now drawn (screen-space path, `0x80022D1C`) and anchored: the census exercises `left-edge=2, centred=15, right-edge=2`, PASS. Their colours equal retail's packet colours for the faces shared with it (see S030 detail). the attract demo's "DEMO MODE" caption now draws at 4:3 and 16:9 and matches the full-console reference (issue 0163). NOT MEASURED: the treasure-row and life-orb sprites (zero entries on every reachable route), the key counter, the completed-gem text (and by code it is not anchored left); pause/tally captions now draw but are not compared against retail. See S030 detail | S019 | G003 |
 | S020 | 60fps presentation reconstructs motion between game updates from captured source geometry | partial — verified on real gameplay 2026-09-29: 0 of 2,097,152 guest RAM bytes differ for fps60 alone, 0 of 7 consecutive presented pairs bit-identical, camera 2,447/3,213 and world 31,702/31,814 records interpolated (issue 0157). The gap is LEVEL CHOICE for the BLENDED environment form, and the unblocker is measured: 47,932 of 51,042 authored keyframes carry a nonzero factor (f632e4d) | S004, S005 | G003 |
 | S021 | Touch-enabled releases provide an authored SVG control interface | missing | S018 | G004 |
 | S022 | Spyro 1 streams its XA music through the shared CD/XA owner | partial | S008 | G002 |
@@ -62,7 +62,7 @@ combinations (Spyro 2 and Spyro 3, fps60 off and on) hash identically to the pre
 in-between is rebuilt natively, read-only, from the guest's own object memory by
 `spyro::makeTerrainWorldPass` behind the framework's one `psx::InBetweenStrategy` seam.
 
-It does not present, and `renderCapabilities()` for both titles stays `widescreenOnly()` on the two gaps
+It does not present, and `frame_rendererCapabilities()` for both titles stays `widescreenOnly()` on the two gaps
 below. The seam that would admit it is in place and tested: `InBetweenStrategy::guestPathClaim()` names
 why a strategy's in-between may present without the guest's renderer live, the Spyro world pass claims
 `HostRebuiltFromGuestMemory`, `RenderCapabilities::guestInterpolated()` is the shape, and
@@ -227,7 +227,7 @@ measurement rather than a shipping fallback. The captured links resolve to compl
 chains, and an eight-capture controlled route produced 128 packets with no cycle or missing head;
 the anchor depth changed from `0x065E` to `0x081A` as gameplay advanced. The source-grounded native
 owner now derives the live 16-point fan, exact GTE projection/depth inputs, OT buckets, and linked
-painter order in `game/render/field_shadow_recipe.*` / `field_shadow_submitter.*`, and FIELD calls
+painter order in `game/render/field/field_shadow_recipe.*` / `field_shadow_submitter.*`, and FIELD calls
 it after the player model. The first native face matches the retained source capture exactly
 (anchor `00A70064/065E`, points `009A0064/0742` and `009E0055/0713`, bucket 10); the recipe and
 focused painter-order tests pass. This is geometry/queue evidence, not complete visual or full
@@ -249,7 +249,7 @@ producer variants remain unowned, so the complete game remains partial. The acto
 live route ran 3,700 presented fields with 1,910 reconciled logic frames and no render refusal; that
 route had a valid-empty secondary list and emitted roughly 110–120 shaded faces per FIELD frame.
 The environment layer's `active_animation` refusal is resolved: RenderWorldChunks' phase-1 per-sector
-animation is owned natively (`game/render/world_animation.cpp`) and proven byte-exact against the
+animation is owned natively (`game/render/world/world_animation.cpp`) and proven byte-exact against the
 retained body on the exact frame that was refusing (C229, instrument I057, issue 0089). The
 post-framework replay `scratch/logs/spyro-replay-post-framework-field-20260828.log` then ran through
 the recorded user input and 10,000 presented fields with rc=0, 5,057 reconciled frames, zero dropped layers, and no native
@@ -268,7 +268,7 @@ denominator is exact.
 **MEASURED ON GAMEPLAY 2026-09-29 (issue 0157): the interpolated present is now verified against real
 gameplay, and the four things it was missing all have numbers.** Driven to the Artisans courtyard with
 `tools/drive.py gameplay --hold RIGHT --hold-frames 400`, 3,221 logic frames, the new per-category
-census (`interpcensus`, `game/render/interp_census.*`) reports:
+census (`interpcensus`, `game/render/temporal/interp_census.*`) reports:
 
 | category | captured items | reconstructed | latest-only | why |
 |---|---|---|---|---|
@@ -400,7 +400,7 @@ selected-entry word, refusing a homeworld by name because there Quit opens a con
 six `g_Portals` records, teleports onto a gate's own path node through the port's gate diagnostic and
 walks the rest, hopping and detouring when steering alone stalls. That route now CROSSES the portal:
 the cyclorama refusals of issue 0106 are gone, and the CdControlF mis-binding behind them is fixed
-(see below). Stages 1 and 9 now have their native producer — `game/render/level_transition_scene`
+(see below). Stages 1 and 9 now have their native producer — `game/render/frame/scene/level_transition_scene`
 over `level_transition_tally_recipe` and the HUD text builder, closing issue 0107 — so the route
 renders the transition and the entrance animation and reaches gameplay in the destination level. The
 field's Spyro shadow producer `0x80059A48` now accepts the level-entry frames whose anchor projection
@@ -521,7 +521,7 @@ cannot inherit Spyro 1's capability claims merely because they share the engine 
 Gap: other scene arms and live producer variants remain unowned; temporal
 eligibility is limited to the compatible paired-actor path. The post-migration live configuration is
 verified: the 800-field product run enabled the temporal presenter and announced
-`aspect=1`, `wide_engine=1`, `native_width=512`, `render_width=684`. Its present-600 capture is a real
+`aspect=1`, `wide_engine=1`, `native_width=512`, `frame_renderer_width=684`. Its present-600 capture is a real
 960x720 stage-13 picture with 69.7% non-black pixels and 3,022 colors. This proves exposed 16:9
 projection. C226 adds the temporal runtime proof through the corrected host-owned scheduler: a
 bounded no-input 4,000-field run reached 142/142 compatible intervals and the shipping presenter
@@ -554,19 +554,19 @@ with 3 visited list members / 1 record, 138 candidates, 63 rejects, and 75 faces
 actor-pass gap is Moby shadows: the regular native builder now stages the source-backed list entries
 from fixed start `0x800724F4` and commits the shared cursor at `0x80075F00` after actor admission,
 but the native actor builders/renderers do not yet own the complete Moby shadow result. Moby shadow consumer `0x80059F8C` is now owned by
-`game/render/moby_shadow_recipe.*` / `moby_shadow_submitter.*` and is called by the stage-0 seam in
+`game/render/field/moby_shadow_recipe.*` / `moby_shadow_submitter.*` and is called by the stage-0 seam in
 its authored position, between the shaded pass and Spyro's model. Its staging was separately broken:
 `0x8001F344`/`0x8001F350` admit an entry only when `m_ShadowDistance` is negative AND the view depth
 is nearer than `0x1200`, and the port negated that limit, which no visible Moby can satisfy — so the
 list was always empty. Measured over a walk through Artisans after the fix: entries 1..5, drawn up to
 2, faces up to 8, with every rejection reason (no plane, far, backfacing, off screen) observed at
 least once. Spyro shadow `0x80059A48` is owned by the separate native fan recipe and submitter.
-Flame `0x80058D64` is owned by `game/render/spyro_flame_recipe.*` / `spyro_flame_submitter.*` /
-`fx_spyro_flame.*` and is now called by the stage-0 seam after Spyro's shadow, in its authored
+Flame `0x80058D64` is owned by `game/render/field/spyro_flame_recipe.*` / `spyro_flame_submitter.*` /
+`spyro_flame.*` and is now called by the stage-0 seam after Spyro's shadow, in its authored
 position. Its missing input is resolved: `0x80023AC4` reads its live GTE rotation matrix back at
 `0x8002401C` and publishes it into `g_SpyroFlame+0xB8` at `0x80024110`, gated on `g_SpyroFlame+0x9A`,
 and the native Spyro producer that replaced it had dropped that publication, leaving the five words
-zero and every flame point collapsed onto the flame origin. `game/render/spyro_flame_matrix.*` now
+zero and every flame point collapsed onto the flame origin. `game/render/field/spyro_flame_matrix.*` now
 carries it, publishing the composed layer 1 matrix — the camera rotation composed with `g_Spyro+0x0C`
 and then `g_Spyro+0x10` — because retail publishes between those two composition steps. Measured over
 a live breath in Artisans: parts 8, tips 8, ribbon quads 8..160, and the census decays back to zero as
@@ -577,11 +577,11 @@ of on the flame. That is the crash on breathing fire.
 
 `0x80058BA8`, the last call of `0x80019698`, is a two-line C function calling the handwritten glow
 renderer `0x800580F4` and then the sparkle renderer `0x800584C4`. The glow half is now owned by
-`game/render/glow_recipe.*` / `glow_submitter.*`: sixteen fixed records at `0x80078800`, each fanning
+`game/render/field/glow_recipe.*` / `glow_submitter.*`: sixteen fixed records at `0x80078800`, each fanning
 semi-transparent additive Gouraud triangles from one bright projected centre out to a ring of black
 points whose screen offsets are scaled by radius over depth, with retail's own delta pre-scaling,
 four-edge outcode reject, and the `>> 7` ordering-table bin that steps 0x40 further back past 0xFF.
-Six focused tests pass. The sparkle half is now owned too, by `game/render/sparkle_recipe.*` /
+Six focused tests pass. The sparkle half is now owned too, by `game/render/field/sparkle_recipe.*` /
 `sparkle_submitter.*`: eight records at `0x80077108`, each projected once for its centre and then a
 second time through a diagonal matrix whose scale is its own view depth, which cancels the
 perspective shrink so a spark keeps a constant screen size, and emitted as two crossed GP0 line
@@ -594,8 +594,8 @@ four vertices only, and now admits two as well, untextured only, because a GP0 l
 texture word (psxport `25a432e3`, 145/145 tests).
 
 The dragon-rescue cutscene renderer `0x8001CFDC` (stage 8, `GS_Dragon`) is owned by
-`game/render/dragon_scene_recipe.*` and `fx_dragon_scene.*`, with the burst star `0x80058864` in
-`dragon_burst_recipe.*` / `fx_dragon_burst.*`. The recipe derives which of the eight
+`game/render/frame/scene/dragon_scene_recipe.*` and `dragon_scene_producer.*`, with the burst star `0x80058864` in
+`dragon_burst_recipe.*` / `dragon_burst_producer.*`. The recipe derives which of the eight
 `g_DragonCutscene.m_State` branches applies and returns it as a plan — producer list, the two Moby
 lists to publish, and which source the regular actor pass reads — so the branch table is one
 structure rather than eight compositions. State 0 shares FIELD's model chain through
@@ -610,7 +610,7 @@ and the cutscene's Spyro producer no longer applies a hide gate only `0x80019698
 Artisans: the cutscene runs to completion through all eight `m_State` branches — 0, 1, 2, 3, 4, 5,
 6 and 7 — with no refusal and no abort, ending on state 7's fade-out.
 
-`0x80058BA8` is wired as the last FIELD producer via `game/render/fx_glow_sparkle.*`. Measured live in
+`0x80058BA8` is wired as the last FIELD producer via `game/render/field/glow_sparkle.*`. Measured live in
 Artisans: one active glow record fanning 4–8 faces per field, one live sparkle emitting two lines and
 then aging out to `alive=0` on its own schedule, `dt=2`, no refusal and no Lightrec fallback over
 20.5 M translated blocks. Its screen-edge outcode carried retail's fixed 512 right edge, which in a
@@ -655,7 +655,7 @@ CdControlF, not CdControlB, and its two-argument ABI has no result buffer, so th
 owner it was bound to wrote 8 bytes at whatever a2 held; and psxport's direct-runtime binding loop
 silently dropped bindings past `kMaxBindings` instead of refusing. The `fieldsky` channel
 now names each refusing draw with its frame/recipe status, refusal string and reject counters, so
-the three previously silent `return false` paths in `fx_field_cyclorama.cpp` no longer abort a frame
+the three previously silent `return false` paths in `field_cyclorama.cpp` no longer abort a frame
 without saying why. The current replay reaches this complete
 stage-0 composition without a native-render refusal;
 the acceptance boundary is now faithful visual/oracle comparison plus the remaining unowned scene
@@ -1404,7 +1404,7 @@ The 4:3 content appears at its ORIGINAL SCALE and centred, the stretch hypothesi
 margins carry hundreds of distinct colours with no repeated edge column, and both joins are continuous
 against their own neighbourhoods. The capture was read as an image: the Artisans courtyard at the dragon
 rescue, with hills, sky and stonework running to both edges of the 1284-wide frame. `[wide]` reads
-`native_width=512 render_width=684`, and `render_width > native_width` is the authoritative check.
+`native_width=512 render_width=684`, and `frame_renderer_width > native_width` is the authoritative check.
 
 **AND THE COUNTER-CASE, because one frame is not a verdict.** The same pair at fence 3300 REFUSES, and
 the refusal is informative: both margins are `0.0% non-black, 1 colours, 161/161 repeated columns` — the
@@ -1573,7 +1573,7 @@ The structural cause is recovered and the layer is not a render pass at all: it 
 ordering table, front-list and depth (0x8007581C / 0x80075820), cleared per frame by
 0x80016784(n). 1,451 instruction words over 13 producer bodies decode to zero COP2 traffic, so
 the fade, border, orb/egg sprites and shaded line/box are pure functions of pre-GTE state.
-Tracers are excluded because they are only derivable WITH a projection and `fx_field_tracers`
+Tracers are excluded because they are only derivable WITH a projection and `field_tracers`
 already owns that.
 
 **The denominator correction, which is the important part.** The old figure counted all 341,856
@@ -1729,7 +1729,7 @@ smooth.
 
 `fx_field_shaded_queue.cpp` was removed in the same change, for the same reason `fx_secondary_actor`
 was: a standalone producer for this layer with no caller anywhere in the repository. The live owner
-is `fx_field_actor_composition`, because the secondary and world-shaded layers share one guest
+is `field_actor_composition`, because the secondary and world-shaded layers share one guest
 shadow-list transaction.
 
 The terrain producer (0x8004EBA8) was split into owners on 2026-09-19, ahead of giving it a temporal
@@ -1822,7 +1822,7 @@ frame's for reasons nobody chose. And the inverted-draw-area predicate, which se
 each spelled out, is now `spyro::draw_area::ready`.
 
 `fx_secondary_actor.cpp` was removed in the same change. It was a standalone secondary producer with
-no caller: the live owner has been `fx_field_actor_composition` since issue 0099, because the
+no caller: the live owner has been `field_actor_composition` since issue 0099, because the
 secondary and world-shaded layers share one guest shadow-list transaction. A dead second
 implementation of a producer is exactly the drift the one-owner rule exists to prevent.
 
@@ -2209,7 +2209,7 @@ framework: the temporal presenter, the pairing walk, the projection stream and t
 
 **THE HOST IN-BETWEEN RENDERER'S TRAVERSAL LAYER LANDED 2026-10-02** (chunk 1 of the S028/S029 plan).
 The terrain drawer's seven passes now read and write the five ranges they own for one field through one
-accessor (`game/render/guest_terrain_memory.*`) instead of `Core`, carry a `FrameMode` on the frame,
+accessor (`game/render/terrain/guest_terrain_memory.*`) instead of `Core`, carry a `FrameMode` on the frame,
 and report each ordering-table link as `Linked{head, primitive, markKey}` with the mark compared as a
 bin ORDINAL rather than a slot address — the same ordering, so the same comparison works over a table
 an in-between owns in host memory. The real field is byte-identical to the previous build on both
@@ -2227,16 +2227,16 @@ Related goals: G001, G002, G003.
 for a panel and wrong for an edge element: a gem counter authored 46 px from the left edge lands 132 px in.
 One owner now decides the class of each element, draw-side only (no guest write; 4:3 is the identity).
 
-**Owners.** `game/render/ui_anchor.*` is the ONE rule: `Anchor::{LeftEdge, Centred, RightEdge}` and the
+**Owners.** `game/render/hud/ui_anchor.*` is the ONE rule: `Anchor::{LeftEdge, Centred, RightEdge}` and the
 arithmetic (`offset`, `correction`, `place`), plus `placeAndReport` / `correctionAndReport`, which report
-the same number they return on the `uihud` debug channel. `game/render/hud_layout.h` is the guest's HUD
+the same number they return on the `uihud` debug channel. `game/render/hud/hud_layout.h` is the guest's HUD
 block and the class of each part, read from the image's own tables (`g_HudMobyTargetPos` 0x8006E68C,
 `g_HudEggTargetRect` 0x8006E71C, `HudReset`): gem digits and chest x=46..174 LEFT, dragon x=230..292
 CENTRED, lives digits and Spyro head x=394..464 RIGHT, key x=430 RIGHT, treasure row x=36+27i LEFT, life
 orbs RIGHT (they are placed from `m_Mobys[10]`, the Spyro head, so they share its side). Producers:
-`fx_field_collectables.cpp` (sprites, box placement), `field_shaded_queue_submitter.cpp` (the twelve `g_Hud`
+`field_collectables.cpp` (sprites, box placement), `field_shaded_queue_submitter.cpp` (the twelve `g_Hud`
 Moby records, correction to the widened projection), `pause_menu_scene.cpp` (panel shift shared by its
-border), `fx_title_menu.cpp` (centred, symmetric about 384/2 and 512/2 in the guest's constants).
+border), `title_menu.cpp` (centred, symmetric about 384/2 and 512/2 in the guest's constants).
 
 **Measured on the product (16:9 `wide_only_control_settings.ini` against 4:3 `fps60_control_settings.ini`,
 `tools/hud_anchor_census.py`, headless `tools/drive.py` plus the front-end leg):** 14 elements, frames
@@ -2273,7 +2273,7 @@ interpolate across a moved centre (`Mismatch::Projection`).
 
 Two further defects the same work exposed, both fixed at their owner:
 (1) per-vertex lighting (`0x800230EC-0x80023258`, and the variant-1 face arm `0x80023574-0x800236D4`) was
-refused as unsupported. `game/render/shaded_moby_light.*` now owns the GTE program (MVMVA rotate, GPF scale,
+refused as unsupported. `game/render/field/shaded_moby_light.*` now owns the GTE program (MVMVA rotate, GPF scale,
 CC against the light matrix, highlight), tested differentially against the vendored Beetle GTE (4000/4000;
 the test found that CC's second phase writes IR at x255/256, which a hand derivation missed).
 (2) the near-camera back-face exemption was applied to every variant, but only the lit flat arm
@@ -2296,7 +2296,7 @@ object, `field_shaded_queue_emit::kCaptionPass`).
 (now drawn, centred through the projection; not compared against retail, and at 60 fps the caption pass retains no interpolation source), the level-transition tally, and the
 non-centred text boxes. Screen fade and border are full-frame fills that take the live render width.
 
-**"DEMO MODE" (issue 0163).** The native FIELD arm replaces the guest's stage-0 draw, and the demo caption's builder `0x80018908` (call site `0x8001F000`, gate `g_DemoMode` `0x80075714`, string at `0x80010AC0`, position (199, 200, 4352), spacing (16, 1, 5120), width 18, shade 2) had no producer, so the glyphs were never built; the screen-space path was never the cause. `game/render/demo_text_scene.*` builds them through `hud_text` (which also owns the wobble and the shaded-queue append the completed-gem text and the tally used to carry separately). Measured on the running product at the attract demo (`scratch/probe/n43c_2.png`, 4:3, and `w169_1.png`, 16:9): the text sits bottom-centre, 190..335 of 512 at 4:3 and moved by the 86 px margin at 16:9; the full-console reference at the same demo (`ref_1.png`, 560 wide with overscan padding) shows the same glyphs at 191..333 in 512 coordinates, with a differing wobble phase (native tick 48, reference tick 42). `tools/hud_anchor_census.py` also had a merge defect that dropped every HUD correction on its default route; fixed with selftest cases.
+**"DEMO MODE" (issue 0163).** The native FIELD arm replaces the guest's stage-0 draw, and the demo caption's builder `0x80018908` (call site `0x8001F000`, gate `g_DemoMode` `0x80075714`, string at `0x80010AC0`, position (199, 200, 4352), spacing (16, 1, 5120), width 18, shade 2) had no producer, so the glyphs were never built; the screen-space path was never the cause. `game/render/frame/scene/demo_text_scene.*` builds them through `hud_text` (which also owns the wobble and the shaded-queue append the completed-gem text and the tally used to carry separately). Measured on the running product at the attract demo (`scratch/probe/n43c_2.png`, 4:3, and `w169_1.png`, 16:9): the text sits bottom-centre, 190..335 of 512 at 4:3 and moved by the 86 px margin at 16:9; the full-console reference at the same demo (`ref_1.png`, 560 wide with overscan padding) shows the same glyphs at 191..333 in 512 coordinates, with a differing wobble phase (native tick 48, reference tick 42). `tools/hud_anchor_census.py` also had a merge defect that dropped every HUD correction on its default route; fixed with selftest cases.
 
 Gate: `uv run --frozen python tools/verify.py` (Clang, Ninja, clang-format and clang-tidy over 289 translation units, registration of 88 test sources, `ctest` 128/128), on the `demo-text` branch against the workspace's live framework checkout. `tools/hud_anchor_census.py` on its default route: PASS, `left-edge=2, centred=16, right-edge=2`; `drive.py gameplay` reached GS_Playing at frame 6360 on both legs.
 

@@ -388,7 +388,7 @@ not cover WAD overlay code.
 The queue's authenticated assembly writes an actor's X to OFX at
 `0x80022D2C` and has an exit arm at `0x80023958..80023964` that writes
 `0x01000000` (256) to OFX and `0x00780000` (120) to OFY. The native
-`fx_sprite_queue.cpp::setup_screen_gte` likewise writes the actor's X to
+`sprite_queue.cpp::setup_screen_gte` likewise writes the actor's X to
 OFX, but its containing `emit_screen_queue` returned without restoring the
 screen center. Its stage-13 mode-3 text builder has an `x = 100` branch and
 stores that X in the actor field later consumed by `setup_screen_gte`.
@@ -650,8 +650,8 @@ store count is not identical, and the final landed run is tabulated here:
 |---|---|---|---|---|---|
 | 6376 | `0x80013B4C` loader stage zero | 13 -> 0 | 0 -> 0 | 0 -> 0 | none |
 | 6377 | `0x80053C90` PadVSync | 0 | 0 -> 1 | 0 | `hostturn` |
-| 6378 | `0x80053C90` PadVSync | 0 | 1 -> 2 | 0 | `render-suppressed` |
-| 6379 | `0x80053C90` PadVSync | 0 | 2 -> 3 | 0 | `render-suppressed` |
+| 6378 | `0x80053C90` PadVSync | 0 | 1 -> 2 | 0 | `frame_renderer-suppressed` |
+| 6379 | `0x80053C90` PadVSync | 0 | 2 -> 3 | 0 | `frame_renderer-suppressed` |
 | 6380 | `0x80033A6C` first game tick | 0 | 3 | 0 -> 1 | none |
 
 The capture reported six target PCs, **121,927,308** scanned JIT instructions, 6,449 paired stores,
@@ -688,7 +688,7 @@ disabled arm retained nothing. Raw captures are gitignored at
 The "native three, console one" gap at the first stage-zero game-tick store is a **field-delivery
 count** difference, not a missing writer or an unattributed guest VSync. The console reaches the
 first stage-0 stage update one field after the loader's stage-zero store; the native tree delivers
-three fields there — one `hostturn` field and two `render-suppressed` fields — before the next
+three fields there — one `hostturn` field and two `frame_renderer-suppressed` fields — before the next
 product step's stage update runs. The steady cadence then agrees on both sides (two level ticks per
 game tick from the second store on: native 3 -> 6 -> 8 -> 10, console 1 -> 3 -> 5), so the
 divergence is local to the loader -> stage-0 transition rather than a general scheduler rate
@@ -713,7 +713,7 @@ suppressed step delivers three fields where the native branch delivers two.
 
 A temporary diagnostic build (patched, measured, then reverted; never committed) delivered only the
 remaining quota in the suppressed branch. Its bracket contained **two** `0x80053C90` stores — one
-`hostturn` and one `render-suppressed` — and the first game-tick store moved from level tick 3 to
+`hostturn` and one `frame_renderer-suppressed` — and the first game-tick store moved from level tick 3 to
 level tick **2**, with every later sampled game tick also shifted by one (2/5/7/9 instead of 3/6/8/10,
 same +3 then +2 pattern). That capture reported six target PCs, 122,126,013 scanned JIT instructions,
 6,449 paired stores, 21 retained, 6,428 routine increments omitted, and zero fallback instructions.
@@ -795,7 +795,7 @@ The frame driver's `FrameState` addresses are the retail globals, not a private 
 `kGp + 0x4FC` is `g_UnprocessedFrames` (`0x80075760`), and `kGp + 0x538` is `g_StateSwitch`
 (`0x8007579C`). `stepFrame` writes `clamp(elapsedFields(), 2, 4)` into `g_DeltaTime` and zeroes
 `g_UnprocessedFrames` once per logic frame — main.c's three lines, in the host that owns the field
-clock — and `renderSuppressed()` reads the guest's own `g_StateSwitch`.
+clock — and `frame_rendererSuppressed()` reads the guest's own `g_StateSwitch`.
 
 A read-only REPL probe (`scratch/oracle-comparison/pad_edge_probe.py`, log
 `scratch/oracle-comparison/pad_edge_probe.log`) confirmed the coupling live at Artisans: Cross

@@ -19,7 +19,7 @@ card machine's own resolution: `g_Gamestate` 11 (GS_Fairy), `g_FairyCutscene.m_M
 walking **0 -> 2 -> 7**, with the card-stage word (the same `+0x08` word, see below) reaching 4.
 Page 2 is the only jtbl_80010E08 entry whose handler reaches `SaveCreate` (0x800321F4) and
 `MemCardWriteFile` (0x80032230); page 7 is the page the guest captions **"GAME SAVED"** (the string
-at 0x80010CC4, laid out for page 7 by `game/render/fairy_menu_recipe.cpp` `case 7`). The card image
+at 0x80010CC4, laid out for page 7 by `game/render/frame/scene/fairy_menu_recipe.cpp` `case 7`). The card image
 the run left behind carries the `BASCUS-94228SPYRO` file, so the write is corroborated outside the
 guest too.
 

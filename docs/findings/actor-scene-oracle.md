@@ -9,7 +9,7 @@ named.
 
 `spyro::actor_scene_oracle::compare` runs retail's moby-chain walker `0x80019698` over the same guest
 state the native producers have just read, decodes every GPU packet it links into the world OT
-(`game/render/gpu_packet_decode.*`, shared with `world_scene_capture.cpp`), restores the OT and the
+(`game/render/frame/gpu_packet_decode.*`, shared with `world_scene_capture.cpp`), restores the OT and the
 packet-pool cursor, and prints both streams with denominators. It is armed only by the environment
 knob and must never run on a shipping frame: it restores the OT and the packet-pool cursor, but not
 everything else the retail body writes — the shaded queue's per-record `+0x51` accepted flag, the

@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: 
-depends: game/render/fx_sprite_queue.cpp#project_screen_vertex
+depends: game/render/field/sprite_queue.cpp#project_screen_vertex
 ---
 
 ## Claim
@@ -13,7 +13,7 @@ Spyro's native stage-13 screen sprite layer matches the guest producer at semant
 
 ## Evidence
 
-scratch/logs/native-packed-decode-fix.log; shared RTPS phase trace measured 542/542 rows in guest/native and located 271 differing native inputs before the packed signed-shift decode was corrected in game/render/fx_sprite_queue.cpp#project_screen_vertex
+scratch/logs/native-packed-decode-fix.log; shared RTPS phase trace measured 542/542 rows in guest/native and located 271 differing native inputs before the packed signed-shift decode was corrected in game/render/field/sprite_queue.cpp#project_screen_vertex
 
 ## What would falsify it
 

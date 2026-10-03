@@ -103,7 +103,7 @@ takes those coordinates from its own projection's `raw_view_fixed`, never from g
 
 ## What the port does now
 
-`game/render/face_light_program.cpp` owns the transcribed arm as a pure function over the three
+`game/render/field/face_light_program.cpp` owns the transcribed arm as a pure function over the three
 view-space vertices, the control word, and a snapshot of the light colour and magnitude table that
 `face_light_environment` takes from the Core once per composition. `tests/test_face_light_program.cpp`
 runs the pure result against the real GTE for 23 faces through `GTE_ExecuteIsolated` and the same

@@ -1,5 +1,5 @@
+#include "actor_producer.h"
 #include "core.h"
-#include "fx_actor_draw.h"
 #include "game.h"
 #include "guest_globals.h"
 #include "hw_bind.h"

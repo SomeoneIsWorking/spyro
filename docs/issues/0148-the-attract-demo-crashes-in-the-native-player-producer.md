@@ -19,7 +19,7 @@ reproduced with the reach recorder and the differential armed, and with nothing 
     Core::mem_r8 <- spyro::paired_actor::make_stream <- paired_actor::build_descs
       <- spyro_field_player_submit <- spyro_field_model_chain_submit <- SpyroRenderer::renderScene
 
-`make_stream` (`game/render/paired_actor_pose.cpp:168`) reads the model pointer
+`make_stream` (`game/render/actor/paired_actor_pose.cpp:168`) reads the model pointer
 `table[anim] + 0x38` and then dereferences it. In the demo, that word is not a pointer. The last lines
 before the fault are `[pairedactor] ownership gate: leg=native ... PASS`. No drive.py gameplay route
 crashes; only the self-playing demo does.

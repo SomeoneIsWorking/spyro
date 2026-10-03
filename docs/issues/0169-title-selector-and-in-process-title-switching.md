@@ -215,19 +215,19 @@ touched unit: clean.
 ## Root cause of the multi-session faults (framework, fixed here)
 
 Both faults were ONE defect, and it was process-global state shared across Cores — the render-path CVar.
-`render_path_install` wrote a title's fallback into `cv_render_path` at `Layer::Runtime`, a
+`frame_renderer_path_install` wrote a title's fallback into `cv_render_path` at `Layer::Runtime`, a
 process-global slot. Spyro 2 declares only the guest paths, so Spyro 2's boot wrote `gte` there, and
 **every Core created afterwards resolved its render path from it**: Spyro 1's panel session then booted
 on the guest renderer instead of the native one, and the retained-reference leg
-(`game/render/render_frame.cpp::referenceOtWalk`) deliberately stops at the first frame-driver call —
+(`game/render/frame/frame_renderer.cpp::referenceOtWalk`) deliberately stops at the first frame-driver call —
 `frame-render-drv required a completed guest call, but execution exited as frame-boundary`. The same
 mix put a session on a renderer its title does not use, which is how the long-walk confirm reached a
 NULL BIOS function pointer.
 
-Fixed in psxport: a live `render path ...` switch records the Core it was addressed to and a Core adopts
-one only if the switch is its own (`render_path.cpp`); a refused title path is recorded on the Core and
-in the install line, never in the process-global ladder; `render_path_forget(Core*)` from `~Core` keeps
-the remembered pointer from outliving its machine; `render_path_excluding_runtime` reads the ladder
+Fixed in psxport: a live `frame_renderer path ...` switch records the Core it was addressed to and a Core adopts
+one only if the switch is its own (`frame_renderer_path.cpp`); a refused title path is recorded on the Core and
+in the install line, never in the process-global ladder; `frame_renderer_path_forget(Core*)` from `~Core` keeps
+the remembered pointer from outliving its machine; `frame_renderer_path_excluding_runtime` reads the ladder
 without that one layer. Other process-globals fixed for the same reason: the vendored Beetle SPU and XA
 bindings are re-bound per stepped frame in `FrameLoopShell::step()`, and the host field clock is per-Core.
 

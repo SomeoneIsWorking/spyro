@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: render,paired-actor
-depends: game/render/fx_paired_actor.cpp#submit_native, game/render/paired_actor_decode.cpp#resolve_normal_faces, game/render/render_frame.cpp#SpyroRenderer::drawFrame
+depends: game/render/actor/paired_actor.cpp#submit_native, game/render/actor/paired_actor_decode.cpp#resolve_normal_faces, game/render/frame/frame_renderer.cpp#SpyroRenderer::drawFrame
 ---
 
 ## Claim

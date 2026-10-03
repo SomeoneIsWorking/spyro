@@ -28,7 +28,7 @@ Measured 2026-09-20, same route, same settled state, only `aspect` changed:
 | 1 (16:9) | `wide_engine=1 native_width=512 render_width=684` | 684x240 |
 
 `wide_engine=1` in BOTH, which is exactly why psxport's `runtime/psx/picture_announce.h` says to
-read `render_width` and never that flag. That header already recorded Tomba! 2 measuring the same
+read `frame_renderer_width` and never that flag. That header already recorded Tomba! 2 measuring the same
 pair (320 vs 428) on 2026-09-19. The fact was written down, in the framework, and neither title's
 settings file was checked against it.
 
@@ -45,7 +45,7 @@ produced that evidence, announces `aspect=3 wide_engine=1 native_width=512 rende
 ## The measurement, now that widescreen is actually on
 
 `tools/oracle_compare.py --bios ../SCPH1001.BIN` with `aspect=1 fps60=1`, the product log announcing
-`render_width=684`:
+`frame_renderer_width=684`:
 
 ```
 15 checkpoints, 0 decisive divergences, complete: True

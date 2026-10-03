@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """field_layers.py — what does each layer of the FIELD (stage 0) arm actually DRAW?
 
-WHY. `game/render/scene.cpp` carries the field arm's 10-layer list as the native-renderer backlog,
+WHY. `game/render/frame/scene.cpp` carries the field arm's 10-layer list as the native-renderer backlog,
 and six of its ten entries said "(role not RE'd)". Sizing that backlog by reading ten bodies by hand
 is exactly the re-derivation this repo keeps paying for, and the obvious shortcut — "follow the call
 graph to a known renderer" — gives the WRONG answer on this game, because two of the ten layers are
@@ -48,7 +48,7 @@ def _load_callgraph():
 
 
 # The stage-0 arm of the render driver 0x8001ED5C, in the guest's own draw order. This list is the
-# SAME one game/render/scene.cpp ships; it is repeated here rather than parsed out of the .cpp
+# SAME one game/render/frame/scene.cpp ships; it is repeated here rather than parsed out of the .cpp
 # because this tool is what the .cpp's roles were derived FROM, and a tool that read its answer out
 # of the file it justifies would certify nothing.
 LAYERS = [

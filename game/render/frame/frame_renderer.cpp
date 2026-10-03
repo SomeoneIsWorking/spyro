@@ -1,0 +1,503 @@
+// frame_renderer.cpp — ONE frame's picture: the reference OT walk, or the native producers.
+//
+// Spyro1FrameDriver calls this title seam directly. Scene producers feed one render queue, and
+// frame_commit owns the presentation fence. GameHooks::drawOTag remains unset to avoid a second
+// presentation route.
+#include "frame_renderer.h"
+#include "actor_producer.h"
+#include "core.h"
+#include "cutscene_scene_recipe.h"
+#include "demo_text_scene.h"
+#include "dragon_scene_producer.h"
+#include "fairy_menu_scene.h"
+#include "field_2d_overlay.h"
+#include "field_collectables.h"
+#include "field_cyclorama.h"
+#include "field_environment.h"
+#include "field_moby_lists.h"
+#include "field_model_chain.h"
+#include "field_particles.h"
+#include "field_player_actor.h"
+#include "field_shadow.h"
+#include "field_tracers.h"
+#include "fps60.h"      // checked access to Spyro 1's title-owned temporal presentation product
+#include "frame_env.h"  // spyro::render::frameBegin/End — the frame the native producers draw into
+#include "game.h"       // Game::rq — the render queue the native producers emit into
+#include "gpu_vk.h"     // measured native/wide engine extents for the product-path announcement
+#include "guest_call.h" // Bounded runtime execution of the retained reference driver.
+#include "guest_globals.h"
+#include "level_transition_scene.h"
+#include "native_terrain.h"
+#include "paired_actor.h"
+#include "pause_menu_scene.h"
+#include "presentation_owner.h"
+#include "screen_border.h"
+#include "screen_fade.h"
+#include "screen_fade_recipe.h"
+#include "snapshot.h" // snapshot_now — a refusal fatal must leave the corpus its fix needs
+#include "spyro1_field_scheduler.h"
+#include "spyro_context.h"
+#include "stage13_scene_recipe.h"
+#include "temporal_scene.h"
+#include "world_producer.h"
+#include <array>
+#include <lucent/log.h>
+#include <stdlib.h> // abort
+#include <string>
+
+namespace {
+using spyro::guest::kCamera;
+// The scene vocabulary frame_renderer.h owns: the stage selectors, the render-driver entry, and the
+// one scene identity the producers dispatch on.
+using spyro::guest::kGamestate;
+using spyro::guest::kTitlescreenState;
+using spyro::render::kFrameRenderDrv;
+using spyro::render::kStageCutscene;
+using spyro::render::kStageDragon;
+using spyro::render::kStageEntranceAnimation;
+using spyro::render::kStageFairy;
+using spyro::render::kStageField;
+using spyro::render::kStageFrontEnd;
+using spyro::render::kStageGameOver;
+using spyro::render::kStageInventoryMenu;
+using spyro::render::kStageLevelTransition;
+using spyro::render::kStageOldDragon;
+using spyro::render::kStagePauseMenu;
+using spyro::render::kStageRespawn;
+using spyro::render::Scene;
+constexpr uint32_t kStageSubSubstate = 0x80078D7Cu;
+using spyro::guest::kLoadStage;
+using spyro::guest::kStateSwitch;
+constexpr uint32_t kGameplayDrawFrame = 0x8007593Cu;
+
+// One message per layer of 0x80019698, so the abort still names the exact producer that refused
+// now that the chain has its own owner.
+const char *modelChainRefusal(unsigned producer) {
+  switch (producer) {
+  case 0x8001F798u:
+    return "actor producer 0x8001F798 refused its atomic recipe";
+  case 0x80020F34u:
+    return "secondary/shaded actor producers 0x80020F34/0x80022A2C refused their combined atomic "
+           "recipe";
+  case 0x80059F8Cu:
+    return "moby shadow producer 0x80059F8C refused its atomic recipe";
+  case 0x80023AC4u:
+    return "Spyro actor producer 0x80023AC4 refused its atomic recipe";
+  case 0x80059A48u:
+    return "Spyro shadow producer 0x80059A48 refused its atomic recipe";
+  case 0x80058D64u:
+    return "Spyro flame producer 0x80058D64 refused its atomic recipe";
+  case 0x80058BA8u:
+    return "glow/sparkle producer 0x80058BA8 refused its atomic recipe";
+  default:
+    return "a producer of 0x80019698 refused its atomic recipe";
+  }
+}
+
+// Join the layer's name to what it actually saw. A producer address alone sent issue 0113 round
+// four days of "not reproducible": the abort named 0x80020F34 and stopped there, while the reason
+// sat on a debug channel nobody had enabled.
+std::string refusalMessage(const char *layer, const spyro::ProducerRefusal &refusal) {
+  return refusal.detail.empty() ? std::string(layer)
+                                : lucent::format("{} — {}", layer, refusal.detail);
+}
+
+// The dragon owner reports a guest address, or 1 when the composition itself could not be derived.
+const char *dragonRefusal(unsigned producer) {
+  if (producer == 0x80058864u) {
+    return "dragon burst producer 0x80058864 is armed and has no native owner";
+  }
+  if (producer == 1u) {
+    return "dragon cutscene producer 0x8001CFDC refused its atomic composition";
+  }
+  return modelChainRefusal(producer);
+}
+
+bool isFieldStage(uint32_t stage) {
+  return stage == kStageField || stage == kStageRespawn || stage == kStageGameOver;
+}
+
+bool pairedActorScene(Core *core, const Scene &scene) {
+  const bool frontend = scene.stage == kStageFrontEnd &&
+                        core->mem_r32(spyro::guest::kTitlescreenState) == 3u &&
+                        core->mem_r32(0x80078D7Cu) == 2u;
+  const bool respawnFading = (scene.stage == kStageRespawn || scene.stage == kStageGameOver) &&
+                             core->mem_r32(kGameplayDrawFrame) != 0u;
+  // The dragon cutscene draws Spyro too — through the shared field chain in its state 0 and
+  // through 0x80023AC4 directly in most of the rest — so it arms the same ownership gate. Its own
+  // state table answers, rather than a second copy of it here.
+  const bool dragon = scene.stage == kStageDragon && spyro::dragon_scene::drawsPlayer(core);
+  // src/gamestates/draw.c:816 — func_8001A050 calls 0x80023AC4 unconditionally, so both stages it
+  // serves always arm the same ownership gate as a field stage.
+  const bool levelTransition =
+      scene.stage == kStageLevelTransition || scene.stage == kStageEntranceAnimation;
+  // 0x8001A40C — the pause / inventory / old-dragon handler — reaches the same whole 0x80019698
+  // chain on its world path, so it arms the same gate through the same field-player question. The
+  // menu's own frames carry no separate ownership: the world behind the menu is the field's world.
+  // 0x8001D718 (GS_Fairy) runs the same world calls under its dialogue.
+  const bool menuArm = scene.stage == kStagePauseMenu || scene.stage == kStageInventoryMenu ||
+                       scene.stage == kStageOldDragon || scene.stage == kStageFairy;
+  return frontend || dragon || levelTransition ||
+         ((isFieldStage(scene.stage) || menuArm) && !respawnFading &&
+          spyro::field_player_actor::visible(core));
+}
+} // namespace
+
+spyro::render::FrameRenderer::FrameRenderer(Core *c,
+                                            spyro::render::SpriteQueueOffsetObserver *queueObserver)
+    : mC(c), mQueueObserver(queueObserver) {}
+
+// The framework owns configuration; this entry announces the title's render policy.
+void spyro::render::FrameRenderer::installModeFromConfig(Core *c) {
+  if (!c->rsub.mode.psxRender()) {
+    lucent::info("render",
+                 "native path: stage {} front-end and stage {} cutscene recipes. Aborts on a stage "
+                 "with no producer or when a complete native recipe is refused. "
+                 "PSXPORT_RENDER_PATH=gte for the reference picture (guest driver 0x8001ED5C).",
+                 (int)kStageFrontEnd,
+                 (int)kStageCutscene);
+  }
+}
+
+// THE RETAINED REFERENCE BODY — a diagnostic entry for native-producer comparison. It is not
+// currently a runnable player path: every reached retail render arm owns a VSync-based display
+// tail, and the mandatory guest-VSync trap stops it until those diagnostic tails are split from
+// scene production.
+//
+// The OT walk is inside it rather than beside it: the guest's driver ends in its own DrawOTag,
+// which reaches the GPU through DMA2, and the framework walks the ordering table there
+// (gpu_native.cpp `GpuState::gpu_dma2_linked_list`).
+//
+// The DMA2 ordering-table walk owns its queue flush. Flushing again here would re-emit the same
+// consumed queue; see issue 0053 for the historical duplicate-submission finding.
+void spyro::render::FrameRenderer::referenceOtWalk() const {
+  // This deliberately reaches the fatal VSync trap today. Do not add a success override here;
+  // preserve the original guest body and split the measured display tail when the diagnostic leg is
+  // made runnable again.
+  psx::cpu::dispatchGuestToReturn0(
+      *mC, kFrameRenderDrv, psx::cpu::ExecutionBudget::currentTurn(*mC), "frame-render-drv");
+}
+
+// THE NATIVE PICTURE. One branch per stage that has a producer; every other stage ends in the abort
+// below, and that abort is a DELIVERABLE rather than a gap being papered over. A branch that
+// quietly dispatched the guest's renderer, or drew something plausible, would let a half-ported
+// scene read as finished — and the reason this project keeps re-deriving render bugs is that a
+// plausible picture is indistinguishable from a correct one. Stopping with the scene identity
+// printed turns the porting backlog into a crash sequence in dependency order.
+//
+void spyro::render::FrameRenderer::prepareScene(const Scene &sc) const {
+  if (sc.stage == kStageCutscene || sc.stage == kStageLevelTransition ||
+      sc.stage == kStageEntranceAnimation) {
+    const auto state = spyro::cutscene_scene_recipe::read(mC);
+    spyro::cutscene_scene_recipe::prepareFrame(mC, state);
+  }
+}
+
+// STAGES 13 AND 14 compose the already-owned actor, RenderWorldChunks, and cyclorama producers in
+// their authored order. Stage 13 adds its front-end sprites before those owners. Stage 14 copies
+// its clear colour before spyro::render::frameBegin and adds its conditional screen fade afterward.
+// Every producer refuses before partial submission when its semantic input cannot be represented.
+//
+// STAGE 0 (GS_Playing) composes the field-snapshot owners issue 0089 captured, in the guest's
+// authored draw order (external/spyro-1 src/gamestates/draw.c GamestateDraw, GS_Playing branch):
+// cyclorama clear colour; collectables unless a flight level (0x80019300, g_IsFlightLevel
+// 0x80075690); the moby chains (0x80019698); the environment and world chunks (0x8002B9CC ->
+// 0x800258F0); the cyclorama wrapper (0x80050BD0); particles (0x800573C8); the screen fade; the
+// screen border (0x80018F30); tracers (0x800189F0). Each layer now has an atomic native recipe; a
+// refusal remains fail-fast at the first incomplete input rather than silently dropping it.
+void spyro::render::FrameRenderer::renderScene(const Scene &sc) const {
+  const int32_t ofsX = mC->mem_r16s(mEnv + 8u), ofsY = mC->mem_r16s(mEnv + 10u);
+  const int32_t cx = mC->mem_r16s(mEnv + 0u), cy = mC->mem_r16s(mEnv + 2u);
+  const int32_t cw = mC->mem_r16s(mEnv + 4u), ch = mC->mem_r16s(mEnv + 6u);
+  if (isFieldStage(sc.stage)) {
+    if ((sc.stage == kStageRespawn || sc.stage == kStageGameOver) &&
+        mC->mem_r32(kGameplayDrawFrame) != 0u) {
+      // The respawn/game-over arms keep the pre-existing two-call composition: they draw a fade and
+      // a border over a frozen gameplay frame, they are not a FIELD arm, and this change does not
+      // make them one. They go through the same submitters with an explicit queue, which is the
+      // only thing that changed about those two functions.
+      const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+      const auto fade =
+          spyro::screen_fade_recipe::field(mC->mem_r32(0x80075918u), ofsX, ofsY, renderWidth);
+      if (!spyro::screen_fade::submit(mC, mC->game->rq, fade)) {
+        abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
+      }
+      if (spyro::screen_border::armed(mC)) {
+        const auto border = spyro::screen_border::stage(mC);
+        if (!spyro::screen_border::submit(mC, mC->game->rq, border)) {
+          abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+        }
+      }
+      return;
+    }
+    const auto background = spyro::cutscene_scene_recipe::read(mC);
+    spyro::cutscene_scene_recipe::prepareFrame(mC, background);
+    // Retail clears g_SonyImage.m_ShadedMobys immediately before func_80019300. The native actor
+    // producer does not consume that guest pointer list, so reproduce the lifecycle boundary here
+    // instead of letting a prior screen's stale entries consume the field HUD capacity.
+    mC->mem_w32(0x800720F4u, 0u);
+    // Retail builds the three actor lists before the regular, secondary, and shaded passes. The
+    // regular native owner reads the level array directly, but the secondary owner consumes the
+    // negative-state list produced here; omitting this state-only arm leaves its source pointers
+    // uninitialized at the first FIELD frame.
+    spyro::field_moby_lists::build(mC);
+    // THE 2D OVERLAY'S ENDPOINT, captured ONCE for the whole frame. The three producers below read
+    // the same guest words at the same instant, and a reconstruction needs them as one consistent
+    // pair of endpoints rather than three separate reads that could straddle a guest write. The
+    // capture commits nothing: the guest's own writes happen at its own positions below.
+    const int32_t fieldRenderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+    auto &overlay = spyro::context(*mC).overlayFrame;
+    const auto overlayStatus = overlay.capture(*mC, ofsX, ofsY, fieldRenderWidth);
+    if (overlayStatus == spyro::field_2d_overlay::Status::InvalidCount) {
+      abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
+    }
+    if (overlay.armed(spyro::field_2d_overlay::Part::Sprite)) {
+      if (!overlay.commit(*mC, spyro::field_2d_overlay::Part::Sprite)) {
+        abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
+      }
+      if (!spyro::field_2d_overlay::publish(
+              *mC, mC->game->rq, spyro::field_2d_overlay::Part::Sprite, overlay.overlay())) {
+        abortUnimplemented(sc, "collectables producer 0x80019300 refused its atomic recipe");
+      }
+    }
+    // 0x8001F000: the attract demo's "DEMO MODE" caption, between the collectables and the actor
+    // pass, so the shaded pass the model chain runs finds it in the queue.
+    if (!spyro::demo_text_scene::submit(mC)) {
+      abortUnimplemented(sc, "demo-mode text producer 0x80018908 refused its atomic recipe");
+    }
+    if (const auto refusal = spyro::field_model_chain::submit(mC)) {
+      abortUnimplemented(sc, refusalMessage(modelChainRefusal(refusal.producer), refusal).c_str());
+    }
+    if (!spyro::field_environment::submit(mC)) {
+      abortUnimplemented(sc, "environment producer 0x8002B9CC refused its atomic recipe");
+    }
+    if (!spyro::field_cyclorama::submit(mC)) {
+      abortUnimplemented(sc, "cyclorama producer 0x80050BD0 refused its atomic recipe");
+    }
+    if (const auto refusal = spyro::field_particles::submit(mC)) {
+      abortUnimplemented(sc, refusalMessage("particles", refusal).c_str());
+    }
+    // The fade and the border, at the guest's own two later positions, from the SAME endpoint the
+    // sprites were published from. The border's stepped height is committed here rather than at the
+    // capture, because the composition's gate above reads the pre-step value.
+    if (overlay.armed(spyro::field_2d_overlay::Part::Fade)) {
+      if (!overlay.commit(*mC, spyro::field_2d_overlay::Part::Fade) ||
+          !spyro::field_2d_overlay::publish(
+              *mC, mC->game->rq, spyro::field_2d_overlay::Part::Fade, overlay.overlay())) {
+        abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
+      }
+    }
+    if (overlay.armed(spyro::field_2d_overlay::Part::Border)) {
+      if (!overlay.commit(*mC, spyro::field_2d_overlay::Part::Border) ||
+          !spyro::field_2d_overlay::publish(
+              *mC, mC->game->rq, spyro::field_2d_overlay::Part::Border, overlay.overlay())) {
+        abortUnimplemented(sc, "screen border producer 0x80018F30 refused its atomic recipe");
+      }
+    }
+    // The endpoint is retained here, once, after the whole layer is committed: a frame's overlay is
+    // one fact, and retaining it before the border's height was written would retain a frame whose
+    // guest state had not finished being produced.
+    spyro::context(*mC).overlayTemporal.retain(overlay.endpoint());
+    if (!spyro::field_tracers::submit(mC)) {
+      abortUnimplemented(sc, "tracers producer 0x800189F0 refused its atomic recipe");
+    }
+    return;
+  }
+  // STAGES 1 (GS_LevelTransition) and 9 (GS_EntranceAnimation), func_8001A050. Its whole
+  // composition — the cleared Sony image, the tally, the shaded HUD mobys, the Spyro actor and the
+  // cyclorama (through substitute matrices while the level-entrance sweep is still winding down) —
+  // belongs to its own owner.
+  if (sc.stage == kStageLevelTransition || sc.stage == kStageEntranceAnimation) {
+    const auto refusal = spyro::level_transition_scene::submit(mC);
+    if (refusal != spyro::level_transition_scene::Refusal::None) {
+      abortUnimplemented(sc, spyro::level_transition_scene::refusalName(refusal));
+    }
+    return;
+  }
+  // STAGES 2, 3 AND 6 SHARE ONE HANDLER, 0x8001A40C: the FIELD arm's five world calls in the
+  // guest's own order, plus — from the menu's SECOND frame on — a translucent panel, a lit border
+  // and the page's captions. None of its 2D layers is a HUD layer, which is why this arm composes
+  // the world producers itself rather than reusing the FIELD arm's route.
+  if (sc.stage == kStagePauseMenu || sc.stage == kStageInventoryMenu ||
+      sc.stage == kStageOldDragon) {
+    const auto refusal = spyro::pause_menu_scene::submit(mC, cx + cw - 1);
+    if (refusal != spyro::pause_menu_scene::Refusal::None) {
+      abortUnimplemented(sc, spyro::pause_menu_scene::refusalName(refusal));
+    }
+    return;
+  }
+  if (sc.stage == kStageFairy) {
+    const auto refusal = spyro::fairy_menu_scene::submit(mC, cx + cw - 1);
+    if (refusal != spyro::fairy_menu_scene::Refusal::None) {
+      abortUnimplemented(sc, spyro::fairy_menu_scene::refusalName(refusal));
+    }
+    return;
+  }
+  if (sc.stage == kStageDragon) {
+    // 0x8001CFDC. The composition is one of eight authored branches selected by the cutscene's own
+    // state, so the owner reports which layer refused rather than returning a bare false.
+    const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+    if (const auto refusal = spyro::dragon_scene::submit(mC, ofsX, ofsY, renderWidth)) {
+      abortUnimplemented(sc, refusalMessage(dragonRefusal(refusal.producer), refusal).c_str());
+    }
+    return;
+  }
+  if (sc.stage != kStageFrontEnd && sc.stage != kStageCutscene) {
+    abortUnimplemented(sc, "no producer is registered for this stage");
+  }
+  if (sc.stage == kStageFrontEnd) {
+    const uint32_t titleMode = mC->mem_r32(spyro::guest::kTitlescreenState);
+    if (!spyro::stage13_scene_recipe::hasSharedBackdrop(titleMode)) {
+      if (!stage13Mode3Render()) {
+        abortUnimplemented(sc, "mode 3 also armed paired-actor renderer 0x80023AC4");
+      }
+      return;
+    }
+    if (!titleMenuRender(ofsX, ofsY, cx, cy, cx + cw - 1, cy + ch - 1)) {
+      abortUnimplemented(sc, "the stage-13 producer declined this frame's menu mode");
+    }
+  }
+  if (const auto refusal = spyro::actor_draw::submit(mC)) {
+    abortUnimplemented(sc, refusalMessage("actor 0x8001F798", refusal).c_str());
+  }
+  int32_t worldSelection = -1;
+  if (sc.stage == kStageFrontEnd) {
+    const auto invocation = spyro::stage13_scene_recipe::sharedBackdropInvocation();
+    spyro::stage13_scene_recipe::apply(mC, invocation);
+    worldSelection = invocation.worldSelection;
+  } else {
+    const auto invocation = spyro::cutscene_scene_recipe::worldInvocation();
+    spyro::cutscene_scene_recipe::applyWorldInvocation(mC, invocation);
+    worldSelection = invocation.worldSelection;
+  }
+  if (!spyro::world_draw::submit(mC, worldSelection)) {
+    abortUnimplemented(sc, "world producer 0x800258F0 refused its atomic recipe");
+  }
+  if (!spyro::render::submitTerrainGuest(mC, -1, kCamera + 0x14u, kCamera)) {
+    abortUnimplemented(sc, "cyclorama producer 0x8004EBA8 refused its atomic recipe");
+  }
+  if (sc.stage == kStageCutscene) {
+    const auto state = spyro::cutscene_scene_recipe::read(mC);
+    const int32_t renderWidth = gpu_vk_wide_engine(mC) ? gpu_vk_wide_engine_w(mC) : cw;
+    const auto fade = spyro::screen_fade_recipe::cutscene(state.fade, ofsX, ofsY, renderWidth);
+    if (!spyro::screen_fade::submit(mC, mC->game->rq, fade)) {
+      abortUnimplemented(sc, "screen fade producer 0x800190D4 refused its atomic recipe");
+    }
+  }
+}
+
+[[noreturn]] void spyro::render::FrameRenderer::abortUnimplemented(const Scene &sc,
+                                                                   const char *why) const {
+  lucent::error(
+      "render", "NATIVE RENDER NOT IMPLEMENTED — stage selector = {} ({})", sc.stage, why);
+  lucent::error("render",
+                "  fatal boundary: guest pc=0x{:08X} ra=0x{:08X} sp=0x{:08X} "
+                "stage={}/{}/{} load_stage={} state_switch={}",
+                mC->pc,
+                mC->r[31],
+                mC->r[29],
+                mC->mem_r32(kGamestate),
+                mC->mem_r32(kTitlescreenState),
+                mC->mem_r32(kStageSubSubstate),
+                mC->mem_r32(kLoadStage),
+                mC->mem_r32(kStateSwitch));
+  // A title need not declare a legacy GameConfig, and Spyro does not: `Core::cfg` is null for the
+  // whole run. Dereferencing it here killed this function with SIGSEGV two lines into the report,
+  // so every refusal since has looked to the operator like a crash rather than a diagnosis, and
+  // the arm, the field backlog, the projection state and the RAM snapshot below were never
+  // written. That is the worst possible place for a null check to be missing: the one path whose
+  // entire job is to explain itself. Say which case this is instead of skipping quietly.
+  if (mC->cfg == nullptr) {
+    lucent::error("render",
+                  "  resident overlay slots: none to report — this title declares no GameConfig");
+  } else {
+    for (const auto &slot : mC->cfg->overlaySlots) {
+      if (slot.base == 0u) {
+        continue;
+      }
+      const auto identity = mC->currentImageIdentity(slot.base);
+      lucent::error("render",
+                    "  resident overlay slot 0x{:08X}: id={}",
+                    slot.base,
+                    identity ? identity->id : 0);
+    }
+  }
+  reportBacklog(sc);
+  // The frame-MISS path already dumps 2 MB of guest RAM because that image is what every
+  // follow-up question gets answered from. A refusal fatal is the same kind of event and had no
+  // dump, so each unowned stage-0 layer had to be re-driven live to be looked at once. Write it
+  // here unconditionally: this path ends the run anyway, so there is no cost to weigh.
+  snapshot_now(mC, "native-render-refusal");
+  lucent::error("render",
+                "  no fallback is installed on purpose: a native branch that drew "
+                "something plausible would make this gap invisible. Port the scene above, "
+                "or first split the retained diagnostic renderer's guest-VSync tail.");
+  abort();
+}
+
+// ONE frame's picture.
+void spyro::render::FrameRenderer::drawFrame() {
+  const Scene sc = classifyScene();
+  auto &paired = spyro::paired_actor::state(mC);
+  Fps60 &temporal = fps60(*mC->game);
+  const bool pairedState = pairedActorScene(mC, sc);
+  const uint64_t temporalScene = (uint64_t{sc.stage} << 1u) | uint64_t{pairedState};
+  spyro::temporal_scene::begin(
+      *mC, temporalScene, pairedState, mC->rsub.mode.psxRender(), temporal.active());
+  // `PSXPORT_DEBUG=scene`: what the classifier saw, EVERY drawn frame, on BOTH legs — the
+  // denominator is the drawn-frame count, and an unnamed stage prints as loudly as a named one. It
+  // is how "which scenes does a real run actually reach" gets answered with data rather than from
+  // the stage table, and it works on the reference leg precisely because that leg is how you drive
+  // INTO a scene whose producer does not exist yet.
+  lucent::debug("scene",
+                "stage={} leg={} arm={}",
+                sc.stage,
+                mC->rsub.mode.psxRender() ? "psx_render" : "native",
+                sc.arm ? sc.arm->what : "(outside 0..15 — the guest draws nothing)");
+  if (mC->rsub.mode.psxRender()) {
+    // Publish ownership before entering the retained body. Today the mandatory VSync trap stops
+    // the diagnostic leg before it returns; this ordering is already correct for the future split
+    // tail, where frame_commit below becomes its sole presenter.
+    spyro::presentationOwner(*mC).beginGuestFrame();
+    referenceOtWalk();
+    // Unreachable until the retained render-arm tails stop calling guest VSync. Once split, the
+    // guest OT walk will have filled the capture and this fence will drain/present it exactly once.
+    // The same two-field logic-frame quota as the native leg below — the reference leg reproduces
+    // the guest's cadence, not just its pixels.
+    temporal.frame_commit(mC, kFieldsPerLogicFrame);
+    if (!spyro::paired_actor::frameFinish(paired, true, false)) {
+      abort();
+    }
+    return;
+  }
+  // Boot upload-only screens intentionally leave the default at guest VRAM. Reaching this explicit
+  // native frame seam is the first point where the whole picture is known to come from producers.
+  spyro::presentationOwner(*mC).beginNativeFrame();
+  // THE FRAME THE PRODUCERS DRAW INTO. On the reference leg the guest's driver flips the draw env
+  // and programs the GPU from it; on this leg nothing does, so the producers would emit into the
+  // buffer that is NOT on screen and read as broken. game/render/frame_env.cpp owns that — it is
+  // re-frontier `frame.own-render-driver` parts (1) and (2), written from the game's own DRAWENV.
+  prepareScene(sc);
+  mEnv = spyro::render::frameBegin(mC);
+  renderScene(sc);
+  if (!spyro::paired_actor::frameFinish(paired, false, pairedState)) {
+    abort();
+  }
+  spyro::temporal_scene::prepare(*mC);
+  // Submit the complete native scene once, after every producer has accepted its input.
+  mC->game->rq.flush(mC);
+  // …and show the buffer this env names. The guest's own tail is PutDispEnv(activeEnv + 0x5C); see
+  // frame_env.cpp for why that displays the PREVIOUS iteration's buffer and why that is correct.
+  //
+  // Defer presentation and pacing to frame_commit in both temporal
+  // modes. It drains the capture accumulated by the queue flush.
+  spyro::render::frameEnd(mC, mEnv, true);
+  // THE PER-LOGIC-FRAME FENCE. flush() CAPTURES into Fps60::mNCur in both configs and frame_commit
+  // (present_vk -> presentRotate -> mNCur = 0) is the ONLY drain. guestFields=kFieldsPerLogicFrame
+  // (2): the logic frame spends TWO display fields (30 Hz logic, the guest's own measured tail);
+  // present_vk splits that quota across the extra lerped frame only when fps60 is active
+  // (extraFrame = active() && mHavePrev). One field per logic frame ran the game at twice its
+  // retail speed — boot fields paced per-field and were correct, which is exactly why the defect
+  // only showed once gameplay handed pacing to this fence.
+  temporal.frame_commit(mC, kFieldsPerLogicFrame);
+}

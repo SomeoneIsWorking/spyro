@@ -88,7 +88,7 @@ from the resident overlay.
 its DRAW pass. `func_8002B9CC` (`0x8002B9CC`, read out of the image) is
 `memset(0x8006FCF4, 0, 0x1C00)`: `jal 0x80016930` at `0x8002B9E0` with `$a0 = 0x8006FCF4` built at
 `0x8002B9D0` and `$a2 = 0x1C00` in the delay slot. The list base is `+0x400` inside that region. This
-repo reproduces it at `game/render/field_scene_recipe.cpp:62-67`
+repo reproduces it at `game/render/field/field_scene_recipe.cpp:62-67`
 (`spyro::field_scene_recipe::applyEnvironment`), byte-wise over the same 0x1C00.
 
 So a list read taken at a frame boundary is not an observation of the update. On this route it is

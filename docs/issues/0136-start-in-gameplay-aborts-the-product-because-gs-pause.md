@@ -35,9 +35,9 @@ here — the renderer refused on a state it has no producer for.
 
 ## Root cause
 
-`Scene::stage` is `g_Gamestate`. `game/render/render_frame.cpp` has a native producer for stages
+`Scene::stage` is `g_Gamestate`. `game/render/frame/frame_renderer.cpp` has a native producer for stages
 **0, 4, 5** (`isFieldStage`), **1, 9** (`level_transition_scene`), **8** (dragon), **13** (front end) and
-**14** (cutscene). Everything else falls through to `render_frame.cpp:295` and aborts.
+**14** (cutscene). Everything else falls through to `frame_renderer_frame.cpp:295` and aborts.
 
 **EIGHT OF SIXTEEN STAGES ABORT:**
 
@@ -76,7 +76,7 @@ is a *different* screen that the probe never reached. Which screen it is, is ope
 
 ## What the fix must NOT be
 
-`renderScene` refusing to present a scene it cannot draw is **correct behaviour**, and this issue must not be
+`frame_rendererScene` refusing to present a scene it cannot draw is **correct behaviour**, and this issue must not be
 closed by weakening it. No producer may be stubbed to return success, no guest byte may be written, and the
 refusal must not be bypassed. The defect is that the port can put the guest into a state it cannot present,
 so the fix is a real producer for stage 2 (and its stage-3 sibling, which shares the handler).

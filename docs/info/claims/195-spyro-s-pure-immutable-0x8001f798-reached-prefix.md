@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: actor-chain,native-producer,oracle
-depends: game/render/actor_prefix_builder.cpp#build
+depends: game/render/actor/actor_prefix_builder.cpp#build
 reconfirmed: 2026-08-28 04:08:50
 verified_at: 2026-08-28 04:08:50
 ---

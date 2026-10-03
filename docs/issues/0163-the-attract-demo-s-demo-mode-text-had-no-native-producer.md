@@ -11,7 +11,7 @@ updated: 2026-10-01
 ## Answer
 
 Root cause: the native FIELD arm (`SpyroRenderer::renderScene`) REPLACES the guest's stage-0 draw and
-composes each layer from its own producer. `game/render/scene.cpp` classified `0x80018908` ("demo-mode
+composes each layer from its own producer. `game/render/frame/scene.cpp` classified `0x80018908` ("demo-mode
 text", gate `g_DemoMode`) in its layer list, but no producer was ever written for it, so the guest never
 built the glyph Mobys and the shaded pass had nothing to draw. It was not a screen-space-path problem
 (d163fbd's), a refusal, or a cull: the glyphs did not exist.
@@ -35,8 +35,8 @@ on `shadedscreen` across a 420 s no-input run.
 
 ## Fix
 
-`game/render/demo_text_scene.*` is the missing producer: a pure `plan(g_DemoMode)` (the retail constants
-above through `hud_text::layoutCaption`) and `submit`, called in `renderScene` between the collectables
+`game/render/frame/scene/demo_text_scene.*` is the missing producer: a pure `plan(g_DemoMode)` (the retail constants
+above through `hud_text::layoutCaption`) and `submit`, called in `frame_rendererScene` between the collectables
 and the model chain. It reproduces the guest's arena and queue writes through `hud_text`, exactly as the
 completed-gem text and the pause and tally captions already do (the shaded-queue scene reads its Mobys
 from those words; this is not new guest state, it is the state `0x80018908` would have written). The

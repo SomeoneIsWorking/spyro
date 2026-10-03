@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: render,paired-actor,fps60,interpolation
-depends: game/render/fx_paired_actor.cpp#spyro_paired_actor_fps60_world_pass, game/render/paired_actor_decode.cpp#resolve_normal_faces_continuous, game/render/frame_env.cpp#nativeFrameEnd
+depends: game/render/actor/paired_actor.cpp#spyro_paired_actor_fps60_world_pass, game/render/actor/paired_actor_decode.cpp#resolve_normal_faces_continuous, game/render/frame/frame_env.cpp#nativeFrameEnd
 ---
 
 ## Claim

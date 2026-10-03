@@ -6,7 +6,7 @@
 #include "game.h"
 #include "guest_call.h"
 #include "guest_gp.h"
-#include "render.h"
+#include "frame_renderer.h"
 
 #include <algorithm>
 #include <cstdlib>

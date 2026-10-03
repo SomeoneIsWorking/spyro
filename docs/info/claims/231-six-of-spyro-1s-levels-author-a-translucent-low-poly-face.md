@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-09-28
 tags: render,water,census,material,reachability
-depends: tools/census_level_face_material.py, tools/world_chunk_layout.py, tools/census_level_blend.py, game/render/world_chunk_codec.cpp, game/render/world_lq_recipe.cpp
+depends: tools/census_level_face_material.py, tools/world_chunk_layout.py, tools/census_level_blend.py, game/render/world/world_chunk_codec.cpp, game/render/world/world_lq_recipe.cpp
 ---
 
 ## Claim
@@ -53,7 +53,7 @@ signature this workspace has been bitten by. The selftest's `patch-offset` case 
 catch that, and `scratch/wad_census2/mutation_check.py` shows it going red.
 
 **The layout is the SHIPPING CODEC'S, extracted rather than restated.** `tools/world_chunk_layout.py`
-parses `decodeLow` out of `game/render/world_chunk_codec.cpp` and refuses if the text no longer has
+parses `decodeLow` out of `game/render/world/world_chunk_codec.cpp` and refuses if the text no longer has
 the shape it reads: descriptor `+0x10`, payload `+0x1C`, strides 4/4/8, counts `&0xFF` / `>>8` /
 `>>16`, **material word at `+4`**. The material BIT is read from `world_lq_recipe.cpp` itself
 (`source.materialWord & 4u`), so the census cannot be censusing a different bit than the port tests.

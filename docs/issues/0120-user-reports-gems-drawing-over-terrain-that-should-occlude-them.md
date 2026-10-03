@@ -159,7 +159,7 @@ The pixel probe now prints `painter=`, the producer key every native submitter a
 `RenderQueue::PainterObjectScope` with (`external/psxport/runtime/psx/gpu_debug.cpp`). Every prim
 covering the probed pixel — the untextured quad AND the textured hedge faces it beats — carries
 `painter=800258F0`, which is `spyro::world_temporal::kProducerKey`: the WORLD SCENE submitter
-(`game/render/world_scene_submitter.cpp`). The gem producer submits nothing there.
+(`game/render/world/world_scene_submitter.cpp`). The gem producer submits nothing there.
 
 That also settles the `dbg_node=00000000` question this issue previously left open. It is not a
 missing `beginObject` scope in the shaded queue; the prims simply do not come from a producer that
@@ -175,7 +175,7 @@ courtyard frame:
 [primrgb] f3595 scanned 1736 prim(s), 12 carried rgb(120,0,0) +-30
 ```
 
-All 12 are `painter=8001F798` (`fx_actor_draw::kProducerKey`) with display bounding boxes inside
+All 12 are `painter=8001F798` (`actor_producer::kProducerKey`) with display bounding boxes inside
 x 294..350, y 68..80 — the NPC/dragon cluster on the right of frame, which is legitimately
 red-brown. NONE of them covers any of the dark-red dots the report is about. So whatever paints
 those dots is textured, not vertex-coloured, and a vertex-colour search cannot find it.
@@ -277,7 +277,7 @@ product's three are. Three accepted records and three drawn gems on one side, di
 the other, is the shape of a transform defect, not an admission defect.
 
 The transform is `spyro::actor_transform_math::worldAffine`
-(`game/render/actor_transform_math.cpp:138`), which composes:
+(`game/render/actor/actor_transform_math.cpp:138`), which composes:
 
 - `cameraRelativePosition` — note it is deliberately asymmetric, `moby - camera` on X and
   `camera - moby` on Y and Z, encoding the guest's own axis orientation;
@@ -289,7 +289,7 @@ The transform is `spyro::actor_transform_math::worldAffine`
 Every one of those steps is shared with Spyro himself and the NPC actors, which the side-by-side
 shows in the RIGHT places, so a blanket error in the shared path is ruled out by that alone. What is
 NOT shared is whatever is specific to the class-83 record — its scale byte, its `0x44` rotation
-word, or the recipe's approximation recorded at `game/render/field_shaded_queue_recipe.cpp:231`
+word, or the recipe's approximation recorded at `game/render/field/field_shaded_queue_recipe.cpp:231`
 ("TRZ is approximated by the actor's view-Z origin").
 
 Decide it by measurement, not by reading: `PSXPORT_ACTOR_SCENE_ORACLE=1` runs retail's own moby
@@ -310,7 +310,7 @@ producers painting red on this row: 8001F798, 80023AC4
 ```
 
 - `0x8001F798` is `spyro::fx_actor_draw::kProducerKey` — the ordinary actor draw.
-- `0x80023AC4` is the PAIRED-ACTOR renderer (`game/render/fx_paired_actor.cpp`, whose alternate
+- `0x80023AC4` is the PAIRED-ACTOR renderer (`game/render/actor/paired_actor.cpp`, whose alternate
   status-plane arm is still a loud refusal).
 
 `0x80022A2C`, the shaded-moby queue that issue 0111 established as the gems' producer, paints
@@ -372,7 +372,7 @@ two. The native gives it the LARGER (0.012609 vs 0.009528). The world pipeline c
 object retail draws it behind, and the gem is the farther of the two (dist 26333 vs 17518).** That
 is the user's report, reproduced against retail's own ordering rather than against a screenshot.
 
-The likely cause is already written down at `game/render/field_shaded_queue_recipe.cpp:231`: "TRZ is
+The likely cause is already written down at `game/render/field/field_shaded_queue_recipe.cpp:231`: "TRZ is
 approximated by the actor's view-Z origin." A gem's depth comes from its actor origin rather than
 from the value retail's pass computes, so it sorts on a different quantity from the objects it has
 to sort against. Recover TRZ properly for this producer and re-run this diff; the disagreement rate
@@ -388,7 +388,7 @@ rather than being folded into this one.
 
 ## The mechanism, named: the producer computes retail's order and then throws it away
 
-`game/render/field_shaded_queue_recipe.cpp` computes the gem's OT bin exactly as retail does — the
+`game/render/field/field_shaded_queue_recipe.cpp` computes the gem's OT bin exactly as retail does — the
 sum of the four vertices' `sz`, MINUS an actor-origin bias, PLUS a reverse-facing term:
 
 ```cpp
@@ -398,7 +398,7 @@ if (reverseFacing) { depth += 512; }
 const int64_t ot = depth >> 5;
 ```
 
-`game/render/field_shaded_queue_submitter.cpp` then submits those faces as `RQ_WORLD` /
+`game/render/field/field_shaded_queue_submitter.cpp` then submits those faces as `RQ_WORLD` /
 `RQ_OM_DEPTH` with `depth[i] = pzToOrd(face.vertices[i].viewZ)` — raw per-vertex view-Z. **Neither
 the actor-origin bias nor the reverse-facing term is present in the value the depth buffer actually
 compares.** The producer computed retail's ordering answer and then submitted a different quantity.
@@ -571,7 +571,7 @@ renamed `authored_depth=`.
 This is the second attribution mistake in this issue, after the `painter=` correction earlier. Both
 had the same shape: a probe field was read as answering a question it does not answer. Treat any
 remaining claim here that rests on a single probe field as unconfirmed until the field's own
-definition has been checked in `render_queue.h`.
+definition has been checked in `frame_renderer_queue.h`.
 
 ## 2026-09-19: CAUSE LOCATED — the origin bias cancels the range, and inverts the order
 
@@ -909,7 +909,7 @@ Within an authored painter domain the replay key IS the order -- it is retail's 
 655/655 -- so the depth buffer must only separate BINS and never contradict them. The framework
 already does exactly this for `sort_key` items: `rq_apply_ot_lifo_depths` gives a whole bucket one
 band depth, and its comment says why ("the depth buffer stops being a second opinion that has to be
-argued with"). `render_queue.cpp:1903` excludes `it.painter_object`, and every Spyro prim carries
+argued with"). `frame_renderer_queue.cpp:1903` excludes `it.painter_object`, and every Spyro prim carries
 one, so no Spyro face has ever reached it.
 
 Falsifier for the fix: the `ord x bin` table above must collapse to ONE constant across all eight
@@ -1025,7 +1025,7 @@ thousands of pixels in this scene, so "no change" is a real negative and not a p
 Nearest and farthest are the widest spread the depth band admits. They agree. **The submitted depth
 does not reach the picture for these draws.**
 
-The mechanism is in `render_queue.cpp:emitItem`: under `mPainterRegrouping` it calls
+The mechanism is in `frame_renderer_queue.cpp:emitItem`: under `mPainterRegrouping` it calls
 `gpu_vk_set_order_override(core, mPainterPresentationRank)`, and `GpuVkState::set_order` derives the
 primitive's depth from that rank. The replay order is the whole answer; `RqItem::depth` is dead for
 a painter range.

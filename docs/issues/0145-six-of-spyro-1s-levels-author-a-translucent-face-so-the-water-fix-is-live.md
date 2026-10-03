@@ -91,7 +91,7 @@ looser-than-`+` slip that hid a 100% residency match as 0.03%; and a backward wa
 `0 of 14` then `0 of 44`. **A uniform result is the tell.** So:
 
 - **THE LAYOUT IS THE SHIPPING CODEC'S, NOT A SECOND COPY.** `tools/world_chunk_layout.py` EXTRACTS
-  the field layout from `game/render/world_chunk_codec.cpp` and refuses if that text stops having
+  the field layout from `game/render/world/world_chunk_codec.cpp` and refuses if that text stops having
   the shape it reads. Its selftest requires **four perturbed copies** of the codec -- descriptor
   moved, face stride changed to 16, material word moved to the record's first word, count masks
   split -- to each change or refuse the extracted layout. The material bit censused is read from

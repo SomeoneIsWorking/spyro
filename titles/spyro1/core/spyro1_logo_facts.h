@@ -28,7 +28,7 @@
 //  which
 //     is why its pixels sit two to a 16-bit VRAM word and why reading them as 15-bit colour
 //     produced per-texel noise inside a correct silhouette. Decoded by the port's own renderer
-//     arithmetic (game/render/fx_title_menu.cpp's push2dQuad), the logo lives at VRAM page x =
+//     arithmetic (game/render/scene/title_menu.cpp's push2dQuad), the logo lives at VRAM page x =
 //     (0x98 & 0xF)*64 = 512, y = ((0x98 >> 4) & 1)*256 = 256, and its palette at x = (0x7FE0 &
 //     0x3F)*16 = 512, y = 0x7FE0 >> 6 = 511.
 //

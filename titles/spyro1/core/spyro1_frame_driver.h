@@ -15,7 +15,7 @@ class Game;
 
 namespace spyro::render {
 // The one frame's picture owner, owned by this driver for the process. Defined in
-// game/render/render.h; only the pointer's lifetime crosses this header.
+// game/render/frame_renderer.h; only the pointer's lifetime crosses this header.
 class FrameRenderer;
 } // namespace spyro::render
 

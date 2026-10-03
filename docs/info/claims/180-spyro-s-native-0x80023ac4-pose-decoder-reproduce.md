@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: render,paired-actor
-depends: game/render/fx_paired_actor.cpp#compare_actual_guest
+depends: game/render/actor/paired_actor.cpp#compare_actual_guest
 ---
 
 ## Claim

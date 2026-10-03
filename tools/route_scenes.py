@@ -112,7 +112,7 @@ DEATH_PLANE_Z = 0x400
 # through 4 across a handful of fields. Page 7 (.L8003245C's jtbl entry) is the page that ends the
 # cutscene, and it is the SUCCESS page, not a refusal: the guest's own caption for it is the string
 # "GAME SAVED" at 0x80010CC4, which the native fairy menu owner lays out for page 7
-# (game/render/fairy_menu_recipe.cpp, `case 7`). Pages 3, 4, 5 and 6 are the failures -- "NO
+# (game/render/frame/scene/fairy_menu_recipe.cpp, `case 7`). Pages 3, 4, 5 and 6 are the failures -- "NO
 # MEMORY CARD", "NO SAVE FILE", "SAVE ERROR" and "SAVE FAILED" -- and are the ones a refusal names.
 SAVE_PAGE_WRITE = 2
 SAVE_PAGE_SAVED = 7
@@ -573,7 +573,7 @@ def _await_write(port: ScenePort, page_before: int, option: int, has_card: int) 
 
     Page 2 is the only page whose handler reaches SaveCreate (0x800321F4) and MemCardWriteFile
     (0x80032230), and page 7 is the page the guest ends the cutscene on, captioned "GAME SAVED"
-    (the string at 0x80010CC4, laid out for page 7 by game/render/fairy_menu_recipe.cpp). So the
+    (the string at 0x80010CC4, laid out for page 7 by game/render/frame/scene/fairy_menu_recipe.cpp). So the
     proof is the page SEQUENCE the guest walked -- it must contain 2 and end on 7 -- and not a
     sample of the page alone, because the machine finishes inside one 60-field step.
 

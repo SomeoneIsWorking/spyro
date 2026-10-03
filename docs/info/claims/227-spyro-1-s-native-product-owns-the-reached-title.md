@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-27
 tags: render,native,title,frame
-depends: game/render/title_menu_recipe.cpp#buildMode2, game/render/title_menu_state.cpp#read, game/render/render_frame.cpp#pairedActorScene, titles/spyro1/core/spyro1_frame_driver.cpp#Spyro1FrameDriver::stepFrame
+depends: game/render/frame/scene/title_menu_recipe.cpp#buildMode2, game/render/frame/scene/title_menu_state.cpp#read, game/render/frame/frame_renderer.cpp#pairedActorScene, titles/spyro1/core/spyro1_frame_driver.cpp#Spyro1FrameDriver::stepFrame
 ---
 
 ## Claim

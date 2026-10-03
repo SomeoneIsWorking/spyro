@@ -107,7 +107,7 @@ wrongly.
 
 ### The new hypothesis: the recipe computes retail's order and the submitter discards it
 
-`game/render/field_shaded_queue_recipe.cpp` derives the OT bin the way retail does, and it is NOT
+`game/render/field/field_shaded_queue_recipe.cpp` derives the OT bin the way retail does, and it is NOT
 just the vertex depths:
 
 ```cpp
@@ -117,7 +117,7 @@ if (reverseFacing) { depth += 512; }
 const int64_t ot = depth >> 5;
 ```
 
-`game/render/field_shaded_queue_submitter.cpp` then submits `depth[i] = pzToOrd(vertices[i].viewZ)`
+`game/render/field/field_shaded_queue_submitter.cpp` then submits `depth[i] = pzToOrd(vertices[i].viewZ)`
 — raw per-vertex view-Z, with **neither the actor-origin bias nor the reverse-facing term**. The
 bias is proportional to `affine.t[2]`, the instance's own view-Z origin, so its omission grows with
 distance: exactly the observed signature of the FARTHER instance being placed nearer.
@@ -162,7 +162,7 @@ cyclorama entries all take an `otBin`.
 
 The pixel probe prints `authored={}` from `RqItem::authored_depth`, and 15,592 of 15,592 probed
 lines read `authored=0`. That was read as "no face carries an authored order". It does not mean
-that. `authored_depth` is documented in `render_queue.h` as "1 = depth[] already encodes OT order;
+that. `authored_depth` is documented in `frame_renderer_queue.h` as "1 = depth[] already encodes OT order;
 suppress the generic later-draw bias" -- a statement about the depth ARRAY, not about painter order.
 The field that carries retail's bin is `RqItem::painter_replay`, and the probe did not print it at
 all. A probe that omits the only field bearing on the question, while printing a similarly-named one

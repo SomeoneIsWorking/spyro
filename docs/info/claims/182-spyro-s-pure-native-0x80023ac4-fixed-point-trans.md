@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: 
-depends: game/render/fx_paired_actor.cpp#project_rtps, game/render/fx_paired_actor.cpp#capture_guest_projection
+depends: game/render/actor/paired_actor.cpp#project_rtps, game/render/actor/paired_actor.cpp#capture_guest_projection
 ---
 
 ## Claim

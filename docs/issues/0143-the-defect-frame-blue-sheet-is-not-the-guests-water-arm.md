@@ -61,7 +61,7 @@ scanline. A sheet lying on the courtyard floor cannot tint the wall above its ow
 ## 2. The guest's water arm is DEAD in this level
 
 `tools/pool_viewpoint.py` walks the resident level's own sector list and reads every low-poly chunk
-with the port's field layout (`game/render/world_chunk_codec.cpp:44`). Over **178 of 178** sectors,
+with the port's field layout (`game/render/world/world_chunk_codec.cpp:44`). Over **178 of 178** sectors,
 **1783 faces**:
 
 - **0 of 1783** carry material bit 2, which is the guest's water decision at `0x8002651C`.

@@ -30,7 +30,7 @@ which reports 62,183 of 62,183 listed main-image instructions agreeing with
 | `0x80026374`–`0x80026380` | `srl 13`/`andi 0x7F8` | face array end = face base + faceCount*8, face count = (descriptor >> 16) & 0xFF |
 | `0x80026394` | `lw $t6, 0x4($s5)` | the face's SECOND word is the material word |
 
-`game/render/world_chunk_codec.cpp:46-85` implements exactly this and is therefore **correct**; that
+`game/render/world/world_chunk_codec.cpp:46-85` implements exactly this and is therefore **correct**; that
 was checked field by field and is a negative result worth recording, because it is the layout the
 water reading was suspected of and it is right.
 
@@ -44,7 +44,7 @@ the four corresponding 4-byte words out of the chunk's colour array:
 | colour 2 | `0x800264E8`–`0x800264FC` | bits 14–19 |
 | colour 3 | `0x800264F8`–`0x8002650C` | bits 6–11 |
 
-`game/render/world_lq_recipe.cpp:36` already decodes those four fields for both the vertex indices
+`game/render/world/world_lq_recipe.cpp:36` already decodes those four fields for both the vertex indices
 and the colour indices, and both agree with the guest.
 
 **The water arm, and the whole defect:**
@@ -73,7 +73,7 @@ actors, hedges, towers and buildings, and one broken material.
 
 ## The fix
 
-`game/render/world_lq_recipe.cpp:appendFace` now derives the constant from the material word and uses
+`game/render/world/world_lq_recipe.cpp:appendFace` now derives the constant from the material word and uses
 it for the translucent arm:
 
     const bool translucent = (source.materialWord & 4u) != 0u;

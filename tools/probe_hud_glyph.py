@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """probe_hud_glyph.py — WHAT THE GUEST'S HUD GLYPH RECORDS CONTAIN, read from a live run.
 
-WHY THIS EXISTS. `game/render/hud_text_builder` lays a caption into the guest's descending
+WHY THIS EXISTS. `game/render/hud/hud_text_builder` lays a caption into the guest's descending
 `g_HudMobys` arena and is tested, but nothing in the port CONSUMES the arena, so the pause menu drew
 its panel and its border and no captions. A consumer cannot be written from a struct declaration: three
 facts decide its shape, and all three are answers about the RUNNING image rather than about the

@@ -72,7 +72,7 @@ this is a single 4-byte write into a world chunk's colour array, not a structura
 
 The writer is the same mistake in the second place it appears. `world_scene::animate` is the one
 function allowed to write guest RAM on the native world path, because retail's renderer writes the
-animation channels itself. It ran its cull at `renderWidth(core)`, so at 16:9 it decoded and
+animation channels itself. It ran its cull at `frame_rendererWidth(core)`, so at 16:9 it decoded and
 **committed** the animation channels of sectors retail's 4:3 cull does not keep. A margin-only
 sector's channels therefore advanced in guest RAM at 16:9 and stood still at 4:3 — a second
 gameplay-visible difference, in the geometry itself rather than in a visibility byte.
@@ -133,7 +133,7 @@ as the guest cursor, so `moby_shadow_recipe::derive` reads `SpyroContext::drawnM
 of guest RAM. `glow_recipe::derive` takes the drawn projection and the drawn right edge as
 parameters instead of calling `gpu_vk_wide_engine` itself, which is the same window the world uses.
 
-**Type-1 line particles** (`fx_field_particles.cpp`) had the 0124 defect in its second arm: the
+**Type-1 line particles** (`field_particles.cpp`) had the 0124 defect in its second arm: the
 `+3` byte got the widened answer. Both arms now go through one helper,
 `field_particle_endpoint::classify`, which returns the guest byte and the drawn decision together —
 and the helper exists precisely so the third arm that will be written cannot get this wrong.

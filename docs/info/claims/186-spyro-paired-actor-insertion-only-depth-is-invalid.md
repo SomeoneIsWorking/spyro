@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-14
 tags: render, paired-actor, depth, ordering-table
-depends: game/render/paired_actor_decode.cpp#analyze_overlap_depth, game/render/fx_paired_actor.cpp
+depends: game/render/actor/paired_actor_decode.cpp#analyze_overlap_depth, game/render/actor/paired_actor.cpp
 ---
 
 ## Claim

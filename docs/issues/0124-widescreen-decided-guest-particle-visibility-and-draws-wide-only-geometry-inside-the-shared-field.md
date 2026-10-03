@@ -91,7 +91,7 @@ aspects, so it is the same primitives drawn differently rather than extra ones.
 ### The bisect, run: a blunt suppression arm is not viable
 
 Suppressing `80023AC4` at `field_model_chain.cpp` (wrapping its `layer(...)` call in `if (false)`)
-and rebuilding makes the product CRASH on the seek route at both aspects -- `fx_paired_actor.cpp`
+and rebuilding makes the product CRASH on the seek route at both aspects -- `paired_actor.cpp`
 checks for that painter object in at least two places, so Spyro's absence violates an invariant
 downstream. Do not repeat that arm.
 
@@ -101,7 +101,7 @@ downstream. Do not repeat that arm.
 per frame", and **nothing anywhere calls it** -- not the framework, not `game/`, not `titles/`. So
 `geomOfx()` is always the 4:3 centre, and every producer supplies the aspect itself. Five do, each
 spelling it `gpu_vk_wide_engine_w(...) / 2` for itself:
-`fx_actor_draw.cpp`, `secondary_actor_emit.cpp`, and the two particle producers (via defect 1's fix).
+`actor_producer.cpp`, `secondary_actor_emit.cpp`, and the two particle producers (via defect 1's fix).
 
 The paired actor did not. `paired_actor_pose.cpp` read `geomOfx()` raw, so at 16:9 **Spyro was
 projected about x=256 while the world around him was projected about x=342** -- he sat ~86 px left
@@ -109,7 +109,7 @@ of where the scene put him. That is exactly what the pixels said: his purple spa
 at 4:3 and 101..258 at 16:9, the RIGHT EDGE IDENTICAL in both, i.e. not shifted by the +86 every
 other region shifts by.
 
-`game/render/wide_screen_space.{h,cpp}` (renamed from defect 1's `particle_screen_space`, since it
+`game/render/hud/wide_screen_space.{h,cpp}` (renamed from defect 1's `particle_screen_space`, since it
 now serves every producer) owns `horizontalCenter(core)`, and the paired actor, both actor producers
 and both particle producers read it instead of spelling the expression again.
 

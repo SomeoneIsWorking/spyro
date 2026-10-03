@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-27
 tags: render,paired-actor,fps60,interpolation,runtime
-depends: game/render/fx_paired_actor.cpp#spyro_paired_actor_fps60_world_pass, game/render/paired_actor_temporal_evidence.cpp#spyro_paired_actor_temporal_finish, titles/spyro1/core/spyro1_field_scheduler.cpp#FieldScheduler
+depends: game/render/actor/paired_actor.cpp#spyro_paired_actor_fps60_world_pass, game/render/actor/paired_actor_temporal_evidence.cpp#spyro_paired_actor_temporal_finish, titles/spyro1/core/spyro1_field_scheduler.cpp#FieldScheduler
 reconfirmed: 2026-08-27 03:21:30
 verified_at: 2026-08-27 03:21:30
 ---

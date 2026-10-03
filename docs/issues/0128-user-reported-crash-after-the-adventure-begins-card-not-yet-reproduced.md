@@ -311,14 +311,14 @@ Spyro actor producer 0x80023AC4 refused its atomic recipe — semi-transparent f
   (invocations=1 groups=0 candidates=278 faces=183)
 ```
 
-That is the paired actor (Spyro) path, `fx_paired_actor.cpp:649`: it refuses any face whose command has the
+That is the paired actor (Spyro) path, `paired_actor.cpp:649`: it refuses any face whose command has the
 semi-transparency bit, and its emitter passes semi = 0 and its painter group asserts `!item.semi`. It is a
 deliberate, named gap and not the face-light arm, so it was not changed here. It is now the demo route's
 end (the corpus's attract-demo route also exits 139 there).
 
 ## 2026-10-01: frame 21,318 — the paired actor refused every semi-transparent face
 
-**Cause.** `fx_paired_actor.cpp` refused any face whose GP0 command carried the semi bit, passed `semi = 0`
+**Cause.** `paired_actor.cpp` refused any face whose GP0 command carried the semi bit, passed `semi = 0`
 to its emitter, and its painter-group contract asserted `!item.semi`. That was a named gap, not a retail
 rule. Retail `0x80023AC4` draws such a face through the same packet path as an opaque one (bytes of
 `SCUS_942.28`, text at file offset 0x800):

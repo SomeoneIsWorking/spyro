@@ -9,7 +9,7 @@ created: 2026-09-29
 updated: 2026-10-01
 ---
 
-`game/render/interp_census.*` accounts every captured queue item of a logic frame into five
+`game/render/temporal/interp_census.*` accounts every captured queue item of a logic frame into five
 categories (camera, actors, world, particles, HUD) and counts what the in-between present rebuilt
 from two captured states, with the reason for every item drawn at its own endpoint. The measurement
 it produced on the Artisans gameplay route is in `docs/project-state.md` (S020). Its own test found
@@ -23,7 +23,7 @@ zero, or a classification that falls through to a plausible default, instead of 
    moved to the END of the pass, after every layer has published.
 
 2. **A producer key was mistyped, and the fallthrough hid it.** `kPairedActor` was `0x80023acu`; the
-   real key stamped by `fx_paired_actor.cpp` is `0x80023ac4`. An unknown publisher does not fail the
+   real key stamped by `paired_actor.cpp` is `0x80023ac4`. An unknown publisher does not fail the
    classification, it lands in the world bucket, so 184,138 paired-actor and player items were
    reported as world geometry for a whole run with every number looking reasonable. The other fifteen
    keys were checked against the producer constants that define them and all match.

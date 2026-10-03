@@ -4,7 +4,7 @@ kind: claim
 status: falsified
 created: 2026-08-13
 tags: render,native-producer,sprite-queue
-depends: game/render/fx_sprite_queue.cpp#stage13Mode3Render
+depends: game/render/field/sprite_queue.cpp#stage13Mode3Render
 falsified_on: 2026-08-13
 ---
 

@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-22
 tags: render,field,world,re
-depends: game/render/field_environment_recipe.cpp#derive, game/render/field_environment_recipe.cpp#matches, game/render/field_environment_oracle.cpp#worldEntry
+depends: game/render/field/field_environment_recipe.cpp#derive, game/render/field/field_environment_recipe.cpp#matches, game/render/field_environment_oracle.cpp#worldEntry
 ---
 
 ## Claim

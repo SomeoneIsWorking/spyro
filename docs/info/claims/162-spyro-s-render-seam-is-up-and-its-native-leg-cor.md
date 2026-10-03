@@ -4,7 +4,7 @@ kind: claim
 status: holds
 created: 2026-08-06
 tags: render
-depends: game/render/render_frame.cpp#SpyroRenderer::drawFrame
+depends: game/render/frame/frame_renderer.cpp#SpyroRenderer::drawFrame
 ---
 
 ## Claim

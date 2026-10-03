@@ -20,12 +20,12 @@ that offset to every vertex. Spyro double-buffers by alternating the offset's y 
 while the draw-area clip `s_da_*` is absolute. On the buffer at y=240 the unoffset quad (y 67..176)
 fell entirely outside the clip (240..479), so nothing was drawn. That is the 67 / -173 `display_bbox`
 alternation 0144 recorded. Every other 2D producer in `game/render` already adds `gpu.s_off_y`
-(for example `fx_field_collectables.cpp`, `field_shadow_submitter.cpp`). The captions go through the
+(for example `field_collectables.cpp`, `field_shadow_submitter.cpp`). The captions go through the
 shaded pass, which places them itself.
 
 ## Fix
 
-`pause_menu::placePanel` and `pause_menu::placeSegment` (`game/render/pause_menu_recipe.*`) put the
+`pause_menu::placePanel` and `pause_menu::placeSegment` (`game/render/frame/scene/pause_menu_recipe.*`) put the
 recipe into framebuffer space by adding the offset. Both scene submitters use them.
 `test_pause_menu_recipe` pins the offset on both buffers (0 and 240) and that the border shades are
 kept.

@@ -23,7 +23,7 @@ secondary owner was wired and the first live FIELD frame refused its uninitializ
 
 ## Fix
 
-`fx_field_actor_composition.*` now prepares the secondary and shaded scenes, derives both recipes,
+`field_actor_composition.*` now prepares the secondary and shaded scenes, derives both recipes,
 and uses the framework's batch painter admission before committing either scene. It rebases the
 shaded shadow output after the secondary output, then publishes the two queue objects in retail
 order. FIELD now calls the state-only `0x800521C0` builder before collectables and actors, matching

@@ -20,7 +20,7 @@ policies in one world stream.
 
 ## Fix
 
-`fx_field_player_actor.*` now owns the source-backed `g_IsSpyroHidden` gate at `0x80075814` and calls
+`field_player_actor.*` now owns the source-backed `g_IsSpyroHidden` gate at `0x80075814` and calls
 the normal three-layer paired-actor decoder for visible FIELD frames. FIELD paired faces use a new
 authored replay phase after regular and secondary actors; the stage-13 owner remains isolated. The
 replay phase is tested with the existing scene-order contract and the hidden-value policy has a

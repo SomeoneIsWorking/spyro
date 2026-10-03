@@ -55,7 +55,7 @@ verified end to end.
 The first divergence is at the very first sampled call and on GTE data register 6, which the drawer
 publishes itself:
 
-`game/render/guest_terrain_drawer.cpp`, `Drawer::run` --
+`game/render/terrain/guest_terrain_drawer.cpp`, `Drawer::run` --
 `gte_write_data(gte::kVxy1, frame.scratch)` with
 `frame.scratch = core_.mem_r32(globals_.scratchBaseWord) - facts_.scratchListsBelowEnd`.
 
@@ -69,7 +69,7 @@ external/psxport/tools/decomp_pipeline.py --image scratch/assets/spyro2/SCUS_944
 ```
 
 and the classification pass that immediately consumes it
-(`game/render/guest_terrain_classify.cpp`, `SectorClassifier::classify`, which writes one visibility
+(`game/render/terrain/guest_terrain_classify.cpp`, `SectorClassifier::classify`, which writes one visibility
 byte per sector at `kScratchpad` and reads the camera back out of the same region) is the second
 place to look. Do not widen the gate or loosen the comparison to make this pass: the whole value of
 the differential is that it is strict.

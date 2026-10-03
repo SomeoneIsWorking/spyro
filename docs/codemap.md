@@ -31,7 +31,14 @@ execution and services; title code must not fork Lightrec or reproduce a second 
 | --- | --- | --- |
 | `game/core/` | `spyro`, `spyro2`, `spyro3` and the title-neutral sub-namespaces below | Process composition, per-Core shared context, field delivery, guest execution, CD/archive, widescreen policy, memory card, SPU facts, native leaf overrides |
 | `game/host/` | `spyro` | The process top level: catalog probe, title selector, panel sessions, one title session |
-| `game/render/` | `spyro`, `spyro::render` and one sub-namespace per producer/layer | The picture: scene classification, producers, temporal (60 fps) sources, widescreen anchoring, HUD |
+| `game/render/frame/` | `spyro`, `spyro::render` | The picture: scene classification, the native leg's frame, the shared GPU/coprocessor vocabulary |
+| `game/render/field/` | `spyro`, `spyro::render` and one sub-namespace per layer | The field layers, their recipes and submit chain, the guest moby walk, the drawn-half tables |
+| `game/render/actor/` | `spyro::actor_*`, `spyro::paired_actor*` | The regular, secondary and paired actor layers |
+| `game/render/terrain/` | `spyro::guest_terrain`, `spyro::terrain_*` | The native terrain producer: the guest drawer as passes, and its derive/preflight/publish chain |
+| `game/render/world/` | `spyro::world_*`, `spyro::cyclorama_*` | The world producer, its codecs and LQ/HQ recipes, the cyclorama and menu background |
+| `game/render/temporal/` | `spyro::temporal`, `spyro::<layer>_temporal` | The 60 fps endpoint lifecycle every layer shares, and its two presentation-only censuses |
+| `game/render/hud/` | `spyro::ui_anchor`, `spyro::hud_*`, `spyro::field_2d_overlay*` | The screen-space 2D layer and the ONE horizontal anchoring rule |
+| `game/render/scene/` | `spyro::<scene>` | The front-end and cutscene scenes |
 | `titles/spyro1/core/` | `spyro1`, `spyro1::native` | SCUS_942.28's frame driver, field scheduler, boot sequence, transition skip, observers, and its native leaf overrides |
 | `titles/spyro2/core/`, `titles/spyro3/core/` | `spyro2`, `spyro3` | Measured boot, logo and widescreen facts, plus the two runtime objects |
 | `titles/spyro{2,3}/render/` | `spyro2`, `spyro3` | The per-image HUD anchoring overrides |
@@ -234,38 +241,100 @@ psx::debug::DbgServer         per session, attached in spyro::TitleSession::boot
 
 ### `game/render/` — namespace `spyro` (and `spyro::render` for the picture owner)
 
-| Group | Namespace | Responsibility |
+`game/render/` is eight directories, one per subsystem. Every directory is a PUBLIC include
+directory, so a module is included by its unique basename (`"actor_producer.h"`), never by a path.
+A new module goes in the directory of the subsystem it belongs to; nothing lands in `game/render/` itself.
+
+| Directory | Owns |
+| --- | --- |
+| `frame/` | The picture itself: classification, the native leg's frame open/close, and the shared GPU/coprocessor vocabulary every producer submits through. |
+| `field/` | The ten field layers, their recipes and their submit chain, plus the guest moby walk and the drawn-half tables. |
+| `actor/` | The regular, secondary and paired actor layers, from model decode to queue emit. |
+| `terrain/` | The native terrain producer: the guest drawer reimplemented as passes, plus its derive/preflight/publish chain. |
+| `world/` | The world producer and the cyclorama/menu background: the sector corpus, its codecs, the LQ/HQ recipes and the sky geometry. |
+| `temporal/` | The 60 fps reconstruction lifecycle shared by every layer, and its two presentation-only censuses. |
+| `hud/` | The screen-space 2D layer, the guest's HUD layout and text, and the ONE horizontal anchoring rule. |
+| `scene/` | The front-end and cutscene scenes, each with its pure recipe and its native scene owner. |
+
+#### `game/render/frame/` — the picture
+
+| Module | Namespace | Responsibility |
 | --- | --- | --- |
-| `render.h`, `render_frame.cpp`, `scene.cpp` | `spyro::render` | `FrameRenderer`: one frame's picture — classify the guest's stage selector, then either walk the guest's own OT or compose the native producers. `Scene`, `StageArm`, `FieldLayer` and the stage selectors are its vocabulary. |
+| `frame_renderer.{h,cpp}`, `frame_renderer_frame.cpp` | `spyro::render` | `FrameRenderer`: one frame's picture — classify the guest's stage selector, then either walk the guest's own OT or compose the native producers. |
+| `scene.{h,cpp}` | `spyro::render` | `Scene`, `StageArm`, `FieldLayer` and the stage selectors: the field arm's layer list is the native-renderer backlog, declared once here. |
 | `presentation_owner.{h,cpp}` | `spyro` | `PresentationOwner`: per-Game statement of which producer owns the next present. |
 | `frame_env.{h,cpp}` | `spyro` | The native leg's frame open/close and display environment. |
-| `fx_*.{h,cpp}` | owner namespaces | The guest-facing producer entry points: one file per field layer or front-end scene (`fx_field_cyclorama`, `fx_field_environment`, `fx_field_particles`, `fx_field_collectables`, `fx_field_shadow`, `fx_field_tracers`, `fx_moby_shadow`, `fx_world_draw`, `fx_actor_draw`, `fx_field_player_actor`, `fx_paired_actor`, `fx_sprite_queue`, `fx_title_menu`, `fx_screen_fade`, `fx_screen_border`, `fx_spyro_flame`, `fx_glow_sparkle`, `fx_dragon_burst`, `fx_dragon_scene`, `fx_field_actor_composition`). |
+| `draw_area.h`, `producer_refusal.h`, `scene_painter_order.*`, `painter_submission_preflight.*` | `spyro` | The draw-destination check, the refusal vocabulary, and the painter order and preflight shared by producers. |
+| `gpu_packet_decode.{h,cpp}`, `guest_gte.{h,cpp}`, `guest_trig.{h,cpp}`, `gte_color_ops.h`, `projection_stream.{h,cpp}`, `scene_camera_inputs.h` | `spyro::gpu_packet_decode`, `spyro::guest_gte`, `spyro::guest_trig`, `spyro::gte_color`, `spyro` | The packet and coprocessor vocabulary and the projection sampler the producers share. |
+
+#### `game/render/field/` — the field layers
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
 | `field_model_chain.{h,cpp}`, `field_moby_lists.{h,cpp}` | `spyro` | The layer-by-layer submission chain and the moby list build the field arm owns. |
-| `native_terrain.cpp` | `spyro` | The terrain producer's guest entry points (a selector and two `SHORTMATRIX` pointers). |
-| `terrain_scene/recipe/submitter/emit`, `terrain_packet_sink` | `spyro::terrain_*` | The terrain producer's corpus read, pure derivation, queue plan, one derive/preflight/publish owner, and the in-between's packet destination. |
-| `guest_terrain_*.{h,cpp}` | `spyro::guest_terrain` | The native terrain drawer of this engine family: one file per pass plus the frame state, memory, mesh, polygon, split, fog and screen owners. |
-| `terrain_world_pass.{h,cpp}` | `spyro` | The in-between field: the guest's own terrain drawer run again at a lerped camera, over host memory shaped like guest RAM. |
-| `guest_camera_builder.{h,cpp}` | `spyro::guest_camera` | The guest's own camera builder, re-run for an in-between rather than interpolated from its packed output. |
-| `guest_moby_visibility.cpp`, `guest_moby_{frustum,gte,rotation}.h` | `spyro::guest_moby`, `…_frustum`, `…_gte`, `…_rotation` | Native per-frame moby culling, with the pure frustum arithmetic, GTE vocabulary and rotation composition split out. |
-| `guest_render_globals.h` | `spyro::guest_render_globals` | The guest globals the moby walk and the terrain drawer share. |
-| `world_source*`, `world_chunk_codec`, `world_material_codec`, `world_animation` | `spyro::world_*` | The world producer's owned unprojected sector occurrences and the codecs that decode them. |
-| `world_scene_{capture,builder,prepare,submitter}`, `world_recipe` | `spyro::world_scene`, `…_prepare`, `…_submitter`, `spyro::world_recipe` | The world producer's guest read, scene build, prepare, submission, and pure face derivation. |
-| `world_{lq,hq}_recipe`, `world_hq_refinement`, `world_projection_math` | `spyro::world_*_recipe`, `spyro::world_projection_math` | LQ/HQ/refinement recipes and the projection arithmetic they share. |
-| `actor_recipe_capture`, `actor_model_codec`, `actor_prefix_builder`, `actor_transform_math`, `actor_scene_builder` | `spyro::actor_*` | Actor model decode, prefix building, transform math and scene build. |
-| `actor_emit`, `actor_submission`, `actor_stage`, `actor_face_submitter`, `actor_billboard_face`, `actor_draw_recipe`, `actor_global_order`, `actor_ot_coalescer` | `spyro::actor_*` | The regular actor layer's route to the render queue: emit, preflight, publish, and the shared vocabulary. |
+| `field_actor_composition`, `field_player_actor` | `spyro` | The field arm's actor composition and Spyro's own field model. |
+| `field_cyclorama`, `cyclorama_*` (see `world/`) | `spyro::field_cyclorama` | The field arm's sky producer entry point. |
+| `field_environment{,_recipe,_scene}`, `field_collectables{,_recipe}`, `field_shadow{,_recipe,_submitter}`, `field_tracers{,_recipe}`, `field_particles{,_recipe}`, `field_particle_endpoint`, `field_particle_*_submitter`, `particle_sine_table.h`, `face_light_{environment,program}` | `spyro::field_*`, `spyro::face_light_*` | The remaining field layers and their derivation. |
+| `sparkle_*`, `glow_*`, `moby_shadow{,_list,_recipe,_submitter}`, `spyro_flame{,_matrix,_recipe,_submitter}` | `spyro::sparkle_*`, `spyro::glow_*`, `spyro::moby_shadow_*`, `spyro::spyro_flame_*` | The half-drawn effect layers and their recipes. |
+| `field_shaded_queue_{scene,recipe,emit,submitter}`, `shaded_moby_light` | `spyro::field_shaded_queue_*`, `spyro::shaded_light` | The world-shaded sprite queue and its GTE lighting program. |
+| `sprite_queue.{h,cpp}` | `spyro::render` | `SpriteQueueOffsetObserver` and `emitScreenQueue`: the screen-space sprite queue every screen-space producer submits through. |
+| `guest_moby_visibility.cpp`, `guest_moby_{frustum,gte,rotation}.h`, `guest_render_globals.h`, `sector_visibility.{h,cpp}`, `moby_shadow_list.{h,cpp}` | `spyro::guest_moby*`, `spyro::guest_render_globals`, `spyro::sector_visibility`, `spyro::moby_shadow_list` | Native per-frame moby culling with its pure arithmetic, and the two drawn-half tables. |
+
+#### `game/render/actor/` — the actor layers
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
+| `actor_producer`, `actor_recipe_capture`, `actor_model_codec`, `actor_prefix_builder`, `actor_transform_math`, `actor_scene_builder` | `spyro::actor_*` | The regular actor layer's guest entry point, model decode, prefix building, transform math and scene build. |
+| `actor_emit`, `actor_submission`, `actor_stage`, `actor_face_submitter`, `actor_billboard_face`, `actor_draw_recipe`, `actor_global_order`, `actor_ot_coalescer`, `actor_scene_oracle.{h,cpp}` | `spyro::actor_*`, `spyro::actor_scene_oracle` | The layer's route to the render queue: emit, preflight, publish, and the independent record oracle. |
 | `secondary_actor_{scene,recipe,emit}` | `spyro::secondary_actor_*` | The secondary layer's compose/preflight/publish owner. |
-| `paired_actor_{pose,decode,depth,color_fade}`, `paired_actor_temporal_evidence` | `spyro::paired_actor`, `spyro::paired_actor_depth`, `spyro::paired_actor_color_fade` | Spyro's own paired actor: pose decode, depth, colour fade, and the temporal evidence. |
-| `field_shaded_queue_{scene,recipe,emit,submitter}`, `shaded_moby_light` | `spyro::field_shaded_queue_*`, `spyro::shaded_light` | The world-shaded sprite queue: scene input, recipe, derive/preflight/publish, submission, and the GTE lighting program. |
-| `cyclorama_*`, `menu_lighting`, `menu_panel_submit`, `menu_world_pass` | `spyro::cyclorama_*`, `spyro::menu_*` | Sky geometry, portals and masks, plus the menu's own background and panel. |
-| `field_environment_*`, `field_collectables_recipe`, `field_shadow_*`, `field_tracers_recipe`, `field_particles_*`, `sparkle_*`, `glow_*`, `moby_shadow_*` | `spyro::field_*`, `spyro::sparkle_*`, `spyro::glow_*`, `spyro::moby_shadow_*` | The remaining field layers: environment, collectables, shadows, tracers, particles, sparkles, glows, moby shadows. |
-| `field_scene_recipe`, `cutscene_scene_recipe`, `stage13_scene_recipe`, `title_menu_{recipe,state}`, `pause_menu_{recipe,scene}`, `fairy_menu_{recipe,scene}`, `level_transition_*`, `dragon_*`, `demo_text_scene` | `spyro::<scene>_recipe` and owners | The front-end and cutscene scenes, each with its pure recipe and its native scene owner. |
-| `field_2d_overlay*`, `hud_text_builder`, `hud_layout`, `hud_draw_context` | `spyro::field_2d_overlay*`, `spyro::hud_text`, `spyro::hud_layout`, `spyro::hud_draw_context` | The screen-space 2D layer, the guest's two text builders, the HUD block's layout, and the widget-in-progress seam. |
-| `ui_anchor.{h,cpp}`, `wide_screen_space.{h,cpp}`, `sector_visibility.{h,cpp}`, `moby_shadow_list.{h,cpp}` | `spyro::ui_anchor`, `spyro::wide_screen_space`, `spyro::sector_visibility`, `spyro::moby_shadow_list` | The ONE horizontal anchoring rule for screen-space UI, the horizontal policy for world geometry, and the two drawn-half tables. |
-| `temporal_pair.h`, `instance_pairing.h`, `actor_pairing.{h,cpp}`, `temporal_scene.{h,cpp}` | `spyro::temporal`, `spyro::instance_pairing`, `spyro::actor_pairing`, `spyro` | The two-endpoint lifecycle every temporal source shares, the instance pairing that feeds it, and the scene admission scratch. |
-| `actor_temporal`, `secondary_actor_temporal`, `field_shaded_queue_temporal`, `terrain_temporal`, `world_temporal`, `field_2d_overlay.h` (`History`) | `spyro::<layer>_temporal` | One endpoint pair per layer, each with its own identity rule over the payload that layer draws. |
-| `interp_census.{h,cpp}`, `margin_object_census.{h,cpp}`, `producer_refusal.h`, `draw_area.h`, `scene_painter_order`, `painter_submission_preflight` | `spyro::interp_census`, `spyro::margin_object_census`, `spyro` | Presentation-only accounting, the per-class drawn-reach census, the refusal vocabulary, the draw-destination check, and the painter order shared by producers. |
-| `gpu_packet_decode.{h,cpp}`, `guest_gte.{h,cpp}`, `guest_trig.{h,cpp}`, `gte_color_ops.h`, `particle_sine_table.h` | `spyro::gpu_packet_decode`, `spyro::guest_gte`, `spyro::guest_trig`, `spyro::gte_color` | The packet and coprocessor vocabulary the producers share. |
-| `projection_stream.{h,cpp}`, `scene_camera_inputs.h`, `actor_scene_oracle.{h,cpp}`, `world_scene_oracle.{h,cpp}`, `world_scene_capture.{h,cpp}` | `spyro` | The projection sampler, the camera inputs, and the independent record oracles. |
+| `paired_actor`, `paired_actor_{pose,decode,depth,color_fade}`, `paired_actor_temporal_evidence` | `spyro::paired_actor`, `spyro::paired_actor_depth`, `spyro::paired_actor_color_fade` | Spyro's own paired actor: pose decode, depth, colour fade, and the temporal evidence. |
+
+#### `game/render/terrain/` — the native terrain producer
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
+| `native_terrain.cpp` | `spyro` | The producer's guest entry points (a selector and two `SHORTMATRIX` pointers). |
+| `terrain_{recipe,scene,submitter,emit}`, `terrain_packet_sink` | `spyro::terrain_*`, `spyro::terrain_packet_sink` | Corpus read, pure derivation, queue plan, one derive/preflight/publish owner, and the packet destination. |
+| `guest_terrain_*` (classify, coarse, detail, far, fine, fog, translucent, split, resplit, polygon, mesh, screen, passes, drawer, frame, memory, facts) | `spyro::guest_terrain` | The native terrain drawer of this engine family: one file per pass plus the frame state, memory and mesh owners. |
+| `guest_camera_builder.{h,cpp}` | `spyro::guest_camera` | The guest's own camera builder, re-run for an in-between rather than interpolated from its packed output. |
+
+#### `game/render/world/` — the world producer and the background
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
+| `world_producer` | `spyro` | The producer's guest entry point. |
+| `world_source*`, `world_chunk_codec`, `world_material_codec`, `world_animation` | `spyro::world_*` | The owned unprojected sector occurrences and the codecs that decode them. |
+| `world_scene_{capture,builder,prepare,submitter}`, `world_recipe`, `world_scene_oracle.{h,cpp}` | `spyro::world_scene*`, `spyro::world_recipe` | Guest read, scene build, prepare, submission, pure face derivation, and the independent oracle. |
+| `world_{lq,hq}_recipe`, `world_hq_refinement`, `world_projection_math` | `spyro::world_*_recipe`, `spyro::world_projection_math` | LQ/HQ/refinement recipes and the projection arithmetic they share. |
+| `cyclorama_{scene,portal_mesh,mask}_{recipe,submitter}`, `menu_world_pass`, `menu_lighting.*`, `menu_panel_submit` | `spyro::cyclorama_*`, `spyro::menu_*` | Sky geometry, portals and masks, plus the menu's own background and panel. |
+
+#### `game/render/temporal/` — the 60 fps lifecycle
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
+| `temporal_pair.h`, `instance_pairing.h`, `temporal_scene.{h,cpp}` | `spyro::temporal`, `spyro::instance_pairing`, `spyro` | The two-endpoint lifecycle every temporal source shares, the instance pairing that feeds it, and the scene admission scratch. |
+| `actor_temporal`, `secondary_actor_temporal`, `field_shaded_queue_temporal`, `terrain_temporal`, `world_temporal` | `spyro::<layer>_temporal` | One endpoint pair per layer, each with its own identity rule over the payload that layer draws. |
+| `terrain_world_pass.{h,cpp}` | `spyro` | The in-between field: the guest's own terrain drawer run again at a lerped camera. |
+| `actor_pairing.{h,cpp}`, `interp_census.{h,cpp}`, `margin_object_census.{h,cpp}` | `spyro::actor_pairing`, `spyro::interp_census`, `spyro::margin_object_census` | Presentation-only accounting and the per-class drawn-reach census. |
+
+#### `game/render/hud/` — the screen-space 2D layer
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
+| `ui_anchor.{h,cpp}` | `spyro::ui_anchor` | The ONE horizontal anchoring rule for screen-space UI: `Anchor::{LeftEdge, Centred, RightEdge}`, and the frame every title's HUD is related against. |
+| `field_2d_overlay{,_recipe}.{h,cpp}` | `spyro::field_2d_overlay*` | The screen-space 2D layer and its pure recipe. |
+| `hud_text_builder`, `hud_layout.h`, `hud_draw_context.h` | `spyro::hud_text`, `spyro::hud_layout`, `spyro::hud_draw_context` | The guest's two text builders, the HUD block's layout, and the widget-in-progress seam. |
+| `screen_{fade,border}{,_recipe}.{h,cpp}` | `spyro::screen_fade*`, `spyro::screen_border*` | The full-screen fade and border producers. |
+| `wide_screen_space.{h,cpp}` | `spyro::wide_screen_space` | The horizontal policy for world geometry. |
+
+#### `game/render/scene/` — the front-end and cutscene scenes
+
+| Module | Namespace | Responsibility |
+| --- | --- | --- |
+| `field_scene_recipe`, `stage13_scene_recipe`, `cutscene_scene_recipe` | `spyro::<scene>_recipe` | The pure recipe behind each scene's native owner. |
+| `demo_text_scene`, `title_menu`, `title_menu_{recipe,state}`, `pause_menu_{recipe,scene}`, `fairy_menu_{recipe,scene}`, `level_transition_{scene,tally_recipe}` | `spyro::<scene>` and owners | Each front-end scene's native owner and its own state. |
+| `dragon_{burst,scene}_producer`, `dragon_{burst,scene}_recipe` | `spyro::dragon_*` | The dragon reward's burst star and scene producers. |
+
 
 ### `titles/spyro1/core/` — namespace `spyro1` (leaves in `spyro1::native`)
 

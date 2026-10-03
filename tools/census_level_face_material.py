@@ -32,7 +32,7 @@ pinned by the selftest's positive case.
 
 The archive index is NOT re-implemented here: `read_entries` is imported from
 `census_level_blend.py`, which owns it. The face record's layout is not restated either: it is read
-out of the shipping `game/render/world_chunk_codec.cpp` by `tools/world_chunk_layout.py`, and the
+out of the shipping `game/render/world/world_chunk_codec.cpp` by `tools/world_chunk_layout.py`, and the
 material bit censused here is the bit `world_lq_recipe.cpp` itself tests, read from that file.
 
 ## WHAT COUNTS AS A READING
@@ -754,11 +754,11 @@ def main() -> int:
         return 2
 
     print(f"[archive] {path.name}: {len(blob)} bytes; {len(read_entries(blob))} index entries")
-    print(f"[layout] read from game/render/world_chunk_codec.cpp: descriptor +0x"
+    print(f"[layout] read from game/render/world/world_chunk_codec.cpp: descriptor +0x"
           f"{layout.descriptor:02X}, payload +0x{layout.payload:02X}, strides "
           f"{layout.vertex_stride}/{layout.colour_stride}/{layout.face_stride}, material word at "
           f"+{layout.material_word_offset}")
-    print(f"[selector] read from game/render/world_lq_recipe.cpp: material bit "
+    print(f"[selector] read from game/render/world/world_lq_recipe.cpp: material bit "
           f"0x{translucent:02X}, the bit 0x8002651C `andi $a3,$t6,4` tests\n")
 
     if args.control:

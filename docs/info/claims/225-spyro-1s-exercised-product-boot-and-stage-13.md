@@ -20,7 +20,7 @@ Real SCUS_942.28, Clang build `scratch/build/agent-spyro`, psxport `784e5212-dir
 `scratch/logs/agent-spyro-wide-capture-600.stdout.log` exited 0 at
 `PSXPORT_NATIVE_FRAMES=800`, reached native stage 13, printed `frame-loop contract SATISFIED`, and
 contained neither `GUEST VSYNC VIOLATION` nor a FrameDriver fence violation. The same run announced
-`aspect=1`, `wide_engine=1`, `native_width=512`, `render_width=684`; its three native producer rows
+`aspect=1`, `wide_engine=1`, `native_width=512`, `frame_renderer_width=684`; its three native producer rows
 attributed 262,789 primitives. The present-600 capture is a real 960x720 image with 69.7% non-black
 pixels and 3,022 colors. The dedicated Clang tree passed 34/34 CTests after building all test
 executables.

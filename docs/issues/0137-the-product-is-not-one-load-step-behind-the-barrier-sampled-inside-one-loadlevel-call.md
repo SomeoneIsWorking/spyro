@@ -288,7 +288,7 @@ low — but it is a shared directory and I moved it without asking. |
 used `build/bin/spyro_port` as built at **17:15**, against the receipt
 `commit = 7f537273db66b4ba576d0651d66545354f52e0de`. By 20:33 another agent had reconfigured
 `build/` (receipt `006eb917`) and by 20:43 rebuilt the binary (26,521,368 bytes against 26,501,312
-at 17:15), with `game/render/render.h`, `game/render/render_frame.cpp` and `CMakeLists.txt` modified
+at 17:15), with `game/render/frame/frame_renderer.h`, `game/render/frame/frame_renderer.cpp` and `CMakeLists.txt` modified
 and four new `game/render/pause_menu_*` files in the tree. None of that is this issue's, and none of
 it is boot-path code, but **the load-stepper numbers here describe the 17:15 binary and should be
 re-taken on a quiescent tree before anything is concluded about the current one.** The A/B in

@@ -53,7 +53,7 @@ instrument's own discrimination, not an absence of scanning. Log:
 `scratch/logs/sheet-ctl.log`.
 
 **(c) The layer, measured by a mute that still exists.** `PSXPORT_NOHUD=1` drops `RQ_HUD` prims
-(`render_queue.cpp:1040`). With it: **0 of 4252** prims carry the colour, and **0 of 8** presents show
+(`frame_renderer_queue.cpp:1040`). With it: **0 of 4252** prims carry the colour, and **0 of 8** presents show
 the rectangle. The 13-column run that survives at the same guest x (`336..344` at 16:9,
 `250..259` at 4:3) is Spyro's green glow — a world prim — which is the negative control that says
 the detector is not simply firing on anything bluish.
@@ -97,7 +97,7 @@ state bug. There is no evidence here of the product being in a state it should n
 
 ## 4. The port draws it, and it is not faithful in two measurable ways
 
-`render_frame.cpp:298-306` dispatches `sc.stage == kStagePauseMenu` to `pause_menu_scene::submit`,
+`frame_renderer_frame.cpp:298-306` dispatches `sc.stage == kStagePauseMenu` to `pause_menu_scene::submit`,
 so **the guest's `0x8001A40C` never runs**; the port's native owner is the submitter. Its geometry
 is byte-faithful — `(140,67)..(372,176)`, code `0x2A`, semi, 4 vertices, `SetDrawMode(1, 0, 0x40)`,
 front-list `AddPrim`, the prim cursor advanced by 6 + 5·n words. Two things are not.
@@ -129,7 +129,7 @@ its `da_*` clip carried through the same transform its vertices get, so the only
 the centring stays in the one owner that has it. The local alternative, which is correct and small
 but leaves a second place that has to know the margin, is to give the panel the same clip
 `submitBorder` already receives (`drawAreaX1`, the guest draw area's right edge, `cx + cw - 1` from
-`render_frame.cpp:299`) instead of its own geometry. **I recommend the queue-side fix and have not
+`frame_renderer_frame.cpp:299`) instead of its own geometry. **I recommend the queue-side fix and have not
 shipped either**, because both are framework-facing and this claim is `scratch`-scoped.
 
 **(D2) THE PANEL'S COLOUR IS THE WRONG CONSTANT.** `pause_menu::kPanelColourByte = 0xE0`, cited in

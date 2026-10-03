@@ -33,7 +33,7 @@ Every horizontal cull or screen-rect limit this title owns, with where it lives 
 | # | Owner | Guest citation | Site | Status |
 |---|---|---|---|---|
 | 1 | World sector horizontal plane (`broadCull`) | `0x800258F0` | `world_scene_prepare.cpp:28` | already widened (0152) |
-| 2 | World face clip right edge | `0x8002651C`/`0x80026544`/`0x8002654C` | `world_recipe.h` `clipCode`, `world_lq_recipe.cpp:22` | already widened — the caller passes `renderWidth(Core*)` as `clipRight` |
+| 2 | World face clip right edge | `0x8002651C`/`0x80026544`/`0x8002654C` | `world_recipe.h` `clipCode`, `world_lq_recipe.cpp:22` | already widened — the caller passes `frame_rendererWidth(Core*)` as `clipRight` |
 | 3 | Moby plane, regular pass | `0x8001F158` | `actor_scene_builder.cpp:149` `classify_view` | already widened (0152) |
 | 4 | Moby plane, secondary pass | `0x800208FC` | `secondary_actor_scene.cpp:40` `build_source_record` | already widened (0152) |
 | 5 | Moby shadow staging depth, regular + secondary | `0x8001F34C`, `0x80020AF8` | `actor_scene::kShadowStagingDepth` | already widened |
@@ -107,13 +107,13 @@ and exactly why its margin number could not move.
 
 So the proof counts **objects**, per class, with the span each producer actually rasterised.
 
-- `game/render/margin_object_census.{h,cpp}` — a `SpanBucket` per class (drawn, outside the guest
+- `game/render/temporal/margin_object_census.{h,cpp}` — a `SpanBucket` per class (drawn, outside the guest
   window, leftmost and rightmost screen x) accumulated in a `Recorder` owned by `SpyroContext`. A
   recipe with no `Core` by design carries a bucket and the `Core` owner drains it.
 - Fed at each producer's **post-reject** point, so "outside" means drawn:
   sectors at the world recipes' face-append (`world_lq_recipe.cpp`, `world_hq_refinement.cpp`), Mobys
   at the single face emission shared by the regular and secondary layers
-  (`actor_face_submitter.cpp`), particles at both `fx_field_particles` submission arms, glows at
+  (`actor_face_submitter.cpp`), particles at both `field_particles` submission arms, glows at
   `glow_submitter.cpp`, shadows at `field_shadow_submitter.cpp`.
 - `PSXPORT_MARGIN_CENSUS=<path>` writes the report at process exit. It is read through the framework's
   `cfg_str` owner, never `getenv`; a run without it pays one branch per object and writes nothing.

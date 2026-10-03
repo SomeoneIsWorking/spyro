@@ -4,7 +4,7 @@ kind: claim
 status: falsified
 created: 2026-08-27
 tags: render,cutscene,runtime,widescreen,vsync
-depends: game/render/render_frame.cpp#SpyroRenderer::drawFrame, titles/spyro1/core/spyro1_frame_driver.cpp, titles/spyro1/core/spyro1_field_scheduler.cpp, game/render/cutscene_scene_recipe.cpp, game/render/fx_screen_fade.cpp
+depends: game/render/frame/frame_renderer.cpp#SpyroRenderer::drawFrame, titles/spyro1/core/spyro1_frame_driver.cpp, titles/spyro1/core/spyro1_field_scheduler.cpp, game/render/frame/scene/cutscene_scene_recipe.cpp, game/render/hud/screen_fade.cpp
 falsified_on: 2026-08-27
 ---
 

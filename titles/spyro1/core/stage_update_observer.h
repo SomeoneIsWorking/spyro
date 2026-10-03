@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render.h"
+#include "frame_renderer.h"
 
 #include <array>
 #include <cstddef>

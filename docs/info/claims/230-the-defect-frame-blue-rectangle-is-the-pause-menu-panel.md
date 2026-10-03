@@ -39,7 +39,7 @@ pause. So the match is a property of the pause frames, not a constant the instru
 (`scratch/logs/sheet-ctl.log`; the run that also carries the guest-state lines is
 `scratch/logs/sheet-dbg.log`.)
 
-**The layer, by a mute that still exists.** `PSXPORT_NOHUD=1` (`render_queue.cpp:1040` drops
+**The layer, by a mute that still exists.** `PSXPORT_NOHUD=1` (`frame_renderer_queue.cpp:1040` drops
 `RQ_HUD`): **0 of 4252** prims carry the colour and **0 of 8** presents show the rectangle. The
 13-column run that survives at the same guest x — `336..344` at 16:9, `250..259` at 4:3 — is Spyro's
 green glow, a world prim, and is the control that says the detector is not firing on anything
@@ -124,7 +124,7 @@ non-P6 file, a truncated PPM) none of which may read as a clean zero.
   which.
 - **A live run where `g_Gamestate` is 0 at a frame that still carries the panel.** The claim that
   this is the pause menu rests on the guest's own words, and a route that reaches the panel without
-  `GS_PauseMenu` would mean some other stage reuses `0x8001A40C` — which `render_frame.cpp:298`
+  `GS_PauseMenu` would mean some other stage reuses `0x8001A40C` — which `frame_renderer_frame.cpp:298`
   already admits it does, for `GS_InventoryMenu` (3) and `GS_OldDragon` (6). `page=0` and
   `captions=5` are what separate them here, and a different page's caption set would separate them
   there.

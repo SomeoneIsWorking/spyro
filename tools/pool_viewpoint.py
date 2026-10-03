@@ -45,7 +45,7 @@ Two facts fall out of those bytes and this tool depends on both:
 
   1. **AXIS ORDER.** Camera word 0 pairs with `originWord >> 16`, camera word 1 with
      `originWord & 0xFFFF`, and camera word 2 with the halfword at `+0x0E`. The port's
-     `game/render/world_lq_recipe.cpp:40` computes the same three subtractions, so this is the
+     `game/render/world/world_lq_recipe.cpp:40` computes the same three subtractions, so this is the
      shipping arithmetic and not a second reading of it.
   2. **UNITS.** The camera is divided by 16 and the chunk origin is NOT, so a chunk origin is in
      units of one-sixteenth of a camera word. A target built without the shift lands 16x too far
@@ -92,7 +92,7 @@ import spyro1_steering  # noqa: E402
 READ_CHUNK = 64
 
 # g_Environment's own field offsets, and g_Camera's, as the port already reads them in
-# game/render/world_source.cpp. Named here because this probe walks the SAME structure the shipping
+# game/render/world/world_source.cpp. Named here because this probe walks the SAME structure the shipping
 # producer walks, and a second hand-typed offset is how a probe starts measuring a different level
 # from the one the product draws.
 ENV_SECTOR_TABLE = 0x00
@@ -237,7 +237,7 @@ def sector_list(ram: Ram) -> tuple[list[int], str]:
 def decode_sector(ram: Ram, index: int, address: int) -> Sector:
     """Decode one sector's low-poly chunk with the port's own field layout.
 
-    Field offsets are `game/render/world_chunk_codec.cpp:44` (decodeLow), which the fix's own
+    Field offsets are `game/render/world/world_chunk_codec.cpp:44` (decodeLow), which the fix's own
     commit message established as a faithful implementation of the header. This probe reads the SAME
     header rather than defining a second layout that could drift from the product's.
     """

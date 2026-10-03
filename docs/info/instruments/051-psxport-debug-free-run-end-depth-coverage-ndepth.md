@@ -19,7 +19,7 @@ It has shown BOTH answers on the same binary within one session: 2.10% before th
 
 ## DISTRUSTED 2026-09-19 — its call site no longer exists, so it can never print
 
-The instrument is `render_depth_coverage_report`, which this record says was called from
+The instrument is `frame_renderer_depth_coverage_report`, which this record says was called from
 `game/core/producer_run.cpp` `finish_once`. **That file no longer exists and nothing in this
 repository calls the function.** Searched every tree under `~/repo/psx` excluding build/, .git/ and
 vendored checkouts: the only references are the framework's own declaration and definition
@@ -47,7 +47,7 @@ about the guest-OT compositor's widen, which the native render path does not use
 ## STILL DISTRUSTED 2026-09-19 after the call site WAS restored — the counters are on the wrong path
 
 `spyro::reportRuntimeRun` (`game/core/runtime_run.cpp`) now calls
-`render_depth_coverage_report(&core, "run-complete")`, so the instrument prints again. It prints:
+`frame_renderer_depth_coverage_report(&core, "run-complete")`, so the instrument prints again. It prints:
 
 ```
 [ndepth:warn] depth coverage (run-complete): NO PRIMITIVES WERE CLASSIFIED AT ALL this run

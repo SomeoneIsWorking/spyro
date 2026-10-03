@@ -52,7 +52,7 @@ DEMO_PLAYBACK_TICKS = 0x35C - 8  # g_DemoLengths[0] - 8 (asm/data/math.data.s:27
 DEMO_FADE_TICKS = 16            # g_DemoFadeTimer counts to 16 and the title screen comes back (update.c:950)
 
 # The same lens plus the two words this route is about. g_DemoMode decides where the pad comes from
-# and gates the demo-mode caption the renderer draws (game/render/scene.cpp:128-131), so a difference
+# and gates the demo-mode caption the renderer draws (game/render/frame/scene.cpp:128-131), so a difference
 # in it is a difference in the simulation. The fade counter is decisive here where the dragon
 # cutscene's tick is informational, because it is incremented once per demo update (update.c:945)
 # rather than read from g_LevelTicks.

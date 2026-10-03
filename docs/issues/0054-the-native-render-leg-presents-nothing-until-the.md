@@ -37,7 +37,7 @@ composited the buffer that was not on screen.
 
 ## Fix
 
-`game/render/frame_env.cpp` — frontier `frame.own-render-driver` parts (1) and (2), game-side:
+`game/render/frame/frame_env.cpp` — frontier `frame.own-render-driver` parts (1) and (2), game-side:
 `nativeFrameBegin` flips the env and programs GP0 E3/E4/E5/E1/E2/E6 + the `isbg` fill from the
 game's own DRAWENV; `nativeFrameEnd` spends the `>=2`-field throttle through
 `spyro_deliver_field` (the same `deliver_field` the reference leg uses — ONE definition of a

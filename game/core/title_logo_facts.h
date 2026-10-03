@@ -55,10 +55,11 @@ struct TitleLogoFacts {
 };
 
 // THE TEXPAGE AND CLUT WORDS, DECODED. These are the four expressions the guest's own renderer
-// applies when it hands a sprite to the GPU (game/render/fx_title_menu.cpp's push2dQuad call, and
-// the same arithmetic in the decompilation's DumpClut: `x = (clut & 0x3f) << 4, y = clut >> 6`).
-// They live here so a VRAM snapshot cannot drift from what the renderer sampled: a snapshot that
-// placed its rect one page off would produce a picture that is nearly, but not quite, the logo.
+// applies when it hands a sprite to the GPU (game/render/scene/title_menu.cpp's push2dQuad call,
+// and the same arithmetic in the decompilation's DumpClut: `x = (clut & 0x3f) << 4, y = clut >>
+// 6`). They live here so a VRAM snapshot cannot drift from what the renderer sampled: a snapshot
+// that placed its rect one page off would produce a picture that is nearly, but not quite, the
+// logo.
 constexpr int texturePageX(std::uint16_t tpage) {
   return static_cast<int>(tpage & 0xFu) * 64;
 }

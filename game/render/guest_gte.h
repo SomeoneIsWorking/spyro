@@ -10,6 +10,7 @@
 // names here are the hardware's; each owner names what it keeps in them where it does so.
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 
 namespace spyro::guest_gte {
@@ -37,6 +38,14 @@ inline constexpr std::uint32_t kMac3 = 27;
 // Control registers.
 inline constexpr std::uint32_t kRotation0 = 0; // RT11RT12 .. RT33 are CR0..CR4
 inline constexpr std::uint32_t kRotationWords = 5;
+
+// ONE ROTATION ELEMENT: the signed 16-bit half of a control register. A control register packs two
+// of them, the low half in bits 0..15 and the high half in bits 16..31, and each is a matrix
+// element in its own right.
+inline std::int16_t rotationElement(std::uint32_t controlWord, unsigned half) {
+  const std::uint32_t bits = half == 0 ? (controlWord & 0xFFFFu) : ((controlWord >> 16) & 0xFFFFu);
+  return static_cast<std::int16_t>(static_cast<std::uint16_t>(bits));
+}
 inline constexpr std::uint32_t kTranslationX = 5;
 inline constexpr std::uint32_t kTranslationY = 6;
 inline constexpr std::uint32_t kTranslationZ = 7;

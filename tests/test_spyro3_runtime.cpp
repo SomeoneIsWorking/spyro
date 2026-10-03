@@ -10,7 +10,7 @@ int main() {
   const RenderCapabilities capabilities = runtime.renderCapabilities();
   if (image == nullptr || runtime.legacyConfigForMigration() != nullptr ||
       runtime.legacyHooksForMigration() != nullptr || capabilities.defaultPath != RenderPath::Gte ||
-      capabilities.nativeRenderPath || capabilities.temporalInterpolation) {
+      capabilities.nativeRenderPath || !capabilities.temporalInterpolation) {
     return 1;
   }
   // Every value below is read out of SCUS_944.67's own crt0 and initialised data, and each is

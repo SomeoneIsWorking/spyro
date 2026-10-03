@@ -21,6 +21,10 @@ SpyroTitle SpyroRuntime::title() const {
   return title_;
 }
 
+RenderCapabilities SpyroRuntime::renderCapabilities() const {
+  return RenderCapabilities::widescreenOnly();
+}
+
 const TitleLogoFacts &SpyroRuntime::logoFacts() const {
   return kNoLogoFacts;
 }

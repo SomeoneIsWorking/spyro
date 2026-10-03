@@ -13,6 +13,7 @@
 #include "fx_actor_draw.h"
 #include "fx_paired_actor.h"
 #include "game.h"
+#include "in_between_strategy.h"
 #include "instance_pairing.h"
 #include "interp_census.h"
 #include "painter_object_layer.h"
@@ -20,7 +21,6 @@
 #include "secondary_actor_emit.h"
 #include "secondary_actor_temporal.h"
 #include "spyro_context.h"
-#include "temporal_scene_source.h"
 
 #include <cstdlib>
 #include <lucent/log.h>
@@ -135,7 +135,7 @@ layerSampler(Core &core, const History &history, const char *channel) {
   };
 }
 
-class SpyroTemporalScene final : public TemporalSceneSource {
+class SpyroTemporalScene final : public InBetweenStrategy {
 public:
   explicit SpyroTemporalScene(Game &game) : game_(game) {}
 
@@ -497,6 +497,6 @@ void spyro_temporal_scene_prepare(Core &core) {
                 paired.temporal_eligible);
 }
 
-std::unique_ptr<TemporalSceneSource> spyro_temporal_scene_source(Game &game) {
+std::unique_ptr<InBetweenStrategy> spyro_temporal_scene_source(Game &game) {
   return std::make_unique<SpyroTemporalScene>(game);
 }

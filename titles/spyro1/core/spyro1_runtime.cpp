@@ -6,6 +6,7 @@
 #include "frame_pacer.h"
 #include "game.h"
 #include "guest_globals.h"
+#include "in_between_strategy.h"
 #include "interp_census.h"
 #include "native_audio_key_state.h"
 #include "native_camera.h"
@@ -48,7 +49,6 @@
 #include "spyro_game.h"
 #include "spyro_gate_debug.h"
 #include "temporal_scene.h"
-#include "temporal_scene_source.h"
 
 #include <lucent/log.h>
 

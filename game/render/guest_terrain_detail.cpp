@@ -108,7 +108,7 @@ void DetailPass::run() {
     gte_write_ctrl(gte::kRotation0 + i, frame_.rotationWord(i));
   }
   gte_write_ctrl(gte::kLight3, core_.mem_r32(frame_.facts.detail.fogLevel));
-  frame_.primitive = core_.mem_r32(frame_.globals.primitiveCursor);
+  frame_.primitive = frame_.primitiveBase();
   frame_.orderingTable = core_.mem_r32(frame_.globals.orderingTable);
   list_ = frame_.scratch + kDetailList;
   frame_.fineSplitCursor = frame_.scratch + kFineSplitList;

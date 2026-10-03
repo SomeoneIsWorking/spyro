@@ -121,11 +121,6 @@ private:
   void animatePairSlot(std::uint32_t sector, std::uint32_t slot, std::uint32_t index);
   std::uint32_t definition(std::uint32_t sector, std::uint32_t slot, std::uint32_t index);
 
-  // The five RT words the camera-relative view rotation is read from.
-  [[nodiscard]] std::uint32_t viewRotation() const {
-    return frame_.facts.classify.viewRotation;
-  }
-
   TerrainFrame &frame_;
   Core &core_;
   TerrainMemory &memory_;
@@ -139,7 +134,7 @@ private:
 
 void SectorClassifier::run() {
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
-    gte_write_ctrl(gte::kRotation0 + i, core_.mem_r32(viewRotation() + 4 * i));
+    gte_write_ctrl(gte::kRotation0 + i, frame_.classificationRotationWord(i));
   }
   gte_write_ctrl(gte::kTranslationX, 0);
   gte_write_ctrl(gte::kTranslationY, 0);

@@ -31,6 +31,17 @@ namespace spyro2 {
 //   80067EAC  the camera position x, y, z, read at 800438FC.
 //   8006B300  one visibility byte per terrain sector, written by the classification pass (800244F0)
 //             and read by the walk for each moby's group byte.
+//
+// The camera's OWN state, and the builder that reads it. FUN_800156FC — this family's per-field
+// body, called from the game main at 80011AFC — opens with two calls before it does anything else:
+//
+//   FUN_8001C2F8(&80067EC8, &80067E98, &80067E84)   the camera builder, out of three angles
+//   FUN_8001BDB0(&80067EB8, &80067EAC)              last field's position <- this one's
+//
+// So 80067EC8 is three signed 16-bit ANGLES and 80067E84/80067E98 are what the builder WRITES from
+// them: the classification matrix first, then the same matrix with row 1 by 0x140>>9 for the
+// drawer. MEASURED by otattr last-writer provenance on 80067E84..80067EA8, which names 800156FC for
+// both, and by rebuilding both from the angles (game/render/guest_camera_builder.cpp).
 inline constexpr spyro::guest_render_globals::Globals kRenderGlobals{
     .registerSaveArea = 0x8006A9ECu,
     .scratchBaseWord = 0x80067034u,
@@ -39,6 +50,12 @@ inline constexpr spyro::guest_render_globals::Globals kRenderGlobals{
     .orderingTableMark = 0x80067168u,
     .cameraRotation = 0x80067E84u,
     .cameraPosition = 0x80067EACu,
+    .cameraAngles = 0x80067EC8u,
+    // 80061BD8 / 80061C58: the two 256-entry 16-bit tables the builder's own two helpers read, each
+    // named at its use inside FUN_8001B61C and FUN_8001B664 (0x8001B61C indexes 80061BD8 with
+    // `&DAT_80061bd8 + 2*index`, 0x8001B664 indexes 80061C58 the same way).
+    .cameraSineTable = 0x80061BD8u,
+    .cameraCosineTable = 0x80061C58u,
     .visibilityGroups = 0x8006B300u,
 };
 

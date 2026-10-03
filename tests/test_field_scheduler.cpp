@@ -258,7 +258,7 @@ void test_root_without_hook_survives_pending_work_inside_guest_dispatch() {
   CHECK_EQ(fixture.game->core.pending_work & Core::PW_IRQ, 0u);
 }
 
-class EmptyTemporalScene final : public TemporalSceneSource {
+class EmptyTemporalScene final : public InBetweenStrategy {
 public:
   bool eligible(const Core &) const override {
     return true;

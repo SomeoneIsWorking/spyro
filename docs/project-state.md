@@ -46,8 +46,8 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 | S031 | Spyro 2 widescreen anchors the UI: edge HUD elements at the widened edges or safe area, centred elements centred, nothing stretches | verified — the drawer is `FUN_80053E78` emitting 2D quads/sprites through `FUN_800520CC` (gem counter `FUN_8005251C` x 0x28 left, orb counter x 0x198 right, meter `FUN_80052D84` right, lives `FUN_80052B88` centre); guest 2D is presented centred (+margin), so `titles/spyro2/render/spyro2_hud_anchor.*` applies `ui_anchor::correction` (-86/0/+86 at 684) to the producers' x argument. Glimmer with Select (HUD on): 16:9 gem/digit at the left inset and orb/digit at the right inset matching 4:3, lives centred, unstretched, unclipped; 4:3 unchanged; override differential at 4:3 0 mismatches (counter 59/59, emitter 108/108). Gap: the meter path was not shown on the measured route | S026 | G003 |
 | S027 | Spyro 3 widescreen renders additional horizontal scene coverage without stretching: margin objects drawn from object memory past every title-owned horizontal cull, margin-only objects animated port-side, guest memory untouched | partial — the widening itself is measured and rendered: the shared owner latches Spyro 3's OWN measured sites (`SetGeomOffset` leaf `0x8005D35C`; sole CR26 publication `0x8005955C` writes the projection distance H and is deliberately not intercepted; four inline CR24/CR25 restatements at `0x80033EF8/0x80033EFC/0x80034B30/0x80034B38` carried by the per-field re-assertion), authored window 512x240 OFX 256 OFY 120 H `0x155`, and presents 684x240 at 16:9 with 86px of real scene in both margins and the player unchanged in size. Both horizontal culls are native and widen: moby walk `0x80030478` (811 insns) and terrain drawer `0x80022378` (5487 insns) with its sector-visibility leaf `0x8002D0D8`, outcodes on [-margin, 512+margin). Override differential at 4:3 over `tools/title_route.py --title spyro3`: 26/26 moby-walk calls and 26/26 terrain-drawer calls match retail, 0 mismatches, 0 incomparable; the projection leaf's single sampled call is INCOMPARABLE ("original path performed platform-service @0x8005D35C"). 4:3 unchanged. Remaining: margin-only objects animated port-side is unmeasured, and the terrain re-split pass is not shown to have run. | S025 | G003 |
 | S032 | Spyro 3 widescreen anchors the UI: edge HUD elements at the widened edges or safe area, centred elements centred, nothing stretched | partial — the HUD chain is measured and the edge widgets are anchored. Pass `0x80029E48` (from `0x8001E460`, bit `0x20`) dispatches one drawer per widget through the table `0x8006727C`; `0x800285A4` registers three groups whose DRAW callbacks are `0x80029904` and `0x80029BB0`, each emitting an icon through `0x800289C8(icon,x)` and a value through `0x800291B8(value,x,y,w)`. Measured elements and classes: collectable counter `0x80067248` (authored x 20) LeftEdge, lives counter `0x8006729C` (authored x 256) Centred, egg counter `0x800672F0` (authored x 492) RightEdge. Classification is by widget element, not by return address, because both counters share one drawer and reach the SAME emitter call sites (icon ra `0x800299B8` for gem x 20 AND egg x 382), so `spyro::hud_draw_context::Draw` carries the element down one level. The icon emitter is NOT corrected on every call: the value emitter `0x800291B8` draws its digits by CALLING the icon emitter `0x800289C8` per glyph from `0x80029374`, so correcting both applies the margin twice — measured as the collectable count landing at x −111 (off the left edge, number not drawn) and the egg icon at 595 instead of 468 (jammed to the right edge, reading as icon/count swapped); the value emitter therefore opens `hud_draw_context::Draw::insideValue` and the icon emitter leaves that interval alone. Presented evidence at 684x240: collectable icon at columns 21..49 (4:3: 20..50) and its digit at 61..84 (4:3: 61), egg digit at 595..618 (4:3: 423..446, i.e. +172 = the full widening), icon left of count on both sides, nothing resized. 4:3 is PIXEL-IDENTICAL: 0 of 122880 pixels differ from the pre-change reference. Gap: widgets that only appear under other game states have not been enumerated. | S027 | G003 |
-| S028 | Spyro 2 presents interpolated 60fps from captured source geometry | missing | S024 | G003 |
-| S029 | Spyro 3 presents interpolated 60fps from captured source geometry | missing | S025 | G003 |
+| S028 | Spyro 2 presents interpolated 60fps | partial — the capability is ON (`guestInterpolated()`) and the real field is still the guest's own untouched output: at 4:3 the settled/moved shots are md5 `9df2264c…`/`9c22de45…` with fps60 off AND on. MEASURED 2026-10-03, five defects closed. (1) CAMERA PAIRING: the endpoints are now keyed on the guest's own `sceneProducerTicks`, so they are the two most recent REAL scene frames however many display fields were delivered between them (Spyro runs its scene at 30 Hz on a fraction of the 60 Hz fields; sampling per presentation made both endpoints the same camera on every one of those fields). (2) THE IN-BETWEEN IS CLEAN AT t=0.5: it used to paint twelve rows below the guest's own window (rows 228..239, which the guest's frame leaves black — 497 of its submitted items straddled y=228 under the guest's own draw area, against 0 such items in the guest's captured queue on most frames and 6-9 on the rest), because its camera sits BETWEEN two of the guest's and so reaches nearer ground than either did, and nothing clipped it to the guest's window. The reconstruction now clips its packets to the draw area the guest's OWN identical packet stream was enqueued under, read from the captured queue (and puts it back afterwards — the draw area is GPU state the guest owns). MEASURED after: the t=0.5 in-between differs from the fps60-off picture in 30 middle rows (the mobys, drawn at real-frame state — the accepted gap) and NOT ONE row outside them, with an identical non-black pixel count; at t=1 (PSXPORT_FPS60_TFORCE=1) it is the real frame's own terrain. (3) The Spyro 3 abort had the same cause here: the in-between's packet arena started at the guest's cursor, which the presenter reaches only after the field's own producers have allocated, so a 35,468-byte reconstruction from 0x801D04B4 ran 6,844 bytes past the scratch block at 0x801D7444 and wrote over the sector and split lists — walkSplitList then read the colour word 0x0C000000 as a sector header and faulted on 0x30000008. The arena now has a window of its own above every range the traversal owns (unit-tested, `terrain_packet_window`, 15 checks; below the refusal bound it is refused by name). (4) The GTE is saved and restored around the traversal through psxport's new passive `GTE_SaveRawState`/`GTE_RestoreRawState` — the register file and flags, never the read ports, which pop the projection FIFO and clear flags (unit-tested, `gte_raw_state`, 264 checks). (5) The classification pass reads the in-between's own view matrix — the UNSCALED one the guest keeps beside the drawer's — instead of the guest's second, camera-relative matrix. (6) THE CAMERA IS NOW THE GUEST'S OWN, NOT A LERP OF ITS OUTPUT. The earlier note here was wrong about what the five words are: they are WRITTEN BY THE GUEST from three 16-bit ANGLES, by its own camera builder, which `otattr` last-writer provenance named (SCUS_944.25 0x800156FC / SCUS_944.67 0x8001E638, each opening with `FUN_8001C2F8(&angles, &view, &projection)`). The in-between therefore interpolates the ANGLES — each the short way round its 4096-step turn — and re-runs that builder over host memory (`guest_camera_builder.*`, unit-tested `guest_camera_builder`, 1701 checks), which is bit-exact against the guest's own matrices on every camera measured on both titles. Neither lerp form of the packed words survives: they are truncated 12-bit-fraction products of those angles, so they are not values that move linearly with the camera, and choosing between a whole-word and a per-half lerp by which one renders is guessing. The recovered step is `docs/re-frontier.md` `guest.camera-builder`. REMAINING: mobys in an in-between are at real-frame state (the accepted gap, the 30 middle rows above). Evidence: 10 consecutive 684x240 presents with the camera moving (`scratch/gate/wide2/`), captures opened. | S024 | G003 |
+| S029 | Spyro 3 presents interpolated 60fps | partial — as S028 on the same shared owner, and the capability is ON. The abort is FIXED at its cause: walkSplitList read the colour word 0x0C000000 as a sector header because the in-between's packet arena had overwritten the scratch block's sector and split lists (S028 (3); the same run on SCUS_944.25 faulted at the same line on 0x30000008). MEASURED 2026-10-03: `tools/title_route.py --title spyro3` at 4:3 with fps60 on runs 8,000+ fields to gameplay and through a walk (1,405 units) and a jump with 0 faults, and the real field is byte-identical — settled/moved md5 `200df262…`/`8022bb1e…` with fps60 off AND on. 10 consecutive 684x240 presents with the camera moving in `scratch/gate/wide3/`, captures opened. Its picture at t=0.5 differs from the fps60-off picture in 27 middle rows (the mobys) and nowhere else, with an identical non-black pixel count. (7) With the camera recovered the reconstruction defers the UNION of both endpoints' splits, and Spyro 3's first in-between wrote a split entry 0x30C4 above the scratch block — past the top the guest sized for one camera's splits — and the write was refused because nothing owned it. The in-between's scratch window now runs to the end of every range it does NOT own rather than to the block, and both titles run their routes at t=0.5 with 0 faults. | S025 | G003 |
 | S036 | The zero-argument product opens on an in-window title selector; entries are enabled only for provisioned, authenticated executables; a title can return to the selector and another can start in the same process | verified headless, both orders, for all three pairs (1<->2, 2<->3, 1<->3) at frame 300, partial overall — selector rendered by the psxport RmlUi screen and captured from the present image; `tools/title_switch.py` runs selector -> A (frame N) -> `session return` -> selector -> B (frame N) and compares B's full guest RAM and scratchpad with two fresh-process B runs (the two fresh runs agree first, as the control): identical in both orders (the control also differs between titles: 36f2a838 / 3ab8187f / 74f52d7f). Defects found and fixed on the way are in issue 0169. a pad-driven (not control-channel) selection of every title, and any windowed run, are not recorded; the picker window has no title (the pinned framework has no HostIdentity); the explicit executable argument remains a maintainer override that skips the selector | Panel logos: a title's wordmark is snapshotted from that title's OWN live VRAM while the game's own title screen is on it — the facts name the title's gate (the guest word whose overlay block tick retail itself tests) and its wordmark's sprite records, and PanelLogo reads those records and snapshots their texture rectangles through their CLUTs, resolving index 0 as the PSX transparency rule says. **Spyro 1 verified**: sprite record 0 at 0x8006FACC (tpage 0x0098 = 8-bit, clut 0x7FE0, 255x128) emitted by the title overlay's 0x8007CEE4, gated on CutsceneLayout.m_CurrentTick >= 1170 via the pointer global 0x80075680; the CLUT is 256 texels in ONE VRAM row (beetle DEFINE_Update_CLUT_Cache), not a 16x16 block — the block read is what produced per-texel noise inside a correct silhouette; the rectangle's right 127 columns are the banner's texture (its page origin is 128 texels right), so the fact clips to 128 and the panel shows the SPYRO THE DRAGON wordmark (`scratch/picker_verify/sel_spyro{1,2,3}.png`, 2026-10-03, three lit panels, wordmark centred at 20% height in colour on the selected panel; Spyro 2/3 logos still `blocked`, their tables ungated, so those panels draw no name). LOGO SCALE 2026-10-03: a panel's logo is drawn at the SAME scale the panel applies to its picture (cover.h / (crop.h * pictureHeight) = 3 for a 240-line frame in a 720-line panel), magnified by whole texels so the wordmark keeps the game's pixel grid, and the magnified copy is built once per logo rather than per frame. Captures sel_spyro{1,2,3}.png at 02:32-02:33 show it. Spyro 2 and 3 remain blocked and the measurements that block them are recorded in their own logo-facts headers: Spyro 2 has no sprite table in 2 MiB of RAM, its display list draws no textured prim, guest VRAM is never written, and the on-screen plate's texels match nothing in the saved machine; its 0x8019C000 buffer holds a different, vertically sliced lockup. Spyro 2/3 logos: the MDEC/STR route is REFUTED for both, not assumed — no `[fmv] begin` in any run that reaches either title screen, no `[cd]` streaming after boot, and no `.STR` directory entry in either disc image. Two earlier Spyro 2 negatives were wrong and are corrected in its logo-facts header: guest texture memory is populated, not empty, and `provat`'s `<never written>` proves nothing (it says the same for Spyro 1, whose logo texels are resident). The open lead is an INDEXED texture page in that populated memory; the plate's 15-bit form matches nothing in RAM. SPYRO 2/3 LOGOS ARE BLOCKED, and parked there deliberately. Spyro 2's overlay bundle went through Ghidra at its measured base (WAD[0x237dc..0x35800] -> 0x8006DA40) and does not contain the emitter: the 19 module bases are pointer-setup functions with zero `jal` in 8 KiB, SCUS_944.25's own file has no record-shaped table, and `refs 0x80066D40` returns nothing, so the title state's draw cannot be reached from the one word known to select it. Every measurement is in the titles' logo-facts headers. What is landable today is Spyro 1's logo, the shared magnification, and the selector layout.
 | S033 | Spyro 1: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | partial — M1 and M2 measured against the full-console reference (28/28 payload digests identical; 0 hand-off field differences at 4 terminals) and R6 decided; M4 (absence of loading presentation) still open | S008, S011 | G005 |
 | S034 | Spyro 2: load operations complete without loading-only waits or presentation; logos cancel through the recovered route | missing | S008, S024 | G005 |
@@ -55,6 +55,82 @@ behavior or native owner it observed; it does not prove that the native/Lightrec
 
 ## Current focus
 
+### Spyro 2/3 in-between terrain (chunk 2, in progress)
+
+The real field is the game's untouched GPU output and is byte for byte so: all four 4:3 route
+combinations (Spyro 2 and Spyro 3, fps60 off and on) hash identically to the pre-change baseline. The
+in-between is rebuilt natively, read-only, from the guest's own object memory by
+`spyro::makeTerrainWorldPass` behind the framework's one `psx::InBetweenStrategy` seam.
+
+It does not present, and `renderCapabilities()` for both titles stays `widescreenOnly()` on the two gaps
+below. The seam that would admit it is in place and tested: `InBetweenStrategy::guestPathClaim()` names
+why a strategy's in-between may present without the guest's renderer live, the Spyro world pass claims
+`HostRebuiltFromGuestMemory`, `RenderCapabilities::guestInterpolated()` is the shape, and
+`Fps60::interpolationPermitted` asks the strategy instead of demanding Native. Tomba! 2's
+`GuestGeometrySceneSource` claims `GuestPrimitives` and is unaffected.
+
+TWO REFUTED HYPOTHESES, both measured and both now reverted rather than kept:
+
+- THE DRAWING ENVIRONMENT. The reconstruction inherits whatever GP0 E3/E4/E5 state the GPU is in,
+  because the replayed packets do not carry those commands, and the clip is applied to
+  `da - vertex - off` so a clip paired with the wrong offset is a different window. Capturing the
+  field's own environment and applying it around the reconstruction changed NOTHING (MEASURED
+  2026-10-03, t=0.5, pixel-identical), so it is out: t=1 is already pixel-correct under the same
+  environment the t=0.5 frame uses, which means the environment cannot be the cause.
+
+- THE PACKED GTE CONTROL REGISTERS. `cameraRotation` holds five words the drawer loads straight into the
+  GTE's control file (`gte_write_ctrl(kRotation0 + i, rotationWord(i))`), and a control register packs
+  two signed 16-bit matrix elements (CR0 = RT11 | RT12<<16), so interpolating a packed word as one
+  32-bit integer lets the low element carry into the high one at any 0<t<1 while both endpoints pass
+  through exact. That predicts exactly the observed shape — correct real frame, wrong in-between. It is
+  nevertheless FALSE here: unpacking, lerping and repacking the halves presents an EMPTY frame
+  (MEASURED: 2 colours, 0 non-black) where the whole-word lerp presents a correct terrain picture with
+  a twelve-row defect. So these words are not packed element pairs, and the comment at the lerp says so
+  rather than inviting the next reader to re-try it.
+
+  Both readings are exact at t=0 and t=1 and only differ between them, which is why the empty frame is
+  the decisive measurement: a wrong reading does not merely shift the picture, it destroys it.
+
+WHAT IS LEFT, and it is the one thing both refutations point at: the band is a function of t alone, so
+the defect is in the INTERPOLATION ITSELF. The words at `0x80067E84` are neither one 32-bit element each
+nor two packed signed halves each, which means they are not the camera's own storage format at all.
+The interpolation that will be right is the one the guest does: recover the writer of those five words,
+take the ANGLES it derives them from, interpolate those, and build the matrix with the guest's own
+builder. `docs/workspace/GHIDRA.md` (psxport) is the route — the words live in a WAD image, and
+Ghidra's analysed range for spyro2 is the main executable (`0x8000F800..0x80066FFF`), so the WAD module
+has to be opened at its base.
+
+**GAP 1 — THE IN-BETWEEN'S SPLIT-LIST WALK.** With the capability on,
+SCUS_944.67 aborts a few thousand fields in: `guest_terrain::walkSplitList` -> `splitCoarsePolygons` ->
+`Drawer::run` reads `0x029407E0`, which is unmapped. The word it dereferenced was therefore not a
+pointer, so the coarse or fine split list carried stale content past its entries. The translucent pass
+does write the terminating zero (`guest_terrain_translucent.cpp`, after its own deferrals), so the
+terminator is present and the list is being walked from the wrong place or a pass wrote after it. The
+next step is to establish which.
+
+**GAP 2 — THE IN-BETWEEN'S PICTURE AT A LERPED CAMERA.** Ownership is FIXED and no longer a gap: the
+record is keyed by ARENA (`SpyroContext::TerrainPacketArena`), and ownership went from 0 matches on
+every frame but the first to ~750-770 of ~1585 captured items on every frame
+(`tests/test_terrain_packet_arenas.cpp`, 56 checks over the two-arena alternation). Coordinate space is
+correct (captured and reconstructed items for the same sector carry the same vertices and equivalent
+draw areas). At `t=1` — the reconstruction at the real camera — the in-between is pixel-correct
+INCLUDING both letterboxes, which is the proof the geometry, the sink and the clip are right. The
+residual twelve-row band at the bottom appears ONLY at `t=0.5`, so it is the lerped camera alone: the
+reconstruction is drawing twelve rows further down than the guest's own window allows at a camera
+between two of the guest's.
+
+FIXED AND STAYING:
+
+- a chain's next pointer is a 24-bit main-RAM offset, not an address (the sink refused its own chains).
+- the frame's terrain record is keyed by arena rather than unioned or tick-counted (spyro_context.h).
+TRIED AND REJECTED: restoring the GTE's register file across a reconstruction. The premise is sound —
+a reconstruction re-runs the guest's producer, which writes the GTE exactly as the guest would, and the
+GTE is hardware state the guest reads back, so refusing guest writes does not protect it. It is not
+kept because it did not fix SCUS_944.67's fault, and because a passive read of the whole register file
+is not possible: DR15 and the FIFO-mapped registers MATERIALISE the colour and XY FIFOs through the
+running-GTE path, advancing FIFO state and raising the GTE interrupt, and reading them segfaults with
+no CPU bound. A register set narrow enough to read safely is unproven for this fault, so the change
+stays out rather than shipping a half-measure that breaks a seam test.
 S011 — the Artisans route matches the full-console reference on every decisive range at every one
 of its 477 game frames (`tools/oracle_compare.py --frame-step 1`, 485 checkpoints, 6,305 decisive
 range comparisons, zero divergences; issue 0110). The world, the player model, the regular and
@@ -2086,9 +2162,10 @@ Related goal: G002.
 
 ### S023-S029 — Spyro 2 and Spyro 3
 
-**Status: S023 `partial` (measured 2026-09-30), the rest still `missing`.** Spyro 3 is no longer
-unexecuted — its boot prefix runs — but it stops inside the loader and never reaches game main, so
-no gameplay claim is made for it.
+**Status: S023 `partial` (measured 2026-09-30); S028/S029 `partial` (measured 2026-10-02); S027/S032 `partial`;
+the rest of this block still `missing`.** Spyro 3 is no longer unexecuted — its boot prefix runs — and both
+titles now reach gameplay, widen to 16:9, and present interpolated in-betweens. See the S024/S025,
+S026/S027 and S031/S032 rows for the measured evidence.
 
 Both titles are held behind Spyro 1 by the single-title rule in `CLAUDE.md`: "Finish Spyro 1 before
 continuing title-specific Spyro 2 or Spyro 3 implementation." Spyro 1 has not finished — S011
@@ -2129,6 +2206,18 @@ against the baseline and will not come for free from Spyro 1. Spyro 1's interpol
 title-owned producers that read Spyro 1's game state — the terrain, actor and shaded-sprite sources
 named in S020 — and none of them transfers to another title's scene layout. What does transfer is the
 framework: the temporal presenter, the pairing walk, the projection stream and the measurement tools.
+
+**THE HOST IN-BETWEEN RENDERER'S TRAVERSAL LAYER LANDED 2026-10-02** (chunk 1 of the S028/S029 plan).
+The terrain drawer's seven passes now read and write the five ranges they own for one field through one
+accessor (`game/render/guest_terrain_memory.*`) instead of `Core`, carry a `FrameMode` on the frame,
+and report each ordering-table link as `Linked{head, primitive, markKey}` with the mark compared as a
+bin ORDINAL rather than a slot address — the same ordering, so the same comparison works over a table
+an in-between owns in host memory. The real field is byte-identical to the previous build on both
+titles at 4:3 (settled and moved shots md5-identical: Spyro 2 `9df2264c…`/`9c22de45…` with fps60 off,
+Spyro 3 `200df262…`/`8022bb1e…` with fps60 on), and a whole drawer's worth of `InBetween`-mode passes
+over a one-sector level leaves all 2,097,152 RAM bytes and 1,024 scratchpad bytes unchanged while still
+classifying that sector (`guest_terrain_memory` in CTest). The remaining S028/S029 gap is the sink and
+the lerped camera: nothing yet feeds an in-between, and `HostMemory`'s first product caller is chunk 2.
 
 Related goals: G001, G002, G003.
 

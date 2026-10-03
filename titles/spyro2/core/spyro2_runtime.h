@@ -24,6 +24,17 @@ public:
   bool guestVramIsPicture(const Game &game) const override;
   void stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) override;
 
+  // SCUS_944.25 now OWNS a native producer (the terrain world pass, spyro::makeTerrainWorldPass)
+  // and a temporal product, so its capability is no longer widescreen-only: Native carries the
+  // in-between this title builds from its own object memory, and Gte remains the pure-guest
+  // picture.
+  RenderCapabilities renderCapabilities() const override;
+
+  // THIS TITLE'S IN-BETWEEN. Its own strategy, not the framework's host world pass: this one knows
+  // that this engine family's terrain is drawn by ONE measured routine whose seven passes can be
+  // run again over host memory at a lerped camera.
+  std::unique_ptr<TemporalFramePresentation> createTemporalFramePresentation(Game &game) override;
+
   const PlatformHlePlan *platformHlePlan() const override;
   const char *discEnvVar() const override;
   const GuestCdStreamCallbackLayout *guestCdStreamCallbackLayout() const override;

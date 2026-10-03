@@ -3,6 +3,7 @@
 #include "boot_prefix_frame_driver.h"
 #include "cd_stock_read_completion.h"
 #include "core.h"
+#include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
 #include "spyro3_boot_facts.h"
@@ -12,6 +13,7 @@
 #include "spyro3_widescreen_facts.h"
 #include "spyro_context.h"
 #include "stock_read_publication.h"
+#include "terrain_world_pass.h"
 
 #include <cstdlib>
 #include <lucent/log.h>
@@ -172,6 +174,28 @@ const GuestCdStreamCallbackLayout Spyro3Runtime::cdStreamCallbackLayout_{
 };
 
 Spyro3Runtime::Spyro3Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro3) {}
+
+RenderCapabilities Spyro3Runtime::renderCapabilities() const {
+  // Gte remains the default and the real path, and `nativeRenderPath` stays false, so the REAL
+  // field is the guest's own untouched GPU output however the toggle is set.
+  //
+  // The temporal product IS declared: this title's world pass claims
+  // GuestPathClaim::HostRebuiltFromGuestMemory, and `guestInterpolated()` is the shape that takes
+  // it. What is measured now (docs/project-state.md S029): the real field at 4:3 is byte-identical
+  // with fps60 off and on (settled/moved md5 `200df262…`/`8022bb1e…`), and the route runs to
+  // gameplay and through a walk and a jump with no fault — the in-between used to abort in
+  // walkSplitList.
+  return RenderCapabilities::guestInterpolated();
+}
+
+std::unique_ptr<TemporalFramePresentation>
+Spyro3Runtime::createTemporalFramePresentation(Game &game) {
+  // This title's OWN in-between, not the framework's host world pass: this image draws its terrain
+  // with one measured routine (SCUS_944.67 0x80022378, instruction-for-instruction the same body as
+  // Spyro 2's) whose seven passes can be run again over host memory at a lerped camera.
+  return std::make_unique<Fps60>(
+      game, spyro::makeTerrainWorldPass(game, spyro3::kTerrainFacts, spyro3::kRenderGlobals));
+}
 
 void *Spyro3Runtime::createContext(Core &) {
   // The shared lineage context: the field owner back-pointer, the run counter, and the archive

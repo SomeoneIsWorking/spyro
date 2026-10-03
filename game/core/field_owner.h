@@ -153,6 +153,10 @@ public:
     return presents_;
   }
 
+  std::uint64_t temporalDeferrals() const {
+    return temporalDeferrals_;
+  }
+
   const FieldOwnerFacts &facts() const {
     return facts_;
   }
@@ -182,6 +186,13 @@ private:
   std::uint64_t fields_ = 0;
   std::uint64_t paces_ = 0;
   std::uint64_t presents_ = 0;
+  // Visible fields a temporal product swallowed: the guest's ordering table was empty, so the field
+  // was not a frame and the product's real/in-between pair already covered the 60 Hz output.
+  std::uint64_t temporalDeferrals_ = 0;
+  // The scene-producer tick as of the last delivered field, so a field can be asked whether the
+  // guest's native scene producers ran on IT rather than on some earlier field.
+  std::uint32_t sceneTick_ = 0;
+
   std::uint32_t callbackFallback_ = 0;
   std::uint16_t previousButtons_ = 0xFFFFu;
   // Wall-clock epoch of this owner, taken in the constructor. A `pace` report needs milliseconds

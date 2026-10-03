@@ -9,7 +9,6 @@
 #include "scene_painter_order.h"
 #include "spyro_context.h"
 #include "temporal_scene.h"
-#include "temporal_scene_source.h"
 #include "terrain_emit.h"
 #include "testutil.h"
 #include "title_runtime_registry.h"

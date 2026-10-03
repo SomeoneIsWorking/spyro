@@ -60,13 +60,12 @@ public:
 
   // An identified lineage title does not acquire Spyro 1's renderer merely by deriving from this
   // base. Runtime execution always consumes the selected executable directly through Lightrec.
-  RenderCapabilities renderCapabilities() const override {
-    return {
-        .defaultPath = RenderPath::Gte,
-        .nativeRenderPath = false,
-        .temporalInterpolation = false,
-    };
-  }
+  //
+  // This base also declares no temporal product of its own: a title that has one overrides both of
+  // these. Reporting widescreen only and building no presentation keeps the product at the guest's
+  // real frame rate, which is the truth about a frame that has no in-between rather than a claim
+  // of 60 fps over an empty one.
+  RenderCapabilities renderCapabilities() const override;
 
 protected:
   SpyroRuntime(const GuestProgramImage &programImage, SpyroTitle title);

@@ -39,7 +39,6 @@ std::uint32_t shiftRightArithmetic(std::uint32_t value, std::uint32_t bits) {
 }
 
 // SCUS_944.25 80028B2C: the buffer ends at scratch + 0x1000.
-constexpr std::uint32_t kPrimitiveSpan = 0x1000;
 
 // The far sector header (the near passes read others, guest_terrain_mesh.h).
 namespace far_sector {
@@ -115,7 +114,7 @@ private:
 // 80028B14.
 void FarPass::run() {
   lastBin_ = (core_.mem_r32(frame_.facts.far.farDepth) >> 7) - 1;
-  bufferEnd_ = frame_.scratch + kPrimitiveSpan;
+  bufferEnd_ = frame_.scratch + kPrimitiveArenaBytes;
   markBin_ = frame_.markBinFrom(core_.mem_r32(frame_.globals.orderingTableMark));
   for (std::uint32_t i = 0; i < camera_.size(); ++i) {
     camera_[i] = frame_.positionWord(i) >> 4;

@@ -2,6 +2,7 @@
 
 #include "cfg.h"
 #include "core.h"
+#include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
 #include "guest_call.h"
@@ -228,12 +229,44 @@ bool FieldOwner::deliver(FieldRequest request) {
   snapshot_tick(&core);
 
   if (request.present) {
-    // Every visible field crosses the framework's one presentation fence. This is the same owner
-    // the native gameplay path reaches through Fps60::frame_commit; boot/upload fields simply have
-    // no temporal decorator. A raw gpu_present here showed pixels but left FrameLoopShell's product
-    // boundary at fence zero, so the host could not prove one-and-only-one presentation per step.
-    game_.presentation.commit(&core, request.pace ? 1 : 0);
-    ++presents_;
+    // Every visible field crosses the framework's one presentation fence. A raw gpu_present here
+    // showed pixels but left FrameLoopShell's product boundary at fence zero, so the host could not
+    // prove one-and-only-one presentation per step.
+    //
+    // WHEN THE TITLE'S RUNTIME DECLARED A TEMPORAL PRODUCT, that product owns the fence and the
+    // cadence. It presents the real field AND the in-between slot built from the same captured
+    // queue, so committing the fence without it would show the in-between's own frame as if it were
+    // the real one.
+    //
+    // A field that captured NO primitives, or one the guest's own native scene producers never ran
+    // on, is not a frame. Spyro runs its 30 Hz scene on a fraction of the display fields, and the
+    // rest arrive with an ordering table holding one or two primitives: presenting one put a held
+    // copy of the last picture on screen — a repeat between a real frame and its in-between, which
+    // is judder at exactly the place the temporal product exists to remove — and it also retired
+    // the paired endpoint, because `presentRotate()` adopted that field's near-empty projection set
+    // as the previous frame and the next real frame then had none of its own vertices to
+    // interpolate toward (measured at 45 % of frames). The temporal product already emitted BOTH 60
+    // Hz slots when it presented the frame that drew, so such a field commits its fence
+    // UNPRESENTED: the boundary still advances exactly once per step (the frame contract is about
+    // the boundary, not about a picture), the capture still resets, and nothing reaches the screen.
+    // "The scene producers ran" is the guest's own fact, read from SpyroContext's tick; a primitive
+    // count would be this port's threshold. A title with no temporal product is unchanged: every
+    // visible field still crosses the plain fence with its picture.
+    auto *temporal = dynamic_cast<Fps60 *>(game_.temporalPresentation.get());
+    const std::uint32_t sceneTick = spyro_context(core).sceneProducerTicks;
+    const bool isSceneField = sceneTick != sceneTick_;
+    sceneTick_ = sceneTick;
+
+    if (temporal != nullptr && (!isSceneField || game_.presentation.capturedCount() == 0)) {
+      game_.presentation.commitUnpresented(&core);
+      ++temporalDeferrals_;
+    } else if (temporal != nullptr) {
+      temporal->frame_commit(&core, request.pace ? 1 : 0);
+      ++presents_;
+    } else {
+      game_.presentation.commit(&core, request.pace ? 1 : 0);
+      ++presents_;
+    }
   }
   game_.spu_audio.frame();
   if (request.pace) {

@@ -93,6 +93,15 @@ public:
   // already owns and zero elsewhere. A zero `bytes` reserves nothing.
   void map(std::uint32_t base, std::uint32_t bytes);
 
+  // Empty [base, base + bytes) instead of seeding it from the guest's bytes. A range the traversal
+  // must find EMPTY is not a range it also reads level data out of, and `map`'s seeding would leave
+  // the guest's last field's own contents there for it to adopt — which for an ordering table means
+  // linking a fresh packet behind a stale head and drawing a chain the guest never built.
+  //
+  // This is about the HOST's copy only. The guest's bytes are not touched, which is the whole
+  // reason the in-between can have a table at all.
+  void mapEmpty(std::uint32_t base, std::uint32_t bytes);
+
   // Forget every mapping and every counted read and write.
   void clear();
 

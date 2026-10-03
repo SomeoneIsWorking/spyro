@@ -13,6 +13,11 @@
 //
 // The passes it runs are declared in guest_terrain_passes.h and the state they hand on is
 // guest_terrain_frame.h.
+//
+// `inBetweenCamera` is the camera an IN-BETWEEN presents, and only an in-between may pass one: the
+// real field passes null and reads the guest's own words. A real field handed a camera would read a
+// copy of the guest's camera that the guest can also read and change, which is exactly the drift
+// this seam exists to make impossible.
 #pragma once
 
 #include "core.h"
@@ -20,6 +25,8 @@
 #include "guest_terrain_facts.h"
 #include "guest_terrain_frame.h"
 #include "guest_terrain_memory.h"
+
+#include <optional>
 
 namespace spyro::guest_terrain {
 
@@ -37,9 +44,15 @@ public:
          const Facts &facts,
          const guest_render_globals::Globals &globals,
          TerrainMemory &memory,
-         FrameMode mode);
+         FrameMode mode,
+         const InBetweenCamera *inBetweenCamera = nullptr,
+         std::uint32_t inBetweenArenaBase = 0);
 
-  void run();
+  // Runs the seven passes and returns the frame they ran on, so a caller that walks the resulting
+  // ordering table afterwards walks THIS field's table: which bins it linked is frame state, and a
+  // second `run()` would produce a second frame with a second, empty record of them. The frame is
+  // the drawer's own member, so the reference outlives the call.
+  const TerrainFrame &run();
 
 private:
   Core &core_;
@@ -47,6 +60,24 @@ private:
   const guest_render_globals::Globals &globals_;
   TerrainMemory &memory_;
   const FrameMode mode_;
+  // Held, not returned from a local: the frame is what a caller walks the ordering table with, and
+  // a reference to a local would be the exact bug this member exists to prevent.
+  std::optional<TerrainFrame> frame_;
+  // The camera an in-between presents; always null for a real field, which the constructor refuses.
+  const InBetweenCamera *inBetweenCamera_ = nullptr;
+  // WHERE AN IN-BETWEEN'S PACKETS GO, when it is not the guest's own cursor (0 = the guest's).
+  //
+  // The guest allocates its terrain packets out of one pool and grows it upward, between its
+  // previous buffer's scratch block and the scratch block of the buffer in use. An in-between has
+  // no such guarantee: by the time the presenter rebuilds the frame, the guest's cursor has already
+  // advanced past everything the field's own producers allocated, so a reconstruction started there
+  // runs out of room before the frame ends. MEASURED 2026-10-03 on SCUS_944.25: an in-between
+  // starting at 0x801D04B4 needed 35,468 bytes of packets and the scratch block begins at
+  // 0x801D7444 — 6,844 bytes short — and the packets it wrote over the scratch block's sector and
+  // split lists, which is what made walkSplitList read a split-list word of 0x0C000000 as a sector
+  // header. So the caller that owns the host windows gives the arena a window of its own, above
+  // everything else the traversal touches.
+  std::uint32_t inBetweenArenaBase_ = 0;
 };
 
 // Run one call of the drawer against this image: spill retail's borrowed registers, ask the guest

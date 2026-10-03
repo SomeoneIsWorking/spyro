@@ -75,6 +75,17 @@ void HostMemory::map(std::uint32_t base, std::uint32_t bytes) {
   segments_ = std::move(kept);
 }
 
+void HostMemory::mapEmpty(std::uint32_t base, std::uint32_t bytes) {
+  if (bytes == 0) {
+    return;
+  }
+  map(base, bytes);
+  Segment *const segment = find(base);
+  if (segment != nullptr) {
+    std::memset(segment->bytes.data() + (base - segment->base), 0, bytes);
+  }
+}
+
 void HostMemory::clear() {
   segments_.clear();
   guestReads_ = 0;

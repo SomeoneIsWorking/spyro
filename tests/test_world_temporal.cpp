@@ -3,7 +3,6 @@
 #include "game.h"
 #include "spyro_context.h"
 #include "temporal_scene.h"
-#include "temporal_scene_source.h"
 #include "testutil.h"
 #include "world_scene_builder.h"
 #include "world_source_fixture.h"

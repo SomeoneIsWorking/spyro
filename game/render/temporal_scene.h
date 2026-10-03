@@ -38,11 +38,11 @@ private:
 
   std::unique_ptr<RenderQueue> sink_;
 };
-class TemporalSceneSource;
+class InBetweenStrategy;
 
 // Captures eligibility after the complete logic-frame scene has been produced. Unowned scene
 // producers remain in the captured frame until they provide their own temporal source.
 void spyro_temporal_scene_begin(
     Core &core, uint64_t scene, bool pairedScene, bool reference, bool active);
 void spyro_temporal_scene_prepare(Core &core);
-std::unique_ptr<TemporalSceneSource> spyro_temporal_scene_source(Game &game);
+std::unique_ptr<InBetweenStrategy> spyro_temporal_scene_source(Game &game);

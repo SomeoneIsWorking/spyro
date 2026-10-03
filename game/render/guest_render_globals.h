@@ -27,7 +27,15 @@ struct Globals {
   std::uint32_t orderingTableMark = 0; // deepest bin a far prim reached
   std::uint32_t cameraRotation = 0;    // five RT words
   std::uint32_t cameraPosition = 0;    // x, y, z words
-  std::uint32_t visibilityGroups = 0;  // one byte per terrain sector
+  // THE CAMERA'S OWN STATE: the three signed 16-bit angles the guest's camera builder reads, at the
+  // head of the object it takes (0x80067EC8 on SCUS_944.25). The five rotation words above are
+  // what that builder WRITES from these, one field earlier in the frame, which is why they are
+  // derived output and these are the input an in-between interpolates.
+  std::uint32_t cameraAngles = 0;
+  // The two 256-entry 16-bit tables the builder reads its sine and cosine out of.
+  std::uint32_t cameraSineTable = 0;
+  std::uint32_t cameraCosineTable = 0;
+  std::uint32_t visibilityGroups = 0; // one byte per terrain sector
 };
 
 // The register numbers retail saves, in save-area order. Measured, not assumed: the prologues of

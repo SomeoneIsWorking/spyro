@@ -23,6 +23,12 @@ public:
   bool guestVramIsPicture(const Game &game) const override;
   void stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) override;
 
+  // SCUS_944.67 now OWNS a native producer (the terrain world pass, spyro::makeTerrainWorldPass)
+  // and a temporal product, so its capability is no longer widescreen-only. See the Spyro 2 runtime
+  // for why the two titles' answers are the same shape and their facts are not.
+  RenderCapabilities renderCapabilities() const override;
+  std::unique_ptr<TemporalFramePresentation> createTemporalFramePresentation(Game &game) override;
+
   const PlatformHlePlan *platformHlePlan() const override;
   const char *discEnvVar() const override;
   const GuestCdStreamCallbackLayout *guestCdStreamCallbackLayout() const override;

@@ -4,6 +4,7 @@
 #include "cd_control.h"
 #include "cd_stock_read_completion.h"
 #include "core.h"
+#include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
 #include "guest_cd_stream_callback_layout.h"
@@ -15,6 +16,7 @@
 #include "spyro_context.h"
 #include "spyro_game.h"
 #include "stock_read_publication.h"
+#include "terrain_world_pass.h"
 
 #include <memory>
 
@@ -170,6 +172,29 @@ const GuestCdStreamCallbackLayout Spyro2Runtime::cdStreamCallbackLayout_{
 };
 
 Spyro2Runtime::Spyro2Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro2) {}
+
+RenderCapabilities Spyro2Runtime::renderCapabilities() const {
+  // Gte remains the default and the real path, and `nativeRenderPath` stays false, so the REAL
+  // field is the guest's own untouched GPU output however the toggle is set.
+  //
+  // The temporal product IS declared: this title's world pass claims
+  // GuestPathClaim::HostRebuiltFromGuestMemory, and `guestInterpolated()` is the shape that takes
+  // it. What is measured now (docs/project-state.md S028): the real field at 4:3 is byte-identical
+  // with fps60 off and on (settled/moved md5 `9df2264c…`/`9c22de45…`), the in-between at t=1 is the
+  // real frame's own terrain, and at t=0.5 it presents a complete frame with no geometry outside
+  // the guest's own window.
+  return RenderCapabilities::guestInterpolated();
+}
+
+std::unique_ptr<TemporalFramePresentation>
+Spyro2Runtime::createTemporalFramePresentation(Game &game) {
+  // This title's OWN in-between, not the framework's host world pass: this image draws its terrain
+  // with one measured routine (SCUS_944.25 0x80023BB4) whose seven passes can be run again over
+  // host memory at a lerped camera. The facts are the image's, read out of its bytes, and they are
+  // the addresses the drawer reads — not copies of guest state.
+  return std::make_unique<Fps60>(
+      game, spyro::makeTerrainWorldPass(game, spyro2::kTerrainFacts, spyro2::kRenderGlobals));
+}
 
 void *Spyro2Runtime::createContext(Core &) {
   // The shared lineage context: the field owner back-pointer, the run counter, and the archive

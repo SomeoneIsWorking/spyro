@@ -37,6 +37,17 @@ namespace spyro3 {
 //   8006E020  the camera position x, y, z.
 //   80072330  one visibility byte per terrain sector, written by the classification pass and read
 //             by the walk for each moby's group byte.
+//
+// The camera's OWN state and the builder that reads it, the structural twin of Spyro 2's. This
+// family's per-field body is 0x8001E638, and it opens with the same two calls:
+//
+//   FUN_8004F6C4(&8006E03C, &8006E00C, &8006DFF8)   the camera builder, out of three angles
+//   FUN_8004F178(&8006E02C, &8006E020)              last field's position <- this one's
+//
+// FUN_8004F6C4 is byte for byte the same body as SCUS_944.25's 0x8001C2F8 — the same halfword
+// indices, the same two GTE products, the same 0x140>>9 on halfwords 6, 8 and 10 — with the
+// trigonometry two leaves over at 0x8004E9E4 and 0x8004EA2C. MEASURED by otattr last-writer
+// provenance on 8006DFF8, which names 0x8001E638.
 inline constexpr spyro::guest_render_globals::Globals kRenderGlobals{
     .registerSaveArea = 0x80071540u,
     .scratchBaseWord = 0x8006C668u,
@@ -45,6 +56,11 @@ inline constexpr spyro::guest_render_globals::Globals kRenderGlobals{
     .orderingTableMark = 0x8006C7D4u,
     .cameraRotation = 0x8006DFF8u,
     .cameraPosition = 0x8006E020u,
+    .cameraAngles = 0x8006E03Cu,
+    // The two 256-entry 16-bit tables, named at their use inside the two leaves: 0x8004E9E4 reads
+    // 800658A0 (`&DAT_800658a0 + 2*index`) and 0x8004EA2C reads 80065920.
+    .cameraSineTable = 0x800658A0u,
+    .cameraCosineTable = 0x80065920u,
     .visibilityGroups = 0x80072330u,
 };
 

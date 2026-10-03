@@ -81,8 +81,12 @@ set(SPYRO_RUNTIME_SOURCES
   game/core/title_selection.cpp
   game/host/title_availability.cpp
   game/host/picker_content.cpp
+  game/host/picker_layout.cpp
+  game/host/picker_composite.cpp
   game/host/picker_runtime.cpp
   game/host/picker_session.cpp
+  game/host/panel_sessions.cpp
+  game/host/panel_logo.cpp
   game/host/title_session.cpp
   game/host/product_host.cpp
   game/render/actor_billboard_face.cpp
@@ -373,6 +377,13 @@ if(BUILD_TESTING)
   add_executable(test_title_picker tests/test_title_picker.cpp)
   target_link_libraries(test_title_picker PRIVATE spyro_runtime)
   add_test(NAME title_picker COMMAND test_title_picker)
+  # The picker's panel geometry: the shares tile the surface, the selected panel ends up widest, the
+  # width animation converges without overshooting, a picture is fitted to its panel instead of
+  # stretched, and one or two panels lay out by the same rule as three.
+  add_executable(test_picker_layout tests/test_picker_layout.cpp)
+  target_include_directories(test_picker_layout PRIVATE game/host)
+  target_link_libraries(test_picker_layout PRIVATE spyro_runtime)
+  add_test(NAME picker_layout COMMAND test_picker_layout)
   add_executable(test_spyro3_runtime
     tests/test_spyro3_runtime.cpp)
   target_include_directories(test_spyro3_runtime PRIVATE game/core)

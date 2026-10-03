@@ -28,6 +28,12 @@ public:
   const char *discEnvVar() const override;
   const GuestCdStreamCallbackLayout *guestCdStreamCallbackLayout() const override;
   std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
+
+  // WHERE THIS DISC'S OWN LOGO IS, and whether the guest is in its attract demo — both measured,
+  // both answered by this title and by no other. See spyro2_logo_facts.h and kAttractDemoMode
+  // below.
+  const spyro::TitleLogoFacts &logoFacts() const override;
+  spyro::AttractState attractState(const Game &game, Core &core) const override;
   void pacePresentation(Core &core, int fields, int parts) override;
 
   // THE TITLE'S ANSWER to the configured aspect, and the only place `gpu_vk_latch_guest_projection`

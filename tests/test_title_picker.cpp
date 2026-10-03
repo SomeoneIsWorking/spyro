@@ -137,16 +137,53 @@ int main() {
              refusal.find("unknown") != std::string::npos,
          "pick of an unknown slug is refused");
 
+  // The panels are the AVAILABLE titles in catalog order: a title that cannot be started gets no
+  // panel, so panel 0 is alpha and the two disabled entries are not panels at all.
+  expect(content.panelCount() == 1, "one panel per available title");
+  expect(content.panelContent().entries.size() == 1 && content.panelContent().entries[0].enabled,
+         "every panel entry is selectable, because only startable titles have one");
+  expect(content.panelTitle(0).identity->slug == "alpha", "panel 0 is the first available title");
+  expect(content.panelOf("alpha") == 0, "a slug resolves to its panel");
+  expect(content.panelOf("beta") == -1, "a title with no panel resolves to none");
+  expect(content.panelOf("nope") == -1, "and so does an unknown slug");
+  bool panelOutOfRange = false;
+  try {
+    (void)content.panelTitle(1);
+  } catch (const std::out_of_range &) {
+    panelOutOfRange = true;
+  }
+  expect(panelOutOfRange, "a panel outside the panels that exist is refused, not clamped");
+
   spyro::PickerRuntime runtime;
   std::FILE *out = std::tmpfile();
   expect(!runtime.handle("pick", "pick alpha", out), "an unbound runtime does not answer");
-  runtime.bind(&content);
+  runtime.bind(&content, nullptr);
+  runtime.setSelection(0);
   expect(runtime.handle("pick", "pick alpha\n", out), "pick is handled");
   expect(runtime.takePick() == std::optional<std::string>("alpha"),
          "an accepted pick is taken once");
   expect(!runtime.takePick().has_value(), "and only once");
   runtime.handle("pick", "pick beta", out);
   expect(!runtime.takePick().has_value(), "a refused pick records nothing");
+
+  // Selecting a panel is a different decision from starting one: it moves the highlight without
+  // committing to a title.
+  expect(runtime.handle("select", "select alpha", out), "select is handled");
+  expect(runtime.takeSelection() == std::optional<int>(0), "a slug selects its panel");
+  expect(!runtime.takeSelection().has_value(), "and only once");
+  runtime.handle("select", "select beta", out);
+  expect(!runtime.takeSelection().has_value(), "selecting a title with no panel records nothing");
+  // With one panel there is nowhere to move: left and right both stay on it, and the panel count is
+  // the content's own, so the channel cannot name a panel that does not exist.
+  runtime.handle("select", "select right", out);
+  expect(runtime.takeSelection() == std::optional<int>(0),
+         "right on a one-panel picker stays on it");
+  runtime.handle("select", "select left", out);
+  expect(runtime.takeSelection() == std::optional<int>(0), "and so does left");
+  expect(runtime.handle("picker", "picker shot", out), "picker shot is handled");
+  expect(!runtime.takePick().has_value() && !runtime.takeSelection().has_value(),
+         "and decides nothing");
+
   expect(!runtime.handle("frame", "frame", out), "other commands fall through to the framework");
   std::fclose(out);
 

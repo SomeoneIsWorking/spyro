@@ -7,6 +7,7 @@
 #include "game.h"
 #include "spyro3_boot_facts.h"
 #include "spyro3_hud_anchor.h"
+#include "spyro3_logo_facts.h"
 #include "spyro3_render_facts.h"
 #include "spyro3_widescreen_facts.h"
 #include "spyro_context.h"
@@ -194,11 +195,10 @@ void Spyro3Runtime::registerOverrides(Game &game) {
   spyro3::hud_anchor::registerOverrides(game.core);
   widescreen_.registerProjectionOverrides(game.core);
   registerRenderOverrides(game.core);
-  lucent::info(
-      "boot",
-      "installed Spyro 3 native overrides for the measured libgte projection offset leaf, "
-      "the moby visibility walk, the terrain drawer and the HUD anchor; every other boot "
-      "service remains a measured library leaf or the framework's stock CD seam");
+  lucent::info("boot",
+               "installed Spyro 3 native overrides for the measured libgte projection offset leaf, "
+               "the moby visibility walk, the terrain drawer and the HUD anchor; every other boot "
+               "service remains a measured library leaf or the framework's stock CD seam");
 }
 
 void Spyro3Runtime::bootInit(Core &core) {
@@ -245,6 +245,10 @@ bool Spyro3Runtime::guestVramIsPicture(const Game &) const {
   // Spyro 3 has no native producer: every presented field is guest VRAM, from the display
   // bootstrap's own clear through whatever the guest draws.
   return true;
+}
+
+const spyro::TitleLogoFacts &Spyro3Runtime::logoFacts() const {
+  return kLogoFacts;
 }
 
 } // namespace spyro3

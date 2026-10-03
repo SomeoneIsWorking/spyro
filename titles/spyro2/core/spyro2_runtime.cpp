@@ -9,6 +9,7 @@
 #include "guest_cd_stream_callback_layout.h"
 #include "spyro2_boot_facts.h"
 #include "spyro2_hud_anchor.h"
+#include "spyro2_logo_facts.h"
 #include "spyro2_render_facts.h"
 #include "spyro2_widescreen_facts.h"
 #include "spyro_context.h"
@@ -18,6 +19,17 @@
 #include <memory>
 
 namespace spyro2 {
+namespace {
+
+// Spyro 2's attract/demo state. MEASURED 2026-10-02, and not read off a symbol: a whole-machine RAM
+// diff across its boot (cards at field 203, demo at field 3361) made 0x80066D40 a candidate, and
+// the CAUSAL test settled it — with Spyro 2 running its demo, poking that word to zero took the
+// guest out of the demo and onto its own title screen ("SPYRO Riptor's Rage! / press start"). A
+// word whose value changes during boot is a candidate; the word that takes the demo away when you
+// clear it is the flag. It is 1 while the attract demo plays and 0 through the cards.
+constexpr std::uint32_t kAttractDemoMode = 0x80066D40u;
+
+} // namespace
 namespace {
 
 // MEASURED from SCUS_944.25 with external/psxport/tools/disasm.py over a RAM image built the
@@ -231,6 +243,15 @@ bool Spyro2Runtime::guestVramIsPicture(const Game &) const {
   // Spyro 2 has no native producer: every presented field is guest VRAM, from the display
   // bootstrap's own clear through the title screen the guest draws.
   return true;
+}
+
+const spyro::TitleLogoFacts &Spyro2Runtime::logoFacts() const {
+  return kLogoFacts;
+}
+
+spyro::AttractState Spyro2Runtime::attractState(const Game &, Core &core) const {
+  return core.mem_r32(kAttractDemoMode) != 0 ? spyro::AttractState::InDemo
+                                             : spyro::AttractState::NotInDemo;
 }
 
 } // namespace spyro2

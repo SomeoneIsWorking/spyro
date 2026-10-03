@@ -64,6 +64,12 @@ public:
   void initialize();
   void stepFrame(Core &core, std::uint32_t frame) override;
 
+  // The title's own answer to "are you showing your picture yet": the retail boot prefix (logos,
+  // publisher cards, loading screens) has returned and the per-frame title loop owns the step.
+  [[nodiscard]] bool pastBootPrefix() const override {
+    return phase_ == Phase::MainLoop;
+  }
+
   [[nodiscard]] bool bootComplete() const {
     return phase_ == Phase::MainLoop;
   }

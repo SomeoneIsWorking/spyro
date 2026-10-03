@@ -27,6 +27,9 @@ public:
   const char *discEnvVar() const override;
   const GuestCdStreamCallbackLayout *guestCdStreamCallbackLayout() const override;
   std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
+
+  // WHERE THIS DISC'S OWN LOGO IS, once it is measured in-product. See spyro3_logo_facts.h.
+  const spyro::TitleLogoFacts &logoFacts() const override;
   void pacePresentation(Core &core, int fields, int parts) override;
 
   // THE TITLE'S ANSWER to the configured aspect, and the only place `gpu_vk_latch_guest_projection`

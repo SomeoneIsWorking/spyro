@@ -25,6 +25,11 @@ public:
   void registerOverrides(Game &game) override;
   void bootInit(Core &core) override;
   std::unique_ptr<FrameDriver> createFrameDriver(Game &game) override;
+
+  // WHERE THIS DISC'S OWN LOGO IS, and whether its guest is in its attract demo — both measured,
+  // both this title's alone. See spyro1_logo_facts.h and guest_globals.h's kDemoMode.
+  const spyro::TitleLogoFacts &logoFacts() const override;
+  spyro::AttractState attractState(const Game &game, Core &core) const override;
   RenderCapabilities renderCapabilities() const override {
     return RenderCapabilities::interpolatedNative();
   }

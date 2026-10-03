@@ -5,6 +5,7 @@
 #include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
+#include "guest_globals.h"
 #include "interp_census.h"
 #include "native_audio_key_state.h"
 #include "native_camera.h"
@@ -42,6 +43,7 @@
 #include "native_spu_voice_pitch.h"
 #include "presentation_owner.h"
 #include "spyro1_frame_driver.h"
+#include "spyro1_logo_facts.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
 #include "spyro_gate_debug.h"
@@ -69,6 +71,18 @@ const GuestProgramImage Spyro1Runtime::programImage_{
 };
 
 Spyro1Runtime::Spyro1Runtime() : SpyroRuntime(programImage_, spyro::SpyroTitle::Spyro1) {}
+
+const spyro::TitleLogoFacts &Spyro1Runtime::logoFacts() const {
+  return kLogoFacts;
+}
+
+spyro::AttractState Spyro1Runtime::attractState(const Game &, Core &core) const {
+  // g_DemoMode is Spyro 1's own demo/attract state, already named and quoted in guest_globals.h:
+  // the stage-0 draw gate tests it at 0x8001EFF0 before building the demo caption. Zero is "not a
+  // demo", anything else is a demo being played (PLAY or RECORD).
+  return core.mem_r32(spyro::guest::kDemoMode) != 0 ? spyro::AttractState::InDemo
+                                                    : spyro::AttractState::NotInDemo;
+}
 
 void *Spyro1Runtime::createContext(Core &) {
   return new SpyroContext();

@@ -21,7 +21,7 @@ namespace fixture = spyro::testing::world_source_fixture;
 
 struct Fixture {
   std::unique_ptr<Game> game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   Source source;
   spyro::world_scene_submitter::DrawState draw;
   std::vector<psx::cpu::ImageIdentity> images;
@@ -85,7 +85,7 @@ void test_owned_source_and_current_destination() {
   f.game->gpu.s_da_y0 = 0;
   f.game->gpu.s_da_y1 = 2;
   const std::vector<uint8_t> before(std::begin(core.ram), std::end(core.ram));
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(f.context.worldTemporal.eligible());
   CHECK_EQ(f.context.pairedActor.temporal.calls, 0u);
   CHECK_EQ(core.rsub.projParams.projH(), 7u);
@@ -146,7 +146,7 @@ void test_residency_checks_every_span_and_generation() {
   CHECK(history.compatible(core, why));
   core.imageCatalog().activate("synthetic equal-byte reload", last, 1u);
   CHECK(!history.compatible(core, why));
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(!history.eligible());
 }
 
@@ -193,7 +193,7 @@ void test_draw_policy_changes_refuse_without_losing_destination_ownership() {
   f.retain(f.source);
   const char *why = nullptr;
   CHECK(!history.compatible(f.game->core, why));
-  spyro_temporal_scene_prepare(f.game->core);
+  spyro::temporal_scene::prepare(f.game->core);
   CHECK(!history.eligible());
   history.begin(1, false, true);
   f.draw.areaLeft = f.draw.areaRight + 1;
@@ -220,7 +220,7 @@ void test_midpoint_visibility_admission_and_refusal() {
   CHECK_EQ(emptyPlan.draw.areaBottom, 495);
   f.draw = emptyPlan.draw;
   f.interval(previous, current);
-  spyro_temporal_scene_prepare(f.game->core);
+  spyro::temporal_scene::prepare(f.game->core);
   CHECK(f.context.worldTemporal.eligible());
   auto target = std::make_unique<RenderQueue>();
   target->game = f.game.get();
@@ -230,7 +230,7 @@ void test_midpoint_visibility_admission_and_refusal() {
   // Negative packed X borrows into endpoint Y before interpolation. Destination ownership is
   // the added draw offset, not an assumption that the source vertex lies at projection center.
   CHECK_EQ(target->items[0].ysf[0], midpoint.faces[0].vertices[0].screenY + 256.0f);
-  Fps60 presentation(*f.game, spyro_temporal_scene_source(*f.game));
+  Fps60 presentation(*f.game, spyro::temporal_scene::source(*f.game));
   for (float t : {0.0f, 0.5f, 1.0f}) {
     presentation.presentPass(&f.game->core, t, {});
     CHECK_EQ(presentation.mSink->n, t == 0.5f ? 2 : 0);
@@ -253,7 +253,7 @@ void test_midpoint_visibility_admission_and_refusal() {
                      : spyro::world_recipe::Status::InvalidChunk));
     f.context.worldTemporal.rotate();
     f.interval(badPrevious, badCurrent);
-    spyro_temporal_scene_prepare(f.game->core);
+    spyro::temporal_scene::prepare(f.game->core);
     CHECK(!f.context.worldTemporal.eligible());
     CHECK(spyro::world_scene::build(badPrevious).status == spyro::world_recipe::Status::ValidEmpty);
     CHECK(spyro::world_scene::build(badCurrent).status == spyro::world_recipe::Status::ValidEmpty);
@@ -296,7 +296,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   current.selection.sectors[0]->animation = 0xffffffffu;
   const std::vector<uint8_t> before(std::begin(core.ram), std::end(core.ram));
   f.interval(previous, current);
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(f.context.worldTemporal.eligible());
   CHECK(std::equal(before.begin(), before.end(), std::begin(core.ram)));
   const auto *retained = f.context.worldTemporal.previous();
@@ -315,7 +315,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   core.imageCatalog().activate(
       "synthetic animation data reload", {animationSet, payload + 16u}, 2u);
   f.retain(current);
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(!f.context.worldTemporal.eligible());
   CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == unchanged);
   CHECK_EQ(f.context.worldTemporal.previous()->source.selection.sectors[0]->animation, 0xffffff00u);
@@ -326,7 +326,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   const auto beforeMutation = f.context.worldTemporal.previous()->source.sectors[0]->low.vertices;
   core.ram[payload] ^= 1u; // Content changes without an image-generation change.
   f.retain(current);
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(!f.context.worldTemporal.eligible());
   CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == beforeMutation);
 
@@ -336,7 +336,7 @@ void test_visible_pending_animation_materializes_retained_endpoint() {
   core.imageCatalog().activate(
       "new animation slot owner", {animationSetSlot, animationSetSlot + 4u}, 2u);
   f.retain(current);
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(!f.context.worldTemporal.eligible());
   CHECK(f.context.worldTemporal.previous()->source.sectors[0]->low.vertices == beforeOwnership);
 }

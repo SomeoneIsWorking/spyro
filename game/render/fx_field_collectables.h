@@ -5,11 +5,13 @@
 class Core;
 struct RenderQueue;
 
+namespace spyro::field_collectables {
+
 // The guest's HUD block, read through ONE lens. The 2D overlay's endpoint capture and this
 // producer's own stage must not read the block twice and disagree: they are the same memory read at
 // the same instant, and two copies of an address table are how a shipping owner and the oracle that
 // checks it end up reading different memory.
-spyro::field_collectables_recipe::State spyro_field_collectables_read(Core *core);
+spyro::field_collectables_recipe::State read(Core *core);
 
 // Native producer for FIELD collectables/HUD layer 0x80019300.
 //
@@ -22,11 +24,12 @@ spyro::field_collectables_recipe::State spyro_field_collectables_read(Core *core
 // performs — from a recipe it was handed, so an in-between picture writes nothing into the guest's
 // shaded queue. `stage` is the two of them in one call, for a caller that has no pre-derived
 // recipe.
-bool spyro_field_collectables_commit(Core *core,
-                                     const spyro::field_collectables_recipe::Recipe &recipe);
+bool commit(Core *core, const spyro::field_collectables_recipe::Recipe &recipe);
 
-bool spyro_field_collectables_stage(Core *core, spyro::field_collectables_recipe::Recipe &recipe);
+bool stage(Core *core, spyro::field_collectables_recipe::Recipe &recipe);
 
-bool spyro_field_collectables_submit(Core *core,
-                                     RenderQueue &target,
-                                     const spyro::field_collectables_recipe::Recipe &recipe);
+bool submit(Core *core,
+            RenderQueue &target,
+            const spyro::field_collectables_recipe::Recipe &recipe);
+
+} // namespace spyro::field_collectables

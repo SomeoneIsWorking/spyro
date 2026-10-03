@@ -2,4 +2,8 @@
 
 struct Core;
 
-bool spyro_field_shadow_submit(Core *core);
+namespace spyro::field_shadow {
+
+bool submit(Core *core);
+
+} // namespace spyro::field_shadow

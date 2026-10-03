@@ -31,7 +31,7 @@ std::unique_ptr<Game> fixture(uint8_t enable) {
 
 void test_publishes_all_five_words_when_the_gate_is_set() {
   const auto game = fixture(1);
-  CHECK(spyro_flame_matrix_publish(&game->core, kWords));
+  CHECK(spyro::flame_matrix::publish(&game->core, kWords));
   for (uint32_t i = 0; i < kWords.size(); ++i) {
     CHECK_EQ(game->core.mem_r32(kMatrix + i * 4u), kWords[i]);
   }
@@ -41,14 +41,14 @@ void test_publishes_all_five_words_when_the_gate_is_set() {
 // moves on, so a publication that ignored it would look like a working flame and be wrong.
 void test_clear_gate_leaves_the_previous_matrix_untouched() {
   const auto game = fixture(0);
-  CHECK(!spyro_flame_matrix_publish(&game->core, kWords));
+  CHECK(!spyro::flame_matrix::publish(&game->core, kWords));
   for (uint32_t i = 0; i < kWords.size(); ++i) {
     CHECK_EQ(game->core.mem_r32(kMatrix + i * 4u), 0xdeadbeefu);
   }
 }
 
 void test_null_core_refuses() {
-  CHECK(!spyro_flame_matrix_publish(nullptr, kWords));
+  CHECK(!spyro::flame_matrix::publish(nullptr, kWords));
 }
 
 } // namespace

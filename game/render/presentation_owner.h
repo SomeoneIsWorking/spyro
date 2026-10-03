@@ -2,10 +2,12 @@
 
 class Core;
 
+namespace spyro {
+
 // Per-Game statement of which producer owns the picture that the next present must build. Boot
 // starts with guest VRAM because Spyro's upload-only logos precede the title frame driver. Each
 // explicit reference/native frame seam then replaces that default before it can present.
-class SpyroPresentationOwner {
+class PresentationOwner {
 public:
   void beginGuestFrame() {
     owner_ = Owner::GuestReference;
@@ -31,5 +33,8 @@ private:
   Owner owner_ = Owner::BootUploads;
 };
 
-SpyroPresentationOwner &spyro_presentation_owner(Core &core);
-const SpyroPresentationOwner &spyro_presentation_owner(const Core &core);
+// The process-lifetime owner of the selected title, published with the context it belongs to.
+PresentationOwner &presentationOwner(Core &core);
+const PresentationOwner &presentationOwner(const Core &core);
+
+} // namespace spyro

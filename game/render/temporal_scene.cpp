@@ -74,7 +74,7 @@ void reconstructLayer(Core &core,
                           ? history.emit(core, *core.game->rqRedirect, t, census)
                           : spyro::actor_stage::Temporal::NoEndpoints;
   if (account) {
-    spyro_context(core).interpCensus.recordLayer(category, censusOf(census));
+    spyro::context(core).interpCensus.recordLayer(category, censusOf(census));
   }
   if (!spyro::actor_stage::completed(status)) {
     lucent::error(channel,
@@ -103,7 +103,7 @@ void reconstructOverlay(Core &core,
           ? history.emit(core, *core.game->rqRedirect, static_cast<double>(t), census)
           : spyro::actor_stage::Temporal::NoEndpoints;
   if (account) {
-    spyro_context(core).interpCensus.recordLayer(interp_census::Category::Hud, censusOf(census));
+    spyro::context(core).interpCensus.recordLayer(interp_census::Category::Hud, censusOf(census));
   }
   if (!spyro::actor_stage::completed(status)) {
     lucent::error("field2dtemporal",
@@ -143,7 +143,7 @@ public:
     if (&core != &game_.core) {
       return false;
     }
-    const auto &context = spyro_context(core);
+    const auto &context = spyro::context(core);
     return context.pairedActor.temporal_eligible || context.worldTemporal.eligible() ||
            context.actorTemporal.eligible() || context.secondaryActorTemporal.eligible() ||
            context.shadedQueueTemporal.eligible() || context.terrainTemporal.eligible() ||
@@ -178,7 +178,7 @@ public:
   }
 
   bool owns(const RqItem &item) const override {
-    const auto &context = spyro_context(game_.core);
+    const auto &context = spyro::context(game_.core);
     return (context.pairedActor.temporal_eligible && producerItem(item, 0x80023AC4u)) ||
            (context.worldTemporal.eligible() &&
             producerItem(item, spyro::world_temporal::kProducerKey)) ||
@@ -194,11 +194,11 @@ public:
   }
 
   void reconstruct(Core &core, float t) override {
-    auto &census = spyro_context(core).interpCensus;
+    auto &census = spyro::context(core).interpCensus;
     const bool inBetween = census.isInBetween(t);
-    const auto &context = spyro_context(core);
+    const auto &context = spyro::context(core);
     if (context.pairedActor.temporal_eligible) {
-      spyro_paired_actor_fps60_world_pass(&core, t);
+      spyro::paired_actor::fps60WorldPass(&core, t);
     }
     // THE CAMERA ROW. One camera sample per in-between present, and it is compatible exactly when
     // the world source admitted this interval, because `worldTemporal::compatible` is what compares
@@ -252,14 +252,14 @@ public:
   void rotate(Core &core) override {
     // One logic frame closes here: both of its presents have run, so the reconstructed items and
     // every layer's record census are all in. The next frame's admission opens the next one.
-    spyro_context(core).interpCensus.endLogicFrame();
-    spyro_paired_actor_fps60_rotate(&core);
-    spyro_context(core).worldTemporal.rotate();
-    spyro_context(core).actorTemporal.rotate();
-    spyro_context(core).secondaryActorTemporal.rotate();
-    spyro_context(core).shadedQueueTemporal.rotate();
-    spyro_context(core).terrainTemporal.rotate();
-    spyro_context(core).overlayTemporal.rotate();
+    spyro::context(core).interpCensus.endLogicFrame();
+    spyro::paired_actor::fps60Rotate(&core);
+    spyro::context(core).worldTemporal.rotate();
+    spyro::context(core).actorTemporal.rotate();
+    spyro::context(core).secondaryActorTemporal.rotate();
+    spyro::context(core).shadedQueueTemporal.rotate();
+    spyro::context(core).terrainTemporal.rotate();
+    spyro::context(core).overlayTemporal.rotate();
   }
 
 private:
@@ -270,12 +270,11 @@ private:
 
 // The same source emitters and queue planner as presentation, with an isolated sink and no
 // presentation counters. A midpoint refusal rejects the complete world interval.
-SpyroTemporalSceneAdmission::SpyroTemporalSceneAdmission() = default;
-SpyroTemporalSceneAdmission::~SpyroTemporalSceneAdmission() = default;
+spyro::temporal_scene::Admission::Admission() = default;
+spyro::temporal_scene::Admission::~Admission() = default;
 
-bool SpyroTemporalSceneAdmission::interval(Core &core,
-                                           const char *label,
-                                           const std::function<bool(RenderQueue &, float)> &emit) {
+bool spyro::temporal_scene::Admission::interval(
+    Core &core, const char *label, const std::function<bool(RenderQueue &, float)> &emit) {
   if (!sink_) {
     sink_ = std::make_unique<RenderQueue>(RenderQueue::Observation::Admission);
   }
@@ -314,14 +313,14 @@ bool SpyroTemporalSceneAdmission::interval(Core &core,
   return true;
 }
 
-bool SpyroTemporalSceneAdmission::world(Core &core, bool paired) {
-  const auto &context = spyro_context(core);
+bool spyro::temporal_scene::Admission::world(Core &core, bool paired) {
+  const auto &context = spyro::context(core);
   return interval(
       core, "world-temporal-preflight", [&context, paired, &core](RenderQueue &sink, float t) {
         if (paired &&
-            spyro_paired_actor_rebuild_sample(
+            spyro::paired_actor::rebuildSample(
                 &core, sink, context.pairedActor.previous, context.pairedActor.current, t) ==
-                SpyroPairedRebuildResult::Refused) {
+                spyro::paired_actor::RebuildResult::Refused) {
           lucent::debug("worldtemporal", "preflight refused stage=paired t={}", t);
           return false;
         }
@@ -329,16 +328,16 @@ bool SpyroTemporalSceneAdmission::world(Core &core, bool paired) {
       });
 }
 
-bool SpyroTemporalSceneAdmission::actors(Core &core) {
-  const auto &history = spyro_context(core).actorTemporal;
+bool spyro::temporal_scene::Admission::actors(Core &core) {
+  const auto &history = spyro::context(core).actorTemporal;
   if (!history.paired()) {
     return false;
   }
   return interval(core, "actor-temporal-preflight", layerSampler(core, history, "actortemporal"));
 }
 
-bool SpyroTemporalSceneAdmission::secondaryActors(Core &core) {
-  const auto &history = spyro_context(core).secondaryActorTemporal;
+bool spyro::temporal_scene::Admission::secondaryActors(Core &core) {
+  const auto &history = spyro::context(core).secondaryActorTemporal;
   if (!history.paired()) {
     return false;
   }
@@ -346,8 +345,8 @@ bool SpyroTemporalSceneAdmission::secondaryActors(Core &core) {
       core, "secondary-actor-temporal-preflight", layerSampler(core, history, "secondarytemporal"));
 }
 
-bool SpyroTemporalSceneAdmission::shadedQueue(Core &core) {
-  const auto &history = spyro_context(core).shadedQueueTemporal;
+bool spyro::temporal_scene::Admission::shadedQueue(Core &core) {
+  const auto &history = spyro::context(core).shadedQueueTemporal;
   if (!history.paired()) {
     return false;
   }
@@ -355,8 +354,8 @@ bool SpyroTemporalSceneAdmission::shadedQueue(Core &core) {
       core, "shaded-queue-temporal-preflight", layerSampler(core, history, "shadedtemporal"));
 }
 
-bool SpyroTemporalSceneAdmission::terrain(Core &core) {
-  const auto &history = spyro_context(core).terrainTemporal;
+bool spyro::temporal_scene::Admission::terrain(Core &core) {
+  const auto &history = spyro::context(core).terrainTemporal;
   if (!history.paired()) {
     return false;
   }
@@ -373,8 +372,8 @@ bool SpyroTemporalSceneAdmission::terrain(Core &core) {
 // overlay. What it DID protect — a midpoint that cannot be queued, and a midpoint presenting a
 // degenerate bar or quad — the producers' own submitters check, and this runs them at all three
 // samples.
-bool SpyroTemporalSceneAdmission::overlay(Core &core) {
-  const auto &history = spyro_context(core).overlayTemporal;
+bool spyro::temporal_scene::Admission::overlay(Core &core) {
+  const auto &history = spyro::context(core).overlayTemporal;
   if (!history.paired()) {
     return false;
   }
@@ -402,20 +401,20 @@ bool SpyroTemporalSceneAdmission::overlay(Core &core) {
   return true;
 }
 
-void spyro_temporal_scene_begin(
+void spyro::temporal_scene::begin(
     Core &core, uint64_t scene, bool pairedScene, bool reference, bool active) {
-  auto &context = spyro_context(core);
+  auto &context = spyro::context(core);
   context.worldTemporal.begin(scene, reference, active);
   context.actorTemporal.begin(scene, reference, active);
   context.secondaryActorTemporal.begin(scene, reference, active);
   context.shadedQueueTemporal.begin(scene, reference, active);
   context.terrainTemporal.begin(scene, reference, active);
   context.overlayTemporal.begin(scene, reference, active);
-  spyro_paired_actor_frame_begin(context.pairedActor, pairedScene, reference, active);
+  spyro::paired_actor::frameBegin(context.pairedActor, pairedScene, reference, active);
 }
 
-void spyro_temporal_scene_prepare(Core &core) {
-  auto &context = spyro_context(core);
+void spyro::temporal_scene::prepare(Core &core) {
+  auto &context = spyro::context(core);
   // The denominator, taken after every producer has submitted: one walk of the captured queue,
   // partitioned by the category its publisher belongs to.
   context.interpCensus.beginLogicFrame(core);
@@ -471,7 +470,7 @@ void spyro_temporal_scene_prepare(Core &core) {
                 endpoint && endpoint->gates.sprites ? 1 : 0);
   if (paired.was_fps60_active && paired.endpoints_compatible) {
     // Preserve paired-only admission when the world lacks a complete matching source.
-    paired.temporal_eligible = spyro_paired_actor_fps60_eligible(paired);
+    paired.temporal_eligible = spyro::paired_actor::fps60Eligible(paired);
   }
   const char *why = nullptr;
   if (!context.worldTemporal.materializePending(core, why)) {
@@ -497,6 +496,6 @@ void spyro_temporal_scene_prepare(Core &core) {
                 paired.temporal_eligible);
 }
 
-std::unique_ptr<InBetweenStrategy> spyro_temporal_scene_source(Game &game) {
+std::unique_ptr<InBetweenStrategy> spyro::temporal_scene::source(Game &game) {
   return std::make_unique<SpyroTemporalScene>(game);
 }

@@ -100,7 +100,7 @@ void emitLine(Core *core,
 
 } // namespace
 
-spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
+spyro::ProducerRefusal spyro::field_particles::submit(Core *core) {
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   const auto recipe = spyro::field_particles_recipe::derive(ram);
   if (!preflight(core, recipe)) {
@@ -151,7 +151,7 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     const int xs[2] = {projected.sx, projected.sx + 1};
     const int ys[2] = {projected.sy, projected.sy};
     // Past `answer.drawn`, so this particle is on screen. Its span is the per-class answer.
-    spyro_context(*core).marginCensus.record(
+    spyro::context(*core).marginCensus.record(
         spyro::margin_object_census::Class::kParticle, xs[0], xs[1]);
     const unsigned char rs[2] = {point.r, point.r};
     const unsigned char gs[2] = {point.g, point.g};
@@ -191,7 +191,7 @@ spyro::ProducerRefusal spyro_field_particles_submit(Core *core) {
     const int ys[2] = {first.sy, second.sy};
     // A type-1 line is clipped and depth-sorted on its FIRST endpoint alone, so the span that says
     // how far the widening reached is the span the guest itself would have drawn.
-    spyro_context(*core).marginCensus.record(
+    spyro::context(*core).marginCensus.record(
         spyro::margin_object_census::Class::kParticle, xs[0], xs[1]);
     const unsigned char rs[2] = {line.r0, line.r1};
     const unsigned char gs[2] = {line.g0, line.g1};

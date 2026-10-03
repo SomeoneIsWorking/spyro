@@ -70,7 +70,7 @@ struct SpanBucket {
   }
 };
 
-// Accumulates across a run. Held by SpyroContext: no globals, no statics, and its lifetime is
+// Accumulates across a run. Held by spyro::Context: no globals, no statics, and its lifetime is
 // exactly the context's.
 class Recorder {
 public:

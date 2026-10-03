@@ -65,7 +65,8 @@ void submit(Core *core,
     // Past the recipe, so this shadow face is drawn. Its span is the per-class answer for shadows,
     // and it is only reachable at all once the shaded pass's 0x1100 near bound stages the Moby —
     // which is the point issue 0154 had to establish against retail before widening could count it.
-    spyro_context(*core).marginCensus.addVertices(margin_object_census::Class::kShadow, xs, xs + 3);
+    spyro::context(*core).marginCensus.addVertices(
+        margin_object_census::Class::kShadow, xs, xs + 3);
     queue.emitOrQueue(core,
                       1,
                       RQ_WORLD,

@@ -174,7 +174,7 @@ public:
   }
 
   spyro1::Spyro1Runtime runtime;
-  SpyroContext context;
+  spyro::Context context;
   std::unique_ptr<Game> game = std::make_unique<Game>();
   spyro1::FieldScheduler fields;
   R3000 saved{};

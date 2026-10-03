@@ -91,7 +91,7 @@ const TerrainFrame &Drawer::run() {
     // The cursor is the guest's own, read here once. It does not move during the field — the drawer
     // commits `frame.primitive` back to it only at the exit — so this is where every pass's
     // allocation starts.
-    frame.arena = &spyro_context(core_).beginTerrainArena(core_.mem_r32(globals_.primitiveCursor));
+    frame.arena = &spyro::context(core_).beginTerrainArena(core_.mem_r32(globals_.primitiveCursor));
   }
   if (real) {
     // The drawer's one call out of its own body. Only the guest can answer it, so an in-between
@@ -113,7 +113,7 @@ const TerrainFrame &Drawer::run() {
       for (std::uint32_t i = 0; i < count; ++i) {
         visible[i] = memory_.r8(kScratchpad + i);
       }
-      spyro_context(core_).terrainVisibility = std::move(visible);
+      spyro::context(core_).terrainVisibility = std::move(visible);
     }
   }
   classifySectors(frame);

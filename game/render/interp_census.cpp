@@ -281,7 +281,7 @@ bool replCommand(Core &core, const char *command, const char *line) {
   if (std::strcmp(command, "interpcensus") != 0) {
     return false;
   }
-  Census &owner = spyro_context(core).interpCensus;
+  Census &owner = spyro::context(core).interpCensus;
   if (line != nullptr && std::strstr(line, "reset") != nullptr) {
     owner.reset();
     lucent::info("interpcensus", "counters cleared");

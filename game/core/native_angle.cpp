@@ -85,7 +85,7 @@ void spin60_native(Core *c) {
 
 } // namespace
 
-void spyro_register_native_angle(Core &core) {
+void spyro::registerNativeAngle(Core &core) {
   spyro::installNativeOverride(core, 0x80017908u, "angdiff8", angdiff8_native);
   spyro::installNativeOverride(core, 0x8005C720u, "spin60", spin60_native);
 }

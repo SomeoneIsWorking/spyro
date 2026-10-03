@@ -10,13 +10,13 @@
 
 #include <lucent/log.h>
 
-bool spyro_moby_shadow_submit(Core *core) {
+bool spyro::moby_shadow::submit(Core *core) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }
   const auto recipe =
       spyro::moby_shadow_recipe::derive(core,
-                                        spyro_context(*core).drawnMobyShadows,
+                                        spyro::context(*core).drawnMobyShadows,
                                         spyro::wide_screen_space::projection(core),
                                         spyro::wide_screen_space::drawClipRight(core));
   // Denominators on every path. A frame whose shadows were all rejected has to read differently

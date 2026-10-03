@@ -61,7 +61,7 @@ bool preflight(Core *core, const spyro::field_tracers_recipe::Recipe &recipe) {
 
 } // namespace
 
-bool spyro_field_tracers_submit(Core *core) {
+bool spyro::field_tracers::submit(Core *core) {
   const spyro::world_chunk_codec::RamView ram(std::span<const uint8_t>(core->ram));
   const auto recipe = spyro::field_tracers_recipe::derive(ram);
   if (!preflight(core, recipe)) {

@@ -171,7 +171,7 @@ void plantLevel(Core &core, const spyro::guest_terrain::Facts &facts) {
 void testMarkOrdering() {
   using namespace spyro::guest_terrain;
   Core core{};
-  SpyroContext context{};
+  spyro::Context context{};
   core.gameCtx = &context;
 
   GuestMemory memory(core);
@@ -236,7 +236,7 @@ void testModeGuards() {
   gte_init();
   std::unique_ptr<Game> game = std::make_unique<Game>();
   Core &core = game->core;
-  SpyroContext context{};
+  spyro::Context context{};
   core.gameCtx = &context;
   gte_bind(&core);
   const Facts facts = fixtureFacts();

@@ -104,7 +104,7 @@ bool submitSparkles(Core *core) {
 
 } // namespace
 
-bool glow_sparkle_submit(Core *core) {
+bool spyro::glow_sparkle::submit(Core *core) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }

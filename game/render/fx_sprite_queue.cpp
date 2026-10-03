@@ -584,61 +584,7 @@ void trace_reference_faces(Core *c) {
 
 } // namespace
 
-void spyro_trace_reference_sprite_faces(Core *c) {
-  trace_reference_faces(c);
-}
-
-void spyro_trace_reference_sprite_packets(Core *c, uint32_t begin, uint32_t end) {
-  if (!cfg_str("PSXPORT_SPRITE_QUEUE_FACE_TRACE") || (int32_t)c->mem_r32(kStage13Timer) != 171) {
-    return;
-  }
-  lucent::info("spritematrix",
-               "phase=guest cr={:08X},{:08X},{:08X},{:08X},{:08X}",
-               gte_read_ctrl(0),
-               gte_read_ctrl(1),
-               gte_read_ctrl(2),
-               gte_read_ctrl(3),
-               gte_read_ctrl(4));
-  uint32_t packet = 0;
-  for (uint32_t p = begin; p < end;) {
-    const uint32_t tag = c->mem_r32(p);
-    const uint32_t bytes = ((tag >> 24) + 1u) * 4u;
-    if (bytes < 20u || p + bytes > end) {
-      break;
-    }
-    const uint32_t op = c->mem_r8(p + 7u) & 0xFCu;
-    if (op == 0x20u || op == 0x28u) {
-      int x[4]{}, y[4]{};
-      const int count = op == 0x20u ? 3 : 4;
-      for (int i = 0; i < count; ++i) {
-        const uint32_t xy = c->mem_r32(p + 8u + (uint32_t)i * 4u);
-        x[i] = (int16_t)xy;
-        y[i] = (int16_t)(xy >> 16);
-      }
-      if (count == 3) {
-        x[3] = x[2];
-        y[3] = y[2];
-      }
-      lucent::info("spritepacket",
-                   "packet={} count={} sxy={}:{};{}:{};{}:{};{}:{}",
-                   packet,
-                   count,
-                   x[0],
-                   y[0],
-                   x[1],
-                   y[1],
-                   x[2],
-                   y[2],
-                   x[3],
-                   y[3]);
-    }
-    packet++;
-    p += bytes;
-  }
-  lucent::info("spritepacket", "timer=171 scanned_packets={} bytes={}", packet, end - begin);
-}
-
-bool SpyroRenderer::stage13Mode3Render() const {
+bool spyro::render::FrameRenderer::stage13Mode3Render() const {
   Core *c = mC;
   const uint32_t original_pool = c->mem_r32(kPoolCursor);
   const uint32_t state = c->mem_r32(kStage13State);
@@ -695,7 +641,7 @@ bool SpyroRenderer::stage13Mode3Render() const {
   const bool complete_queue = spyro::render::emitScreenQueue(*c, mQueueObserver);
 
   const bool complete_paired =
-      state != 2u || spyro_paired_actor_submit(c, spyro_paired_actor_state(c));
+      state != 2u || spyro::paired_actor::submit(c, spyro::paired_actor::state(c));
 
   return complete_queue && complete_paired;
 }

@@ -25,10 +25,10 @@ namespace {
 
 void test_exact_producer_membership() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   context.pairedActor.temporal_eligible = true;
-  const auto source = spyro_temporal_scene_source(*game);
+  const auto source = spyro::temporal_scene::source(*game);
   RqItem item{};
   item.layer = RQ_WORLD;
   item.has_xyf = true;
@@ -51,9 +51,9 @@ void test_exact_producer_membership() {
   context.actorTemporal.admit(true);
   CHECK(source->owns(item));
   auto other = std::make_unique<Game>();
-  SpyroContext otherContext;
+  spyro::Context otherContext;
   other->core.gameCtx = &otherContext;
-  const auto otherSource = spyro_temporal_scene_source(*other);
+  const auto otherSource = spyro::temporal_scene::source(*other);
   CHECK(!otherSource->owns(item));
   CHECK(!source->eligible(other->core));
 }
@@ -68,9 +68,9 @@ void test_exact_producer_membership() {
 // admissible overlay claims nothing of this one's items.
 void test_overlay_membership_is_layer_scoped_and_ineligible_claims_nothing() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
-  const auto source = spyro_temporal_scene_source(*game);
+  const auto source = spyro::temporal_scene::source(*game);
   RqItem item{};
   item.layer = RQ_HUD;
   item.painter_object = 0; // a 2D item's producer field is structurally zero
@@ -82,9 +82,9 @@ void test_overlay_membership_is_layer_scoped_and_ineligible_claims_nothing() {
   CHECK(source->owns(item));
   // The same history must not make the source eligible for a Core it does not own.
   auto other = std::make_unique<Game>();
-  SpyroContext otherContext;
+  spyro::Context otherContext;
   other->core.gameCtx = &otherContext;
-  const auto otherSource = spyro_temporal_scene_source(*other);
+  const auto otherSource = spyro::temporal_scene::source(*other);
   CHECK(!otherSource->owns(item));
   CHECK(!otherSource->eligible(other->core));
 
@@ -112,7 +112,7 @@ void test_overlay_membership_is_layer_scoped_and_ineligible_claims_nothing() {
 
 void test_runtime_factory_rotates_own_endpoints() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   auto &state = context.pairedActor;
   state.current.valid = true;
@@ -141,26 +141,29 @@ void test_runtime_factory_rotates_own_endpoints() {
 
 void test_disabled_and_discontinuous_frames_refuse() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
-  auto source = spyro_temporal_scene_source(*game);
+  auto source = spyro::temporal_scene::source(*game);
   auto &state = context.pairedActor;
   state.temporal_eligible = true;
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(!source->eligible(game->core));
   state.was_fps60_active = true;
   state.temporal_eligible = true;
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(!source->eligible(game->core));
   state.endpoints_compatible = true;
   state.temporal_eligible = true;
   // Compatibility flags cannot authorize missing immutable endpoints.
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(!source->eligible(game->core));
   CHECK_EQ(state.temporal.eligibility_checks, 1u);
 }
 
-void setSourceDepth(SpyroPairedFrame &frame, int32_t z, uint32_t control = 0, uint8_t bias = 0) {
+void setSourceDepth(spyro::paired_actor::Frame &frame,
+                    int32_t z,
+                    uint32_t control = 0,
+                    uint8_t bias = 0) {
   const auto depth = spyro::paired_actor_depth::derive(z, bias, control);
   frame.transform.base_mac[2] = z;
   frame.transform.layer_cr[0][7] = static_cast<uint32_t>(z);
@@ -171,8 +174,8 @@ void setSourceDepth(SpyroPairedFrame &frame, int32_t z, uint32_t control = 0, ui
   frame.transform.ot_shift = depth.shift;
 }
 
-SpyroPairedFrame triangle() {
-  SpyroPairedFrame frame{};
+spyro::paired_actor::Frame triangle() {
+  spyro::paired_actor::Frame frame{};
   frame.valid = true;
   frame.authored_replay = true;
   frame.epoch = 1u;
@@ -195,7 +198,8 @@ SpyroPairedFrame triangle() {
   return frame;
 }
 
-void checkSourceUnchanged(const SpyroPairedFrame &before, const SpyroPairedFrame &after) {
+void checkSourceUnchanged(const spyro::paired_actor::Frame &before,
+                          const spyro::paired_actor::Frame &after) {
   CHECK_EQ(before.valid, after.valid);
   CHECK_EQ(before.culled, after.culled);
   CHECK_EQ(before.epoch, after.epoch);
@@ -232,7 +236,7 @@ void checkSourceUnchanged(const SpyroPairedFrame &before, const SpyroPairedFrame
 
 void test_mixed_scene_reconstructs_authored_motion_without_guest_writes() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   game->mods.fps60 = true;
   auto &state = context.pairedActor;
@@ -241,8 +245,8 @@ void test_mixed_scene_reconstructs_authored_motion_without_guest_writes() {
   state.current.transform.layer_cr[0][5] = 100u;
   state.endpoints_compatible = true;
   state.was_fps60_active = true;
-  CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, state.current) ==
-        SpyroPairedRebuildResult::Emitted);
+  CHECK(spyro::paired_actor::rebuildEndpoint(&game->core, game->rq, state.current) ==
+        spyro::paired_actor::RebuildResult::Emitted);
   CHECK_EQ(game->rq.n, 1);
   if (game->rq.n != 1) {
     return;
@@ -267,11 +271,11 @@ void test_mixed_scene_reconstructs_authored_motion_without_guest_writes() {
   CHECK(baseline.accepted());
   CHECK_EQ(baseline.commands.size(), 4u);
 
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(state.temporal_eligible);
-  const SpyroPairedFrame previousBefore = state.previous, currentBefore = state.current;
+  const spyro::paired_actor::Frame previousBefore = state.previous, currentBefore = state.current;
   const std::vector<uint8_t> ramBefore(std::begin(game->core.ram), std::end(game->core.ram));
-  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  Fps60 presentation(*game, spyro::temporal_scene::source(*game));
   float midpoint = 0;
   for (float t : {0.5f, 1.0f}) {
     const int range = game->gpu_vk.s_painter_ranges;
@@ -316,7 +320,7 @@ void test_mixed_scene_reconstructs_authored_motion_without_guest_writes() {
     CHECK(game->rqRedirect == nullptr);
     CHECK(!game->core.rsub.mode.displayPassArmed());
   }
-  CHECK(spyro_paired_temporal_proven(state.temporal));
+  CHECK(spyro::paired_actor::temporal_evidence::proven(state.temporal));
   CHECK(std::equal(ramBefore.begin(), ramBefore.end(), std::begin(game->core.ram)));
   checkSourceUnchanged(previousBefore, state.previous);
   checkSourceUnchanged(currentBefore, state.current);
@@ -325,7 +329,7 @@ void test_mixed_scene_reconstructs_authored_motion_without_guest_writes() {
 
 void test_valid_empty_endpoint_keeps_visible_midpoint() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   game->mods.fps60 = true;
   auto &state = context.pairedActor;
@@ -337,21 +341,21 @@ void test_valid_empty_endpoint_keeps_visible_midpoint() {
   state.current.pose[2][2] = -150;
   state.endpoints_compatible = true;
   state.was_fps60_active = true;
-  CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, state.previous) ==
-        SpyroPairedRebuildResult::Emitted);
+  CHECK(spyro::paired_actor::rebuildEndpoint(&game->core, game->rq, state.previous) ==
+        spyro::paired_actor::RebuildResult::Emitted);
   CHECK_EQ(game->rq.n, 1);
   game->rq.reset();
-  CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, state.current) ==
-        SpyroPairedRebuildResult::NoOutput);
+  CHECK(spyro::paired_actor::rebuildEndpoint(&game->core, game->rq, state.current) ==
+        spyro::paired_actor::RebuildResult::NoOutput);
   CHECK_EQ(game->rq.n, 0);
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(state.temporal_eligible);
   CHECK_EQ(state.temporal.eligible_intervals, 1u);
-  const SpyroPairedFrame previousBefore = state.previous, currentBefore = state.current;
+  const spyro::paired_actor::Frame previousBefore = state.previous, currentBefore = state.current;
   const std::vector<uint8_t> ramBefore(std::begin(game->core.ram), std::end(game->core.ram));
   const std::vector<uint8_t> scratchBefore(std::begin(game->core.scratch),
                                            std::end(game->core.scratch));
-  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  Fps60 presentation(*game, spyro::temporal_scene::source(*game));
   presentation.presentPass(&game->core, 0.5f, {});
   CHECK_EQ(presentation.mPresentStream.size(), 1u);
   CHECK_EQ(presentation.mSink->n, 1);
@@ -362,7 +366,7 @@ void test_valid_empty_endpoint_keeps_visible_midpoint() {
   CHECK_EQ(state.temporal.endpoint_calls, 1u);
   CHECK_EQ(state.temporal.emitted, 1u);
   CHECK_EQ(state.temporal.no_output, 1u);
-  CHECK(spyro_paired_temporal_proven(state.temporal));
+  CHECK(spyro::paired_actor::temporal_evidence::proven(state.temporal));
   CHECK(std::equal(ramBefore.begin(), ramBefore.end(), std::begin(game->core.ram)));
   CHECK(std::equal(scratchBefore.begin(), scratchBefore.end(), std::begin(game->core.scratch)));
   checkSourceUnchanged(previousBefore, state.previous);
@@ -373,7 +377,7 @@ void test_valid_empty_endpoint_keeps_visible_midpoint() {
 
 void test_regular_actor_interval_reconstructs_authored_motion() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   game->mods.fps60 = true;
   auto &history = context.actorTemporal;
@@ -396,13 +400,13 @@ void test_regular_actor_interval_reconstructs_authored_motion() {
   CHECK_EQ(endpoint.painter_object, spyro::actor_draw::kProducerKey);
 
   const std::vector<uint8_t> ramBefore(std::begin(game->core.ram), std::end(game->core.ram));
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(history.eligible());
-  const auto source = spyro_temporal_scene_source(*game);
+  const auto source = spyro::temporal_scene::source(*game);
   CHECK(source->eligible(game->core));
   CHECK(source->owns(endpoint));
 
-  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  Fps60 presentation(*game, spyro::temporal_scene::source(*game));
   std::array<RqItem, 1> captured{endpoint};
   float midpoint = 0;
   for (float t : {0.5f, 1.0f}) {
@@ -428,42 +432,43 @@ void test_regular_actor_interval_reconstructs_authored_motion() {
 
 void test_single_actor_endpoint_is_not_an_interval() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   game->mods.fps60 = true;
   context.actorTemporal.begin(1, false, true);
   context.actorTemporal.retain({spyro::test_fixture::actorRecord(0x80010000u, 0)});
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(!context.actorTemporal.eligible());
   RqItem item{};
   item.layer = RQ_WORLD;
   item.has_xyf = true;
   item.painter_object = spyro::actor_draw::kProducerKey;
-  CHECK(!spyro_temporal_scene_source(*game)->owns(item));
+  CHECK(!spyro::temporal_scene::source(*game)->owns(item));
 }
 
 void test_temporal_evidence_requires_complete_visible_observation() {
-  CHECK(spyro_paired_temporal_selftest());
+  CHECK(spyro::paired_actor::temporal_evidence::selftest());
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   auto &evidence = context.pairedActor.temporal;
-  CHECK(spyro_paired_temporal_complete(evidence));
+  CHECK(spyro::paired_actor::temporal_evidence::complete(evidence));
   evidence = {.calls = 2,
               .midpoint_calls = 1,
               .endpoint_calls = 1,
               .no_output = 2,
               .eligibility_checks = 1,
               .eligible_intervals = 1};
-  CHECK(spyro_paired_temporal_complete(evidence));
-  CHECK(!spyro_paired_temporal_proven(evidence));
-  spyro_paired_actor_temporal_finish(&game->core); // complete empty output is valid normal gameplay
+  CHECK(spyro::paired_actor::temporal_evidence::complete(evidence));
+  CHECK(!spyro::paired_actor::temporal_evidence::proven(evidence));
+  spyro::paired_actor::temporal_evidence::finish(
+      &game->core); // complete empty output is valid normal gameplay
 }
 
 void test_forced_endpoint_diagnostics_account_for_both_slots_without_motion_proof() {
   for (const int forcedInterpolation : {0, 1}) {
     auto game = std::make_unique<Game>();
-    SpyroContext context;
+    spyro::Context context;
     game->core.gameCtx = &context;
     game->mods.fps60 = true;
     auto &state = context.pairedActor;
@@ -472,41 +477,41 @@ void test_forced_endpoint_diagnostics_account_for_both_slots_without_motion_proo
     state.current.transform.layer_cr[0][5] = 100u;
     state.endpoints_compatible = true;
     state.was_fps60_active = true;
-    spyro_temporal_scene_prepare(game->core);
+    spyro::temporal_scene::prepare(game->core);
     CHECK(state.temporal_eligible);
-    Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+    Fps60 presentation(*game, spyro::temporal_scene::source(*game));
     presentation.presentPass(&game->core, static_cast<float>(forcedInterpolation), {});
     CHECK_EQ(state.temporal.endpoint_calls, 1u);
-    CHECK(!spyro_paired_temporal_complete(state.temporal, forcedInterpolation));
+    CHECK(!spyro::paired_actor::temporal_evidence::complete(state.temporal, forcedInterpolation));
     presentation.presentPass(&game->core, 1.0f, {});
     CHECK_EQ(state.temporal.endpoint_calls, 2u);
     CHECK_EQ(state.temporal.midpoint_calls, 0u);
     CHECK_EQ(state.temporal.emitted, 2u);
-    CHECK(spyro_paired_temporal_complete(state.temporal, forcedInterpolation));
-    CHECK(!spyro_paired_temporal_proven(state.temporal));
+    CHECK(spyro::paired_actor::temporal_evidence::complete(state.temporal, forcedInterpolation));
+    CHECK(!spyro::paired_actor::temporal_evidence::proven(state.temporal));
     // Without the explicit endpoint override, two endpoint callbacks remain incomplete.
     for (const int midpointMode : {-1, 2, -2}) {
-      CHECK(!spyro_paired_temporal_complete(state.temporal, midpointMode));
+      CHECK(!spyro::paired_actor::temporal_evidence::complete(state.temporal, midpointMode));
     }
     ++state.temporal.no_output;
-    CHECK(!spyro_paired_temporal_complete(state.temporal, forcedInterpolation));
+    CHECK(!spyro::paired_actor::temporal_evidence::complete(state.temporal, forcedInterpolation));
   }
-  const SpyroPairedTemporalEvidence midpoint{.calls = 2,
-                                             .midpoint_calls = 1,
-                                             .endpoint_calls = 1,
-                                             .emitted = 2,
-                                             .eligibility_checks = 1,
-                                             .eligible_intervals = 1};
+  const spyro::paired_actor::temporal_evidence::Evidence midpoint{.calls = 2,
+                                                                  .midpoint_calls = 1,
+                                                                  .endpoint_calls = 1,
+                                                                  .emitted = 2,
+                                                                  .eligibility_checks = 1,
+                                                                  .eligible_intervals = 1};
   for (const int midpointMode : {-1, 2, -2}) {
-    CHECK(spyro_paired_temporal_complete(midpoint, midpointMode));
+    CHECK(spyro::paired_actor::temporal_evidence::complete(midpoint, midpointMode));
   }
-  CHECK(!spyro_paired_temporal_complete(midpoint, 0));
-  CHECK(!spyro_paired_temporal_complete(midpoint, 1));
+  CHECK(!spyro::paired_actor::temporal_evidence::complete(midpoint, 0));
+  CHECK(!spyro::paired_actor::temporal_evidence::complete(midpoint, 1));
 }
 
 void test_coalesced_actor_buckets_merge_with_field_world() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   game->mods.fps60 = true;
   auto frame = triangle();
@@ -532,8 +537,8 @@ void test_coalesced_actor_buckets_merge_with_field_world() {
     frame.primitives.push_back(primitive);
   }
   frame.layer_counts[0] = static_cast<uint32_t>(frame.pose.size());
-  CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, frame) ==
-        SpyroPairedRebuildResult::Emitted);
+  CHECK(spyro::paired_actor::rebuildEndpoint(&game->core, game->rq, frame) ==
+        spyro::paired_actor::RebuildResult::Emitted);
   CHECK_EQ(game->rq.n, bins.size());
   if (game->rq.n != static_cast<int>(bins.size())) {
     return;
@@ -556,9 +561,9 @@ void test_coalesced_actor_buckets_merge_with_field_world() {
   state.previous = state.current = frame;
   state.endpoints_compatible = true;
   state.was_fps60_active = true;
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(state.temporal_eligible);
-  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  Fps60 presentation(*game, spyro::temporal_scene::source(*game));
   // Negative identifiers denote the world face at that global bin; nonnegative are actor order.
   const std::array<int, 13> replay{-8, -7, 0, 1, 2, -6, 3, 4, -1, 5, -100, 6, 7};
   for (float t : {0.0f, 0.5f, 1.0f}) {
@@ -588,8 +593,8 @@ void test_coalesced_actor_buckets_merge_with_field_world() {
   // The title front-end retains its isolated actor group: no shared-world coalescing key.
   frame.authored_replay = false;
   game->rq.consumed = 1;
-  CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, frame) ==
-        SpyroPairedRebuildResult::Emitted);
+  CHECK(spyro::paired_actor::rebuildEndpoint(&game->core, game->rq, frame) ==
+        spyro::paired_actor::RebuildResult::Emitted);
   CHECK_EQ(game->rq.n, bins.size());
   for (int i = 0; i < game->rq.n; ++i) {
     CHECK_EQ(game->rq.items[i].painter_replay.domain, 0u);
@@ -598,7 +603,7 @@ void test_coalesced_actor_buckets_merge_with_field_world() {
 
 void test_moving_camera_depth_uses_source_midpoint() {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   game->mods.fps60 = true;
   auto &state = context.pairedActor;
@@ -608,10 +613,10 @@ void test_moving_camera_depth_uses_source_midpoint() {
   setSourceDepth(state.current, 1281, 1);
   state.endpoints_compatible = true;
   state.was_fps60_active = true;
-  spyro_temporal_scene_prepare(game->core);
+  spyro::temporal_scene::prepare(game->core);
   CHECK(state.temporal_eligible);
   const auto previous = state.previous, current = state.current;
-  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  Fps60 presentation(*game, spyro::temporal_scene::source(*game));
   for (const auto [t, expectedBin] :
        std::array<std::pair<float, uint16_t>, 3>{{{0, 6}, {0.5f, 8}, {1, 9}}}) {
     presentation.presentPass(&game->core, t, {});
@@ -623,13 +628,13 @@ void test_moving_camera_depth_uses_source_midpoint() {
   checkSourceUnchanged(previous, state.previous);
   checkSourceUnchanged(current, state.current);
   state.current.transform.depth_bias++;
-  CHECK(!spyro_paired_actor_fps60_eligible(state));
+  CHECK(!spyro::paired_actor::fps60Eligible(state));
 }
 
 void test_stationary_unequal_depth_faces_preserve_authored_bucket_fifo() {
   for (bool authoredReplay : {true, false}) {
     auto game = std::make_unique<Game>();
-    SpyroContext context;
+    spyro::Context context;
     game->core.gameCtx = &context;
     game->mods.fps60 = true;
     auto frame = triangle();
@@ -652,9 +657,9 @@ void test_stationary_unequal_depth_faces_preserve_authored_bucket_fifo() {
     state.previous = state.current = frame;
     state.endpoints_compatible = true;
     state.was_fps60_active = true;
-    spyro_temporal_scene_prepare(game->core);
+    spyro::temporal_scene::prepare(game->core);
     CHECK(state.temporal_eligible);
-    Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+    Fps60 presentation(*game, spyro::temporal_scene::source(*game));
     for (float t : {0.0f, 0.5f, 1.0f}) {
       presentation.presentPass(&game->core, t, {});
       CHECK_EQ(presentation.mSink->n, 2);
@@ -690,7 +695,7 @@ void test_stationary_unequal_depth_faces_preserve_authored_bucket_fifo() {
 void test_stationary_fractional_source_preserves_every_presentation() {
   for (const int32_t cameraDepth : {1000, 40000}) {
     auto game = std::make_unique<Game>();
-    SpyroContext context;
+    spyro::Context context;
     game->core.gameCtx = &context;
     game->mods.fps60 = true;
     auto frame = triangle();
@@ -707,16 +712,16 @@ void test_stationary_fractional_source_preserves_every_presentation() {
     state.previous = state.current = frame;
     state.endpoints_compatible = true;
     state.was_fps60_active = true;
-    CHECK(spyro_paired_actor_rebuild_endpoint(&game->core, game->rq, frame) ==
-          SpyroPairedRebuildResult::Emitted);
+    CHECK(spyro::paired_actor::rebuildEndpoint(&game->core, game->rq, frame) ==
+          spyro::paired_actor::RebuildResult::Emitted);
     CHECK_EQ(game->rq.n, 1);
     if (game->rq.n != 1) {
       continue;
     }
     const RqItem endpoint = game->rq.items[0];
-    spyro_temporal_scene_prepare(game->core);
+    spyro::temporal_scene::prepare(game->core);
     CHECK(state.temporal_eligible);
-    Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+    Fps60 presentation(*game, spyro::temporal_scene::source(*game));
     for (float t : {0.0f, 0.5f, 1.0f}) {
       presentation.presentPass(&game->core, t, {});
       CHECK_EQ(presentation.mSink->n, 1);
@@ -736,7 +741,7 @@ void test_stationary_fractional_source_preserves_every_presentation() {
 void test_joint_world_camera_admission_preserves_live_state() {
   namespace fixture = spyro::testing::world_source_fixture;
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   auto &core = game->core;
   core.gameCtx = &context;
   game->mods.fps60 = true;
@@ -767,8 +772,8 @@ void test_joint_world_camera_admission_preserves_live_state() {
   paired.endpoints_compatible = true;
   paired.was_fps60_active = true;
   CHECK(history.camerasMatch(paired.previous, paired.current));
-  CHECK(spyro_paired_actor_rebuild_endpoint(&core, game->rq, paired.current) ==
-        SpyroPairedRebuildResult::Emitted);
+  CHECK(spyro::paired_actor::rebuildEndpoint(&core, game->rq, paired.current) ==
+        spyro::paired_actor::RebuildResult::Emitted);
   const auto recipe = spyro::world_scene::build(world);
   const auto plan = spyro::world_scene_submitter::prepare(
       draw, game->rq, spyro::world_temporal::kProducerKey, recipe);
@@ -782,7 +787,7 @@ void test_joint_world_camera_admission_preserves_live_state() {
   const auto scopeDepth = core.rsub.producerScope.depth();
   core.rsub.projParams.setProjH(731);
   core.rsub.projParams.setGeomOffset(13, 17);
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(paired.temporal_eligible);
   CHECK(history.eligible());
   CHECK_EQ(core.rsub.census.primsSeen(), census);
@@ -798,10 +803,10 @@ void test_joint_world_camera_admission_preserves_live_state() {
   CHECK_EQ(core.rsub.projParams.geomOfx(), 13.0f);
   CHECK_EQ(core.rsub.projParams.geomOfy(), 17.0f);
   CHECK(std::equal(before.begin(), before.end(), std::begin(core.ram)));
-  const auto scene = spyro_temporal_scene_source(*game);
+  const auto scene = spyro::temporal_scene::source(*game);
   CHECK(scene->owns(captured[0]));
   CHECK(scene->owns(captured[1]));
-  Fps60 presentation(*game, spyro_temporal_scene_source(*game));
+  Fps60 presentation(*game, spyro::temporal_scene::source(*game));
   for (float t : {0.0f, 0.5f, 1.0f}) {
     presentation.presentPass(&core, t, {captured, 1});
     CHECK_EQ(presentation.mSink->n, 3);
@@ -818,17 +823,17 @@ void test_joint_world_camera_admission_preserves_live_state() {
   for (bool previous : {true, false}) {
     auto &frame = previous ? paired.previous : paired.current;
     ++frame.transform.sceneCamera.position[0];
-    spyro_temporal_scene_prepare(core);
+    spyro::temporal_scene::prepare(core);
     CHECK(paired.temporal_eligible);
     CHECK(!history.eligible());
     --frame.transform.sceneCamera.position[0];
     --frame.frameSerial;
-    spyro_temporal_scene_prepare(core);
+    spyro::temporal_scene::prepare(core);
     CHECK(paired.temporal_eligible);
     CHECK(!history.eligible());
     ++frame.frameSerial;
   }
-  spyro_temporal_scene_prepare(core);
+  spyro::temporal_scene::prepare(core);
   CHECK(history.eligible());
   presentation.presentRotate();
   CHECK(history.current() == nullptr);
@@ -841,7 +846,7 @@ void test_paired_camera_capture_precedes_actor_rotation() {
   namespace fixture = spyro::testing::world_source_fixture;
   auto game = std::make_unique<Game>();
   auto &core = game->core;
-  // The diagnostic pose-builder remains usable with no SpyroContext or temporal lifecycle.
+  // The diagnostic pose-builder remains usable with no spyro::Context or temporal lifecycle.
   CHECK(core.gameCtx == nullptr);
   auto bytes = fixture::lowGeometryFixture();
   fixture::w32(bytes, 0x76378, 0xa0000);
@@ -855,8 +860,8 @@ void test_paired_camera_capture_precedes_actor_rotation() {
   std::copy(bytes.begin(), bytes.end(), std::begin(core.ram));
   core.rsub.projParams.setGeomOffset(256, 120);
   core.rsub.projParams.setGeomScreen(341);
-  SpyroPairedActorTransform transform{};
-  CHECK(spyro_paired_actor_build_transform(&core, transform));
+  spyro::paired_actor::Transform transform{};
+  CHECK(spyro::paired_actor::buildTransform(&core, transform));
   const auto world = spyro::world_source::select(spyro::world_chunk_codec::RamView(bytes), 0);
   CHECK(transform.sceneCamera.valid);
   CHECK(transform.sceneCamera.matrix == world.camera.projectionMatrix.m);

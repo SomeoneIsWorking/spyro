@@ -217,7 +217,7 @@ private:
   // from and what `reconstruct` builds on.
   TerrainField present_;
   TerrainField previous_;
-  std::vector<SpyroContext::TerrainPacketArena> arenas_;
+  std::vector<spyro::Context::TerrainPacketArena> arenas_;
   bool ownsField_ = false;
   Report report_;
 

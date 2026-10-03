@@ -199,18 +199,18 @@ const char *armName(Arm a) {
 // It returns whether a quad actually reached the render queue, and the arm below counts THAT rather
 // than counting its own intentions — so the `emitted=` in the diagnostic can never report sprites
 // that were rejected on the way out.
-bool SpyroRenderer::spriteEmit(int32_t x,
-                               int32_t y,
-                               int32_t id,
-                               uint32_t style,
-                               int32_t drawOfsX,
-                               int32_t drawOfsY,
-                               int32_t clipX0,
-                               int32_t clipY0,
-                               int32_t clipX1,
-                               int32_t clipY1,
-                               const char *element,
-                               std::size_t index) const {
+bool spyro::render::FrameRenderer::spriteEmit(int32_t x,
+                                              int32_t y,
+                                              int32_t id,
+                                              uint32_t style,
+                                              int32_t drawOfsX,
+                                              int32_t drawOfsY,
+                                              int32_t clipX0,
+                                              int32_t clipY0,
+                                              int32_t clipX1,
+                                              int32_t clipY1,
+                                              const char *element,
+                                              std::size_t index) const {
   Core *c = mC;
   const bool mirror = id < 0;
   const uint32_t sid = (uint32_t)(mirror ? -id : id);
@@ -294,12 +294,12 @@ bool SpyroRenderer::spriteEmit(int32_t x,
 //
 // Returns false when the frame's mode has no producer, so the seam can abort naming it instead of
 // presenting a screen with its menu missing.
-bool SpyroRenderer::titleMenuRender(int32_t drawOfsX,
-                                    int32_t drawOfsY,
-                                    int32_t clipX0,
-                                    int32_t clipY0,
-                                    int32_t clipX1,
-                                    int32_t clipY1) const {
+bool spyro::render::FrameRenderer::titleMenuRender(int32_t drawOfsX,
+                                                   int32_t drawOfsY,
+                                                   int32_t clipX0,
+                                                   int32_t clipY0,
+                                                   int32_t clipX1,
+                                                   int32_t clipY1) const {
   Core *c = mC;
   const auto st = spyro::title_menu_state::read(c);
   if (st.mode == 1 || st.mode == 2) {

@@ -74,7 +74,7 @@ bool sameDrawPolicy(const world_scene_submitter::DrawState &a,
   return policy(a) == policy(b);
 }
 
-bool cameraMatches(const Frame &world, const SpyroPairedFrame &paired) {
+bool cameraMatches(const Frame &world, const spyro::paired_actor::Frame &paired) {
   const auto &camera = world.source.selection.camera;
   const SceneCameraInputs inputs{true, camera.projectionMatrix.m, camera.position};
   return world.serial != 0 && world.serial == paired.frameSerial &&
@@ -319,8 +319,8 @@ bool History::compatible(const Core &core, const char *&why) const {
   return world_source_pair::compatible(previous->source, current->source, why);
 }
 
-bool History::camerasMatch(const SpyroPairedFrame &previous,
-                           const SpyroPairedFrame &current) const {
+bool History::camerasMatch(const spyro::paired_actor::Frame &previous,
+                           const spyro::paired_actor::Frame &current) const {
   return pair_.previous() && pair_.current() && cameraMatches(*pair_.previous(), previous) &&
          cameraMatches(*pair_.current(), current);
 }

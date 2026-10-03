@@ -3,8 +3,8 @@
 #include "game.h"
 #include "guest_globals.h"
 #include "hw_bind.h"
+#include "native_terrain.h"
 #include "spyro_context.h"
-#include "spyro_game.h"
 #include "testutil.h"
 #include "world_scene_submitter.h"
 
@@ -26,14 +26,14 @@ void test_empty_actor_submission_commits_shadow_reset() {
   Core &core = game->core;
   // A completed submission retains its record corpus as the next frame's interpolation endpoint,
   // which is per-Core title state. Without it the producer has nowhere to publish that endpoint.
-  SpyroContext context{};
+  spyro::Context context{};
   core.gameCtx = &context;
   core.mem_w32(kLevelMobys, kMoby);
   core.mem_w32(kMoby + 0x48u, 0xffffffffu);
   core.mem_w32(kShadowCursor, kPreviousCursor);
   core.mem_w32(kShadowStart, 0x80012000u);
 
-  CHECK_EQ(spyro_actor_submit(&core).producer, 0u);
+  CHECK_EQ(spyro::actor_draw::submit(&core).producer, 0u);
   CHECK_EQ(core.mem_r32(kShadowCursor), kShadowStart);
   CHECK_EQ(game->rq.n, 0);
   // The cursor ends the list; clearing unrelated backing bytes is not part of this transition.
@@ -45,13 +45,13 @@ void test_refused_actor_submission_preserves_shadow_state() {
   Core &core = game->core;
   // The producer reads the drawn sector table before it walks the Moby array (issue 0152), so the
   // context is part of this call's inputs even on the path that refuses.
-  SpyroContext context{};
+  spyro::Context context{};
   core.gameCtx = &context;
   core.mem_w32(kLevelMobys, 0x801ffffcu);
   core.mem_w32(kShadowCursor, kPreviousCursor);
   core.mem_w32(kShadowStart, 0x80012000u);
 
-  const auto refusal = spyro_actor_submit(&core);
+  const auto refusal = spyro::actor_draw::submit(&core);
   CHECK_EQ(refusal.producer, 0x8001F798u);
   // A refusal that only a debug channel can explain is what issue 0113 cost four days to; the
   // reason must travel with it to the abort.
@@ -69,7 +69,7 @@ constexpr uint32_t kScratchVertex = 0x1f80000cu;
 
 // The terrain producer retains its captured corpus as the next update's interpolation endpoint,
 // which is per-Core title state, so the context is part of its contract and not test scaffolding.
-void prepare_terrain(Game &game, SpyroContext &context) {
+void prepare_terrain(Game &game, spyro::Context &context) {
   Core &core = game.core;
   core.gameCtx = &context;
   game.mods.aspect = ASPECT_4_3;
@@ -108,9 +108,9 @@ void prepare_terrain(Game &game, SpyroContext &context) {
 
 void test_owned_terrain_vertices_submit() {
   auto game = std::make_unique<Game>();
-  SpyroContext context{};
+  spyro::Context context{};
   prepare_terrain(*game, context);
-  CHECK(spyro_terrain_submit(&game->core, -1, kMatrix, kMatrix));
+  CHECK(spyro::render::submitTerrainGuest(&game->core, -1, kMatrix, kMatrix));
   CHECK_EQ(game->rq.n, 1);
   CHECK_EQ(game->rq.items[0].painter_object, 0x8004eba8u);
 }
@@ -118,14 +118,14 @@ void test_owned_terrain_vertices_submit() {
 void test_external_terrain_vertices_refuse_independently_of_scratch() {
   for (const uint32_t scratchClip : {0u, 0x1fu}) {
     auto game = std::make_unique<Game>();
-    SpyroContext context{};
+    spyro::Context context{};
     prepare_terrain(*game, context);
     Core &core = game->core;
     // Index three is outside the three native vertices. The retired path read this scratch slot
     // and accepted the face as clipped when all five clip flags were present.
     core.mem_w32(kFace, (12u << 20u) | (12u << 10u) | 12u);
     core.mem_w32(kScratchVertex, scratchClip);
-    CHECK(!spyro_terrain_submit(&core, -1, kMatrix, kMatrix));
+    CHECK(!spyro::render::submitTerrainGuest(&core, -1, kMatrix, kMatrix));
     CHECK_EQ(game->rq.n, 0);
     CHECK_EQ(core.mem_r32(kScratchVertex), scratchClip);
     CHECK_EQ(gte_read_ctrl(24u), 256u << 16u);

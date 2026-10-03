@@ -3,14 +3,16 @@
 // WHY IT EXISTS. A native override is a plain `void (*)(Core *)`: there is nowhere to hang a
 // user-data pointer. An override that has to consult a title-owned object — Spyro 2's widescreen
 // owner is the only one today — therefore needs a way back to that object from the Core alone, and
-// `spyro_context(core).projectionHook` is it.
+// `context(core).projectionHook` is it.
 //
 // It is deliberately NOT a general "call back into the title" door. It is ONE narrow event: a
 // guest projection was just restated. A title with no projection of its own leaves the pointer null
-// and nothing reads it. The per-field boundary is `spyro::FieldObserver`.
+// and nothing reads it. The per-field boundary is `FieldObserver`.
 #pragma once
 
 class Core;
+
+namespace spyro {
 
 class GuestProjectionOwner {
 public:
@@ -20,3 +22,5 @@ public:
   // retail write has already happened; the owner may re-assert whatever its plan requires.
   virtual void onProjectionPublished(Core &core) = 0;
 };
+
+} // namespace spyro

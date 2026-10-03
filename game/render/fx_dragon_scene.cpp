@@ -79,7 +79,7 @@ void cameraShake(Core *core, int32_t ticks) {
 } // namespace
 
 spyro::ProducerRefusal
-dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidth) {
+spyro::dragon_scene::submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidth) {
   if (core == nullptr) {
     return spyro::refuse(kChannel, kRecipeRefusal, "no core");
   }
@@ -87,7 +87,7 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
   // 0x8001CFDC runs the burst 0x80058864 before every branch, gated on D_80076248's enable word.
   // It links into the HUD ordering table rather than the world one, so it is a 2D overlay drawn
   // over whichever state composes below.
-  if (!dragon_burst_submit(core)) {
+  if (!spyro::dragon_burst::submit(core)) {
     return spyro::ProducerRefusal{0x80058864u, {}};
   }
   const auto plan = spyro::dragon_scene::plan(core, state);
@@ -120,7 +120,7 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
     bool ok = true;
     switch (producer) {
     case Producer::QueueMobys:
-      spyro_field_build_moby_lists(core);
+      spyro::field_moby_lists::build(core);
       break;
     case Producer::RescuedText:
       psx::cpu::dispatchGuestToReturn0(*core, kRescuedText, budget(), "dragon-rescued-text");
@@ -137,7 +137,7 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
     // These carry their own reason, so they return it rather than collapsing into `ok` and
     // losing it: the composed pass is the one layer that can say what it refused on.
     case Producer::Regular:
-      if (const auto refusal = spyro_actor_submit(core, source)) {
+      if (const auto refusal = spyro::actor_draw::submit(core, source)) {
         census.add(" REFUSED at regular: {}", refusal.detail);
         census.flush_debug(kChannel);
         return refusal;
@@ -160,34 +160,34 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
       }
       break;
     case Producer::MobyShadows:
-      ok = spyro_moby_shadow_submit(core);
+      ok = spyro::moby_shadow::submit(core);
       break;
     case Producer::SpyroModel:
       // Retail calls 0x80023AC4 straight, with no g_IsSpyroHidden test: only state 0 reaches the
       // player through 0x80019698, which owns that gate itself. Routing these branches through the
       // field player owner would add a hide check the cutscene does not have.
-      ok = spyro_paired_actor_submit_field(core, spyro_paired_actor_state(core));
+      ok = spyro::paired_actor::submitField(core, spyro::paired_actor::state(core));
       break;
     case Producer::SpyroShadow:
-      ok = spyro_field_shadow_submit(core);
+      ok = spyro::field_shadow::submit(core);
       break;
     case Producer::Environment:
-      ok = spyro_field_environment_submit(core);
+      ok = spyro::field_environment::submit(core);
       break;
     case Producer::Cyclorama:
-      ok = spyro_field_cyclorama_submit(core);
+      ok = spyro::field_cyclorama::submit(core);
       break;
     case Producer::Particles:
       // Carries its own reason, so it takes the refusal-returning arm rather than collapsing to
       // `ok` and losing what the producer saw.
-      if (const auto refusal = spyro_field_particles_submit(core)) {
+      if (const auto refusal = spyro::field_particles::submit(core)) {
         census.add(" REFUSED at particles: {}", refusal.detail);
         census.flush_debug(kChannel);
         return refusal;
       }
       break;
     case Producer::ScreenFade:
-      ok = spyro_screen_fade_submit(
+      ok = spyro::screen_fade::submit(
           core,
           core->game->rq,
           spyro::screen_fade_recipe::dragon(
@@ -197,13 +197,13 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
       // The dragon arm gates on the same pre-step state the FIELD arm does
       // (`if (g_ScreenBorderEnabled || D_800756C0)` in 0x8001CFDC), then steps and draws.
       ok = true;
-      if (spyro_screen_border_armed(core)) {
-        const auto border = spyro_screen_border_stage(core);
-        ok = spyro_screen_border_submit(core, core->game->rq, border);
+      if (spyro::screen_border::armed(core)) {
+        const auto border = spyro::screen_border::stage(core);
+        ok = spyro::screen_border::submit(core, core->game->rq, border);
       }
       break;
     case Producer::FieldChain:
-      if (const auto refusal = spyro_field_model_chain_submit(core)) {
+      if (const auto refusal = spyro::field_model_chain::submit(core)) {
         census.add(" REFUSED at 0x{:08X}: {}", refusal.producer, refusal.detail);
         census.flush_debug(kChannel);
         return refusal;
@@ -221,7 +221,7 @@ dragon_scene_submit(Core *core, int drawOffsetX, int drawOffsetY, int renderWidt
   return {};
 }
 
-bool spyro_dragon_scene_draws_player(Core *core) {
+bool spyro::dragon_scene::drawsPlayer(Core *core) {
   if (core == nullptr) {
     return false;
   }
@@ -237,7 +237,7 @@ bool spyro_dragon_scene_draws_player(Core *core) {
     // State 0 reaches the player through the shared field chain, which applies 0x80019698's own
     // hide gate, so the answer there is the field answer.
     if (producer == spyro::dragon_scene::Producer::FieldChain) {
-      return spyro_field_player_visible(core);
+      return spyro::field_player_actor::visible(core);
     }
   }
   return false;

@@ -18,11 +18,11 @@ constexpr uint32_t kProducerKey = spyro::world_temporal::kProducerKey;
 
 } // namespace
 
-bool spyro_field_environment_submit(Core *core) {
+bool spyro::field_environment::submit(Core *core) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }
-  auto &history = spyro_context(*core).worldTemporal;
+  auto &history = spyro::context(*core).worldTemporal;
   spyro::field_environment_scene::Frame frame{};
   const auto scene = spyro::field_environment_scene::prepare(core, frame);
   if (scene != spyro::field_environment_scene::Status::Ready &&
@@ -54,7 +54,7 @@ bool spyro_field_environment_submit(Core *core) {
   spyro::field_scene_recipe::applyEnvironment(core, frame.invocation);
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "field:environment");
   spyro::world_scene_submitter::submit(
-      core, core->game->rq, kProducerKey, frame.world, plan, spyro_context(*core).drawnSectors);
+      core, core->game->rq, kProducerKey, frame.world, plan, spyro::context(*core).drawnSectors);
   history.retain(*core, std::move(frame.source), plan.draw);
   lucent::debug("fieldenv",
                 "PASS selection={} distance=0x{:X} sectors={} low={} high={} candidates={} "

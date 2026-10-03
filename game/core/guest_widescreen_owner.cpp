@@ -62,7 +62,7 @@ GuestWidescreenOwner *GuestWidescreenOwner::of(Core &core) noexcept {
   // No abort, no log: every caller of this one treats null as "this Core is not widening", which
   // is the correct and complete answer for a Core whose library leaves have not been bound. The
   // projection leaves, which cannot run unbound, go through `require`.
-  return static_cast<GuestWidescreenOwner *>(spyro_context(core).projectionHook);
+  return static_cast<GuestWidescreenOwner *>(spyro::context(core).projectionHook);
 }
 
 GuestWidescreenOwner &GuestWidescreenOwner::require(Core &core) {
@@ -97,7 +97,7 @@ PresentationAspect GuestWidescreenOwner::presentationAspect(const Core &core) co
 }
 
 void GuestWidescreenOwner::registerProjectionOverrides(Core &core) {
-  spyro_context(core).projectionHook = this;
+  spyro::context(core).projectionHook = this;
 
   // Both leaves are ALSO in `PlatformHlePlan`. That is not a conflict: the framework's own dispatch
   // contract consults a title's image-scoped override BEFORE any host-service table, so these two

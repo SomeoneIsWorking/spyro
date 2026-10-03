@@ -94,7 +94,7 @@ struct GuestWidescreenFacts {
 };
 
 class GuestWidescreenOwner final : public GuestWidescreenProjection,
-                                   public GuestProjectionOwner,
+                                   public spyro::GuestProjectionOwner,
                                    public FieldObserver,
                                    public FrameTailObserver {
 public:
@@ -147,8 +147,8 @@ public:
   //   pixel.
   void onFrameTail(Core &core) override;
 
-  // `GuestProjectionOwner`. The projection half; the drawing rectangle is not guest projection and
-  // is deliberately NOT routed through this interface.
+  // `spyro::GuestProjectionOwner`. The projection half; the drawing rectangle is not guest
+  // projection and is deliberately NOT routed through this interface.
   void onProjectionPublished(Core &core) override;
 
   // `spyro::FieldObserver` — the per-field boundary.

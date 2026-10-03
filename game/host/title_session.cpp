@@ -61,7 +61,7 @@ TitleSession::~TitleSession() {
   psx::cpu::shutdownHostTurn(parts_->game->core);
   reportRuntimeRun(parts_->game->core, steps_);
   // The per-class drawn-reach census covers every field this session ran (issue 0154).
-  margin_object_census::writeReportIfRequested(spyro_context(parts_->game->core).marginCensus);
+  margin_object_census::writeReportIfRequested(spyro::context(parts_->game->core).marginCensus);
 }
 
 bool TitleSession::boot() {

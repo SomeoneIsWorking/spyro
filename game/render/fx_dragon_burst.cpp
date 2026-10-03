@@ -20,7 +20,7 @@ constexpr int kTriangleVertices = 3;
 
 } // namespace
 
-bool dragon_burst_submit(Core *core) {
+bool spyro::dragon_burst::submit(Core *core) {
   const auto recipe = spyro::dragon_burst::derive(core);
   if (recipe.status == spyro::dragon_burst::Status::Inactive) {
     lucent::debug("dragonburst", "inactive");

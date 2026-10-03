@@ -32,10 +32,10 @@ constexpr uint32_t kCdMusicIdle = 0x40u;
 void cd_retry_step(Core *core) {
   psx::cpu::callOriginalToReturn(
       *core, 0x800163E4u, psx::cpu::ExecutionBudget::currentTurn(*core), "cd-retry-step");
-  if (spyro_context(*core).archiveTransfer.takeCompletion()) {
+  if (spyro::context(*core).archiveTransfer.takeCompletion()) {
     psx::cpu::dispatchGuestToReturn1(
         *core, 0x80016490u, 2u, psx::cpu::ExecutionBudget::currentTurn(*core), "cd-complete");
-    auto &ledger = spyro_context(*core).loadLedger;
+    auto &ledger = spyro::context(*core).loadLedger;
     const auto *owner = spyro::fieldOwnerIfPublished(*core);
     ledger.completePending(owner != nullptr ? owner->fields() : 0u,
                            static_cast<int32_t>(core->mem_r32(kLoadStage)));
@@ -68,7 +68,7 @@ void publishTransferState(Core &core, const spyro::ArchiveRead &read, bool pendi
 
 void transfer(Core &core, bool deferred) {
   const auto read = archiveReadFromRegisters(core);
-  auto &ledger = spyro_context(core).loadLedger;
+  auto &ledger = spyro::context(core).loadLedger;
   // `$ra` inside the override is the address after the guest's `jal`, so the issuer site is eight
   // bytes back, and those are the 31 addresses the census enumerates -- which is what makes the
   // ledger's coverage denominator mean anything. It resolves the site ONLY when the caller was
@@ -92,7 +92,7 @@ void transfer(Core &core, bool deferred) {
                     .fieldCounted = owner != nullptr,
                     .fieldAtIssue = field,
                     .loadStageAtIssue = static_cast<int32_t>(core.mem_r32(kLoadStage))});
-  const auto decision = spyro_context(core).archiveTransfer.read(
+  const auto decision = spyro::context(core).archiveTransfer.read(
       core, read, deferred, [&ledger, index](std::string_view digest) {
         ledger.attachDigest(index, std::string(digest));
       });
@@ -136,7 +136,7 @@ void cd_stream_read(Core *core) {
 
 } // namespace
 
-void spyro_register_cd_queue(Core &core) {
+void spyro::registerCdQueue(Core &core) {
   spyro::installNativeOverride(core, 0x80016500u, "cd_loader", cd_loader);
   spyro::installNativeOverride(core, 0x80016698u, "cd_stream_read", cd_stream_read);
   spyro::installNativeOverride(core, 0x800163E4u, "cd_retry_step", cd_retry_step);

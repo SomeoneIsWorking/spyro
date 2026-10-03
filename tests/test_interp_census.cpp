@@ -178,7 +178,7 @@ void test_repl_command_is_not_a_prefix_match() {
   // no frame of its own to look at. It is heap-allocated here so the test fails on an assertion
   // rather than on the allocator's stack.
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   // A command this owner does not own must be declined so the next owner gets it, and the gate
   // string must match in full: `interpcensusx` is a different command.

@@ -17,11 +17,10 @@ class TitleSession;
 // that one title, which is the only way the process runs a single title.
 //
 // IT OWNS THE WINDOW. `presentation_` is the process's one window and one SDL_GPU device, created
-// before the first session and released after the last, and every session presents through it. It
-// was a `Game` member instead, so picking a title destroyed the selector's window and device and
-// built a second beside it — which is what made the selector look like a separate program the
-// player had to close. Session teardown still releases everything session-owned (the machine, the
-// pad, the debug endpoint, the memory card); nothing session-owned here reaches this object.
+// before the first session and released after the last, and every session presents through it — so
+// picking a title keeps the same window the selector was drawn in. Session teardown still releases
+// everything session-owned (the machine, the pad, the debug endpoint, the memory card); nothing
+// session-owned here reaches this object.
 //
 // The selector and a title are the SAME session here: confirming hands back the live session whose
 // demo was playing in the panel, so the chosen title continues from the frame the player saw rather

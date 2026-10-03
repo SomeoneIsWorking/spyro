@@ -278,7 +278,7 @@ bool decode_pose(Core *c,
   return true;
 }
 
-bool build_transform(Core *c, SpyroPairedActorTransform &out) {
+bool build_transform(Core *c, spyro::paired_actor::Transform &out) {
   constexpr uint32_t instance = guest::kSpyro, camera = guest::kCamera;
   constexpr uint32_t sinTable = 0x8006CBF8u, cosTable = 0x8006CC78u;
   if (!c->rsub.projParams.geomValid()) {

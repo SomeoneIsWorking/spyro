@@ -110,7 +110,7 @@ void runHandoff(Core &core) {
   runStore(core, kTick);
 }
 
-void enableSyntheticFields(Game &game, SyntheticRuntime &runtime, SpyroContext &context) {
+void enableSyntheticFields(Game &game, SyntheticRuntime &runtime, spyro::Context &context) {
   game.core.gameCtx = &context;
   game.runtime = &runtime;
   game.gpu_dev.s_gpu_on = 0;
@@ -253,7 +253,7 @@ void test_padv_sync_bracket_keeps_callback_origin_after_boring_prefix() {
   SyntheticRuntime runtime;
   psxport_install_game(runtime);
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   enableSyntheticFields(*game, runtime, context);
   Core &core = game->core;
   spyro1::FieldScheduler fields(*game);
@@ -340,7 +340,7 @@ void test_unreached_stage_reports_no_padv_sync_bracket() {
   SyntheticRuntime runtime;
   psxport_install_game(runtime);
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   enableSyntheticFields(*game, runtime, context);
   Core &core = game->core;
   spyro1::FieldScheduler fields(*game);

@@ -81,7 +81,7 @@ struct Machine {
     return result.returned() ? core.r[2] : 0xFFFFFFFFu;
   }
 
-  SpyroContext context;
+  spyro::Context context;
   std::unique_ptr<Game> game;
 };
 

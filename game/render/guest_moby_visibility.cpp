@@ -167,7 +167,7 @@ private:
 void MobyWalk::run() {
   // This field draws the scene. The temporal product reads the tick to tell a scene frame from one
   // of the guest's near-empty fields, which must not become the pairing endpoint.
-  ++spyro_context(core_).sceneProducerTicks;
+  ++spyro::context(core_).sceneProducerTicks;
   guest_render_globals::spillBorrowedRegisters(core_, globals_);
   const std::uint32_t base = core_.mem_r32(globals_.scratchBaseWord);
   const std::uint32_t firstRecord = core_.mem_r32(facts_.firstRecordWord);

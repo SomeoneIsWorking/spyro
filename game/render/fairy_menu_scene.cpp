@@ -218,8 +218,8 @@ Refusal submit(Core *core, std::int32_t drawAreaX1) {
   }
   // 0x80018F30 is called unconditionally at the end of the handler: it steps the bar height and
   // draws the two bars when they are up.
-  const auto border = spyro_screen_border_stage(core);
-  if (!spyro_screen_border_submit(core, core->game->rq, border)) {
+  const auto border = spyro::screen_border::stage(core);
+  if (!spyro::screen_border::submit(core, core->game->rq, border)) {
     return Refusal::ScreenBorder;
   }
   return Refusal::None;

@@ -128,7 +128,7 @@ void TerrainWorldPass::capture(Core &core, TerrainField &into) const {
   // field the matrices above were built from (MEASURED: rebuilding both matrices from these three
   // words reproduces the guest's own, bit for bit, for every camera on the route).
   into.angles = cameraAngles(core);
-  into.visibleSectors = spyro_context(core).terrainVisibility;
+  into.visibleSectors = spyro::context(core).terrainVisibility;
   into.captured = true;
 }
 
@@ -145,7 +145,7 @@ void TerrainWorldPass::beginPresentation(Core &core, CapturedFrameView frame, bo
   // The key is the guest's OWN fact, `sceneProducerTicks`: the number of times the scene producer
   // has run. It advances only on a real scene tick, so the endpoints stay the two most recent REAL
   // scene frames however many display fields were delivered between them.
-  const std::uint32_t sceneTick = spyro_context(core).sceneProducerTicks;
+  const std::uint32_t sceneTick = spyro::context(core).sceneProducerTicks;
   if (captured_ && sceneTick == sceneTick_) {
     return;
   }
@@ -175,9 +175,9 @@ void TerrainWorldPass::beginPresentation(Core &core, CapturedFrameView frame, bo
   // own [begin, end) — and `owns` picks by containment, which is what makes the answer exact even
   // though the guest presents one buffer's pass while the next draws into the other.
   arenas_.clear();
-  const std::vector<SpyroContext::TerrainPacketArena> &run = spyro_context(core).terrainArenas;
+  const std::vector<spyro::Context::TerrainPacketArena> &run = spyro::context(core).terrainArenas;
   arenas_.assign(run.begin(), run.end());
-  for (SpyroContext::TerrainPacketArena &arena : arenas_) {
+  for (spyro::Context::TerrainPacketArena &arena : arenas_) {
     std::sort(arena.packets.begin(), arena.packets.end());
     arena.packets.erase(std::unique(arena.packets.begin(), arena.packets.end()),
                         arena.packets.end());
@@ -225,7 +225,7 @@ bool TerrainWorldPass::owns(const RqItem &item) const {
   //
   // Containment narrows the search to the passes that could have produced it; the linked sets
   // decide.
-  for (const SpyroContext::TerrainPacketArena &arena : arenas_) {
+  for (const spyro::Context::TerrainPacketArena &arena : arenas_) {
     if (item.guest_packet < arena.begin || item.guest_packet >= arena.end) {
       continue;
     }

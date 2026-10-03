@@ -19,14 +19,14 @@ using spyro::guest::kDeltaTime;
 
 } // namespace
 
-bool spyro_screen_border_armed(Core *core) {
+bool spyro::screen_border::armed(Core *core) {
   // The gate is the PRE-step state: the guest's `if (g_ScreenBorderEnabled || D_800756C0)` runs
   // before func_80018F30 has stepped anything, and reading the stepped value here would keep the
   // producer alive for one frame after the guest's would have released it.
   return core->mem_r32(kEnabled) != 0u || core->mem_r32(kBarHeight) != 0u;
 }
 
-spyro::screen_border_recipe::Recipe spyro_screen_border_stage(Core *core) {
+spyro::screen_border_recipe::Recipe spyro::screen_border::stage(Core *core) {
   const uint32_t enabled = core->mem_r32(kEnabled);
   const int32_t height = static_cast<int32_t>(core->mem_r32(kBarHeight));
   const int32_t deltaTime = static_cast<int32_t>(core->mem_r32(kDeltaTime));
@@ -39,9 +39,9 @@ spyro::screen_border_recipe::Recipe spyro_screen_border_stage(Core *core) {
   return recipe;
 }
 
-bool spyro_screen_border_submit(Core *core,
-                                RenderQueue &queue,
-                                const spyro::screen_border_recipe::Recipe &recipe) {
+bool spyro::screen_border::submit(Core *core,
+                                  RenderQueue &queue,
+                                  const spyro::screen_border_recipe::Recipe &recipe) {
   if (!recipe.visible) {
     return true;
   }

@@ -1,9 +1,9 @@
 # Codemap — SpyroEngine
 
-This map owns placement only: which subsystem owns a responsibility, where it lives now, and where
-new work belongs. Product intent is in `docs/project-goals.md`; capability state in
-`docs/project-state.md`; atomic work in `docs/issues/`; migration order in `docs/migration.md`; and
-binary-evidence dependencies in `docs/re-frontier.md`.
+This map owns placement and ownership only: which directory, namespace and class owns a
+responsibility, where it lives now, and where new work belongs. Product intent is in
+`docs/project-goals.md`; capability state in `docs/project-state.md`; atomic work in `docs/issues/`;
+migration order in `docs/migration.md`; binary-evidence dependencies in `docs/re-frontier.md`.
 
 ## Architecture
 
@@ -21,126 +21,292 @@ run.sh -> locked Python launcher -> authenticated title image
                            +---------+----------+
 ```
 
-`game/core/` contains process composition, root continuation, shared field delivery, and lineage policy.
-`titles/spyro2/` holds Spyro 2 identity, runtime policy, the guest-executed boot driver, and its native renderer overrides (`render/`).
-`SpyroRuntime` owns only proven address-free lineage policy. Each final title runtime owns its
-executable identity, image-aware addresses, lifecycle, and capability policy. psxport owns PSX CPU
+One process. One window and one presentation device belong to `spyro::ProductHost`; every title
+session presents through them and nothing session-owned touches that object. psxport owns PSX CPU
 execution and services; title code must not fork Lightrec or reproduce a second cache/dispatcher.
+
+## Directories
+
+| Directory | Namespace | What lives there |
+| --- | --- | --- |
+| `game/core/` | `spyro`, `spyro2`, `spyro3` and the title-neutral sub-namespaces below | Process composition, per-Core shared context, field delivery, guest execution, CD/archive, widescreen policy, memory card, SPU facts, native leaf overrides |
+| `game/host/` | `spyro` | The process top level: catalog probe, title selector, panel sessions, one title session |
+| `game/render/` | `spyro`, `spyro::render` and one sub-namespace per producer/layer | The picture: scene classification, producers, temporal (60 fps) sources, widescreen anchoring, HUD |
+| `titles/spyro1/core/` | `spyro1`, `spyro1::native` | SCUS_942.28's frame driver, field scheduler, boot sequence, transition skip, observers, and its native leaf overrides |
+| `titles/spyro2/core/`, `titles/spyro3/core/` | `spyro2`, `spyro3` | Measured boot, logo and widescreen facts, plus the two runtime objects |
+| `titles/spyro{2,3}/render/` | `spyro2`, `spyro3` | The per-image HUD anchoring overrides |
+| `tests/`, `titles/*/tests/` | — | Hermetic tests over the shipping owners |
+
+---
+
+## Who owns it
+
+Every chain names the owner and the method at each hop. Framework classes are `psx::…` and live in
+`external/psxport/`; they are named here so a hop is findable, never because they are title code.
+
+### The frame turn
+
+```text
+spyro::ProductHost::runToEnd            one loop per entered title; also the selector's loop
+  └─ spyro::TitleSession::step          honour pause, honour the run cap, then one product step
+       ├─ psx::debug::DbgServer::honourPause
+       └─ dc_step_frame → psx::FrameLoopShell::step
+            └─ <FrameDriver>::stepFrame          the title's one finite native frame step
+                 ├─ spyro1::Spyro1FrameDriver::stepFrame   (SCUS_942.28)
+                 │    ├─ spyro1::BootSequence::step        until the boot prefix has returned
+                 │    ├─ runGuestUpdate                   the retail main-loop iteration, draw-less
+                 │    │                                   iterations chained first
+                 │    ├─ spyro::render::FrameRenderer::drawFrame
+                 │    └─ spyro::deliverNativeField("native-frame-tail")
+                 └─ spyro::BootPrefixFrameDriver::stepFrame   (SCUS_944.25 / SCUS_944.67)
+                      ├─ spyro::GuestCall::begin / resume     the retail boot prefix, across steps
+                      └─ spyro::FieldOwner::deliver          one presented field per step
+            └─ psx::debug::DbgServer::service        the control channel's own per-step service
+```
+
+**While a movie or a blocking CD call holds the turn.** No title code runs inside a blocking guest
+call: `spyro::GuestCall::resume` turns a guest VSync into a typed `FieldBoundary` outcome and returns
+to `BootPrefixFrameDriver::stepFrame`, and `spyro::ArchiveTransfer::read` completes through
+`spyro::context(core).archiveTransfer.takeCompletion()` polled by the `cd_retry_step` native leaf.
+The frame turn is therefore always owned by the `FrameDriver` — nothing else ever holds it. A
+blocking framework movie (`psx::movie::Fmv`) is likewise not a guest call: it is entered from the
+framework's own delivery path, and host input during it is the framework's
+`psx::input::HostInput`, which every pumping caller shares.
+
+### The delivery of one display field
+
+`spyro::FieldOwner::deliver` is the ONE definition of "a display field happened", shared by every
+title in the lineage. In order: park the REPL → sample the host pad → advance the display clock →
+dispatch this title's guest vblank root (`spyro::FieldOwner::dispatchCallbacks`) → advance the field
+counter → the title observes (`spyro::FieldObserver::onField`) → snapshot → cross the presentation
+fence when the field is visible → service audio (`psx::audio::SpuAudio::frame`) → release the
+host-turn token. `spyro::FieldOwner::hostTurnThunk` is the host-turn entry: one more physical field,
+never a second presentation fence.
+
+`spyro1::FieldScheduler` is the Spyro 1 `FieldObserver`: the shared sequence plus the two things
+that are this title's alone — the boot-sequence window in which a Start edge is observed, and the
+per-field skip map.
+
+### Host input → guest pad buffer
+
+```text
+psx::input::HostInput        the ONE host-input owner (external/psxport/runtime/psx/host_input.h):
+                            the SDL event drain, the key state and the gamepads
+  └─ psx::input::Pad::pollHostInput   the guest's pad, one per Core, active-low mask
+       ├─ psx::input::Pad::setPlayerInputSuppressed   a picker panel must not see the player's pad
+       └─ the guest pad buffer at the title's own layout
+            └─ titles/spyro1/core/spyro1_input_phase.h  spyro1::InputPhase::of — which screen is
+                                                        taking input this pad frame, the key a
+                                                        recorded `.pad` replay is stored against
+```
+
+* **Movie skip / presentation skip.** `spyro::FieldOwner::presentationSkipPressed` asks whether the
+  Start/Cross edge that ends a presentation-only hold is down. Only `spyro1::BootSequence` (boot
+  logos) and `spyro1::TransitionSkip` decide whether such an edge *transitions*; the pad subsystem
+  keeps exposing the input to later title states unchanged.
+* **The window question.** `gpu_vk_windowed()` (external/psxport/runtime/psx/gpu_vk.h) is the
+  renderer's answer to "is there a window", and it is passed to input explicitly rather than read
+  back out of the renderer.
+* **The debug control channel.** `psx::debug::DbgServer` is attached per session by
+  `spyro::TitleSession::boot` and serviced once per product step by `spyro::TitleSession::step`,
+  between `dc_step_frame` and the next frame. Its forced-input path is separate from the player's
+  SDL path; `spyro::PickerSession::serviceInput` is the one place the picker reads the pad and the
+  channel together.
+
+### Guest draw → presentation
+
+```text
+spyro::render::FrameRenderer::drawFrame
+  ├─ classifyScene()                    which guest stage selector is on screen
+  ├─ [reference leg]  referenceOtWalk() the guest's own render driver, unmodified
+  ├─ [native leg]     prepareScene() → frame_env nativeFrameBegin
+  │                   renderScene()  → one producer per field layer
+  │                                     (fx_*_submit, spyro::render::FrameRenderer::titleMenuRender,
+  │                                      ::stage13Mode3Render)
+  └─ the ONE presentation fence        spyro::render::PresentationOwner (beginGuestFrame /
+                                       beginNativeFrame) through the framework's RenderQueue
+```
+
+* **Real field.** `spyro::PresentationOwner::guestVramIsPicture` decides whether the presented image
+  is guest VRAM or the native producers' queue; boot starts with guest VRAM because Spyro's
+  upload-only logos precede the title frame driver.
+* **60 fps in-between.** The title's temporal product (`spyro2::Spyro2Runtime::createTemporalFramePresentation`
+  → `spyro::TerrainWorldPass`, `spyro::makeTerrainWorldPass`) rebuilds a field from the guest's own
+  object memory at a lerped camera; `spyro::terrain_packet_sink::submit` is where its reconstructed
+  packets go, and `spyro::interp_census::Census` records what it rebuilt.
+* **Widescreen.** `spyro::GuestWidescreenOwner` owns the ONE widening decision for a
+  guest-projection title: the resolved plan, the horizontal centre re-asserted per field, the
+  widened draw rectangle at the frame tail, and the widened horizontal margin every title-owned cull
+  asks. `spyro::guest_widescreen_math` is its pure arithmetic. Native producers anchor through
+  `spyro::ui_anchor` and `spyro::wide_screen_space` / `spyro::wide::drawnHorizontalInside`.
+* **Field tail.** `spyro::FrameTailObserver::onFrameTail` runs BETWEEN the guest's last work and the
+  field being presented — the only point at which a widened GP1 drawing rectangle survives.
+
+### CD / streaming
+
+```text
+guest CD call → native leaf  (game/core/cd_queue.cpp: cd_loader / cd_stream_read / cd_retry_step)
+  └─ spyro::context(core).archiveTransfer   spyro::ArchiveTransfer::read → archive_transfer::decide
+       └─ spyro::context(core).loadLedger   spyro::load_ledger::Ledger (records, never writes)
+  └─ spyro::image_publication::digest       the one SHA-256 digest-and-activate owner
+```
+
+Stock framework `CdRead` landings are published by `spyro::publishStockReadLanding`
+(`game/core/stock_read_publication.*`), which each title runtime declares.
+
+### Audio
+
+```text
+psx::audio::SpuAudio                      the framework SPU owner, per Core
+  ├─ service once per delivered field     spyro::FieldOwner::deliver → spu_audio.frame()
+  ├─ title leaves                         spyro1::native:: (spu_* overrides) bind the retail
+  │                                        key-status, voice-attribute, pitch, register and
+  │                                        transfer-mode routines to this image
+  └─ panel muting                         psx::audio::SpuAudio::setOutputEnabled — only the selected
+                                           picker panel is audible
+```
+
+### The debug / control channel
+
+```text
+psx::debug::DbgServer         per session, attached in spyro::TitleSession::boot
+  ├─ DbgServer::service       once per product step, in spyro::TitleSession::step
+  ├─ DbgServer::honourPause   before the step
+  └─ psx::debug::repl         stepped from tools/drive.py, tools/live_play.py, tools/title_route.py
+```
+
+---
 
 ## Ownership
 
-| Subsystem | Responsibility | Current / target location | Entry point | Deep doc |
-| --- | --- | --- | --- | --- |
-| Player launcher | Frozen Python environment, dependency refusal, provisioning every configured title, authentication, product build and launch of the zero-argument selector | `run.sh`, `bootstrap.py`, `tools/run.py` | `tools/run.py::main` | `docs/migration.md`, `docs/findings/launcher-cmake-compiler-identity.md` |
-| Product host and title selector | The process's top level: probe the catalog for provisioned, authenticated executables, show the selector, run one title session, return to the selector. Confirming hands back the SAME live session whose demo was playing in a panel, so a chosen title continues from the frame the player saw | `game/host/{product_host,picker_session,picker_runtime,picker_content,title_availability,title_session}.*`; `tools/title_switch.py` proves the switch | `spyro::ProductHost::runSelector`, `spyro::ProductHost::runToEnd`, `spyro::TitleSession::step` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| Picker panels (sessions) | Which of the live title sessions runs: one panel per available title, exactly one guest advancing, a session booted the first time it is needed, only the selected one audible, only the confirmed one taking the player's pad. The rotation never stops: a panel with content still gets a slice every turn, because a title's own opening cards leave only by RUNNING and a frozen panel advertises a publisher logo forever. Unready panels and the selected one get the full boot budget; a background panel gets half | `game/host/panel_sessions.*` | `spyro::PanelSessions::advance`, `::nextPanelNeedingWork`, `::panelReady`, `::select`, `::confirm` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| Picker panel geometry | Panel widths and their animation, the panel's four corners, the picture COVER-CROPPED to each panel (a pane is exactly the panel's own shape; the crop drops picture, not panel, so a pane can never reach past its edge into the neighbour), each panel's caption band, and the slant — which leans only the SEAMS between panels, never the window's own left and right edges, so an end panel is a trapezoid that reaches the window edge instead of leaving a black wedge beside it. Pure, and the only part of the picker a hermetic test can decide | `game/host/picker_layout.*`; `tests/test_picker_layout.cpp` | `spyro::PickerLayout::panel`, `::advance`, `::maxPanelWidth`, `spyro::PanelLayout::sourceCrop`, `::averageWidth` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| Picker compositing | The selector's window frame: each session's presented picture as its own quad (the framework's `Pane` is a general two-edge-down quad so an end panel can stand against the window edge), GRAYSCALE on an unselected panel and colour on the selected one, the slanted dividers, the caption backing, and the screen text over them; the framework's `psxport::PaneCompositor` draws what this lays out | `game/host/picker_composite.*`; `external/psxport/runtime/psx/pane_composite.*` | `spyro::PickerComposite::present`, `::captureShot` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| A panel's picture, and WHEN a panel may be drawn | Two separate questions with two separate owners. "Is there a real, coherent picture in the presented image, and where is its extent?" belongs to the framework's present readback (`GpuVkState::retainFilledPresentImage`, `presented_image_has_content`, `measurePresentedContent`), which also HOLDS the newest frame with a picture so a fade or load screen cannot blank a panel. "Is that picture the TITLE's own rather than its publisher card?" belongs to the TITLE: `FrameDriver::pastBootPrefix` answers it from the title's own boot phase, and `TitleSession::showsTitlePicture` asks. No pixel heuristic decides it — a card's sphere spins for minutes and a demo over a wide landscape changes little, so both motion and coverage misjudge | `game/host/title_session.*`; `external/psxport/runtime/psx/{gpu_vk,gpu_vk_screen,game_runtime}.*`; `game/core/boot_prefix_frame_driver.h` | `spyro::TitleSession::showsTitlePicture`, `::hasVisiblePicture`, `psx::GpuVkState::retainFilledPresentImage`, `FrameDriver::pastBootPrefix` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| Multi-session guest execution | Several Lightrec machines in one process (one per live session), the per-Core runtime a frame reads instead of the process's last-installed one, the per-Core render path a boot resolves instead of the process-global CVar's Runtime layer, and the RmlUi library held up for the whole process (one render interface, one shutdown, released by the device owner while the device is alive) rather than shut down by whichever session ends first | `external/psxport/runtime/cpu/lightrec_executor.cpp`, `runtime/psx/{picture_announce,platform_hle,rmlui_overlay,render_path}.*` | `LightrecExecutor::Impl::ensureInitialized`, `render_path_install`, `psx::ui::releaseDeviceResources` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| Session-scoped input and audio | A host that drives input itself keeps the player's pad away from the sessions it is not speaking for; the host audio device is claimed by exactly one session at a time | `external/psxport/runtime/psx/{pad_input,spu_audio}.*` | `Pad::setPlayerInputSuppressed`, `SpuAudio::setOutputEnabled` | `docs/issues/0169-title-selector-and-in-process-title-switching.md` |
-| Title identity | Serial, PS-X EXE header, size, hashes, labels, and environment keys; one runtime SHA-256 owner for executable and WAD bytes | `titles/spyro*/executable.json`, `tools/title_identity.py`, `tools/generate_title_catalog.py`, `game/core/content_identity.*` | title catalog loader; `spyro::sha256` | `docs/project-state.md` |
-| Runtime image provisioning | Extract and authenticate the selected executable without emitting guest bodies | `tools/provision_title.py`; title manifests remain fact authority | `provision_title.provision` | `docs/migration.md` |
-| PSX guest executor | Per-`Core` Lightrec instance, CPU/device synchronization, code cache, bounded exits, and invalidation | `external/psxport/runtime/cpu/`; no title-local executor | `psx::cpu::dispatchGuest` | `docs/migration.md` |
-| Runtime dispatch | Complete image identity, native overrides, scoped original calls, and override-change invalidation | `external/psxport/runtime/cpu/native_dispatch.*` | `dispatchGuest`, `callOriginal` | `docs/migration.md` |
-| Runtime observation | Per-instance delivered-field cap, graceful completion after the product fence, and executor telemetry | `game/core/runtime_run.*`, `game/host/title_session.cpp` | `RuntimeRun`, `reportRuntimeRun` | `docs/project-state.md` |
-| Root guest continuation | Preserve the root return address and committed PC across bounded Lightrec budget yields; propagate other exits | `game/core/guest_execution.*` | `GuestExecution::step` | `docs/migration.md` |
-| Lineage runtime | Address-free executable/capability defaults and title-runtime registry | `game/core/spyro_runtime.*`, `game/core/title_runtime_registry.*` | `SpyroRuntime`, title runtime factory | `AGENTS.md` |
-| Spyro 1 runtime | `SCUS_942.28` image policy and image-scoped verified native leaf overrides; unchanged guest gameplay through Lightrec | `titles/spyro1/core/spyro1_runtime.*`, `game/core/native_{rand,leaf,vec,gte,angle,util}.cpp`; per-subsystem owners `titles/spyro1/core/native_{camera,moby_helpers,player_animation,sound_position}.*` (one module per decomp source file, gated by `tools/native_override_gate.py`; route coverage and corpus-wide differential by `tools/reach_corpus.py`) | `Spyro1Runtime::registerOverrides` | `docs/re-frontier.md`, `docs/issues/0147-native-override-swarm-ledger.md` |
-| Spyro 2 runtime | `SCUS_944.25` image policy, the measured `PlatformHlePlan` of library leaves, the CD ready-callback delivery declaration, and the composition of its native overrides | `titles/spyro2/core/spyro2_runtime.*` | `Spyro2Runtime` | `docs/issues/0092-spyro-2-boot-prefix-stops-before-its-post-displa.md` |
-| Guest moby visibility walk | Native per-frame moby culling (world box, view-space sphere planes), orientation composition, render-list/deferred/close-list building for the moby drawers, with the widescreen plan's horizontal slope; pure frustum arithmetic, GTE vocabulary and rotation composition are separate files. Shared by Spyro 2 (`FUN_80043858`) and Spyro 3 (`FUN_80030478`), whose walks are 811 instructions each and decompile identically apart from addresses | `game/render/guest_moby_visibility.*`, `guest_moby_frustum.h`, `guest_moby_rotation.*`, `guest_moby_gte.h`; per-image facts `titles/spyro{2,3}/render/spyro{2,3}_render_facts.h` | `spyro::guest_moby::walk`, `spyro::guest_moby::Facts` | `docs/re-frontier.md` `spyro2.moby-visibility` |
-| Guest render globals | The guest globals the moby walk and the terrain drawer share: their common register save area and spill, scratch block, primitive cursor, ordering table and its mark, camera, visibility groups. One value set per image | `game/render/guest_render_globals.h`; values in `titles/spyro{2,3}/render/spyro{2,3}_render_facts.h` | `spyro::guest_render_globals::Globals` | `docs/re-frontier.md` |
-| Spyro 2 HUD anchor | Native entry overrides of the HUD counter drawer `FUN_8005251C` and the 2D emitter `FUN_800520CC` (meter calls only) that apply `spyro::ui_anchor::correction` per element class to the emitted screen X at 16:9; identity at 4:3 | `titles/spyro2/render/spyro2_hud_anchor.*` | `spyro2::hud_anchor` | `docs/re-frontier.md` `spyro2.hud-anchor` |
-| In-between strategy | The ONE seam an in-between field is rebuilt through, and its two named implementations: the host world pass (rebuild the guest's own scene natively out of its own object memory) and the guest-geometry source (record and replay guest packets). A title owns the seam by installing a strategy and declaring the render path that admits it | `external/psxport/runtime/psx/in_between_strategy.h`, `host_world_pass_strategy.*`, `guest_geometry_scene_source.h` | `psx::InBetweenStrategy`, `psx::HostWorldPassStrategy`, `psx::makeHostWorldPassStrategy` | `docs/project-state.md` |
-| Real-field terrain record | The guest packet addresses one terrain PASS linked and the arena range it allocated them into, one record per arena, replaced when a pass rewrites that arena. This is the terrain's identity in a captured queue and what a temporal strategy's `owns` matches on | `game/core/spyro_context.h` (`SpyroContext::TerrainPacketArena`) | `SpyroContext::beginTerrainArena` | `docs/project-state.md` |
-| Terrain packet sink | Where an in-between field's reconstructed terrain goes. Retail's flatten order for the drawer's 512-bin ordering table, taken from the guest's own routine, and every bound it enforces as a refusal by name | `game/render/terrain_packet_sink.*` | `spyro::terrain_packet_sink::submit`, `forEachPacket`, `Bound` | `docs/re-frontier.md` `spyro2.terrain-drawer` |
-| Terrain world pass | The Spyro 2/3 host world pass: what an in-between field captures (camera, visibility, packet ownership, and the draw area the guest's own packets were clipped to) at the presentation of a REAL SCENE FRAME — keyed on the guest's own `sceneProducerTicks`, not on the display field — and the drawer run over host memory that rebuilds it. It owns the in-between's six disjoint host windows (scratchpad, scratch block, flag window, ordering-table slots, fogged colours, and a packet arena of its own above all of them, `packetArenaWindow`), the guest-shaped addresses they must have, and the GTE snapshot that hands the coprocessor back | `game/render/terrain_world_pass.*` | `spyro::TerrainWorldPass`, `spyro::makeTerrainWorldPass`, `spyro::packetArenaWindow` | `docs/project-state.md` S028/S029, `docs/re-frontier.md` `guest.camera-builder` |
-| Guest camera builder | The guest's own camera builder: three 16-bit angles and the image's two trig tables in, the two five-word matrices the drawer and the classification pass read out — the projection one with its second row scaled by 5/8, and the view one without. Owned here because an in-between interpolates the ANGLES and re-runs this, rather than interpolating the packed control words the builder writes; a real field never comes here | `game/render/guest_camera_builder.*` | `spyro::guest_camera::Builder` (over `Core`, tables read never written), `interpolate` (shortest way round a 4096-step turn) | `tests/test_guest_camera_builder.cpp`, `docs/re-frontier.md` `guest.camera-builder` |
-| Guest terrain drawer | Native terrain drawer, one file per pass in retail order (`guest_terrain_passes.h`): classify, detail, translucent, coarse split, fine split, GPU-size re-split, far; the state they thread (`_frame.h`, with the frame's `FrameMode` and its `Linked`/`markKey` report), the five ranges the passes OWN for one field and where they read and write them (`_memory.*`, unit-tested: guest RAM for the real field, guest-shaped host memory for an in-between, where an unmapped write is refused and an in-between's packet arena may be a window the caller gives it (`primitiveBase`), with the classification rotation read from the frame's own camera rather than the guest's second matrix (`classificationRotationWord`)), the widescreen screen window (`_screen.h`, unit-tested), near-sector projection (`_mesh.*`), polygon records and GP0 packets (`_polygon.h`), the subdivision grid and cracks (`_split.*`), distance fog (`_fog.*`). Shared by Spyro 2 (`FUN_80023BB4`) and Spyro 3 (`FUN_80022378`), whose drawers are 5,487 instructions each and decompile identically apart from one line | `game/render/guest_terrain_*`; per-image facts `titles/spyro{2,3}/render/spyro{2,3}_render_facts.h` | `spyro::guest_terrain::Drawer`, `spyro::guest_terrain::draw`, `spyro::guest_terrain::Facts`, `spyro::guest_terrain::GuestMemory`, `spyro::guest_terrain::HostMemory`, `spyro::guest_terrain::ScreenBounds` | `docs/re-frontier.md` `spyro2.terrain-drawer` |
-| Field delivery (shared) | The one delivery sequence every title's display field goes through: REPL, pad, display clock, guest vblank root, title field counter, observer, snapshot, one presentation fence (through the title's temporal product when the field captured geometry, so the 60 fps in-between is presented from the frame it was built from), audio, HLE events, host turn | `game/core/field_owner.*`, `game/core/vblank_irq.h`; composed by each title's frame driver and published by an explicit `publish()` | `spyro::FieldOwner`, `spyro::FieldOwnerFacts`, `deliverNativeField` | `docs/re-frontier.md` `guest.temporal-fence` |
-| Boot-prefix frame driver (Spyro 2 and 3) | One product step: a finite guest call through the retail boot prefix, one delivered field per guest display wait, one presented field per step, the retail update/draw pair once the prefix returns, and two separate boot bounds — fields delivered in one call, and steps spent without returning — because a boot that polls never reaches the field bound | `game/core/boot_prefix_frame_driver.*` | `spyro::BootPrefixFrameDriver`, `spyro::BootPrefixFacts` | `docs/issues/0092-spyro-2-boot-prefix-stops-before-its-post-displa.md` |
-| Boot-prefix facts | Each title's measured boot prefix, update/draw pair, field-owner facts and any bound of its own, with the instruction bytes that give each address | `titles/spyro2/core/spyro2_boot_facts.h`, `titles/spyro3/core/spyro3_boot_facts.h` | `spyro2::kBootPrefixFacts`, `spyro3::kBootPrefixFacts` | `docs/issues/0153-spyro-3-boot-prefix-runs-the-retail-boot-through-light.md` |
-| Finite guest call | One guest call that legitimately outlives a host turn: the return address captured before the first dispatch and reused on every resume, a frame-boundary exit that leaves the call active, and a refusal when `$r[31]` would land inside guest RAM. Lineage-shared, because none of it is a title fact | `game/core/spyro_guest_call.*` | `spyro::GuestCall` | `docs/issues/0092-spyro-2-boot-prefix-stops-before-its-post-displa.md` |
-| Spyro 3 HUD anchor | Native overrides of the two widget drawers `FUN_80029904`/`FUN_80029BB0` and their shared icon and value emitters `FUN_800289C8`/`FUN_800291B8`, applying `spyro::ui_anchor::correction` per widget class to the emitted screen X at 16:9; identity at 4:3. Classification is by WIDGET ELEMENT (collectable `0x80067248` left, lives `0x8006729C` centred, egg `0x800672F0` right) because both counters share one drawer and one pair of emitter call sites | `titles/spyro3/render/spyro3_hud_anchor.*`; shared draw context `game/render/hud_draw_context.h` | `spyro3::hud_anchor` | `docs/re-frontier.md` `spyro3.hud-anchor` |
-| Spyro 3 runtime | `SCUS_944.67` identity, the measured `PlatformHlePlan` of library leaves, the CD ready-callback delivery declaration, and the composition of its own native overrides (the `SetGeomOffset` projection leaf and the two shared render routines); `setGeomScreen` left undeclared with the measured reason | `titles/spyro3/core/spyro3_runtime.*`, `titles/spyro3/core/spyro3_widescreen_facts.h` | `Spyro3Runtime` | `docs/issues/0153-spyro-3-boot-prefix-runs-the-retail-boot-through-light.md` |
-| Guest widescreen owner | The one widening decision for a guest-projection title: the resolved plan, the widened horizontal centre re-asserted per field, the widened draw rectangle at the frame tail, and the widened horizontal margin every title-owned cull asks. Per-title leaves, authored window and inline publication sites are facts | `game/core/guest_widescreen_owner.*`, `guest_widescreen_math.h`; facts `titles/spyro{2,3}/core/spyro{2,3}_widescreen_facts.h` | `spyro::GuestWidescreenOwner`, `spyro::GuestWidescreenFacts`; published per Core through `spyro_context(core).projectionHook` and read with the nullable `of()` (no owner means not widening) or the strict `require()` (the bound projection leaves) | `docs/re-frontier.md` `spyro2.widescreen` |
-| Frame lifecycle | Finite native boot and JIT update steps; field delivery owns simulated display time, callbacks and cadence; presentation waits for already-delivered fields | `titles/spyro1/core/spyro1_{boot_sequence,field_scheduler,frame_driver,runtime}.*` | `Spyro1FrameDriver`, `FieldScheduler::deliver`, `Spyro1Runtime::pacePresentation` | `docs/re-frontier.md` |
-| Stage-update return observation | Startup-configured, read-only Spyro 1 camera and player samples after the outer guest update returns, paired with screen-queue GTE offset boundaries | `titles/spyro1/core/stage_update_observer.*`; `game/render/render.h` defines the queue observer seam; composed by `spyro1_frame_driver.*` | `StageUpdateObserver::afterReturn`, `SpriteQueueOffsetObserver` | `docs/issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md` |
-| Spyro 1 handoff store observation | Opt-in read-only pre/post RAM and tick snapshots at the reached New Game handoff SW PCs, the resident PadVSync level-tick store and an unreachable control, classified into transition / bracket / neighborhood / routine and tagged with the delivering field's site | `titles/spyro1/core/handoff_store_observer.*`; composed by `spyro1_frame_driver.*` over the psxport per-Core Lightrec observer; `FieldScheduler::activeDeliverySite` supplies the site | `HandoffStoreObserver::arm`, `finish`, `report` | `docs/issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md` |
-| Transition skipping | Cancel a presentation-only transition screen on Start/Cross by taking its guest owner's own terminal transition; boot logos own theirs separately | `titles/spyro1/core/spyro1_transition_skip.*`, `spyro1_boot_sequence.*`, `spyro1_press_latch.h` (a boot fade/loader press held to the next hold) | `spyro1::classify`, `TransitionSkip::observe`, `BootSequence::leaveFirstPresentationHold` | `docs/findings/start-skip-map.md`, `docs/issues/0151-every-presentation-its-retail-button-and-the-route-that-ends-it.md` |
-| Resumable world execution | Execute unchanged retail world work through Lightrec and return bounded host-service exits | `game/core/world_guest_execution.*` | `WorldGuestExecution::resume` | `docs/migration.md` |
-| Disc/archive service | Title loader ABI/state publication, bounded atomic WAD transfer, byte-content image identity and per-Core completion; framework memory writes own executable invalidation; `image_publication` is the one SHA-256 digest-and-activate owner, and Spyro 2/3 publish every framework stock `CdRead` landing through `stock_read_publication` | `game/core/cd_queue.cpp`, `game/core/archive_transfer.*`, `game/core/image_publication.*`, `game/core/stock_read_publication.*`; composed by `SpyroContext` | `spyro_register_cd_queue`, `ArchiveTransfer::read` | `docs/issues/0091-native-cd-stream-can-acknowledge-a-short-archive.md` |
-| Load operation ledger | One diagnostic record per CD read the disc/archive service performed — issuer site, range, destination, payload identity, load stage, XA bit, and the fields it cost — and the coverage denominator against the 31 census sites; reads and logs, never writes guest state | `game/core/load_ledger.{h,cpp}`; one `Ledger` member of `SpyroContext`, fed by `cd_queue.cpp` and reported by `runtime_run.cpp` | `Ledger::begin`, `completePending`, `report`, `logSummary`; the digest arrives through `ArchiveTransfer::read`'s `PayloadObserver` rather than a second hash | `docs/issues/0155-spyro1-loading-census.md` ("M3 measured"), instrument I058 |
-| Input and memory card | Field pad delivery and title pad-buffer layout; guest card logic uses framework services | `titles/spyro1/core/spyro1_field_scheduler.*`, `spyro1_runtime.*`; framework pad/card owners | `FieldScheduler::deliver`, `guestPadBufferLayout` | `docs/project-state.md` |
-| Pad-replay input phase | Which screen is taking input this pad frame, as the key every recorded `.pad` frame is stored against | `titles/spyro1/core/spyro1_input_phase.*`, declared by `Spyro1Runtime::inputPhase` | `spyro1::InputPhase::of` packs `g_Gamestate` with `g_LevelId` from `game/core/guest_globals.h`; the framework matcher (`external/psxport/runtime/psx/pad_phase_replay.*`) compares keys and never learns what one means | `docs/issues/0116-the-only-gameplay-replay-never-leaves-the-save-file-dialog.md` |
-| Pad replay runs | Replaying a recorded `.pad` headless with no input driver, on a private card in the state the capture was made against | `tools/pad_replay.py`, over `tools/drive.py`'s `Port` and `environment` | The tool supplies the card and the replay knob; the digest refusal is the PRODUCT's (`Memcard::identity`), and the tool never re-checks it | `docs/issues/0116-the-only-gameplay-replay-never-leaves-the-save-file-dialog.md` |
-| Audio | Per-field service of the framework SPU owner | `titles/spyro1/core/spyro1_field_scheduler.*` | `FieldScheduler::deliver` | `docs/project-state.md` |
-| Render orchestration | Scene classification, native layer composition, explicit reference entry, and presentation fence | `game/render/scene.cpp`, `render_frame.cpp`, `render.h` | `SpyroRenderer::drawFrame` | `docs/re-frontier.md` |
-| Presentation ownership | Per-instance choice between guest VRAM and native scene presentation | `game/render/presentation_owner.*`; draw/display environment lifecycle in `frame_env.*` | `spyro_presentation_owner`, `nativeFrameBegin`, `nativeFrameEnd` | `docs/project-state.md` |
-| Stage-13 title/save scenes | Front-end state decode, menu sprites, screen actor queue, and backdrop composition | `game/render/title_menu_*`, `stage13_scene_recipe.*`, `fx_title_menu.cpp`, `fx_sprite_queue.{h,cpp}` | `SpyroRenderer::titleMenuRender`, `stage13Mode3Render`, `spyro::render::emitScreenQueue` | `docs/re-frontier.md` |
-| Stage-14 cutscene | Actor/world/cyclorama/fade composition and cutscene-local presentation policy | `game/render/cutscene_scene_recipe.*`, `render_frame.cpp` plus producer peers | `SpyroRenderer::prepareScene`, `renderScene` | `docs/re-frontier.md` |
-| FIELD scene | Ordered collectable, actor, shadow, environment, cyclorama, particle, fade, border, and tracer composition | `game/render/field_scene_recipe.*`, `field_moby_lists.*`, `fx_field_*`, `render_frame.cpp` | `SpyroRenderer::renderScene` | `docs/re-frontier.md` |
-| World geometry | Owned unprojected sector occurrences, camera/projection/material capture and authored resource spans; admitted draw state; one endpoint and sampled raw-view classification/projection path; LQ/HQ/refinement recipes, animation and queue submission | `game/render/world_source.*`, `world_scene_builder.*`, other `world_*`, `fx_world_draw.*`, `fx_field_environment.*` | `world_scene::capture`, `world_scene::build(const Source&)`, `world_scene::sample`, `spyro_world_submit`, `spyro_field_environment_submit` | `docs/findings/world-semantic-oracle.md` |
-| Actor geometry | Model decode, transform/projection, acceptance, shadow-state publication, and regular/secondary/shaded submission | `game/render/actor_*`, `secondary_actor_*`, `field_shaded_queue_*`, `fx_actor_draw.*`, `fx_field_actor_composition.*` | `spyro_actor_submit`, `spyro_field_actor_composition_submit` | `docs/re-frontier.md` |
-| Every owned horizontal limit overridden | The audit of every horizontal cull and screen-rect limit the title owns, each widened through the ONE plane rule, with gameplay-read state left native. Owns the drawn right edge accessor every renderer reads | `game/core/wide_clip_plan.h` (the rule), `game/render/wide_screen_space.h` (`drawClipRight`, the one edge); overrides in `world_scene_prepare.cpp`, `actor_scene_builder.*`, `secondary_actor_scene.cpp`, `field_shaded_queue_scene.cpp`, `cyclorama_mask_recipe.cpp`, `cyclorama_portal_mesh_recipe.cpp`, `world_scene_builder.cpp`, `terrain_scene.cpp`, `glow_recipe.cpp`, `field_particle_endpoint.h` | `spyro::wide::drawnHorizontalInside`, `wide_screen_space::drawClipRight` | `docs/issues/0154-widescreen-must-override-every-owned-horizontal-limit.md` |
-| HUD draw context | The widget element whose screen-space draw is in progress, published by a HUD widget drawer override and read by the emitters that drawer calls, for titles whose widgets share emitter call sites and cannot be told apart by return address; plus the value-emitter scope, because a value emitter draws its glyphs by calling the icon emitter and must not have them anchored twice | `game/render/hud_draw_context.h` | `spyro::hud_draw_context::Draw` | `docs/re-frontier.md` `spyro3.hud-anchor` |
-| Widescreen UI anchoring | The ONE horizontal anchor rule for screen-space UI: left-edge, centred and right-edge classes, the drawn shift per class, and the census report of the number drawn; plus the guest HUD block's layout and the class of each part. Draw-side only, identity at 4:3 | `game/render/ui_anchor.*` (rule), `game/render/hud_layout.h` (HUD block, classes); consumed by `fx_field_collectables.cpp`, `field_shaded_queue_submitter.cpp`, `pause_menu_scene.cpp`, `fx_title_menu.cpp` | `spyro::ui_anchor::{place, offset, correction, placeAndReport, correctionAndReport}`, `spyro::hud_layout::mobyPart`; the frame comes from `GuestWidescreenOwner::uiFrame()` so two titles cannot answer "how wide is this HUD" two ways | S030, `tools/hud_anchor_census.py` |
-| Per-class drawn-reach census | Counts OBJECTS drawn past the guest's 512-column window per producer class, with the span actually rasterised and the 4:3 run as control. Answers what a pixel census cannot: a widening that moves existing geometry is invisible to pixels | `game/render/margin_object_census.*` (the `SpanBucket`/`Recorder` and the report), held on `SpyroContext` as `marginCensus`; fed at `world_lq_recipe.cpp`, `world_hq_refinement.cpp`, `actor_face_submitter.cpp`, `fx_field_particles.cpp`, `glow_submitter.cpp`, `field_shadow_submitter.cpp`; written by `game/core/main.cpp`; read by `tools/margin_coverage.py --class-census` | `spyro::margin_object_census::Recorder`, `PSXPORT_MARGIN_CENSUS` | `docs/issues/0154-widescreen-must-override-every-owned-horizontal-limit.md` |
-| Paired player geometry | Layer pose decoding, transform construction, primitive/material resolution, and compatible temporal replay | `game/render/paired_actor_pose.*`, `paired_actor_depth.*`, `paired_actor_decode.*`, `fx_paired_actor.*`, `paired_actor_temporal_evidence.*` | `spyro_paired_actor_submit`, `spyro_paired_actor_rebuild_endpoint` | `docs/re-frontier.md` |
-| Temporal scene integration | Per-game source admission scratch, dynamic producer participation, camera/frame provenance, world resource residency history and shared-presenter reconstruction/rotation | `game/render/temporal_scene.*`, `world_temporal.*`, `actor_temporal.*`, `secondary_actor_temporal.*`, `field_shaded_queue_temporal.*`, `scene_camera_inputs.h` | `spyro_temporal_scene_begin`, `spyro_temporal_scene_prepare`, `spyro_temporal_scene_source`, `world_temporal::History`, `actor_temporal::History`, `secondary_actor_temporal::History`, `field_shaded_queue_temporal::History` | `docs/project-state.md` |
-| Temporal endpoint lifecycle | The two-endpoint state machine every temporal source shares: one payload retained per logic frame, rotation at present time, and the consecutive-frame/one-scene admission rule. Knows nothing about what a payload is | `game/render/temporal_pair.h` | `spyro::temporal::Pair` | `docs/codemap.md` |
-| Instance pairing | Matching one frame's draw records to the frame before them by guest instance in occurrence order, and the census that splits a rejection by the layer's own reason. Knows nothing about what a record contains: the identity rule and the sampler are arguments | `game/render/instance_pairing.h` | `instance_pairing::walk`, `instance_pairing::Census`, `instance_pairing::ReasonedCensus` | `docs/codemap.md` |
-| Interpolation census | Which draw category a presented frame's items belong to, how many of each an in-between present rebuilt from two captured states, how many it drew at their own endpoint, and the reason; the per-layer record census beside it with its own denominator; and the product REPL read of both. Presentation-only accounting — it never writes guest state. The producer-key table is asserted by name in its test, because an unknown key falls through to the world bucket rather than failing, and a mistyped one misfiles a whole category silently | `game/render/interp_census.*` | `spyro::interp_census::categoryOf`, `Census::beginLogicFrame`, `Census::reconstruct`, `Census::recordLayer`, `Census::report`, `interp_census::replCommand` | `docs/project-state.md` (S020), `docs/issues/0157` |
-| Actor pairing and sampling | The compressed-model layers' identity rule and pose sampler over the shared pairing: the measured fields that decide whether two poses may be blended, and the prefix sample between them | `game/render/actor_pairing.*` | `actor_pairing::sample`, `actor_pairing::mismatch`, `actor_pairing::Census` | `docs/codemap.md` |
-| Actor stage vocabulary | The named stages an actor corpus passes through on its way to the queue, shared by the submission planner, both emit owners and both temporal sources so one refusal reads the same everywhere | `game/render/actor_stage.*` | `actor_stage::Emit`, `actor_stage::Temporal`, `actor_stage::name` | `docs/codemap.md` |
-| Actor queue submission | The route from a ready actor face corpus to the queue, shared by the regular and secondary layers: submission preflight, the draw-destination check, and publication at the layer's own painter band | `game/render/actor_submission.*` | `actor_submission::prepare`, `actor_submission::publish` | `docs/codemap.md` |
-| Actor queue emission | Composing one regular-actor record corpus into faces, then preflighting and publishing it through the shared submission route | `game/render/actor_emit.*` | `actor_emit::prepare`, `actor_emit::publish` | `docs/codemap.md` |
-| Shaded queue emission | The world-shaded sprite queue's derive/preflight/publish owner, shared by the field composition and the layer's temporal reconstruction. Guest-state commit stays with the composition that owns the shared shadow-list transaction | `game/render/field_shaded_queue_emit.*` | `field_shaded_queue_emit::prepare`, `field_shaded_queue_emit::publish` | `docs/codemap.md` |
-| Shaded queue temporal source | The shaded layer's endpoint pair, its identity rule over mesh/vertex/topology/clip mode, and the per-record predecessors the recipe projects the interval against | `game/render/field_shaded_queue_temporal.*` | `field_shaded_queue_temporal::pair`, `field_shaded_queue_temporal::History` | `docs/project-state.md` |
-| Draw destination | Whether the GPU's inclusive clipped drawing area can hold anything at all, asked once for every producer that would otherwise publish faces retail's GPU would never have drawn | `game/render/draw_area.h` | `spyro::draw_area::ready` | `docs/codemap.md` |
-| Secondary actor emission | The secondary layer's compose/preflight/publish owner: widescreen re-centring, the per-face lighting snapshot, the recipe, and the shared submission route. Guest-state commit stays with the field composition that owns the shared shadow-list transaction | `game/render/secondary_actor_emit.*` | `secondary_actor_emit::recenter`, `secondary_actor_emit::prepare`, `secondary_actor_emit::publish` | `docs/codemap.md` |
-| Projection sampling | One projection over an authored transform, or between two endpoints of it, sampled in view space through the framework's matching-source sampler | `game/render/projection_stream.*` | `spyro::ProjectionStream` | `docs/project-state.md` |
-| Cyclorama/portals | Source sky geometry, aperture projection, near/mid mesh, masks, and queue submission | `cyclorama_*`, `fx_field_cyclorama.*`; the terrain producer it draws through is the four owners below | `spyro_field_cyclorama_submit` | `docs/re-frontier.md` |
-| Terrain corpus capture | The terrain producer's guest reads: the object list the selector resolves, each visible object's decoded model vertices, its face table and colour words. Carries the two conditions retail only checks after a clip test rather than refusing on objects it never looked at | `game/render/terrain_scene.*` | `terrain_scene::capture`, `terrain_scene::matrixWords` | `docs/codemap.md` |
-| Terrain projection | The pure derivation of the terrain producer's faces from that corpus: visibility, the view transform or the interval between two game updates, clip rejection, the primitive-pool budget, and the flat/gouraud colour rule | `game/render/terrain_recipe.*` | `terrain_recipe::derive`, `terrain_recipe::visible` | `docs/project-state.md` |
-| Terrain submission | The terrain producer's queue plan and publication: capacity, the consecutive order-key span the renderer's bias has to distinguish, the widescreen draw edge, and the projection plane the stored depth is normalised against | `game/render/terrain_submitter.*` | `terrain_submitter::prepare`, `terrain_submitter::submit` | `docs/codemap.md` |
-| Terrain temporal source | The terrain layer's endpoint pair, its identity rule over the mesh the interval indexes, and the per-object predecessors the recipe samples the interval against. The layer's motion reaches the picture through both the view rotation and each object's own vertices, and the interval samples both | `game/render/terrain_temporal.*` | `terrain_temporal::pair`, `terrain_temporal::History` | `docs/project-state.md` |
-| Terrain emission | The terrain producer's derive/preflight/publish owner, shared by the guest entry points and by any reconstruction of an in-between present | `game/render/terrain_emit.*`, entry points in `game/render/native_terrain.cpp` | `terrain_emit::prepare`, `terrain_emit::publish`, `spyro_terrain_submit` | `docs/codemap.md` |
-| Per-face actor colour | The two colour programs `func_80020F34` (the SECONDARY layer only; the regular layer `0x8001F798` has none and `actor_draw_recipe::compose` keeps its material colours) selects with prefix bit 2: the ported directional term over a triangle's view-space normal, and the named refusals for the additive arm and the quad billboard | `game/render/face_light_program.*` computes it purely; `face_light_environment.*` snapshots the guest light colour and magnitude table per composition; applied in `actor_draw_recipe.cpp` by `composeWithFaceLight` | `face_light::face_color`, `face_light::EnvironmentSource` | `docs/issues/0113-attract-demo-aborts-secondary-shaded-producers-r.md` |
-| Guest magnitude lookup | One normalise/`D_80074B84` tail shared by libgte's vector length and integer square root, the tracer producer, and the per-face colour program | `game/core/guest_magnitude.*`; consumed by `native_gte.cpp`, `fx_field_tracers.cpp`, `face_light_program.cpp` | `guest_magnitude::normalize`, `scaled`, `lzcr` | `docs/re-frontier.md` |
-| Shaded Moby per-vertex and variant-1 lighting, and the screen-space Moby view | The GTE program of `func_80022A2C`'s lit arms (rotate, scale, CC against the light matrix, highlight), tested against the vendored Beetle GTE; and the screen-space path selected by render-radius bit 7 (own projection centre, TRZ = z>>1, diag(0x1000,0xA00,0x1000) view) that every HUD Moby and glyph takes | `game/render/shaded_moby_light.*` (lighting), `actor_transform_math.*` (`screenSpaceAffine`, `screenSpaceCentre`), `field_shaded_queue_scene.cpp` (record build), `field_shaded_queue_recipe.cpp` (projection override, per-variant face cull) | `shaded_light::faceColour`, `vertexColours`; `actor_transform_math::isScreenSpace` | `docs/project-state.md` S030 |
-| HUD text glyphs and the demo caption | The guest's two HUD text builders (`0x80017FE4` fixed pitch, `0x800181AC` proportional) laid out purely and appended to the HUD Moby arena, the glyph wobble every caller shares, the shaded-Moby queue append, and the attract demo's "DEMO MODE" caption (`0x80018908`, called at `0x8001F000` when `g_DemoMode` is set) | `game/render/hud_text_builder.*` (layout, `append`, `wobble`, `enqueueShaded`); `game/render/demo_text_scene.*` (the caption); callers `fx_field_collectables.cpp`, `level_transition_tally_recipe.cpp`, `pause_menu_scene.cpp` | `hud_text::layoutCaption`, `hud_text::wobble`, `hud_text::enqueueShaded`, `demo_text_scene::submit` | `docs/issues/0163-the-attract-demo-s-demo-mode-text-had-no-native-producer.md` |
-| Actor OT coalescing | Local bucket spans to shared world bins, including empty buckets and the near clamp; regular record keys and paired source depth | `game/render/actor_ot_coalescer.*`, `actor_global_order.*`, `paired_actor_depth.*`; paired submission in `fx_paired_actor.cpp` | `actor_ot_coalescer::map`, `actor_global_order::build`, `paired_actor_depth::derive` | `docs/findings/paired-actor-world-order.md` |
-| Painter ordering | Title draw-order keys and queue admission shared by native producers | `game/render/scene_painter_order.*`, `painter_submission_preflight.*`; framework `RenderQueue` owns admission policy | `scene_painter_order`, `painter_submission::preflight` | `docs/re-frontier.md` |
-| Historical render evidence | Durable claims, issues, instrument records, and independent semantic record comparison; shared retail packet decoder covering both polygon families | `docs/info/`, `docs/issues/`, `game/render/world_scene_oracle.*`, `actor_scene_oracle.*`, `world_scene_capture.*`, `gpu_packet_decode.*` | `tools/info.py brief`, `world_scene_oracle::compare`, `actor_scene_oracle::compare` | `docs/info/instruments/`, `docs/findings/actor-scene-oracle.md` |
-| Run-to-run determinism | Two runs of one binary on the same inputs must be one run: the framework's `fielddigest` channel prints a per-field RAM/tick/IRQ/pad digest, this tool compares two identical legs, refuses a perturbed leg its guest RAM does not show, and names the first divergent field; every Spyro 2/3 route launch starts without a memory card | `tools/determinism_check.py`, `tools/drive.py::ROUTE_CARD` (used by `title_route.open_port`), psxport `runtime/psx/field_digest.*` and `launch_environment.py::agent_environment(card=)` | `uv run --frozen python tools/determinism_check.py --title spyro2`, `--selftest` | `docs/issues/0169-spyro-2-and-3-routes-differed-run-to-run-because-every-run-shared-one-memory-card.md` |
-| Spyro 2/3 title play | The per-title facts a driver needs (disc, image, game-state word and its three route values, player position triple, walk direction, conversation state, level-name words), each cited from instruction bytes; and the observation-driven route from the title into gameplay that proves the player moved and jumped | `tools/title_profile.py` (facts, one home; `tools/boot_run.py` reads its identity), `tools/title_route.py` (route, movement proof, level identity, scripted-port selftest whose cases are refusals), `tools/title_conversation.py` (walk into a conversation and count glyph pixels per capture), `tools/drive.py::Port(gamestate_address=...)` | `uv run --frozen python tools/title_route.py --title spyro3 --shot-dir scratch/play/spyro3`, `--selftest` | `docs/issues/0167-spyro-2-and-3-reach-gameplay-from-the-title-and-the-player-moves.md` |
-| Scene route corpus | The states the corpus must reach and what proves each: a flight level, a boss, a death and respawn, and the in-game save. Each scene walks the product by pad edges chosen from the guest's own words, asserts on the words the guest itself wrote, and refuses by name when it did not arrive; the REPL stepper that presses is shared with the fixed routes | `tools/route_scenes.py` (the scenes, the guest addresses with the instruction each was derived from, and the selftest whose cases are all refusals), `tools/repl_walk.py` (press / run / release over a REPL), `tools/drive.py --scene --scene-proof` (which gives the run its own memory card, `SCENE_CARD`, because the fairy's scene writes one and a shared card carries that write into the next run's boot); the corpus judges them in `tools/reach_corpus.py` | `uv run --frozen python tools/route_scenes.py --selftest`, `uv run --frozen python tools/reach_corpus.py` | `docs/issues/0147-native-override-swarm-ledger.md`, `docs/issues/0170-two-of-the-four-scene-routes-reach-their-scene-and-two-cannot.md` (which scenes reach theirs, with the words, and where the two portal routes stall) |
-| Independent behavior comparison | Drive the Lightrec product and the Beetle full-console reference to title-declared state checkpoints with identical pad delivery and compare declared main-RAM ranges | `tools/oracle_compare.py` (launch, report, `--policy`), `tools/oracle_spyro1.py` (predicates, declared/excluded state, input policy), `tools/oracle_spyro1_demo.py` (the no-input attract route: the field-granular advance, the in-playback `g_GameTick` barrier, and the demo's own ranges), `external/psxport/tools/oracle/compare.py` (shared driver) | `uv run --frozen python tools/oracle_compare.py --frame-step 1 [--selftest] [--policy demo]` | `external/psxport/docs/oracle.md`, `docs/issues/0110-artisans-camera-checkpoints-are-not-yet-phase-aligned.md`, `docs/issues/0133-the-attract-demo-s-recorded-input-diverges-from.md` |
-| Phase localisation | Per-game-frame census of guest state on BOTH cores, with the fields each game frame cost, so a divergence is located rather than inferred | `tools/phase_trace.py` | `uv run --frozen python tools/phase_trace.py --frames 1700 [--follow playing]` | `docs/issues/0132-the-product-spends-two-fields-per-attract-flyby-iteration.md` |
-| Divergence localisation | Per-iteration lockstep diff of a named guest watch set, and of ALL of main RAM over a tick window, recording for each word the FIRST iteration at which it differs; the movement words side by side per tick | `tools/probe_tick_divergence.py` | `uv run --frozen python tools/probe_tick_divergence.py --ticks 580 [--ram-diff 555:556] [--trace 552:558] [--watch-store LO:HI] [--observe PC:addr:bytes --observe-at TICK] [--selftest]` | `docs/issues/0133-the-attract-demo-s-recorded-input-diverges-from.md` |
-| Live play verification | Play the RUNNING product over the framework's loopback debug endpoint: real pad edges across presented frames, guest state sampled live, screenshots of what is on screen | `tools/live_play.py` (the play-through), `tools/title_prompts.py` (which button a screen asks for, shared with the REPL driver), `tools/title_states.py` (the gamestate/overlay vocabulary), `external/psxport/tools/dbgclient.py` (`LiveClient`, the endpoint's one client); the endpoint itself is framework `runtime/psx/dbg_server.*` | `uv run --frozen python tools/live_play.py` | `docs/project-state.md`, `AGENTS.md` |
-| Screen-space overlay extent | How many columns of a submitted 2D quad actually reach the PICTURE, over a strip of consecutive presents, with the presented count as the denominator; the strip itself comes from the driver's `--preseq` | `tools/overlay_extent.py`, `tools/drive.py::Port.preseq` | `uv run --frozen python tools/overlay_extent.py scratch/screenshots/preseq/p*.ppm --expect-width 232` | `docs/issues/0144-the-defect-frame-blue-rectangle-is-the-pause-menu-panel-clipped.md` |
-| Nested guest calls from an override | The `$ra` a nested guest call runs with: the address the guest's own `jal` at that call site leaves, because `dispatchGuest` runs the callee with `core.r[31]` and a callee may keep that register — in `r[31]`, on its own stack frame, or in a global that outlives the call | `game/core/native_execution.h::callGuestJumpedFrom`, gated by `tools/override_call_sites.py`, which re-derives every call site's `jal` and its callee from the provisioned executable | `uv run --frozen python tools/override_call_sites.py [--selftest]` | `docs/issues/0150-two-overrides-differ-from-retail-on-the-attract-route.md` |
-| Route behaviour equivalence | Whether two builds of the product behave the same on ONE route: the per-delivered-field trace (index, delivery site, the title's own 60 Hz counter) and the per-field guest-state changes, read from the channels the product already prints, plus a word-by-word guest-RAM comparison of two `PSXPORT_GRAMDUMP` captures. It exists because the route corpus's mismatch COUNT cannot answer that question: the count is a function of how far into the game a run got before its clock expired | `tools/route_trace.py` (compare / extract / ramdiff), armed through `tools/demo_run.py --debug pace,skipmap` | `uv run --frozen python tools/route_trace.py compare A.log B.log` | `docs/issues/0149-shared-field-owner-measured-against-spyro-1-s-own.md` |
-| Transition-skip evidence | Which presentations exist and what retail accepts on each; a condition-driven pad edge for any gamestate on EITHER side of arrival; and whether a skipped run reached the same guest hand-off state as an unskipped one | `tools/press_conditions.py` (both press phases, with the post-arrival refusals), `tools/ram_compare.py` (the named hand-off field list), driven by `tools/drive.py` (`--skip-transitions`, `--skip-button`, `--press-while`, `--press-after`, `--dumpram`); the inventory itself is `docs/issues/0151` | `press_conditions.parse` / `parse_post`, `ram_compare.compare`, `title_prompts.load_route_prompt` | `uv run --frozen python tools/press_conditions.py --selftest`, `uv run --frozen python tools/ram_compare.py A.bin B.bin` | `docs/issues/0151-every-presentation-its-retail-button-and-the-route-that-ends-it.md` |
-| Build composition | Sole runtime product, framework linkage, and separation of player versus maintainer builds | `CMakeLists.txt` | `spyro_port` | `docs/migration.md` |
-| Hermetic and runtime verification | Focused production-boundary tests plus reusable input replays | `tests/`, `titles/*/tests/`, `replays/` | CTest and project verifier | `docs/project-state.md` |
-| External RE references | Read-only public decompilation references used only to cross-check names and structure | `external/open-spyro/`, `external/spyro-1/` | reference source lookup | `docs/references.md` |
-| Project registries | Goals, state, ownership, issues, migration, RE frontier, claims, and instruments | `docs/` | `tools/info.py brief` | `AGENTS.md` |
-| Shared framework | Lightrec executor, PSX services, test harnesses, SDL_GPU renderer, and title-neutral native seams | `external/psxport/` resolved checkout | framework runtime seam | framework `AGENTS.md` |
+### `game/core/` — namespace `spyro`
+
+| File | Namespace | Owner | Responsibility |
+| --- | --- | --- | --- |
+| `main.cpp` | — | `main` | Process entry: zero-argument selector, or one executable. Composes only. |
+| `spyro_context.{h,cpp}` | `spyro` | `spyro::Context`, `spyro::context` | The per-Core context every subsystem's state is published through, and the only way an override reaches a title object from a `Core`. |
+| `spyro_runtime.{h,cpp}` | `spyro` | `spyro::SpyroRuntime` | Engine-lineage runtime root: image identity, title, logo facts, attract state. |
+| `title_runtime_registry.{h,cpp}` | `spyro` | `runtimeFor` | Which title runtime owns which serial. |
+| `title_selection.{h,cpp}` | `spyro` | `spyro::SelectionResult` | Choosing a title from a `PSXPORT_TITLES` slug list. |
+| `title_logo_facts.h` | `spyro` | `TitleLogoFacts` | Where a disc's own wordmark lands in VRAM and how it is encoded. |
+| `field_owner.{h,cpp}` | `spyro` | `FieldOwner`, `FieldRequest`, `FieldOwnerFacts`, `FieldObserver`, `FrameTailObserver`, `FieldCadence` | The one delivery sequence every title's display field goes through, and the per-Core accessor. |
+| `vblank_irq.h` | `spyro` | `hasPendingEnabledVblank` | The one PSX register fact no title can own: is a VBlank edge pending and enabled. |
+| `deliverNativeField` | `spyro` | `FieldOwner` | One field delivered by a title-owned native tail. |
+| `runtime_run.{h,cpp}` | `spyro` | `RuntimeRun` | The delivered-field cap and the graceful end of a run. |
+| `boot_prefix_frame_driver.{h,cpp}` | `spyro` | `BootPrefixFrameDriver`, `BootPrefixFacts` | One product step of a title whose retail executable IS its boot: a finite guest call, one presented field per step, two separate stall bounds. |
+| `spyro_guest_call.{h,cpp}` | `spyro` | `GuestCall` | One finite guest call resumed across product steps: captured return address, frame-boundary exit, RAM-safe `$r[31]` refusal. |
+| `guest_execution.{h,cpp}` | `spyro` | `GuestExecution`, `reportExecutionResult` | Root guest continuation: preserve the root return address and committed PC across budget yields. |
+| `world_guest_execution.{h,cpp}` | `spyro` | `WorldGuestExecution` | Unchanged retail world work resumed with bounded host-service exits. |
+| `native_execution.h` | `spyro` | `PreservedReturnAddress`, `GuestFrameScope`, `callGuestJumpedFrom` | The `$ra` a nested guest call runs with, and the frame-boundary guard around one. |
+| `native_leaf/vec/gte/angle/rand/util.cpp` | `spyro` | `registerNative*` | The image-scoped verified native leaf overrides, one installer per decomp source file. |
+| `spyro_game.h` | `spyro` | — | The guest-boundary surface: the installers above, the CD queue installer, and the terrain producer's guest entry points. |
+| `cd_queue.cpp` | `spyro` | `registerCdQueue` | The title's cooperative CD loader leaves and the completion delivery. |
+| `archive_transfer.{h,cpp}`, `archive_transfer_contract.h` | `spyro`, `spyro::archive_transfer` | `ArchiveTransfer`, `archive_transfer::decide` | Bounded atomic WAD transfer with per-Core completion; the refusal decision is one pure function. |
+| `image_publication.{h,cpp}` | `spyro::image_publication` | `digest` | The one SHA-256 digest-and-activate owner for guest images. |
+| `stock_read_publication.{h,cpp}` | `spyro` | `publishStockReadLanding` | Every framework stock `CdRead` landing, published through the image owner. |
+| `load_ledger.{h,cpp}` | `spyro::load_ledger` | `Ledger`, `IssuerSite`, `Operation` | One diagnostic record per CD read: site, range, destination, payload identity, stage, cost. Reads and logs; never writes guest state. |
+| `content_identity.{h,cpp}` | `spyro` | `sha256`, `ExecutableIdentity` source | The runtime SHA-256 owner for executable and WAD bytes. |
+| `guest_widescreen_owner.{h,cpp}` | `spyro` | `GuestWidescreenOwner`, `GuestWidescreenFacts`, `ProjectionSite` | The one widening decision for a guest-projection title, and every place the guest restates it. |
+| `guest_widescreen_math.h` | `spyro::guest_widescreen_math` | pure functions | The horizontal arithmetic of that widening, with no Core and no GTE. |
+| `guest_projection_owner.h` | `spyro` | `GuestProjectionOwner` | The per-Core seam a title's own projection owner publishes into. |
+| `wide_clip_plan.h` | `spyro::wide` | the one plane rule | How a title widens a horizontal cull or screen-rect limit. |
+| `guest_magnitude.{h,cpp}` | `spyro::guest_magnitude` | `normalize`, `scaled`, `lzcr` | The one normalise/`D_80074B84` tail shared by libgte, the tracer producer and the per-face colour program. |
+| `guest_globals.h`, `guest_gp.h` | `spyro::guest` | address constants | The guest globals this title's code names. |
+| `memcard_operations.h`, `memcard_event_stack.h` | `spyro` | `MemcardOperationPlan`, `MemcardEventPushPlan` | The title's memory-card operations, as plans the guest logic executes. |
+| `spu_hardware_init.h`, `spu_pio_upload.h`, `text_sprites.h` | `spyro` | facts | Title facts for SPU power-on and the screen text glyph vocabulary. |
+| `actor_mesh_scratch.h` | `spyro` | `ActorMeshScratchLayout` | Where one actor mesh decode keeps its scratch. |
+| `spyro_gate_debug.{h,cpp}` | `spyro::gate_debug` | `GateInfo`, `inspectGate`, `teleportToGate` | The title's debug option: inspect and enter a gate. |
+
+### `game/host/` — namespace `spyro`
+
+| File | Namespace | Owner | Responsibility |
+| --- | --- | --- | --- |
+| `product_host.{h,cpp}` | `spyro` | `ProductHost` | The process top level, and the owner of the one window and one presentation device. |
+| `title_session.{h,cpp}` | `spyro` | `TitleSession` | One boot-to-exit run of one title as a STEPPABLE owner; destruction is the whole teardown. |
+| `title_availability.{h,cpp}` | `spyro` | `TitleAvailabilityProbe`, `TitleAvailability` | Which catalogued titles are provisioned and authenticated right now. |
+| `picker_session.{h,cpp}` | `spyro` | `PickerSession` | The selector's own frame: one guest advancing, one panel confirmed into a live session. |
+| `panel_sessions.{h,cpp}` | `spyro` | `PanelSessions` | The picker's live sessions and the rules about which of them runs. |
+| `picker_layout.{h,cpp}` | `spyro` | `PickerLayout`, `PanelLayout`, `PanelRect`, `SourceCrop` | Panel geometry and the COVER crop — pure, and the only part a hermetic test can decide. |
+| `picker_composite.{h,cpp}` | `spyro` | `PickerComposite` | The selector's window frame: panels as quads, dividers, caption bands, screen text. |
+| `picker_content.{h,cpp}` | `spyro` | `PickerContent` | The labels and artwork the panels advertise. |
+| `picker_runtime.{h,cpp}` | `spyro` | `PickerRuntime` | The host `Game` and composite the selector frame runs on. |
+| `panel_logo.{h,cpp}` | `spyro` | `PanelLogo` | A title's own logo, drawn into its panel. |
+
+### `game/render/` — namespace `spyro` (and `spyro::render` for the picture owner)
+
+| Group | Namespace | Responsibility |
+| --- | --- | --- |
+| `render.h`, `render_frame.cpp`, `scene.cpp` | `spyro::render` | `FrameRenderer`: one frame's picture — classify the guest's stage selector, then either walk the guest's own OT or compose the native producers. `Scene`, `StageArm`, `FieldLayer` and the stage selectors are its vocabulary. |
+| `presentation_owner.{h,cpp}` | `spyro` | `PresentationOwner`: per-Game statement of which producer owns the next present. |
+| `frame_env.{h,cpp}` | `spyro` | The native leg's frame open/close and display environment. |
+| `fx_*.{h,cpp}` | owner namespaces | The guest-facing producer entry points: one file per field layer or front-end scene (`fx_field_cyclorama`, `fx_field_environment`, `fx_field_particles`, `fx_field_collectables`, `fx_field_shadow`, `fx_field_tracers`, `fx_moby_shadow`, `fx_world_draw`, `fx_actor_draw`, `fx_field_player_actor`, `fx_paired_actor`, `fx_sprite_queue`, `fx_title_menu`, `fx_screen_fade`, `fx_screen_border`, `fx_spyro_flame`, `fx_glow_sparkle`, `fx_dragon_burst`, `fx_dragon_scene`, `fx_field_actor_composition`). |
+| `field_model_chain.{h,cpp}`, `field_moby_lists.{h,cpp}` | `spyro` | The layer-by-layer submission chain and the moby list build the field arm owns. |
+| `native_terrain.cpp` | `spyro` | The terrain producer's guest entry points (a selector and two `SHORTMATRIX` pointers). |
+| `terrain_scene/recipe/submitter/emit`, `terrain_packet_sink` | `spyro::terrain_*` | The terrain producer's corpus read, pure derivation, queue plan, one derive/preflight/publish owner, and the in-between's packet destination. |
+| `guest_terrain_*.{h,cpp}` | `spyro::guest_terrain` | The native terrain drawer of this engine family: one file per pass plus the frame state, memory, mesh, polygon, split, fog and screen owners. |
+| `terrain_world_pass.{h,cpp}` | `spyro` | The in-between field: the guest's own terrain drawer run again at a lerped camera, over host memory shaped like guest RAM. |
+| `guest_camera_builder.{h,cpp}` | `spyro::guest_camera` | The guest's own camera builder, re-run for an in-between rather than interpolated from its packed output. |
+| `guest_moby_visibility.cpp`, `guest_moby_{frustum,gte,rotation}.h` | `spyro::guest_moby`, `…_frustum`, `…_gte`, `…_rotation` | Native per-frame moby culling, with the pure frustum arithmetic, GTE vocabulary and rotation composition split out. |
+| `guest_render_globals.h` | `spyro::guest_render_globals` | The guest globals the moby walk and the terrain drawer share. |
+| `world_source*`, `world_chunk_codec`, `world_material_codec`, `world_animation` | `spyro::world_*` | The world producer's owned unprojected sector occurrences and the codecs that decode them. |
+| `world_scene_{capture,builder,prepare,submitter}`, `world_recipe` | `spyro::world_scene`, `…_prepare`, `…_submitter`, `spyro::world_recipe` | The world producer's guest read, scene build, prepare, submission, and pure face derivation. |
+| `world_{lq,hq}_recipe`, `world_hq_refinement`, `world_projection_math` | `spyro::world_*_recipe`, `spyro::world_projection_math` | LQ/HQ/refinement recipes and the projection arithmetic they share. |
+| `actor_recipe_capture`, `actor_model_codec`, `actor_prefix_builder`, `actor_transform_math`, `actor_scene_builder` | `spyro::actor_*` | Actor model decode, prefix building, transform math and scene build. |
+| `actor_emit`, `actor_submission`, `actor_stage`, `actor_face_submitter`, `actor_billboard_face`, `actor_draw_recipe`, `actor_global_order`, `actor_ot_coalescer` | `spyro::actor_*` | The regular actor layer's route to the render queue: emit, preflight, publish, and the shared vocabulary. |
+| `secondary_actor_{scene,recipe,emit}` | `spyro::secondary_actor_*` | The secondary layer's compose/preflight/publish owner. |
+| `paired_actor_{pose,decode,depth,color_fade}`, `paired_actor_temporal_evidence` | `spyro::paired_actor`, `spyro::paired_actor_depth`, `spyro::paired_actor_color_fade` | Spyro's own paired actor: pose decode, depth, colour fade, and the temporal evidence. |
+| `field_shaded_queue_{scene,recipe,emit,submitter}`, `shaded_moby_light` | `spyro::field_shaded_queue_*`, `spyro::shaded_light` | The world-shaded sprite queue: scene input, recipe, derive/preflight/publish, submission, and the GTE lighting program. |
+| `cyclorama_*`, `menu_lighting`, `menu_panel_submit`, `menu_world_pass` | `spyro::cyclorama_*`, `spyro::menu_*` | Sky geometry, portals and masks, plus the menu's own background and panel. |
+| `field_environment_*`, `field_collectables_recipe`, `field_shadow_*`, `field_tracers_recipe`, `field_particles_*`, `sparkle_*`, `glow_*`, `moby_shadow_*` | `spyro::field_*`, `spyro::sparkle_*`, `spyro::glow_*`, `spyro::moby_shadow_*` | The remaining field layers: environment, collectables, shadows, tracers, particles, sparkles, glows, moby shadows. |
+| `field_scene_recipe`, `cutscene_scene_recipe`, `stage13_scene_recipe`, `title_menu_{recipe,state}`, `pause_menu_{recipe,scene}`, `fairy_menu_{recipe,scene}`, `level_transition_*`, `dragon_*`, `demo_text_scene` | `spyro::<scene>_recipe` and owners | The front-end and cutscene scenes, each with its pure recipe and its native scene owner. |
+| `field_2d_overlay*`, `hud_text_builder`, `hud_layout`, `hud_draw_context` | `spyro::field_2d_overlay*`, `spyro::hud_text`, `spyro::hud_layout`, `spyro::hud_draw_context` | The screen-space 2D layer, the guest's two text builders, the HUD block's layout, and the widget-in-progress seam. |
+| `ui_anchor.{h,cpp}`, `wide_screen_space.{h,cpp}`, `sector_visibility.{h,cpp}`, `moby_shadow_list.{h,cpp}` | `spyro::ui_anchor`, `spyro::wide_screen_space`, `spyro::sector_visibility`, `spyro::moby_shadow_list` | The ONE horizontal anchoring rule for screen-space UI, the horizontal policy for world geometry, and the two drawn-half tables. |
+| `temporal_pair.h`, `instance_pairing.h`, `actor_pairing.{h,cpp}`, `temporal_scene.{h,cpp}` | `spyro::temporal`, `spyro::instance_pairing`, `spyro::actor_pairing`, `spyro` | The two-endpoint lifecycle every temporal source shares, the instance pairing that feeds it, and the scene admission scratch. |
+| `actor_temporal`, `secondary_actor_temporal`, `field_shaded_queue_temporal`, `terrain_temporal`, `world_temporal`, `field_2d_overlay.h` (`History`) | `spyro::<layer>_temporal` | One endpoint pair per layer, each with its own identity rule over the payload that layer draws. |
+| `interp_census.{h,cpp}`, `margin_object_census.{h,cpp}`, `producer_refusal.h`, `draw_area.h`, `scene_painter_order`, `painter_submission_preflight` | `spyro::interp_census`, `spyro::margin_object_census`, `spyro` | Presentation-only accounting, the per-class drawn-reach census, the refusal vocabulary, the draw-destination check, and the painter order shared by producers. |
+| `gpu_packet_decode.{h,cpp}`, `guest_gte.{h,cpp}`, `guest_trig.{h,cpp}`, `gte_color_ops.h`, `particle_sine_table.h` | `spyro::gpu_packet_decode`, `spyro::guest_gte`, `spyro::guest_trig`, `spyro::gte_color` | The packet and coprocessor vocabulary the producers share. |
+| `projection_stream.{h,cpp}`, `scene_camera_inputs.h`, `actor_scene_oracle.{h,cpp}`, `world_scene_oracle.{h,cpp}`, `world_scene_capture.{h,cpp}` | `spyro` | The projection sampler, the camera inputs, and the independent record oracles. |
+
+### `titles/spyro1/core/` — namespace `spyro1` (leaves in `spyro1::native`)
+
+| File | Namespace | Owner | Responsibility |
+| --- | --- | --- | --- |
+| `spyro1_runtime.{h,cpp}` | `spyro1` | `Spyro1Runtime` | `SCUS_942.28` image policy and the composition of its native leaf overrides. |
+| `spyro1_frame_driver.{h,cpp}` | `spyro1` | `Spyro1FrameDriver` | One product step: boot prefix, the retail update, the picture, the frame tail. |
+| `spyro1_field_scheduler.{h,cpp}` | `spyro1` | `FieldScheduler` | Spyro 1's field vocabulary over the shared owner: the boot window, the skip map, audio service. |
+| `spyro1_boot_sequence.{h,cpp}` | `spyro1` | `BootSequence` | The native finite boot, and the ownership of the first presentation-only holds. |
+| `spyro1_transition_skip.{h,cpp}` | `spyro1` | `TransitionSkip` | Cancelling a presentation-only transition on Start/Cross by taking its guest owner's own terminal transition. |
+| `spyro1_press_latch.h` | `spyro1` | `PressLatch` | A boot fade/loader press held to the next hold. |
+| `spyro1_input_phase.{h,cpp}` | `spyro1` | `InputPhase` | Which screen is taking input this pad frame — the key a recorded `.pad` frame is stored against. |
+| `spyro1_frame_policy.h`, `spyro1_logo_facts.h` | `spyro1` | facts | Frame bounds and the disc's own logo. |
+| `stage_update_observer.{h,cpp}` | `spyro1` | `StageUpdateObserver` | Opt-in read-only camera/player samples after the outer guest update returns. |
+| `handoff_store_observer.{h,cpp}` | `spyro1` | `HandoffStoreObserver` | Opt-in pre/post RAM and tick snapshots at the New Game handoff PCs. |
+| `native_*.{h,cpp}` | `spyro1::native` | one module per decomp source file | The image-scoped native leaves: camera, player animation and physics, moby helpers/lists/transform/collision/allocator, HUD collectables, environment light, effect state, level globals and initialization, particles, pause menu, pixel fade, cutscene, draw setup, gamepad, glow and sparkle pools, shaded moby queue, shared models, sound position, audio key state, and the SPU registers/voice/pitch/transfer-mode/key-status/common-attr/state/callback leaves. |
+
+### `titles/spyro2/`, `titles/spyro3/`
+
+| File | Namespace | Owner | Responsibility |
+| --- | --- | --- | --- |
+| `spyro{2,3}_runtime.{h,cpp}` | `spyro2`, `spyro3` | `Spyro2Runtime`, `Spyro3Runtime` | `SCUS_944.25` / `SCUS_944.67` identity, HLE plan, CD callback layout, boot-prefix frame driver, temporal product, logo and attract state, widescreen answer. |
+| `spyro{2,3}_boot_facts.h` | `spyro2`, `spyro3` | `kBootPrefixFacts` | The measured boot prefix, update/draw pair and field-owner facts, with the instruction bytes that give each address. |
+| `spyro{2,3}_logo_facts.h`, `spyro{2,3}_widescreen_facts.h` | `spyro2`, `spyro3` | facts | Where the disc's wordmark lands, and the image's measured projection sites and authored window. |
+| `spyro{2,3}_render_facts.h` | `spyro2`, `spyro3` | `spyro::guest_moby::Facts`, `spyro::guest_terrain::Facts`, `guest_render_globals::Globals` | One value set per image for the shared guest moby walk and terrain drawer. |
+| `spyro{2,3}_hud_anchor.{h,cpp}` | `spyro2`, `spyro3` | `hud_anchor` | The per-image HUD widget drawers, applying `spyro::ui_anchor::correction` per element class. |
+| `executable.json` | — | manifest | Serial, hashes, labels and environment keys. |
+
+---
 
 ## Where does new work go?
 
 - Decoder/lowering, Lightrec integration, cache, invalidation, or bounded executor exits →
   `external/psxport/`.
-- A title serial, hash, load range, or runtime image fact → `titles/<title>/` and its manifest-backed
-  runtime policy.
+- A title serial, hash, load range, or runtime image fact → `titles/<title>/` and its
+  manifest-backed runtime policy.
 - A Spyro 1 frame, field, input, audio, or lifecycle transition → `titles/spyro1/core/`.
 - A semantic draw responsibility → one cohesive `game/render/` recipe/builder/submitter owner; the
   scene composer only orders owners.
 - A runtime WAD identity or load/unload observation → the shared executor image tracker; title-specific
-  archive semantics stay in the title CD/archive owner.
+  archive semantics stay in `game/core/archive_transfer.*`.
 - A diagnostic → an oracle/capture module that cannot mutate or submit the shipping picture.
 - A capability change → `docs/project-state.md`; an atomic task/finding → `docs/issues/`; a binary
   dependency step → `docs/re-frontier.md`.

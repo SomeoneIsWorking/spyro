@@ -13,7 +13,9 @@
 
 class Core;
 struct RenderQueue;
-struct SpyroPairedFrame;
+namespace spyro::paired_actor {
+struct Frame;
+} // namespace spyro::paired_actor
 
 namespace spyro::world_temporal {
 
@@ -49,7 +51,8 @@ public:
   void refuse();
   void rotate();
   bool compatible(const Core &core, const char *&why) const;
-  bool camerasMatch(const SpyroPairedFrame &previous, const SpyroPairedFrame &current) const;
+  bool camerasMatch(const spyro::paired_actor::Frame &previous,
+                    const spyro::paired_actor::Frame &current) const;
   bool emit(Core &core, RenderQueue &target, double t) const;
   uint64_t frameSerial() const {
     return pair_.serial();

@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <lucent/log.h>
 
-bool spyro_field_shadow_submit(Core *core) {
+bool spyro::field_shadow::submit(Core *core) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }

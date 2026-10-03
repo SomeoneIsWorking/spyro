@@ -52,7 +52,7 @@ private:
   static const GuestCdStreamCallbackLayout cdStreamCallbackLayout_;
 
   // Process-lifetime, and reached from a native override through
-  // `spyro_context(core).projectionHook` rather than through this member: an override is a plain
+  // `spyro::context(core).projectionHook` rather than through this member: an override is a plain
   // function pointer with nowhere to hang a back-pointer.
   spyro::GuestWidescreenOwner widescreen_{spyro3::kWidescreenFacts};
 };

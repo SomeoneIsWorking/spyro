@@ -4,6 +4,7 @@
 // `terrain_recipe` projects it, and `terrain_emit` preflights and publishes it. What is left here
 // is the boundary the guest calls across — a selector and two SHORTMATRIX pointers — and the one
 // log line that names which stage declined.
+#include "native_terrain.h"
 #include "core.h"
 #include "game.h"
 #include "render_queue.h"
@@ -22,7 +23,7 @@ bool submitTerrain(Core *core,
                    int32_t selector,
                    const std::array<uint32_t, 5> &cull,
                    const std::array<uint32_t, 5> &view) {
-  auto &history = spyro_context(*core).terrainTemporal;
+  auto &history = spyro::context(*core).terrainTemporal;
   auto captured = spyro::terrain_scene::capture(*core, selector, cull, view);
   if (captured.status != spyro::terrain_scene::Status::Ready) {
     lucent::error(
@@ -67,7 +68,7 @@ bool submitTerrain(Core *core,
 
 } // namespace
 
-bool spyro_terrain_submit(Core *c, int32_t selector, uint32_t mat1, uint32_t mat2) {
+bool spyro::render::submitTerrainGuest(Core *c, int32_t selector, uint32_t mat1, uint32_t mat2) {
   const auto cull = spyro::terrain_scene::matrixWords(*c, mat1);
   const auto view = spyro::terrain_scene::matrixWords(*c, mat2);
   if (!cull || !view) {
@@ -77,9 +78,9 @@ bool spyro_terrain_submit(Core *c, int32_t selector, uint32_t mat1, uint32_t mat
   return submitTerrain(c, selector, *cull, *view);
 }
 
-bool spyro_terrain_submit_matrices(Core *c,
-                                   int32_t selector,
-                                   const std::array<uint32_t, 5> &cull,
-                                   const std::array<uint32_t, 5> &view) {
+bool spyro::render::submitTerrainGuestWithMatrices(Core *c,
+                                                   int32_t selector,
+                                                   const std::array<uint32_t, 5> &cull,
+                                                   const std::array<uint32_t, 5> &view) {
   return submitTerrain(c, selector, cull, view);
 }

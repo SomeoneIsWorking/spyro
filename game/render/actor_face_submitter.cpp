@@ -144,7 +144,7 @@ void submit(Core *core,
     // its final screen x in `xs`, and the draw area's right edge is `drawRight`, which is the
     // widened edge. So this is the one point where the drawn span of a Moby is known, and it is
     // what makes the per-class answer a measurement rather than an inference (issue 0154).
-    spyro_context(*core).marginCensus.addVertices(
+    spyro::context(*core).marginCensus.addVertices(
         margin_object_census::Class::kMoby, xs, xs + count);
     const PainterReplayOrder replayOrder =
         layer == Layer::Regular

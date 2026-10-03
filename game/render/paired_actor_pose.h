@@ -58,6 +58,6 @@ bool decode_pose(Core *c,
                  const std::array<LayerDesc, kLayers> &desc,
                  PairedPose &pose,
                  std::array<uint32_t, kLayers> &decoded);
-bool build_transform(Core *c, SpyroPairedActorTransform &out);
+bool build_transform(Core *c, spyro::paired_actor::Transform &out);
 
 } // namespace spyro::paired_actor

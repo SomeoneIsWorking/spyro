@@ -252,7 +252,7 @@ struct TerrainFrame {
   // this field is a REAL one, because only the guest's own pass has packets a captured queue can
   // hold. Set once by Drawer::run at the pass's starting cursor; the record's `end` grows with the
   // pass, and it is what makes a consumer's "which pass produced this address" answer exact.
-  SpyroContext::TerrainPacketArena *arena = nullptr;
+  spyro::Context::TerrainPacketArena *arena = nullptr;
   std::uint32_t orderingTable = 0;     // the ordering table's bin 0
   std::uint32_t textures = 0;          // the level's 48-byte texture records
   std::uint32_t fineSplitCursor = 0;   // next free kFineSplitList word

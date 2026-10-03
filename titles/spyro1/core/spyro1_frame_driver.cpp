@@ -63,8 +63,8 @@ Spyro1FrameDriver::Spyro1FrameDriver(Game &game, bool observeStageUpdate, bool o
     : fields_(game), boot_(fields_), transitions_(fields_),
       stageObserver_(observeStageUpdate, kFrameUpdate),
       handoffStoreObserver_(observeHandoffStores, fields_),
-      renderer_(std::make_unique<SpyroRenderer>(&game.core,
-                                                observeStageUpdate ? &stageObserver_ : nullptr)) {}
+      renderer_(std::make_unique<spyro::render::FrameRenderer>(
+          &game.core, observeStageUpdate ? &stageObserver_ : nullptr)) {}
 
 Spyro1FrameDriver::~Spyro1FrameDriver() {
   stageObserver_.report();
@@ -80,7 +80,7 @@ void Spyro1FrameDriver::initialize(Core &core) {
                   static_cast<int>(storeStatus));
     std::abort();
   }
-  SpyroRenderer::installModeFromConfig(&core);
+  spyro::render::FrameRenderer::installModeFromConfig(&core);
   psx::cpu::dispatchGuestToReturn0(core,
                                    kStaticConstructors,
                                    psx::cpu::ExecutionBudget::currentTurn(core),

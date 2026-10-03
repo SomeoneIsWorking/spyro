@@ -5,6 +5,8 @@
 
 class Core;
 
+namespace spyro::flame_matrix {
+
 // Cross-producer state publication, not geometry: retail's Spyro renderer 0x80023AC4 reads its live
 // GTE rotation matrix back with cfc2 at 0x8002401C and writes those five packed words into
 // g_SpyroFlame+0xB8 at 0x80024110, gated on the enable byte at g_SpyroFlame+0x9A. The flame
@@ -16,4 +18,6 @@ class Core;
 // those two composition steps and the layer 2 rotation restores the layer 0 matrix first.
 //
 // Returns whether the enable byte was set and the words were written.
-bool spyro_flame_matrix_publish(Core *core, const std::array<uint32_t, 5> &matrix);
+bool publish(Core *core, const std::array<uint32_t, 5> &matrix);
+
+} // namespace spyro::flame_matrix

@@ -9,7 +9,7 @@
 #include "guest_call.h"
 #include "guest_trig.h"
 #include "level_transition_tally_recipe.h"
-#include "spyro_game.h"
+#include "native_terrain.h"
 
 namespace spyro::level_transition_scene {
 namespace {
@@ -140,7 +140,7 @@ Refusal submit(Core *core) {
       return Refusal::ShadedActors;
     }
   }
-  if (!spyro_paired_actor_submit_field(core, spyro_paired_actor_state(core))) {
+  if (!spyro::paired_actor::submitField(core, spyro::paired_actor::state(core))) {
     return Refusal::SpyroActor;
   }
   if (core->mem_r32(kCycloramaSectorCount) == 0u) {
@@ -148,13 +148,15 @@ Refusal submit(Core *core) {
   }
   const std::int32_t residual = advanceEntranceSweep(core);
   if (residual == 0) {
-    if (!spyro_terrain_submit(core, -1, kCamera + kCameraView, kCamera + kCameraProjection)) {
+    if (!spyro::render::submitTerrainGuest(
+            core, -1, kCamera + kCameraView, kCamera + kCameraProjection)) {
       return Refusal::Sky;
     }
     return Refusal::None;
   }
   const SkyMatrices matrices = sweepSkyMatrices(core, residual);
-  if (!spyro_terrain_submit_matrices(core, -1, matrices.view, matrices.projection)) {
+  if (!spyro::render::submitTerrainGuestWithMatrices(
+          core, -1, matrices.view, matrices.projection)) {
     return Refusal::Sky;
   }
   return Refusal::None;

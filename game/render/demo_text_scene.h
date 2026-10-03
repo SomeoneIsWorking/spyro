@@ -12,12 +12,11 @@
 // wobbles each glyph (0x8001898C-0x800189CC) and appends the arena to the shaded-Moby queue through
 // 0x80018880 (`jal` at 0x800189D4). The string is at 0x80010AC0.
 //
-// WHY THE PORT HAD NOTHING THERE. The native FIELD arm (`SpyroRenderer::renderScene`) replaces the
-// guest's whole stage-0 draw, composing each layer from its own producer; 0x80018908 was classified
-// in `scene.cpp`'s layer list but no producer was ever written for it, so the guest never built the
-// glyphs and the shaded pass had nothing to draw. This owner is that producer. Like the
-// completed-gem text and the pause and tally captions it reproduces the guest's own arena and queue
-// writes through `hud_text`, because the shaded-queue scene reads its Mobys from them.
+// This owner is the native producer for that layer: the FIELD arm
+// (`render::FrameRenderer::renderScene`) replaces the guest's whole stage-0 draw with one producer
+// per layer. Like the completed-gem text and the pause and tally captions it reproduces the
+// guest's own arena and queue writes through `hud_text`, because the shaded-queue scene reads its
+// Mobys from them.
 #pragma once
 
 #include "hud_text_builder.h"

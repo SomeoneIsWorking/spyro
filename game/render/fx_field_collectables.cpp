@@ -170,7 +170,7 @@ void emitSprite(Core *core,
 
 } // namespace
 
-spyro::field_collectables_recipe::State spyro_field_collectables_read(Core *core) {
+spyro::field_collectables_recipe::State spyro::field_collectables::read(Core *core) {
   return readState(core);
 }
 
@@ -178,7 +178,7 @@ spyro::field_collectables_recipe::State spyro_field_collectables_read(Core *core
 // appends into the slot after whatever the world-shaded queue already holds, and reading that queue
 // back is what finds the insertion point. It commits NOTHING until `commit` accepts the recipe, so
 // a caller that has already derived the recipe does not pay for a second derivation.
-bool spyro_field_collectables_commit(Core *core, const Recipe &recipe) {
+bool spyro::field_collectables::commit(Core *core, const Recipe &recipe) {
   uint32_t queueEnd = 0;
   if (!preflight(core, recipe, queueEnd)) {
     lucent::debug("fieldhud",
@@ -201,14 +201,14 @@ bool spyro_field_collectables_commit(Core *core, const Recipe &recipe) {
   return true;
 }
 
-bool spyro_field_collectables_stage(Core *core, Recipe &recipe) {
-  recipe = spyro::field_collectables_recipe::derive(spyro_field_collectables_read(core));
-  return spyro_field_collectables_commit(core, recipe);
+bool spyro::field_collectables::stage(Core *core, Recipe &recipe) {
+  recipe = spyro::field_collectables_recipe::derive(spyro::field_collectables::read(core));
+  return spyro::field_collectables::commit(core, recipe);
 }
 
-bool spyro_field_collectables_submit(Core *core,
-                                     RenderQueue &queue,
-                                     const spyro::field_collectables_recipe::Recipe &recipe) {
+bool spyro::field_collectables::submit(Core *core,
+                                       RenderQueue &queue,
+                                       const spyro::field_collectables_recipe::Recipe &recipe) {
   if (recipe.status != Status::Ready && recipe.status != Status::CompletedGemText) {
     return false;
   }

@@ -5,6 +5,8 @@
 class Core;
 struct RenderQueue;
 
+namespace spyro::screen_fade {
+
 // Direct native owner of screen fade producer 0x800190D4 for its reached
 // cutscene invocation. Returns false before mutation when the recipe is invalid.
 //
@@ -12,6 +14,6 @@ struct RenderQueue;
 // live queue, and the 2D overlay's temporal source, into the isolated in-between queue. A submitter
 // that reached for `game->rq` itself would put a reconstructed picture in the frame that is already
 // composed, which is the one thing the interpolation path must never do.
-bool spyro_screen_fade_submit(Core *core,
-                              RenderQueue &target,
-                              const spyro::screen_fade_recipe::Recipe &recipe);
+bool submit(Core *core, RenderQueue &target, const spyro::screen_fade_recipe::Recipe &recipe);
+
+} // namespace spyro::screen_fade

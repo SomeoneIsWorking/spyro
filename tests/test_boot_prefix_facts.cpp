@@ -77,7 +77,7 @@ bool windowAdmits(const PlatformHlePlan &plan, std::uint32_t address) {
   return false;
 }
 
-std::unique_ptr<Game> newGame(SpyroContext &context, GameRuntime &runtime) {
+std::unique_ptr<Game> newGame(spyro::Context &context, GameRuntime &runtime) {
   std::unique_ptr<Game> game = std::make_unique<Game>();
   game->core.gameCtx = &context;
   game->runtime = &runtime;
@@ -85,7 +85,7 @@ std::unique_ptr<Game> newGame(SpyroContext &context, GameRuntime &runtime) {
 }
 
 void checkDriverFacts(GameRuntime &runtime, const ExpectedTitle &expected) {
-  SpyroContext context;
+  spyro::Context context;
   std::unique_ptr<Game> game = newGame(context, runtime);
   std::unique_ptr<FrameDriver> created = runtime.createFrameDriver(*game);
   const auto *driver = dynamic_cast<const spyro::BootPrefixFrameDriver *>(created.get());

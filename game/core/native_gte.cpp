@@ -361,7 +361,7 @@ void vec_mul_scalar_native(Core *c) {
 
 } // namespace
 
-void spyro_register_native_gte(Core &core) {
+void spyro::registerNativeGte(Core &core) {
   spyro::installNativeOverride(core, 0x800171FCu, "veclen", veclen_native);
   spyro::installNativeOverride(core, 0x80017048u, "mvmva", mvmva_native);
   spyro::installNativeOverride(core, 0x800170C0u, "mvmva_resident", mvmva_resident_native);

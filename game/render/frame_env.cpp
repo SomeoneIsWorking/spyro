@@ -92,12 +92,13 @@ constexpr uint32_t kDiDispX = 0x00u, kDiDispY = 0x02u;
 constexpr uint32_t kVblankCounter = 0x800749E0u;
 constexpr uint32_t kStampLastFrame = 0x80075950u; // the field count when the PREVIOUS frame ended
 constexpr uint32_t kStampThisFrame = 0x80075954u; // …and this one's, written as the loop spins
-constexpr int32_t kMinFieldsPerFrame = kFieldsPerLogicFrame; // the guest's own `< 2` test
-constexpr int kMaxFieldsPerFrame = 8; // this port's bound; the guest has none
+constexpr int32_t kMinFieldsPerFrame =
+    spyro::render::kFieldsPerLogicFrame; // the guest's own `< 2` test
+constexpr int kMaxFieldsPerFrame = 8;    // this port's bound; the guest has none
 
 } // namespace
 
-uint32_t nativeFrameDisplayEnv(uint32_t drawEnv, bool fps60CommitPending) {
+std::uint32_t spyro::render::frameDisplayEnv(uint32_t drawEnv, bool fps60CommitPending) {
   if (drawEnv != kEnvA && drawEnv != kEnvB) {
     return 0;
   }
@@ -177,9 +178,10 @@ private:
   uint32_t mB;
 };
 
-// nativeFrameBegin — open the native leg's frame: establish its arenas, then program the GPU.
-// Returns the env now being drawn with, so the caller can hand the same one to nativeFrameEnd.
-uint32_t nativeFrameBegin(Core *c) {
+// spyro::render::frameBegin — open the native leg's frame: establish its arenas, then program the
+// GPU. Returns the env now being drawn with, so the caller can hand the same one to
+// spyro::render::frameEnd.
+std::uint32_t spyro::render::frameBegin(Core *c) {
   // (1) THE COMPLETE DRIVER HEAD — 0x8001ED5C, through its camera-matrix call (see note 1).
   const uint32_t env = (c->mem_r32(kActiveEnvPtr) == kEnvA) ? kEnvB : kEnvA;
   const uint32_t pool = c->mem_r32(env + kEnvPoolPtrOfs);
@@ -255,7 +257,8 @@ uint32_t nativeFrameBegin(Core *c) {
   return env;
 }
 
-// nativeFrameEnd — close the frame: SPEND THE FRAME'S FIELDS, then show the buffer this env names.
+// spyro::render::frameEnd — close the frame: SPEND THE FRAME'S FIELDS, then show the buffer this
+// env names.
 //
 // THE FIELD WAIT IS NOT OPTIONAL, and leaving it out is how this file earned its second half.
 // MEASURED before it existed: the native leg ran 1556 drawn frames and the port PRESENTED NOTHING
@@ -288,7 +291,7 @@ uint32_t nativeFrameBegin(Core *c) {
 // drawn on the PREVIOUS iteration, which is the whole point of a double buffer. The guest's own
 // tail does exactly this — PutDispEnv(activeEnv + 0x5C) — and porting it any other way would be
 // inventing a different frame policy while claiming to reproduce this one.
-void nativeFrameEnd(Core *c, uint32_t env, bool fps60CommitPending) {
+void spyro::render::frameEnd(Core *c, uint32_t env, bool fps60CommitPending) {
   // The >= 2-field throttle, on the game's own stamps.
   spyro1::deliverNativeField(*c, "nativeframe", fps60CommitPending);
   int32_t now = (int32_t)c->mem_r32(kVblankCounter);
@@ -314,7 +317,7 @@ void nativeFrameEnd(Core *c, uint32_t env, bool fps60CommitPending) {
   }
   c->mem_w32(kStampLastFrame, (uint32_t)now);
 
-  const uint32_t selectedEnv = nativeFrameDisplayEnv(env, fps60CommitPending);
+  const uint32_t selectedEnv = spyro::render::frameDisplayEnv(env, fps60CommitPending);
   if (!selectedEnv) {
     lucent::error("frameenv", "FATAL: unknown draw env 0x{:08X}", env);
     abort();

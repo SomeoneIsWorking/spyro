@@ -19,6 +19,9 @@
 
 namespace {
 
+using spyro::render::FieldLayer;
+using spyro::render::StageArm;
+
 // gp+0x574 — the STAGE SELECTOR. Both the per-frame update 0x8003385C and the render driver
 // 0x8001ED5C dispatch on it, so it names WHICH game mode is running and therefore which scene a
 // native renderer would have to produce.
@@ -26,18 +29,11 @@ using spyro::guest::kGamestate;
 
 // ── The stage arms of the render driver 0x8001ED5C ───────────────────────────────────────────────
 // Recovered from the linear if-chain at 0x8001EDF8-0x8001EF80 and spot-checked against the
-// disassembly (the chain compares [0x800757D8] against 1,2,3,4,5,6,7,8,9,0xA…0xF in order). Two
-// arms are themselves conditional and two more are indirect; all four are represented honestly
-// rather than collapsed to a single address.
-//
-// THE ROLES ARE NAMED (2026-08-19), and the name is a CROSS-CHECK rather than a borrowing. The
-// vendored decomp's `GamestateDraw` (external/spyro-1/src/gamestates/draw.c:2652) is the same
-// if-chain, and it agrees with this transcription on ALL SIXTEEN arms — every handler address, the
-// two arms that SHARE a handler (4 and 5 both call 0x8001CA38, which that file's own comment calls
-// "Gamestate 4 & 5"), the indirect arm 7 (`D_8007567C()`), and both two-way splits (13 on the
-// titlescreen mode, 15 on the credits stage). Sixteen independent agreements over addresses this
-// repo derived from the bytes before ever reading that file is what makes the names evidence and
-// not a guess; the selector [0x800757D8] is that decomp's `g_Gamestate`, enum in include/common.h.
+// disassembly. Two arms are themselves conditional and two more are indirect; all four are
+// represented honestly rather than collapsed to a single address. Every role is named from the
+// vendored decomp's `GamestateDraw`, which agrees with this transcription on all sixteen arms —
+// handler addresses, the two arms that share a handler, the indirect arm 7, and both two-way
+// splits. The selector [0x800757D8] is that decomp's `g_Gamestate`.
 constexpr StageArm kStageArms[] = {
     {0,
      0x00000000u,
@@ -79,41 +75,19 @@ constexpr uint32_t kStageIndirectPtr15 = 0x80075704u; // the [..]<99 discriminat
 constexpr uint32_t kStageFnPtr7 = 0x8007567Cu;        // stage 7's function pointer
 
 // ── The FIELD (stage 0) layer list ───────────────────────────────────────────────────────────────
-// The stage-0 arm of 0x8001ED5C, in order, from the decompile in scratch/decomp/frameloop.c. `gate`
-// is the global the guest tests before making the call; 0 means unconditional. This list IS the
-// native-renderer backlog for the field, in the order the guest draws it.
+// The stage-0 arm of 0x8001ED5C, in order, from the decompile in scratch/decomp/frameloop.c. This
+// list IS the native-renderer backlog for the field, in the order the guest draws it. Every role is
+// RE'd from two independent sources: this repo's transcription of the arm, and the vendored
+// decomp's stage-0 arm (external/spyro-1/src/gamestates/draw.c:2716-2747), which has the same ten
+// calls in the same order under the same conditions. The gates name four globals:
+// [0x80075690] g_IsFlightLevel, [0x80075714] g_DemoMode, [0x80075918] g_Fade,
+// [0x8007570C] g_ScreenBorderEnabled.
 //
-// EVERY ROLE IS NOW RE'd (2026-08-19). Two independent sources agree, and neither was derived from
-// the other:
-//   * THIS repo's transcription of the arm (addresses, order, and the gate each call is wrapped
-//   in),
-//     taken from the bytes;
-//   * the vendored decomp's stage-0 arm (external/spyro-1/src/gamestates/draw.c:2716-2747), which
-//     has the same ten calls in the same order under the same conditions.
-// The agreement is checkable rather than asserted, because the gates carry data the transcription
-// derived on its own: `[0x80075918] != 0, called with ([0x80075918]<<3) in a1/a2/a3` is exactly the
-// decomp's `if (g_Fade) func_800190D4(2, g_Fade * 8, g_Fade * 8, g_Fade * 8)`. That names the four
-// gate globals: [0x80075690] = g_IsFlightLevel, [0x80075714] = g_DemoMode, [0x80075918] = g_Fade,
-// [0x8007570C] = g_ScreenBorderEnabled.
-//
-// WHICH LAYERS NEED A 3D PRODUCER — MEASURED, not read off the names. `python3
-// tools/field_layers.py` counts COP2/LWC2/SWC2 traffic over each layer's direct-call closure and,
-// separately, over the layer's OWN body. The second count is the one that matters here: the obvious
-// method (walk the call graph to a known renderer) gets PARTICLES wrong, because 0x800573C8 is a
-// hand-written assembly renderer that projects and emits inline and therefore calls nothing at all.
-// Measured on SCUS_942.28, 779 function extents:
-//     0x80019698 actor pass      cop2 1244
-//       (0x80023AC4:336 0x80020F34:218 0x80022A2C:165 0x8001F798:125)
-//
-//     0x8002B9CC environment     cop2  276  (all of it in 0x800258F0)
-//
-//     0x80050BD0 cyclorama       cop2  230
-//       (0x80016D2C:59 0x80050240:43 0x8004F4BC:35 0x8004EBA8:24)
-//     0x800573C8 particles       cop2  166  ALL IN ITS OWN BODY — invisible to a call-graph walk
-//     0x800189F0 tracers         cop2   15  (0x80017B48 world->screen, 0x80017A38 isqrt)
-//     the other five             cop2    0  over 64..459 instructions scanned each
-// So the field's 3D backlog is FIVE layers, not ten, and two of the five (environment, cyclorama)
-// bottom out in renderers this port already owns byte-exactly.
+// WHICH LAYERS NEED A 3D PRODUCER was measured by COP2 traffic over each layer's OWN body
+// (tools/field_layers.py), not over its call closure: a call-graph walk scores the hand-written
+// assembly particle renderer 0x800573C8 at zero because it projects and emits inline and calls
+// nothing. On SCUS_942.28 over 779 function extents the 3D backlog is FIVE layers, and two of them
+// (environment, cyclorama) bottom out in renderers this port already owns byte-exactly.
 constexpr FieldLayer kFieldLayers[] = {
     {0x800521C0u,
      0,
@@ -174,18 +148,15 @@ constexpr FieldLayer kFieldLayers[] = {
 
 } // namespace
 
-// WHAT THIS CLASSIFIER CAN AND CANNOT TELL APART, stated where it is implemented rather than in a
-// report someone has to find:
-//   * IT CAN distinguish the 16 stage-selector values, and for stages 7/13/15 it also reads the
+// WHAT THIS CLASSIFIER CAN AND CANNOT TELL APART, stated where it is implemented:
+//   * IT distinguishes the 16 stage-selector values, and for stages 7/13/15 it also reads the
 //     runtime discriminator that picks the actual handler — so those three report a HANDLER, not
 //     just a stage.
-//   * IT NAMES all sixteen, since 2026-08-19 — the selector is the decomp's `g_Gamestate` and its
-//     enum agrees with this repo's own transcription on every arm (see kStageArms). A name here is
-//     still only a NAME: it says which mode the guest thinks it is in, not that this port can draw
-//     it. The backlog below is what "can it be drawn" is answered by.
+//   * A name in kStageArms is still only a NAME: it says which mode the guest thinks it is in, not
+//     that this port can draw it. kFieldLayers is what "can it be drawn" is answered by.
 //   * IT DOES NOT look below the stage. Two frames of the same stage drawing completely different
 //     content (a different level, a different menu page) are one identity to it.
-Scene SpyroRenderer::classifyScene() const {
+spyro::render::Scene spyro::render::FrameRenderer::classifyScene() const {
   const uint32_t s = mC->mem_r32(kGamestate);
   for (const StageArm &a : kStageArms) {
     if (a.stage == s) {
@@ -201,7 +172,7 @@ Scene SpyroRenderer::classifyScene() const {
 // Every line carries its denominator by construction: the field list prints ALL ten layers with an
 // ARMED/not marker, not just the armed ones, so "nothing armed" is visibly different from "the
 // reporter had nothing to say".
-void SpyroRenderer::reportBacklog(const Scene &sc) const {
+void spyro::render::FrameRenderer::reportBacklog(const spyro::render::Scene &sc) const {
   if (!sc.arm) {
     lucent::error("render",
                   "  stage {} is outside 0..15: the guest's render driver 0x{:08X} falls "
@@ -209,7 +180,7 @@ void SpyroRenderer::reportBacklog(const Scene &sc) const {
                   "for this stage — but reaching it means the selector is a value this port "
                   "has not seen before. Investigate before adding an arm.",
                   sc.stage,
-                  kFrameRenderDrv);
+                  spyro::render::kFrameRenderDrv);
     return;
   }
   lucent::error("render", "  arm: {}", sc.arm->what);

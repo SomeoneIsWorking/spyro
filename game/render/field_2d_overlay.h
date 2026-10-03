@@ -177,11 +177,11 @@ inline field_collectables_recipe::Recipe spriteRecipe(const Overlay &overlay) {
 inline bool publish(Core &core, RenderQueue &target, Part part, const Overlay &overlay) {
   switch (part) {
   case Part::Fade:
-    return spyro_screen_fade_submit(&core, target, fadeRecipe(overlay));
+    return spyro::screen_fade::submit(&core, target, fadeRecipe(overlay));
   case Part::Border:
-    return spyro_screen_border_submit(&core, target, borderRecipe(overlay));
+    return spyro::screen_border::submit(&core, target, borderRecipe(overlay));
   case Part::Sprite:
-    return spyro_field_collectables_submit(&core, target, spriteRecipe(overlay));
+    return spyro::field_collectables::submit(&core, target, spriteRecipe(overlay));
   }
   return false;
 }
@@ -232,7 +232,7 @@ public:
       core.mem_w32(kBarHeight, static_cast<uint32_t>(overlay_.barHeight));
       return true;
     case Part::Sprite:
-      return spyro_field_collectables_commit(&core, collectables_);
+      return spyro::field_collectables::commit(&core, collectables_);
     }
     return false;
   }
@@ -324,7 +324,7 @@ Frame::readState(Core &core, int32_t drawOffsetX, int32_t drawOffsetY, int32_t r
   state.drawOffsetX = drawOffsetX;
   state.drawOffsetY = drawOffsetY;
   state.renderWidth = renderWidth;
-  state.collectables = spyro_field_collectables_read(&core);
+  state.collectables = spyro::field_collectables::read(&core);
   return state;
 }
 

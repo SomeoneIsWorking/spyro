@@ -14,7 +14,7 @@ constexpr unsigned kFlameActive = 0x80078760u; // g_SpyroFlame + 0x98
 
 } // namespace
 
-bool spyro_flame_submit(Core *core) {
+bool spyro::flame::submit(Core *core) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }

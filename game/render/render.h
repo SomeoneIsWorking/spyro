@@ -26,60 +26,59 @@ public:
   virtual void endSpriteQueue(GteOffsetSample exit) = 0;
 };
 
-} // namespace spyro::render
-
 // Stage selectors whose reached recipes have native owners.
-constexpr uint32_t kStageField = 0u;
-constexpr uint32_t kStageLevelTransition = 1u;
-constexpr uint32_t kStagePauseMenu = 2u;
-constexpr uint32_t kStageInventoryMenu = 3u;
-constexpr uint32_t kStageRespawn = 4u;
-constexpr uint32_t kStageGameOver = 5u;
-constexpr uint32_t kStageOldDragon = 6u;
-constexpr uint32_t kStageDragon = 8u;
+inline constexpr std::uint32_t kStageField = 0u;
+inline constexpr std::uint32_t kStageLevelTransition = 1u;
+inline constexpr std::uint32_t kStagePauseMenu = 2u;
+inline constexpr std::uint32_t kStageInventoryMenu = 3u;
+inline constexpr std::uint32_t kStageRespawn = 4u;
+inline constexpr std::uint32_t kStageGameOver = 5u;
+inline constexpr std::uint32_t kStageOldDragon = 6u;
+inline constexpr std::uint32_t kStageDragon = 8u;
 // GS_EntranceAnimation. draw.c:2693 dispatches it to func_8001A050, the same producer as stage 1.
-constexpr uint32_t kStageEntranceAnimation = 9u;
+inline constexpr std::uint32_t kStageEntranceAnimation = 9u;
 // GS_Fairy: draw.c:2696 dispatches it to func_8001D718, which fairy_menu_scene owns.
-constexpr uint32_t kStageFairy = 11u;
-constexpr uint32_t kStageFrontEnd = 13u;
-constexpr uint32_t kStageCutscene = 14u;
+inline constexpr std::uint32_t kStageFairy = 11u;
+inline constexpr std::uint32_t kStageFrontEnd = 13u;
+inline constexpr std::uint32_t kStageCutscene = 14u;
 
 // The guest's per-frame RENDER DRIVER, called once per drawn frame from its main() 0x80012204 at
-// 0x8001227C. It resets the OT/packet pool, dispatches on the stage selector below, and ends in the
+// 0x8001227C. It resets the OT/packet pool, dispatches on the stage selector, and ends in the
 // display tail (DrawSync, the >=2-vblank throttle, PutDispEnv/PutDrawEnv, DrawOTag). It IS the
 // reference path — see re-frontier step `frame.own-render-driver` for the order it comes apart in.
-constexpr uint32_t kFrameRenderDrv = 0x8001ED5Cu;
+inline constexpr std::uint32_t kFrameRenderDrv = 0x8001ED5Cu;
 
-// ── One arm of the guest's render driver 0x8001ED5C ──────────────────────────────────────────────
+// One arm of the guest's render driver 0x8001ED5C. `handler` is 0 when the arm dispatches
+// indirectly or picks between two handlers.
 struct StageArm {
-  uint32_t stage;
-  uint32_t handler; // 0 when the arm dispatches indirectly or picks between two handlers
+  std::uint32_t stage;
+  std::uint32_t handler;
   const char *what;
 };
 
-// ── One layer of the FIELD (stage 0) arm, in the guest's own draw order ──────────────────────────
+// One layer of the FIELD (stage 0) arm, in the guest's own draw order. `gate` is 0 when
+// unconditional; otherwise the layer runs when `[gate]` is non-zero exactly when `gateNonZero`.
 struct FieldLayer {
-  uint32_t fn;
-  uint32_t gate;    // 0 = unconditional
-  bool gateNonZero; // true: runs when [gate] != 0; false: runs when [gate] == 0
+  std::uint32_t fn;
+  std::uint32_t gate;
+  bool gateNonZero;
   const char *what;
 };
 
-// ── The scene a renderer is being asked to produce ───────────────────────────────────────────────
-// `arm` is null when the stage selector is outside 0..15 — the guest's if-chain draws nothing for
-// such a value, so a null arm is a real answer ("nothing to port here"), not a lookup failure.
+// The scene a renderer is being asked to produce. `arm` is null when the stage selector is outside
+// 0..15 — the guest's if-chain draws nothing for such a value, so a null arm is a real answer
+// ("nothing to port here"), not a lookup failure.
 struct Scene {
-  uint32_t stage;
+  std::uint32_t stage;
   const StageArm *arm;
 };
 
-// class SpyroRenderer — the render seam for ONE frame on ONE core.
-//
-// Constructed once per Core by Spyro1FrameDriver; paired producer history therefore survives
-// logic-frame boundaries without file-static or guest-memory state.
-class SpyroRenderer {
+// The render seam for ONE frame on ONE Core. Constructed once per Core by the title's frame
+// driver, so paired producer history survives logic-frame boundaries without file-static or
+// guest-memory state.
+class FrameRenderer {
 public:
-  explicit SpyroRenderer(Core *c,
+  explicit FrameRenderer(Core *c,
                          spyro::render::SpriteQueueOffsetObserver *queueObserver = nullptr);
 
   // Announce the title's native-render policy after the framework installs RenderMode.
@@ -88,9 +87,7 @@ public:
   // ONE frame's picture: the reference OT walk, or the native producers.
   void drawFrame();
 
-  // WHICH SCENE the game is drawing right now, from the guest's own stage selector. A read of game
-  // state, used both to dispatch a native producer and — on the reference leg — to report what the
-  // porting backlog actually consists of on a real run.
+  // WHICH SCENE the game is drawing right now, from the guest's own stage selector.
   Scene classifyScene() const;
 
 private:
@@ -101,25 +98,25 @@ private:
   void reportBacklog(const Scene &sc) const; // scene.cpp — the arm/layer detail
 
   // ── PRODUCERS ─────────────────────────────────────────────────────────────────────────────────
-  // game/render/fx_title_menu.cpp — stage 13's front-end sprite layer (guest 0x8007CD38's picture,
-  // driven by 0x8007CEE4's own state machine). False = this frame's menu mode has no producer, so
-  // the seam must abort rather than present the scene without its menu.
-  bool titleMenuRender(int32_t drawOfsX,
-                       int32_t drawOfsY,
-                       int32_t clipX0,
-                       int32_t clipY0,
-                       int32_t clipX1,
-                       int32_t clipY1) const;
-  bool spriteEmit(int32_t x,
-                  int32_t y,
-                  int32_t id,
-                  uint32_t style,
-                  int32_t drawOfsX,
-                  int32_t drawOfsY,
-                  int32_t clipX0,
-                  int32_t clipY0,
-                  int32_t clipX1,
-                  int32_t clipY1,
+  // fx_title_menu.cpp — stage 13's front-end sprite layer (guest 0x8007CD38's picture, driven by
+  // 0x8007CEE4's own state machine). False = this frame's menu mode has no producer, so the seam
+  // must abort rather than present the scene without its menu.
+  bool titleMenuRender(std::int32_t drawOfsX,
+                       std::int32_t drawOfsY,
+                       std::int32_t clipX0,
+                       std::int32_t clipY0,
+                       std::int32_t clipX1,
+                       std::int32_t clipY1) const;
+  bool spriteEmit(std::int32_t x,
+                  std::int32_t y,
+                  std::int32_t id,
+                  std::uint32_t style,
+                  std::int32_t drawOfsX,
+                  std::int32_t drawOfsY,
+                  std::int32_t clipX0,
+                  std::int32_t clipY0,
+                  std::int32_t clipX1,
+                  std::int32_t clipY1,
                   const char *element,
                   std::size_t index) const;
   // fx_sprite_queue.cpp — native screen-space class of RasterizeSpritePrimQueue 0x80022A2C.
@@ -131,5 +128,7 @@ private:
   spyro::render::SpriteQueueOffsetObserver *mQueueObserver;
   // The DRAWENV this frame is being drawn with, set by drawFrame()'s call to nativeFrameBegin() on
   // the native leg only. 0 on the reference leg, where the guest's own driver owns the env.
-  uint32_t mEnv = 0;
+  std::uint32_t mEnv = 0;
 };
+
+} // namespace spyro::render

@@ -15,12 +15,12 @@ namespace spyro::actor_draw {
 inline constexpr uint32_t kProducerKey = 0x8001F798u;
 inline constexpr const char *kProducerName = "actor:opaque";
 
-} // namespace spyro::actor_draw
-
 // Direct native owner of regular actor renderer 0x8001F798. The source names where 0x8001F158 took
 // its Moby pointers from: FIELD's own level-array classification by default, or the explicit list a
 // cutscene wrote into g_SonyImage.u.m_Draw.m_Moby. Refuses before queue mutation when the
 // current record corpus contains an unsupported arm or material, and the returned refusal carries
 // the stage, the recipe reason and the census that decided it — the abort a user sees is the whole
 // diagnosis, not an address whose explanation lives on a debug channel nobody enabled.
-spyro::ProducerRefusal spyro_actor_submit(Core *c, spyro::actor_scene::Source source = {});
+ProducerRefusal submit(Core *core, actor_scene::Source source = {});
+
+} // namespace spyro::actor_draw

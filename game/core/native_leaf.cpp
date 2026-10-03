@@ -124,7 +124,7 @@ void copy_words_native(Core *c) {
 
 } // namespace
 
-void spyro_register_native_leaves(Core &core) {
+void spyro::registerNativeLeaves(Core &core) {
   spyro::installNativeOverride(core, 0x80017700u, "copy3", copy3_native);
   spyro::installNativeOverride(core, 0x800176F0u, "zero3", zero3_native);
   spyro::installNativeOverride(core, 0x80016914u, "fill", fill_native);

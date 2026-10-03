@@ -9,7 +9,7 @@ constexpr uint32_t kBuildMobyLists = 0x800521c0u;
 
 } // namespace
 
-void spyro_field_build_moby_lists(Core *core) {
+void spyro::field_moby_lists::build(Core *core) {
   psx::cpu::dispatchGuestToReturn0(
       *core, kBuildMobyLists, psx::cpu::ExecutionBudget::currentTurn(*core), "build-moby-lists");
 }

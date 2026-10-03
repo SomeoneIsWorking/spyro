@@ -201,11 +201,11 @@ void *Spyro3Runtime::createContext(Core &) {
   // The shared lineage context: the field owner back-pointer, the run counter, and the archive
   // transfer that serves this title's WAD reads. None of its render histories are written on this
   // title's boot route, which is what makes it a shared owner rather than Spyro 1's state.
-  return new SpyroContext();
+  return new spyro::Context();
 }
 
 void Spyro3Runtime::destroyContext(void *context) {
-  delete static_cast<SpyroContext *>(context);
+  delete static_cast<spyro::Context *>(context);
 }
 
 void Spyro3Runtime::registerOverrides(Game &game) {

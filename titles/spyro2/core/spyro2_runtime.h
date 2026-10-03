@@ -24,10 +24,9 @@ public:
   bool guestVramIsPicture(const Game &game) const override;
   void stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) override;
 
-  // SCUS_944.25 now OWNS a native producer (the terrain world pass, spyro::makeTerrainWorldPass)
-  // and a temporal product, so its capability is no longer widescreen-only: Native carries the
-  // in-between this title builds from its own object memory, and Gte remains the pure-guest
-  // picture.
+  // SCUS_944.25 OWNS a native producer (the terrain world pass, spyro::makeTerrainWorldPass) and a
+  // temporal product, so its capability is not widescreen-only: Native carries the in-between this
+  // title builds from its own object memory, and Gte remains the pure-guest picture.
   RenderCapabilities renderCapabilities() const override;
 
   // THIS TITLE'S IN-BETWEEN. Its own strategy, not the framework's host world pass: this one knows
@@ -48,8 +47,8 @@ public:
   void pacePresentation(Core &core, int fields, int parts) override;
 
   // THE TITLE'S ANSWER to the configured aspect, and the only place `gpu_vk_latch_guest_projection`
-  // can learn one. Before it existed this returned the base nullptr, so the framework resolved
-  // `requested = Standard4x3` and every plan was 4:3 whatever the settings file said.
+  // can learn one. A null answer makes the framework resolve `requested = Standard4x3`, so every
+  // plan would be 4:3 whatever the settings file says.
   const GuestWidescreenProjection *guestWidescreenProjection() const override;
 
   [[nodiscard]] spyro::GuestWidescreenOwner &widescreen() {
@@ -62,7 +61,7 @@ private:
   static const GuestCdStreamCallbackLayout cdStreamCallbackLayout_;
 
   // Process-lifetime, and reached from a native override through
-  // `spyro_context(core).projectionHook` rather than through this member: an override is a plain
+  // `spyro::context(core).projectionHook` rather than through this member: an override is a plain
   // function pointer with nowhere to hang a back-pointer.
   spyro::GuestWidescreenOwner widescreen_{spyro2::kWidescreenFacts};
 };

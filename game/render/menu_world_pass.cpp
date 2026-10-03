@@ -24,19 +24,19 @@ Refusal submit(Core *core) {
   const auto background = spyro::cutscene_scene_recipe::read(core);
   spyro::cutscene_scene_recipe::prepareFrame(core, background);
   core->mem_w32(kShadedMobyList, 0u);
-  spyro_field_build_moby_lists(core);
-  if (const auto refusal = spyro_field_model_chain_submit(core)) {
+  spyro::field_moby_lists::build(core);
+  if (const auto refusal = spyro::field_model_chain::submit(core)) {
     lucent::debug("render", "REFUSED 0x80019698: {}", refusal.detail);
     return Refusal::ActorChain;
   }
-  if (const auto refusal = spyro_field_particles_submit(core)) {
+  if (const auto refusal = spyro::field_particles::submit(core)) {
     lucent::debug("render", "REFUSED 0x800573C8: {}", refusal.detail);
     return Refusal::Particles;
   }
-  if (!spyro_field_cyclorama_submit(core)) {
+  if (!spyro::field_cyclorama::submit(core)) {
     return Refusal::Cyclorama;
   }
-  if (!spyro_field_environment_submit(core)) {
+  if (!spyro::field_environment::submit(core)) {
     return Refusal::Environment;
   }
   return Refusal::None;

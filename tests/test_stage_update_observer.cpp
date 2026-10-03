@@ -121,7 +121,7 @@ void test_sprite_queue_offset_boundaries_count_reached_and_unreachable_writes() 
 void test_shipping_sprite_queue_restores_guest_exit_offsets() {
   auto game = std::make_unique<Game>();
   Core &core = game->core;
-  SpyroContext context;
+  spyro::Context context;
   core.gameCtx = &context;
   gte_bind(&core);
   core.rsub.projParams.setGeomOffset(256.0f, 120.0f);

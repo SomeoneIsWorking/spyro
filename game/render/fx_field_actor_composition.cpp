@@ -173,7 +173,7 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
     spyro::field_shaded_queue_scene::commit(core, shadedFrame);
   }
   // The drawn half of the same shadow list, appended in the same order as the guest half above.
-  auto &drawnShadows = spyro_context(*core).drawnMobyShadows;
+  auto &drawnShadows = spyro::context(*core).drawnMobyShadows;
   drawnShadows.insert(
       drawnShadows.end(), secondaryFrame.drawnShadows.begin(), secondaryFrame.drawnShadows.end());
   drawnShadows.insert(
@@ -198,10 +198,10 @@ spyro::ProducerRefusal compose(Core *core, FieldActorComposition composition) {
   // An empty picture is still an endpoint: the next frame can interpolate against a scene that
   // drew nothing.
   if (composition.secondary) {
-    spyro_context(*core).secondaryActorTemporal.retain(std::move(secondaryFrame));
+    spyro::context(*core).secondaryActorTemporal.retain(std::move(secondaryFrame));
   }
   if (composition.shaded && !composition.captionPass) {
-    spyro_context(*core).shadedQueueTemporal.retain(std::move(shadedFrame.input));
+    spyro::context(*core).shadedQueueTemporal.retain(std::move(shadedFrame.input));
   }
   return {};
 }
@@ -219,10 +219,10 @@ spyro::ProducerRefusal spyro_field_actor_composition_submit(Core *core,
   // the gap. Only the layers this call owns are refused: the other call that shares this logic
   // frame may already have retained its own endpoint.
   if (composition.secondary) {
-    spyro_context(*core).secondaryActorTemporal.refuse();
+    spyro::context(*core).secondaryActorTemporal.refuse();
   }
   if (composition.shaded) {
-    spyro_context(*core).shadedQueueTemporal.refuse();
+    spyro::context(*core).shadedQueueTemporal.refuse();
   }
   return refusal;
 }

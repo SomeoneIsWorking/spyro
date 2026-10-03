@@ -11,9 +11,9 @@ constexpr uint32_t kProducerKey = 0x800190D4u;
 
 } // namespace
 
-bool spyro_screen_fade_submit(Core *core,
-                              RenderQueue &queue,
-                              const spyro::screen_fade_recipe::Recipe &recipe) {
+bool spyro::screen_fade::submit(Core *core,
+                                RenderQueue &queue,
+                                const spyro::screen_fade_recipe::Recipe &recipe) {
   if (!recipe.visible) {
     return true;
   }

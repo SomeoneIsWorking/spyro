@@ -12,7 +12,12 @@
 #include <memory>
 
 class Game;
-class SpyroRenderer;
+
+namespace spyro::render {
+// The one frame's picture owner, owned by this driver for the process. Defined in
+// game/render/render.h; only the pointer's lifetime crosses this header.
+class FrameRenderer;
+} // namespace spyro::render
 
 namespace spyro1 {
 
@@ -37,7 +42,7 @@ private:
   TransitionSkip transitions_;
   StageUpdateObserver stageObserver_;
   HandoffStoreObserver handoffStoreObserver_;
-  std::unique_ptr<SpyroRenderer> renderer_;
+  std::unique_ptr<spyro::render::FrameRenderer> renderer_;
   std::uint32_t gameplayFrame_ = 0;
 };
 

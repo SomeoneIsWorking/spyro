@@ -34,7 +34,7 @@ FieldOwner::FieldOwner(Game &game, FieldOwnerFacts facts, FieldObserver *observe
 }
 
 void FieldOwner::publish() {
-  spyro_context(game_.core).fieldOwner = this;
+  spyro::context(game_.core).fieldOwner = this;
 }
 
 std::int32_t FieldOwner::counter() const {
@@ -249,11 +249,11 @@ bool FieldOwner::deliver(FieldRequest request) {
     // Hz slots when it presented the frame that drew, so such a field commits its fence
     // UNPRESENTED: the boundary still advances exactly once per step (the frame contract is about
     // the boundary, not about a picture), the capture still resets, and nothing reaches the screen.
-    // "The scene producers ran" is the guest's own fact, read from SpyroContext's tick; a primitive
-    // count would be this port's threshold. A title with no temporal product is unchanged: every
-    // visible field still crosses the plain fence with its picture.
+    // "The scene producers ran" is the guest's own fact, read from spyro::Context's tick; a
+    // primitive count would be this port's threshold. A title with no temporal product is
+    // unchanged: every visible field still crosses the plain fence with its picture.
     auto *temporal = dynamic_cast<Fps60 *>(game_.temporalPresentation.get());
-    const std::uint32_t sceneTick = spyro_context(core).sceneProducerTicks;
+    const std::uint32_t sceneTick = spyro::context(core).sceneProducerTicks;
     const bool isSceneField = sceneTick != sceneTick_;
     sceneTick_ = sceneTick;
 
@@ -301,7 +301,7 @@ void FieldOwner::hostTurnThunk(Core *core) {
 }
 
 FieldOwner &fieldOwner(Core &core) {
-  FieldOwner *owner = spyro_context(core).fieldOwner;
+  FieldOwner *owner = spyro::context(core).fieldOwner;
   if (owner == nullptr) {
     lucent::error("fields", "no title field owner is published for this Core");
     std::abort();
@@ -310,11 +310,11 @@ FieldOwner &fieldOwner(Core &core) {
 }
 
 const FieldOwner *fieldOwnerIfPublished(const Core &core) {
-  return spyro_context(core).fieldOwner;
+  return spyro::context(core).fieldOwner;
 }
 
 const FieldOwner &fieldOwner(const Core &core) {
-  const FieldOwner *owner = spyro_context(core).fieldOwner;
+  const FieldOwner *owner = spyro::context(core).fieldOwner;
   if (owner == nullptr) {
     lucent::error("fields", "no title field owner is published for this Core");
     std::abort();

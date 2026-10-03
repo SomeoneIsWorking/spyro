@@ -85,21 +85,21 @@ spyro::AttractState Spyro1Runtime::attractState(const Game &, Core &core) const 
 }
 
 void *Spyro1Runtime::createContext(Core &) {
-  return new SpyroContext();
+  return new spyro::Context();
 }
 
 void Spyro1Runtime::destroyContext(void *context) {
-  delete static_cast<SpyroContext *>(context);
+  delete static_cast<spyro::Context *>(context);
 }
 
 void Spyro1Runtime::registerOverrides(Game &game) {
-  spyro_register_cd_queue(game.core);
-  spyro_register_native_rand(game.core);
-  spyro_register_native_leaves(game.core);
-  spyro_register_native_vec(game.core);
-  spyro_register_native_gte(game.core);
-  spyro_register_native_angle(game.core);
-  spyro_register_native_util(game.core);
+  spyro::registerCdQueue(game.core);
+  spyro::registerNativeRand(game.core);
+  spyro::registerNativeLeaves(game.core);
+  spyro::registerNativeVec(game.core);
+  spyro::registerNativeGte(game.core);
+  spyro::registerNativeAngle(game.core);
+  spyro::registerNativeUtil(game.core);
   native::registerAudioKeyStateOverrides(game.core);
   native::registerCameraOverrides(game.core);
   native::registerCollisionShadeOverrides(game.core);
@@ -147,11 +147,11 @@ std::unique_ptr<FrameDriver> Spyro1Runtime::createFrameDriver(Game &game) {
 }
 
 bool Spyro1Runtime::guestVramIsPicture(const Game &game) const {
-  return spyro_presentation_owner(game.core).guestVramIsPicture();
+  return spyro::presentationOwner(game.core).guestVramIsPicture();
 }
 
 bool Spyro1Runtime::guestPictureIsNativeWidth(const Game &game) const {
-  return spyro_presentation_owner(game.core).guestPictureIsNativeWidth();
+  return spyro::presentationOwner(game.core).guestPictureIsNativeWidth();
 }
 
 void Spyro1Runtime::pacePresentation(Core &core, int fields, int parts) {
@@ -161,7 +161,7 @@ void Spyro1Runtime::pacePresentation(Core &core, int fields, int parts) {
 
 std::unique_ptr<TemporalFramePresentation>
 Spyro1Runtime::createTemporalFramePresentation(Game &game) {
-  return std::make_unique<Fps60>(game, spyro_temporal_scene_source(game));
+  return std::make_unique<Fps60>(game, spyro::temporal_scene::source(game));
 }
 
 namespace {

@@ -18,11 +18,11 @@ constexpr uint32_t kProducerKey = spyro::world_temporal::kProducerKey;
 
 } // namespace
 
-bool spyro_world_submit(Core *core, int32_t selection) {
+bool spyro::world_draw::submit(Core *core, int32_t selection) {
   if (core == nullptr || core->game == nullptr) {
     return false;
   }
-  auto &history = spyro_context(*core).worldTemporal;
+  auto &history = spyro::context(*core).worldTemporal;
   const auto animation = spyro::world_scene::animate(core, selection);
   if (!animation.ok) {
     lucent::debug("worlddirect", "REFUSED animation reason={}", animation.refusal);
@@ -34,7 +34,8 @@ bool spyro_world_submit(Core *core, int32_t selection) {
   // The sector producer's drawn reach, accumulated into the run's per-class census. The world
   // builder has no Core by design, so it hands the span back on the recipe and the Core owner
   // drains it here (issue 0154).
-  spyro_context(*core).marginCensus.merge(spyro::margin_object_census::Class::kSector, recipe.span);
+  spyro::context(*core).marginCensus.merge(spyro::margin_object_census::Class::kSector,
+                                           recipe.span);
   const auto plan =
       spyro::world_scene_submitter::prepare(core, core->game->rq, kProducerKey, recipe);
   if (plan.status != spyro::world_scene_submitter::Status::Ready &&
@@ -56,7 +57,7 @@ bool spyro_world_submit(Core *core, int32_t selection) {
   }
   ProducerScope producer(&core->rsub.producerScope, kProducerKey, "world:static");
   spyro::world_scene_submitter::submit(
-      core, core->game->rq, kProducerKey, recipe, plan, spyro_context(*core).drawnSectors);
+      core, core->game->rq, kProducerKey, recipe, plan, spyro::context(*core).drawnSectors);
   history.retain(*core, std::move(source), plan.draw);
   lucent::debug("worlddirect",
                 "PASS selected={} low={} high={} candidates={} rejected={} faces={} "

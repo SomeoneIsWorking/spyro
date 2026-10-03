@@ -11,18 +11,19 @@ constexpr uint32_t kProducer = 0x80023AC4u;
 
 } // namespace
 
-bool spyro_field_player_visible(Core *core) {
-  return core != nullptr && spyro_field_player_visible(core->mem_r32(kIsSpyroHidden));
+bool spyro::field_player_actor::visible(Core *core) {
+  return core != nullptr && spyro::field_player_actor::visible(core->mem_r32(kIsSpyroHidden));
 }
 
-spyro::ProducerRefusal spyro_field_player_submit(Core *core, SpyroPairedActorFrameState &state) {
+spyro::ProducerRefusal spyro::field_player_actor::submit(Core *core,
+                                                         spyro::paired_actor::FrameState &state) {
   if (core == nullptr) {
     return spyro::refuse("pairedactor", kProducer, "no core");
   }
-  if (!spyro_field_player_visible(core)) {
+  if (!spyro::field_player_actor::visible(core)) {
     return {};
   }
-  if (spyro_paired_actor_submit_field(core, state)) {
+  if (spyro::paired_actor::submitField(core, state)) {
     return {};
   }
   return spyro::refuse("pairedactor",

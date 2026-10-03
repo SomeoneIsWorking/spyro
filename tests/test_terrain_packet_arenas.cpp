@@ -4,12 +4,12 @@
 // the record it matches against is whatever the drawer linked. Keying that record the obvious ways
 // both fail, and the measurements are why:
 //
-//   ONE UNION OF EVERY PASS (spyro_context's `terrainPackets` was this) — the guest DOUBLE-BUFFERS.
-//   MEASURED 2026-10-03 on SCUS_944.25: one terrain pass runs per scene tick into one of two packet
-//   arenas, the primitive cursor alternating between 0x801A2984.. and 0x801C04BC.., and the queue
-//   presented on that tick carries the OTHER pass. A union describes both, so it answers true for
-//   addresses the presented queue does not hold and the match, while it matched 719 of 1355 items
-//   on the first frame, found 0 of 1355 on every frame after.
+//   ONE UNION OF EVERY PASS (spyro::context's `terrainPackets` was this) — the guest
+//   DOUBLE-BUFFERS. MEASURED 2026-10-03 on SCUS_944.25: one terrain pass runs per scene tick into
+//   one of two packet arenas, the primitive cursor alternating between 0x801A2984.. and
+//   0x801C04BC.., and the queue presented on that tick carries the OTHER pass. A union describes
+//   both, so it answers true for addresses the presented queue does not hold and the match, while
+//   it matched 719 of 1355 items on the first frame, found 0 of 1355 on every frame after.
 //
 //   A TICK-COUNTED WINDOW — right answer, wrong derivation, and it fails the moment the cadence is
 //   not the assumed one: two ticks held 1174/1174 on the first frames and then 613 addresses
@@ -28,7 +28,7 @@
 
 namespace {
 
-using ::SpyroContext;
+using ::spyro::Context;
 
 constexpr std::uint32_t kArenaA = 0x801A2984u;
 constexpr std::uint32_t kArenaB = 0x801C04BCu;
@@ -37,10 +37,10 @@ constexpr std::uint32_t kArenaB = 0x801C04BCu;
 // with each address the pass links, exactly as `TerrainFrame::linkAndAdvance` does.
 constexpr std::uint32_t kPacketWords = 4;
 
-void linkPass(SpyroContext &context,
+void linkPass(spyro::Context &context,
               std::uint32_t begin,
               const std::vector<std::uint32_t> &packets) {
-  SpyroContext::TerrainPacketArena &arena = context.beginTerrainArena(begin);
+  spyro::Context::TerrainPacketArena &arena = context.beginTerrainArena(begin);
   for (std::uint32_t packet : packets) {
     arena.packets.push_back(packet);
     arena.end = std::max(arena.end, packet + 4u * kPacketWords);
@@ -51,8 +51,8 @@ void linkPass(SpyroContext &context,
 
 // What `TerrainWorldPass::owns` does: the arena containing the address decides, and that arena's
 // own linked set answers. Not a union, and not a search across arenas.
-bool owns(SpyroContext &context, std::uint32_t guestPacket) {
-  for (const SpyroContext::TerrainPacketArena &arena : context.terrainArenas) {
+bool owns(spyro::Context &context, std::uint32_t guestPacket) {
+  for (const spyro::Context::TerrainPacketArena &arena : context.terrainArenas) {
     if (guestPacket < arena.begin || guestPacket >= arena.end) {
       continue;
     }
@@ -75,7 +75,7 @@ std::vector<std::uint32_t> passIn(std::uint32_t begin, std::uint32_t count) {
 
 // THE ALTERNATION: each pass writes its own arena, and each arena's record answers only for itself.
 void test_each_arena_answers_only_for_its_own_pass() {
-  SpyroContext context;
+  spyro::Context context;
   const std::vector<std::uint32_t> passA = passIn(kArenaA, 8);
   const std::vector<std::uint32_t> passB = passIn(kArenaB, 8);
   linkPass(context, kArenaA, passA);
@@ -97,7 +97,7 @@ void test_each_arena_answers_only_for_its_own_pass() {
 // THE ORDER DOES NOT MATTER: the presented queue alternates, so a record must survive the OTHER
 // arena being written after it.
 void test_a_pass_record_survives_the_other_arena_being_rewritten() {
-  SpyroContext context;
+  spyro::Context context;
   const std::vector<std::uint32_t> passA = passIn(kArenaA, 8);
   linkPass(context, kArenaA, passA);
   // Ten later passes into the other arena. If the records were one shared set, or if writing one
@@ -114,7 +114,7 @@ void test_a_pass_record_survives_the_other_arena_being_rewritten() {
 // so the first pass's addresses are stale the moment the second writes them — and the record must
 // not go on answering for them.
 void test_rewriting_an_arena_replaces_that_arenas_record() {
-  SpyroContext context;
+  spyro::Context context;
   const std::vector<std::uint32_t> first = passIn(kArenaA, 16);
   linkPass(context, kArenaA, first);
 
@@ -134,7 +134,7 @@ void test_rewriting_an_arena_replaces_that_arenas_record() {
 // A PASS THAT LINKS NOTHING OWNS NOTHING. An arena is recorded by its allocation range, which for a
 // pass that linked nothing is empty, so nothing inside it can be claimed.
 void test_an_empty_pass_owns_nothing() {
-  SpyroContext context;
+  spyro::Context context;
   linkPass(context, kArenaA, {});
   CHECK(!owns(context, kArenaA));
   CHECK(!owns(context, kArenaA + 0x1000u));
@@ -143,13 +143,13 @@ void test_an_empty_pass_owns_nothing() {
 // THE RECORD IS BOUNDED. Two arenas is what the real double buffer alternates, but the cursor could
 // move somewhere new, and a context that grew a record per pass would grow without limit.
 void test_the_arena_record_is_bounded() {
-  SpyroContext context;
-  for (std::uint32_t i = 0; i < SpyroContext::kMaxTerrainArenas * 2u; ++i) {
+  spyro::Context context;
+  for (std::uint32_t i = 0; i < spyro::Context::kMaxTerrainArenas * 2u; ++i) {
     linkPass(context, kArenaA + i * 0x10000u, passIn(kArenaA + i * 0x10000u, 4));
   }
-  CHECK_EQ(context.terrainArenas.size(), SpyroContext::kMaxTerrainArenas);
+  CHECK_EQ(context.terrainArenas.size(), spyro::Context::kMaxTerrainArenas);
   // The most recent arena is the one that survived; the oldest was dropped.
-  const std::uint32_t newest = kArenaA + (SpyroContext::kMaxTerrainArenas * 2u - 1u) * 0x10000u;
+  const std::uint32_t newest = kArenaA + (spyro::Context::kMaxTerrainArenas * 2u - 1u) * 0x10000u;
   CHECK(owns(context, newest));
   CHECK(!owns(context, kArenaA));
 }

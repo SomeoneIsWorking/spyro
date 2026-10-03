@@ -152,7 +152,7 @@ void vsra_native(Core *c) {
 
 } // namespace
 
-void spyro_register_native_vec(Core &core) {
+void spyro::registerNativeVec(Core &core) {
   spyro::installNativeOverride(core, 0x80017758u, "vadd", vadd_native);
   spyro::installNativeOverride(core, 0x8001778Cu, "vsub", vsub_native);
   spyro::installNativeOverride(core, 0x80016CB0u, "angtblA", angtbl_a_native);

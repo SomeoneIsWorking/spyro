@@ -12,7 +12,7 @@
 
 namespace spyro {
 RuntimeRun &runtimeRun(Core &core) {
-  return spyro_context(core).run;
+  return spyro::context(core).run;
 }
 
 void reportRuntimeRun(Core &core, std::uint64_t completedSteps) {
@@ -60,12 +60,12 @@ void reportRuntimeRun(Core &core, std::uint64_t completedSteps) {
   // drew anything" -- which is the failure `depth_cov.py` made when it reported zero for a run
   // whose path never executes its counters.
   core.rsub.census.report("spyro run-complete");
-  spyro_paired_actor_temporal_finish(&core);
+  spyro::paired_actor::temporal_evidence::finish(&core);
   // Every CD read this run issued, with its issuer site out of the 31 the census names, and the
   // fields each one cost. The unreached sites are printed BY NAME: a route that never dies and
   // never pauses exercises a dozen of the 31, and a coverage number without its denominator would
   // read like full coverage (issue 0155 section 7, M3).
-  spyro_context(core).loadLedger.logSummary();
-  writeReportIfRequested(spyro_context(core).loadLedger);
+  spyro::context(core).loadLedger.logSummary();
+  writeReportIfRequested(spyro::context(core).loadLedger);
 }
 } // namespace spyro

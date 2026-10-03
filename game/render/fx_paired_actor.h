@@ -10,12 +10,14 @@
 class Core;
 class RenderQueue;
 
-struct SpyroPairedGpuSnapshot {
+namespace spyro::paired_actor {
+
+struct GpuSnapshot {
   int off_x = 0, off_y = 0, da_x0 = 0, da_y0 = 0, da_x1 = 0, da_y1 = 0;
   int tw_mx = 0, tw_my = 0, tw_ox = 0, tw_oy = 0;
 };
 
-struct SpyroPairedActorTransform {
+struct Transform {
   spyro::SceneCameraInputs sceneCamera{};
   std::array<std::array<uint32_t, 8>, 3> layer_cr{};
   std::array<int32_t, 3> base_mac{};
@@ -29,7 +31,7 @@ struct SpyroPairedActorTransform {
   uint8_t depth_bias = 0;
 };
 
-struct SpyroPairedFrame {
+struct Frame {
   bool valid = false;
   bool culled = false;
   uint64_t frameSerial = 0;
@@ -37,14 +39,14 @@ struct SpyroPairedFrame {
   uint64_t topology = 0;
   std::array<uint32_t, 3> layer_counts{};
   bool authored_replay = false;
-  SpyroPairedActorTransform transform{};
+  Transform transform{};
   std::vector<std::array<int32_t, 3>> pose;
-  std::vector<spyro::paired_actor::Primitive> primitives;
+  std::vector<Primitive> primitives;
   std::vector<uint32_t> materials;
-  SpyroPairedGpuSnapshot gpu{};
+  GpuSnapshot gpu{};
 };
 
-struct SpyroPairedActorFrameState {
+struct FrameState {
   uint32_t invocations = 0;
   uint32_t groups = 0;
   uint32_t candidates = 0;
@@ -52,47 +54,38 @@ struct SpyroPairedActorFrameState {
   uint32_t semiFaces = 0; // of `faces`, the ones drawn semi-transparent
   bool culled = false;
   const char *refusal = nullptr;
-  SpyroPairedFrame previous{};
-  SpyroPairedFrame current{};
+  Frame previous{};
+  Frame current{};
   bool endpoints_compatible = false;
   bool temporal_eligible = false;
   bool was_state2 = false;
   uint64_t stage2_epoch = 0;
   bool was_fps60_active = false;
-  SpyroPairedTemporalEvidence temporal{};
+  temporal_evidence::Evidence temporal{};
   uint64_t parser_scanned = 0;
   uint64_t parser_normal = 0;
   uint64_t parser_faded = 0;
 };
 
-bool spyro_paired_actor_build_transform(Core *c, SpyroPairedActorTransform &out);
+bool buildTransform(Core *c, Transform &out);
 
 // Production normal opaque/textured arm of guest renderer 0x80023AC4.
-bool spyro_paired_actor_decode_pose(Core *c);
-bool spyro_paired_actor_submit(Core *c, SpyroPairedActorFrameState &state);
-void spyro_paired_actor_log_frame_compatibility(const SpyroPairedFrame &previous,
-                                                const SpyroPairedFrame &current,
-                                                bool compatible);
-bool spyro_paired_actor_submit_field(Core *c, SpyroPairedActorFrameState &state);
-enum class SpyroPairedRebuildResult : uint8_t { Refused, NoOutput, Emitted };
-SpyroPairedRebuildResult
-spyro_paired_actor_rebuild_endpoint(Core *c, RenderQueue &target, const SpyroPairedFrame &frame);
-SpyroPairedRebuildResult spyro_paired_actor_rebuild_sample(Core *core,
-                                                           RenderQueue &target,
-                                                           const SpyroPairedFrame &previous,
-                                                           const SpyroPairedFrame &current,
-                                                           float t);
-void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
-                                    bool state2,
-                                    bool reference_leg,
-                                    bool fps60_active);
-SpyroPairedActorFrameState &spyro_paired_actor_state(Core *c);
-void spyro_paired_actor_fps60_rotate(Core *c);
-void spyro_paired_actor_fps60_world_pass(Core *c, float t);
-bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state);
-bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState &state,
-                                     bool reference_leg,
-                                     bool expect_group);
+bool decodePose(Core *c);
+bool submit(Core *c, FrameState &state);
+void logFrameCompatibility(const Frame &previous, const Frame &current, bool compatible);
+bool submitField(Core *c, FrameState &state);
+enum class RebuildResult : uint8_t { Refused, NoOutput, Emitted };
+RebuildResult rebuildEndpoint(Core *c, RenderQueue &target, const Frame &frame);
+RebuildResult rebuildSample(
+    Core *core, RenderQueue &target, const Frame &previous, const Frame &current, float t);
+void frameBegin(FrameState &state, bool state2, bool reference_leg, bool fps60_active);
+FrameState &state(Core *c);
+void fps60Rotate(Core *c);
+void fps60WorldPass(Core *c, float t);
+bool fps60Eligible(FrameState &state);
+bool frameFinish(const FrameState &state, bool reference_leg, bool expect_group);
 
 // Hermetic checks for the shipping delta codec and /16 frame blend.
-int spyro_paired_actor_selftest();
+int selftest();
+
+} // namespace spyro::paired_actor

@@ -10,7 +10,7 @@ constexpr uint32_t kMatrix = 0xB8u;
 
 } // namespace
 
-bool spyro_flame_matrix_publish(Core *core, const std::array<uint32_t, 5> &matrix) {
+bool spyro::flame_matrix::publish(Core *core, const std::array<uint32_t, 5> &matrix) {
   if (core == nullptr || core->mem_r8(kFlame + kEnable) == 0u) {
     return false;
   }

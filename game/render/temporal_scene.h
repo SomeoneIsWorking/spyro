@@ -7,13 +7,16 @@
 class Core;
 class Game;
 struct RenderQueue;
+class InBetweenStrategy;
+
+namespace spyro::temporal_scene {
 
 // Reusable isolated admission storage, one per game. Production source reconstruction and queue
 // validation share this sink without allocating the full queue on every logic frame.
-class SpyroTemporalSceneAdmission {
+class Admission {
 public:
-  SpyroTemporalSceneAdmission();
-  ~SpyroTemporalSceneAdmission();
+  Admission();
+  ~Admission();
   bool world(Core &core, bool paired);
   // The four self-contained layer intervals, preflighted the same way and for the same reason: a
   // midpoint the planner would refuse must be discovered before presentation depends on it, not
@@ -38,11 +41,11 @@ private:
 
   std::unique_ptr<RenderQueue> sink_;
 };
-class InBetweenStrategy;
 
 // Captures eligibility after the complete logic-frame scene has been produced. Unowned scene
 // producers remain in the captured frame until they provide their own temporal source.
-void spyro_temporal_scene_begin(
-    Core &core, uint64_t scene, bool pairedScene, bool reference, bool active);
-void spyro_temporal_scene_prepare(Core &core);
-std::unique_ptr<InBetweenStrategy> spyro_temporal_scene_source(Game &game);
+void begin(Core &core, std::uint64_t scene, bool pairedScene, bool reference, bool active);
+void prepare(Core &core);
+std::unique_ptr<InBetweenStrategy> source(Game &game);
+
+} // namespace spyro::temporal_scene

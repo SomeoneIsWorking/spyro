@@ -1,10 +1,5 @@
-// native_rand.cpp — the first guest function this port OWNS rather than observes.
-//
-// WHY THIS ONE FIRST. It is a real native replacement, chosen to be small and exactly specified so
-// native-override registration can be proven before it is pointed at anything load-bearing.
-//
-// THE FUNCTION. 0x8006272C is Sony's rand(): the standard LCG, verified from its own disassembly
-// rather than assumed from the constants.
+// native_rand.cpp — the native replacement for Sony's rand() at 0x8006272C, verified from its own
+// disassembly rather than assumed from the constants:
 //
 //   8006272C  lui  v1, 0x41C6
 //   80062730  lw   v0, [0x80075AC0]      ; seed
@@ -16,16 +11,12 @@
 //   80062750  srl  v0, v0, 16
 //   80062758  andi v0, v0, 0x7FFF        ; return (seed >> 16) & 0x7FFF
 //
-// It matters that this is exact rather than merely random: the title screen branches on rand()&3 to
-// pick its idle animation (C071), so a different sequence changes observable behaviour and would
-// make any future frame-for-frame comparison drift for reasons that have nothing to do with the
-// code under test.
+// The sequence is exact rather than merely random: the title screen branches on rand()&3 to pick
+// its idle animation, so a different sequence changes observable behaviour.
 //
-// HI/LO ARE PART OF THE CONTRACT, and this is the subtlety worth stating. `mult` writes the hi/lo
-// register pair, and the runtime models them. A native body that computes the right RETURN VALUE
-// but leaves hi/lo stale is NOT equivalent — any guest code that reads hi/lo before the next mult
-// would diverge. That is exactly the kind of difference a human reviewer waves past and a per-call
-// differential catches, so the native body sets them explicitly.
+// HI/LO ARE PART OF THE CONTRACT: `mult` writes the register pair and the runtime models it, so a
+// body that computes the right return value but leaves hi/lo stale is not equivalent. `$at` is
+// reproduced for the same reason — "harmless" is a judgement and "identical" is a measurement.
 #include "core.h"
 #include "native_execution.h"
 #include "spyro_game.h"
@@ -51,20 +42,14 @@ void rand_native(Core *c) {
   c->r[4] = lo;                     // a0 = mflo, left live exactly as the body leaves it
   c->r[3] = kMul;                   // v1 = the multiplier the body built with lui/ori
   c->r[2] = (next >> 16) & 0x7FFFu; // v0 = return value
-  // $at IS PART OF THE OBSERVABLE RESULT, however much it should not be. The body's last `lui at,
-  // 0x8007` (0x80062748, building the seed address for the store) leaves 0x80070000 behind, and the
-  // per-call differential flagged the mismatch on call #10 — the first call where the caller
-  // happened to leave a different value in $at. Architecturally $at is the assembler temporary and
-  // no host code reads it across a call, so this is harmless in practice. It is
-  // reproduced anyway because "harmless" is a judgement and "identical" is a measurement, and the
-  // moment a replacement is allowed to differ "where it does not matter" the differential stops
-  // meaning anything. I would not have noticed this by reading the code.
+  // The body's last `lui at, 0x8007` (0x80062748, building the seed address for the store) leaves
+  // 0x80070000 behind, and the per-call differential flagged the mismatch.
   c->r[1] = 0x80070000u;
 }
 
 } // namespace
 
-void spyro_register_native_rand(Core &core) {
+void spyro::registerNativeRand(Core &core) {
   // The literal, not kRandEntry: tools/reach_corpus.py and tools/override_constants.py both read
   // the registered entry address out of this call, so the owner's own registration spells it.
   spyro::installNativeOverride(core, 0x8006272Cu, "rand", rand_native);

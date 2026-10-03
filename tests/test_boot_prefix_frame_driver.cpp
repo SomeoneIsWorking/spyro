@@ -221,9 +221,9 @@ void vsyncLeaf(Core *core) {
 
 // The Game, with the two things a title runtime needs on it already in place. This is a FUNCTION
 // rather than fixture body code on purpose: the frame driver's own constructor reaches
-// `spyro_context(core)` to publish its field owner, and members are initialized before the
+// `spyro::context(core)` to publish its field owner, and members are initialized before the
 // fixture's body runs, so a context published in the body is too late and the driver aborts.
-std::unique_ptr<Game> newGame(SpyroContext &context, spyro2::Spyro2Runtime &runtime) {
+std::unique_ptr<Game> newGame(spyro::Context &context, spyro2::Spyro2Runtime &runtime) {
   std::unique_ptr<Game> game = std::make_unique<Game>();
   game->core.gameCtx = &context;
   game->runtime = &runtime;
@@ -303,7 +303,7 @@ public:
   }
 
   spyro2::Spyro2Runtime runtime;
-  SpyroContext context;
+  spyro::Context context;
   std::unique_ptr<Game> game;
   spyro::BootPrefixFrameDriver driver;
 };
@@ -560,7 +560,7 @@ private:
 void test_reentrant_field_delivery_is_refused() {
   psx::config::cv_nopace.set(psx::config::Layer::Runtime, true);
   psx::config::cv_repl.set(psx::config::Layer::Runtime, false);
-  SpyroContext context;
+  spyro::Context context;
   spyro2::Spyro2Runtime runtime;
   std::unique_ptr<Game> game = newGame(context, runtime);
 
@@ -588,7 +588,7 @@ void test_negative_vsync_query_answers_the_derived_counter() {
   // A Core with its Game, not a bare one: the counter word is served by the framework's peripheral
   // model, which dereferences `core.game`. A bare Core answers the query with a null dereference
   // instead of a value, which reads as a crash in the leaf rather than as the missing owner.
-  SpyroContext context;
+  spyro::Context context;
   spyro2::Spyro2Runtime runtime;
   std::unique_ptr<Game> game = newGame(context, runtime);
   Core &core = game->core;

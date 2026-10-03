@@ -64,7 +64,7 @@ void submit(Core *core, RenderQueue &queue, const glow_recipe::Recipe &recipe, c
     }
     // Past the recipe's own offscreen reject, so this glow face is drawn. `xs` is its final screen
     // span, which is the per-class answer for glows (issue 0154).
-    spyro_context(*core).marginCensus.addVertices(
+    spyro::context(*core).marginCensus.addVertices(
         margin_object_census::Class::kGlow, xs, xs + face.vertices.size());
     // Only the centre carries the record's colour. The ring is black, which is what makes the halo
     // fall off; writing the colour to all three would paint a flat triangle.

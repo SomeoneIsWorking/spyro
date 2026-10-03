@@ -124,7 +124,7 @@ int round_screen(float v) {
   return (int)(v < 0.0f ? v - 0.5f : v + 0.5f);
 }
 
-bool refuse_shipping(SpyroPairedActorFrameState &state, const char *why) {
+bool refuse_shipping(spyro::paired_actor::FrameState &state, const char *why) {
   state.refusal = why;
   state.current = {};
   state.endpoints_compatible = false;
@@ -166,7 +166,7 @@ uint64_t topology_fingerprint(const std::array<uint32_t, 3> &counts,
   return h;
 }
 
-bool frames_compatible(const SpyroPairedFrame &a, const SpyroPairedFrame &b) {
+bool frames_compatible(const spyro::paired_actor::Frame &a, const spyro::paired_actor::Frame &b) {
   return a.valid && b.valid && !a.culled && !b.culled && a.topology == b.topology &&
          a.epoch == b.epoch && a.layer_counts == b.layer_counts &&
          a.authored_replay == b.authored_replay && a.primitives.size() == b.primitives.size() &&
@@ -217,11 +217,11 @@ bool preflight_paired(const RenderQueue &queue, size_t faces, bool authoredRepla
          gpu_vk_order_bias_distinguishes(firstSequence + (uint32_t)faces - 1u);
 }
 
-bool rebuild_recipe_eligible(const SpyroPairedFrame &frame, bool duplicate) {
+bool rebuild_recipe_eligible(const spyro::paired_actor::Frame &frame, bool duplicate) {
   return frame.valid && !frame.culled && !duplicate;
 }
 
-bool project_captured(const SpyroPairedFrame &frame,
+bool project_captured(const spyro::paired_actor::Frame &frame,
                       std::vector<spyro::paired_actor::ProjectedVertex> &out);
 
 spyro::actor_ot_coalescer::Result
@@ -240,22 +240,23 @@ global_bins(std::span<const spyro::paired_actor::ResolvedFace> faces,
   return spyro::actor_ot_coalescer::map({0u, depthNear, control}, bins);
 }
 
-SpyroPairedRebuildResult emit_faces(Core *c,
-                                    RenderQueue &rq,
-                                    std::span<const spyro::paired_actor::ResolvedFace> faces,
-                                    bool authoredReplay,
-                                    uint32_t depthNear,
-                                    uint32_t control,
-                                    const SpyroPairedGpuSnapshot &destination) {
+spyro::paired_actor::RebuildResult
+emit_faces(Core *c,
+           RenderQueue &rq,
+           std::span<const spyro::paired_actor::ResolvedFace> faces,
+           bool authoredReplay,
+           uint32_t depthNear,
+           uint32_t control,
+           const spyro::paired_actor::GpuSnapshot &destination) {
   if (faces.empty()) {
-    return SpyroPairedRebuildResult::NoOutput;
+    return spyro::paired_actor::RebuildResult::NoOutput;
   }
   if (!preflight_paired(rq, faces.size(), authoredReplay)) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   const auto mapping = global_bins(faces, authoredReplay, depthNear, control);
   if (!mapping.valid) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   std::vector<size_t> replay(faces.size());
   std::iota(replay.begin(), replay.end(), size_t{0});
@@ -339,24 +340,25 @@ SpyroPairedRebuildResult emit_faces(Core *c,
                                                                             faceOrdinal)
                                   : PainterReplayOrder{});
   }
-  return SpyroPairedRebuildResult::Emitted;
+  return spyro::paired_actor::RebuildResult::Emitted;
 }
 
-SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
-                                                RenderQueue &rq,
-                                                const SpyroPairedFrame &frame,
-                                                const SpyroPairedGpuSnapshot &destination) {
+spyro::paired_actor::RebuildResult
+emit_captured_endpoint(Core *c,
+                       RenderQueue &rq,
+                       const spyro::paired_actor::Frame &frame,
+                       const spyro::paired_actor::GpuSnapshot &destination) {
   bool duplicate = false;
   const int queued = rq.consumed ? 0 : rq.n;
   for (int i = 0; i < queued; ++i) {
     duplicate |= rq.items[i].painter_object == 0x80023AC4u;
   }
   if (!rebuild_recipe_eligible(frame, duplicate)) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   std::vector<spyro::paired_actor::ProjectedVertex> projected;
   if (!project_captured(frame, projected)) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   auto resolved = spyro::paired_actor::resolve_normal_faces(frame.primitives,
                                                             projected,
@@ -364,7 +366,7 @@ SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
                                                             frame.transform.depth_origin,
                                                             frame.transform.ot_shift);
   if (!resolved) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   return emit_faces(c,
                     rq,
@@ -375,7 +377,7 @@ SpyroPairedRebuildResult emit_captured_endpoint(Core *c,
                     destination);
 }
 
-bool project_captured(const SpyroPairedFrame &frame,
+bool project_captured(const spyro::paired_actor::Frame &frame,
                       std::vector<spyro::paired_actor::ProjectedVertex> &out) {
   out.clear();
   out.reserve(frame.pose.size());
@@ -400,14 +402,15 @@ bool project_captured(const SpyroPairedFrame &frame,
   return at == frame.pose.size();
 }
 
-const SpyroPairedGpuSnapshot &temporal_destination(const SpyroPairedFrame &,
-                                                   const SpyroPairedFrame &current) {
+const spyro::paired_actor::GpuSnapshot &
+temporal_destination(const spyro::paired_actor::Frame &,
+                     const spyro::paired_actor::Frame &current) {
   return current.gpu;
 }
 
 bool interpolate_projected(std::span<const spyro::paired_actor::ProjectedVertex> a,
                            std::span<const spyro::paired_actor::ProjectedVertex> b,
-                           const SpyroPairedActorTransform &tr,
+                           const spyro::paired_actor::Transform &tr,
                            float t,
                            std::vector<spyro::paired_actor::ProjectedVertex> &out) {
   if (a.size() != b.size()) {
@@ -443,11 +446,14 @@ bool interpolate_projected(std::span<const spyro::paired_actor::ProjectedVertex>
   return true;
 }
 
-SpyroPairedRebuildResult emit_interpolated(
-    Core *c, RenderQueue &rq, const SpyroPairedFrame &prev, const SpyroPairedFrame &cur, float t) {
+spyro::paired_actor::RebuildResult emit_interpolated(Core *c,
+                                                     RenderQueue &rq,
+                                                     const spyro::paired_actor::Frame &prev,
+                                                     const spyro::paired_actor::Frame &cur,
+                                                     float t) {
   const auto &destination = temporal_destination(prev, cur);
   if (!std::isfinite(t)) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   if (t == 0.0f) {
     return emit_captured_endpoint(c, rq, prev, destination);
@@ -456,18 +462,18 @@ SpyroPairedRebuildResult emit_interpolated(
     return emit_captured_endpoint(c, rq, cur, destination);
   }
   if (t < 0.0f || t > 1.0f) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   if (!frames_compatible(prev, cur) || prev.transform.ot_shift != cur.transform.ot_shift) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   std::vector<spyro::paired_actor::ProjectedVertex> pa, pb;
   if (!project_captured(prev, pa) || !project_captured(cur, pb) || pa.size() != pb.size()) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   std::vector<spyro::paired_actor::ProjectedVertex> pm;
   if (!interpolate_projected(pa, pb, cur.transform, t, pm)) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   const auto depth = spyro::paired_actor_depth::interpolate(prev.transform.base_mac[2],
                                                             cur.transform.base_mac[2],
@@ -475,12 +481,12 @@ SpyroPairedRebuildResult emit_interpolated(
                                                             cur.transform.ot_control,
                                                             t);
   if (!depth) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   auto resolved = spyro::paired_actor::resolve_normal_faces_continuous(
       cur.primitives, pm, {cur.materials}, depth->origin, depth->shift);
   if (!resolved) {
-    return SpyroPairedRebuildResult::Refused;
+    return spyro::paired_actor::RebuildResult::Refused;
   }
   return emit_faces(c,
                     rq,
@@ -491,7 +497,7 @@ SpyroPairedRebuildResult emit_interpolated(
                     destination);
 }
 
-bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredReplay) {
+bool submit_native(Core *c, spyro::paired_actor::FrameState &state, bool authoredReplay) {
   if (++state.invocations != 1) {
     return refuse_shipping(state, "second invocation in one drawn frame");
   }
@@ -519,7 +525,7 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
     }
   }
 
-  SpyroPairedActorTransform transform{};
+  spyro::paired_actor::Transform transform{};
   const bool transformOk = build_transform(c, transform);
   // Layer 0 is placed by the instance position alone; layers 1 and 2 add a per-layer root offset
   // decoded from the animation's root words. A detached head or wing shows up here as a layer
@@ -562,12 +568,12 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   }
   // 0x80024110 hands the composed matrix to the flame renderer, past the cull test above and before
   // the layer 2 rotation restores the layer 0 matrix, so layer 1 is the state retail publishes.
-  const bool flameMatrix = spyro_flame_matrix_publish(c,
-                                                      {transform.layer_cr[1][0],
-                                                       transform.layer_cr[1][1],
-                                                       transform.layer_cr[1][2],
-                                                       transform.layer_cr[1][3],
-                                                       transform.layer_cr[1][4]});
+  const bool flameMatrix = spyro::flame_matrix::publish(c,
+                                                        {transform.layer_cr[1][0],
+                                                         transform.layer_cr[1][1],
+                                                         transform.layer_cr[1][2],
+                                                         transform.layer_cr[1][3],
+                                                         transform.layer_cr[1][4]});
   lucent::debug("pairedroot", "0x80024110 flame matrix published={}", flameMatrix);
   std::vector<spyro::paired_actor::ProjectedVertex> projected;
   projected.reserve(vertexCount);
@@ -664,9 +670,9 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   if (daX0 > daX1 || daY0 > daY1) {
     return refuse_shipping(state, "active GPU draw area is empty");
   }
-  SpyroPairedFrame captured{};
+  spyro::paired_actor::Frame captured{};
   captured.valid = true;
-  captured.frameSerial = spyro_context(*c).worldTemporal.frameSerial();
+  captured.frameSerial = spyro::context(*c).worldTemporal.frameSerial();
   captured.epoch = state.stage2_epoch;
   captured.layer_counts = decoded;
   captured.authored_replay = authoredReplay;
@@ -684,7 +690,7 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
   if (faces.faces.empty()) {
     state.current = std::move(captured);
     state.endpoints_compatible = frames_compatible(state.previous, state.current);
-    spyro_paired_actor_log_frame_compatibility(
+    spyro::paired_actor::logFrameCompatibility(
         state.previous, state.current, state.endpoints_compatible);
     lucent::debug("pairedactor",
                   "native joined zero-output invocation: candidates={} faces=0 vertices={}",
@@ -693,12 +699,13 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
     return true;
   }
   RenderQueue &rq = c->game->rq;
-  if (emit_captured_endpoint(c, rq, captured, captured.gpu) != SpyroPairedRebuildResult::Emitted) {
+  if (emit_captured_endpoint(c, rq, captured, captured.gpu) !=
+      spyro::paired_actor::RebuildResult::Emitted) {
     return refuse_shipping(state, "captured endpoint rebuild rejected prevalidated frame");
   }
   state.current = std::move(captured);
   state.endpoints_compatible = frames_compatible(state.previous, state.current);
-  spyro_paired_actor_log_frame_compatibility(
+  spyro::paired_actor::logFrameCompatibility(
       state.previous, state.current, state.endpoints_compatible);
   uint32_t grouped = 0;
   uint32_t groupedSemi = 0;
@@ -755,11 +762,11 @@ bool submit_native(Core *c, SpyroPairedActorFrameState &state, bool authoredRepl
 
 } // namespace
 
-bool spyro_paired_actor_build_transform(Core *c, SpyroPairedActorTransform &out) {
+bool spyro::paired_actor::buildTransform(Core *c, spyro::paired_actor::Transform &out) {
   return build_transform(c, out);
 }
 
-bool spyro_paired_actor_decode_pose(Core *c) {
+bool spyro::paired_actor::decodePose(Core *c) {
   std::array<LayerDesc, kLayers> desc;
   PairedPose pose;
   std::array<uint32_t, kLayers> decoded{};
@@ -778,23 +785,23 @@ bool spyro_paired_actor_decode_pose(Core *c) {
   return ok;
 }
 
-bool spyro_paired_actor_submit(Core *c, SpyroPairedActorFrameState &state) {
+bool spyro::paired_actor::submit(Core *c, spyro::paired_actor::FrameState &state) {
   return submit_native(c, state, false);
 }
 
-bool spyro_paired_actor_submit_field(Core *c, SpyroPairedActorFrameState &state) {
+bool spyro::paired_actor::submitField(Core *c, spyro::paired_actor::FrameState &state) {
   return submit_native(c, state, true);
 }
 
-SpyroPairedRebuildResult
-spyro_paired_actor_rebuild_endpoint(Core *c, RenderQueue &target, const SpyroPairedFrame &frame) {
+spyro::paired_actor::RebuildResult spyro::paired_actor::rebuildEndpoint(
+    Core *c, RenderQueue &target, const spyro::paired_actor::Frame &frame) {
   return emit_captured_endpoint(c, target, frame, frame.gpu);
 }
 
-void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
-                                    bool state2,
-                                    bool reference_leg,
-                                    bool fps60_active) {
+void spyro::paired_actor::frameBegin(spyro::paired_actor::FrameState &state,
+                                     bool state2,
+                                     bool reference_leg,
+                                     bool fps60_active) {
   state.temporal_eligible = false;
   if (fps60_active != state.was_fps60_active) {
     state.previous = {};
@@ -821,8 +828,8 @@ void spyro_paired_actor_frame_begin(SpyroPairedActorFrameState &state,
   state.refusal = nullptr;
 }
 
-void spyro_paired_actor_fps60_rotate(Core *c) {
-  auto &state = spyro_paired_actor_state(c);
+void spyro::paired_actor::fps60Rotate(Core *c) {
+  auto &state = spyro::paired_actor::state(c);
   state.temporal_eligible = false;
   if (state.current.valid && !state.refusal) {
     state.previous = std::move(state.current);
@@ -833,27 +840,28 @@ void spyro_paired_actor_fps60_rotate(Core *c) {
   state.endpoints_compatible = false;
 }
 
-SpyroPairedRebuildResult spyro_paired_actor_rebuild_sample(Core *core,
-                                                           RenderQueue &target,
-                                                           const SpyroPairedFrame &previous,
-                                                           const SpyroPairedFrame &current,
-                                                           float t) {
+spyro::paired_actor::RebuildResult
+spyro::paired_actor::rebuildSample(Core *core,
+                                   RenderQueue &target,
+                                   const spyro::paired_actor::Frame &previous,
+                                   const spyro::paired_actor::Frame &current,
+                                   float t) {
   return emit_interpolated(core, target, previous, current, t);
 }
 
-void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
+void spyro::paired_actor::fps60WorldPass(Core *c, float t) {
   if (!c || !c->game || !c->game->rqRedirect) {
     lucent::error("pairedactor", "FATAL: fps60 paired pass has no redirected sink");
     abort();
   }
-  auto &state = spyro_paired_actor_state(c);
+  auto &state = spyro::paired_actor::state(c);
   if (!state.endpoints_compatible) {
     lucent::error("pairedactor", "FATAL: fps60 paired pass called without compatible endpoints");
     abort();
   }
   RenderQueue &sink = *c->game->rqRedirect;
   const int before = sink.n;
-  const auto result = spyro_paired_actor_rebuild_sample(c, sink, state.previous, state.current, t);
+  const auto result = spyro::paired_actor::rebuildSample(c, sink, state.previous, state.current, t);
   ++state.temporal.calls;
   if (t == 0.0f || t == 1.0f) {
     ++state.temporal.endpoint_calls;
@@ -863,10 +871,10 @@ void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
     lucent::error("pairedactor", "FATAL: fps60 paired pass received invalid t={}", t);
     abort();
   }
-  if (result == SpyroPairedRebuildResult::Emitted) {
+  if (result == spyro::paired_actor::RebuildResult::Emitted) {
     ++state.temporal.emitted;
   }
-  if (result == SpyroPairedRebuildResult::NoOutput) {
+  if (result == spyro::paired_actor::RebuildResult::NoOutput) {
     ++state.temporal.no_output;
   }
   lucent::debug("pairedactor",
@@ -880,14 +888,14 @@ void spyro_paired_actor_fps60_world_pass(Core *c, float t) {
                 t,
                 sink.n - before,
                 (int)result);
-  if (result == SpyroPairedRebuildResult::Refused) {
+  if (result == spyro::paired_actor::RebuildResult::Refused) {
     lucent::error(
         "pairedactor", "FATAL: fps60 paired pass refused t={:.3f} result={}", t, (int)result);
     abort();
   }
 }
 
-bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state) {
+bool spyro::paired_actor::fps60Eligible(spyro::paired_actor::FrameState &state) {
   ++state.temporal.eligibility_checks;
   if (!frames_compatible(state.previous, state.current)) {
     return false;
@@ -945,9 +953,9 @@ bool spyro_paired_actor_fps60_eligible(SpyroPairedActorFrameState &state) {
   return accepted;
 }
 
-bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState &state,
-                                     bool reference_leg,
-                                     bool expect_group) {
+bool spyro::paired_actor::frameFinish(const spyro::paired_actor::FrameState &state,
+                                      bool reference_leg,
+                                      bool expect_group) {
   const uint32_t expected = expect_group ? 1u : 0u;
   const bool validZero = expect_group && (state.culled || state.faces == 0) && state.groups == 0;
   const bool ok = !state.refusal && (state.groups == expected || validZero) &&
@@ -970,7 +978,7 @@ bool spyro_paired_actor_frame_finish(const SpyroPairedActorFrameState &state,
   return ok;
 }
 
-int spyro_paired_actor_selftest() {
+int spyro::paired_actor::selftest() {
   int checks = 0;
   bool ok = true;
   auto expect = [&](bool pass, const char *what) {
@@ -981,8 +989,8 @@ int spyro_paired_actor_selftest() {
     return pass;
   };
 
-  ok &=
-      expect(spyro_paired_temporal_selftest(), "temporal presenter evidence rejects partial runs");
+  ok &= expect(spyro::paired_actor::temporal_evidence::selftest(),
+               "temporal presenter evidence rejects partial runs");
   ok &= expect(unpack_accum(0x00200801u).x == 1, "packed X extraction");
   std::array<uint32_t, 27> identity{};
   identity[0] = 4096;
@@ -1029,7 +1037,7 @@ int spyro_paired_actor_selftest() {
   ok &= expect(validate_synthetic_global(false), "global OT appends after pre-existing chain");
   ok &=
       expect(!validate_synthetic_global(true), "global OT rejects corrupt pre-existing tail link");
-  SpyroPairedFrame fa{}, fb{};
+  spyro::paired_actor::Frame fa{}, fb{};
   fa.valid = fb.valid = true;
   fa.epoch = fb.epoch = 7;
   fa.layer_counts = fb.layer_counts = {1, 1, 1};
@@ -1052,7 +1060,7 @@ int spyro_paired_actor_selftest() {
   fa.materials[0] = 0;
   ok &=
       expect(fb.materials[0] == 0x11223344, "captured material copy is guest-mutation independent");
-  SpyroPairedActorTransform temporalTr{};
+  spyro::paired_actor::Transform temporalTr{};
   temporalTr.ofx = 256u << 16;
   temporalTr.ofy = 120u << 16;
   temporalTr.h = 340;
@@ -1067,27 +1075,27 @@ int spyro_paired_actor_selftest() {
   ok &= expect(interpolate_projected(va, vb, temporalTr, 0.5f, vm) && vm[0].view_x == 32767,
                "temporal interpolated raw X saturates once at the GTE IR limit");
   constexpr uint32_t envA = 0x80076EE0u, envB = 0x80076F64u;
-  ok &= expect(nativeFrameDisplayEnv(envA, false) == envA &&
-                   nativeFrameDisplayEnv(envB, false) == envB,
+  ok &= expect(spyro::render::frameDisplayEnv(envA, false) == envA &&
+                   spyro::render::frameDisplayEnv(envB, false) == envB,
                "normal display policy keeps each draw env's guest previous-buffer DISPENV");
-  ok &=
-      expect(nativeFrameDisplayEnv(envA, true) == envB && nativeFrameDisplayEnv(envB, true) == envA,
-             "FPS60 display policy selects reciprocal DISPENV for current A/B draw buffer");
-  ok &= expect(nativeFrameDisplayEnv(0x80000000u, true) == 0,
+  ok &= expect(spyro::render::frameDisplayEnv(envA, true) == envB &&
+                   spyro::render::frameDisplayEnv(envB, true) == envA,
+               "FPS60 display policy selects reciprocal DISPENV for current A/B draw buffer");
+  ok &= expect(spyro::render::frameDisplayEnv(0x80000000u, true) == 0,
                "display policy loudly refuses an unknown draw environment");
-  SpyroPairedFrame destinationPrev{}, destinationCur{};
+  spyro::paired_actor::Frame destinationPrev{}, destinationCur{};
   destinationPrev.gpu.off_y = 0;
   destinationCur.gpu.off_y = 240;
   ok &= expect(temporal_destination(destinationPrev, destinationCur).off_y == 240,
                "forced t=0 content still targets current frame GPU destination");
-  SpyroPairedActorFrameState life{};
-  spyro_paired_actor_frame_begin(life, true, false, true);
+  spyro::paired_actor::FrameState life{};
+  spyro::paired_actor::frameBegin(life, true, false, true);
   ok &= expect(!life.previous.valid && !life.endpoints_compatible,
                "first FPS60 frame has no temporal predecessor");
   life.previous.valid = true;
   life.current.valid = true;
   life.endpoints_compatible = true;
-  spyro_paired_actor_frame_begin(life, false, false, true);
+  spyro::paired_actor::frameBegin(life, false, false, true);
   ok &= expect(!life.previous.valid && !life.current.valid && !life.endpoints_compatible,
                "state2 exit clears both temporal endpoints");
   if (ok) {

@@ -44,11 +44,11 @@ void executeImage(Core &core, std::uint32_t expected) {
 void checkTransfers() {
   auto first = std::make_unique<Game>();
   auto second = std::make_unique<Game>();
-  SpyroContext firstContext;
-  SpyroContext secondContext;
+  spyro::Context firstContext;
+  spyro::Context secondContext;
   first->core.gameCtx = &firstContext;
   second->core.gameCtx = &secondContext;
-  auto &owner = spyro_context(first->core).archiveTransfer;
+  auto &owner = spyro::context(first->core).archiveTransfer;
   std::uint32_t value = 7u;
   std::vector<std::uint32_t> sectors;
   const spyro::ArchiveTransfer::SectorReader reader = [&](std::uint32_t lba, auto bytes) {
@@ -71,7 +71,7 @@ void checkTransfers() {
   const auto oldIdentity = first->core.currentImageIdentity(kDestination);
   require(oldIdentity.has_value(), "complete request must activate a resident image");
   executeImage(first->core, value);
-  require(!spyro_context(second->core).archiveTransfer.takeCompletion(),
+  require(!spyro::context(second->core).archiveTransfer.takeCompletion(),
           "another Core consumed the pending completion");
   require(owner.takeCompletion() && !owner.takeCompletion(),
           "completion must be delivered exactly once to its owning Core");
@@ -116,13 +116,13 @@ void checkTransfers() {
 
 void checkLoaderFault(std::uint32_t entry) {
   auto game = std::make_unique<Game>();
-  SpyroContext context;
+  spyro::Context context;
   game->core.gameCtx = &context;
   auto &core = game->core;
   // Refuse at the production disc-owner boundary without consulting the operator's real media.
   core.game = nullptr;
   core.imageCatalog().activate("synthetic loader registration", {0x10000u, 0x70000u}, 1u);
-  spyro_register_cd_queue(core);
+  spyro::registerCdQueue(core);
   core.r[4] = kRead.baseLba;
   core.r[5] = kRead.destination;
   core.r[6] = kRead.length;

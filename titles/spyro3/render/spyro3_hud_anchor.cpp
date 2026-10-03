@@ -27,7 +27,7 @@ spyro::ui_anchor::Frame frame(Core &core) {
 // Shift the X argument of an emitter ($a1) by the widget's anchor class, if the widget in progress
 // has one. The element is the drawer's own argument and is never written; only this register moves.
 void shiftEmitterArgument(Core &core) {
-  const std::uint32_t element = spyro_context(core).hudDraw.current();
+  const std::uint32_t element = spyro::context(core).hudDraw.current();
   if (const auto anchor = counterAnchor(element)) {
     core.r[5] = static_cast<std::uint32_t>(
         static_cast<std::int32_t>(core.r[5]) +
@@ -40,22 +40,22 @@ void shiftEmitterArgument(Core &core) {
 // so every emitter call inside the draw reads this widget and every call outside reads none. Both
 // drawers are the same body: publish, run the original unchanged, clear.
 void counterDrawer(Core *core) {
-  spyro_context(*core).hudDraw.begin(core->r[4]);
+  spyro::context(*core).hudDraw.begin(core->r[4]);
   (void)spyro::callOriginalOrPropagate(*core, kCounterDrawer);
-  spyro_context(*core).hudDraw.end();
+  spyro::context(*core).hudDraw.end();
 }
 
 void livesDrawer(Core *core) {
-  spyro_context(*core).hudDraw.begin(core->r[4]);
+  spyro::context(*core).hudDraw.begin(core->r[4]);
   (void)spyro::callOriginalOrPropagate(*core, kLivesDrawer);
-  spyro_context(*core).hudDraw.end();
+  spyro::context(*core).hudDraw.end();
 }
 
 // A widget's OWN icon is what its anchor class moves. The same emitter is also called from INSIDE
 // the value emitter, once per digit glyph, and those calls are not this widget's icon to move: see
 // the value emitter below.
 void iconEmitter(Core *core) {
-  if (!spyro_context(*core).hudDraw.insideValue()) {
+  if (!spyro::context(*core).hudDraw.insideValue()) {
     shiftEmitterArgument(*core);
   }
   (void)spyro::callOriginalOrPropagate(*core, kIconEmitter);
@@ -69,9 +69,9 @@ void iconEmitter(Core *core) {
 // right edge, which reads as the icon and the count having swapped sides.
 void valueEmitter(Core *core) {
   shiftEmitterArgument(*core);
-  spyro_context(*core).hudDraw.beginValue();
+  spyro::context(*core).hudDraw.beginValue();
   (void)spyro::callOriginalOrPropagate(*core, kValueEmitter);
-  spyro_context(*core).hudDraw.endValue();
+  spyro::context(*core).hudDraw.endValue();
 }
 
 } // namespace

@@ -107,7 +107,7 @@ void dl_link_native(Core *c) {
 
 } // namespace
 
-void spyro_register_native_util(Core &core) {
+void spyro::registerNativeUtil(Core &core) {
   spyro::installNativeOverride(core, 0x80063C30u, "setg3c30", setg_3c30_native);
   spyro::installNativeOverride(core, 0x80017990u, "dist2d", dist2d_native);
   spyro::installNativeOverride(core, 0x800168DCu, "dllink", dl_link_native);

@@ -17,7 +17,7 @@
 // only consumer of a pending operation is the report. That is what makes the withholding test
 // meaningful: the ledger can report a stage machine stalling without being able to cause one.
 //
-// OWNERSHIP. One Ledger per Core, held by SpyroContext next to the ArchiveTransfer whose reads it
+// OWNERSHIP. One Ledger per Core, held by spyro::Context next to the ArchiveTransfer whose reads it
 // records, and fed by the one place that issues them (cd_queue.cpp). No globals, no singletons and
 // no function-local statics: two Cores in one process (the title selector runs one at a time but
 // nothing in the type system says so) keep two separate ledgers, and a second Core's run cannot
@@ -97,7 +97,7 @@ struct Operation {
   }
 };
 
-// Accumulates across a run. A plain member of SpyroContext; the type has no Core, no disc and no
+// Accumulates across a run. A plain member of spyro::Context; the type has no Core, no disc and no
 // ambient dependency, so a test can drive it without a guest.
 class Ledger {
 public:

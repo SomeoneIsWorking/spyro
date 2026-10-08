@@ -1,0 +1,21 @@
+{
+  "title": "Spyro: Year of the Dragon",
+  "region": "USA",
+  "serial": "SCUS_944.67",
+  "executable": "SCUS_944.67",
+  "file_size": 380928,
+  "sha1": "31ad35fd03539910b5b3d9309ae52f5acaf3612e",
+  "sha256": "cb819ee78c556d403779309859cb08a7111331f624759bc1bc380946261bb26e",
+  "header": {
+    "entry": "0x80059444",
+    "gp": "0x00000000",
+    "text_address": "0x80010000",
+    "text_size": "0x0005C800",
+    "stack_address": "0x801FFFF0",
+    "stack_offset": "0x00000000"
+  },
+  "region_markers": [
+    "Sony Computer Entertainment Inc. for North America area",
+    "Sorceress' Lair"
+  ]
+}

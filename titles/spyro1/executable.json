@@ -1,0 +1,21 @@
+{
+  "title": "Spyro the Dragon",
+  "region": "USA",
+  "serial": "SCUS_942.28",
+  "executable": "SCUS_942.28",
+  "file_size": 417792,
+  "sha1": "84e3728ab94720d0873e2514adf4aade4935e0c5",
+  "sha256": "a533d75cab8afaae6107ec35a02a9a5fe979a92c7c955f9cf1ee50f693a1b998",
+  "header": {
+    "entry": "0x8005B8E0",
+    "gp": "0x00000000",
+    "text_address": "0x80010000",
+    "text_size": "0x00065800",
+    "stack_address": "0x801FFFF0",
+    "stack_offset": "0x00000000"
+  },
+  "region_markers": [
+    "Sony Computer Entertainment Inc. for North America area",
+    "BASCUS-94228SPYRO"
+  ]
+}

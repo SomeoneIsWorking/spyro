@@ -1,0 +1,44 @@
+#include "screen_fade_recipe.h"
+
+namespace spyro::screen_fade_recipe {
+
+namespace {
+
+Recipe uniform(uint32_t fade,
+               uint32_t colourShift,
+               uint8_t blendMode,
+               int32_t drawOffsetX,
+               int32_t drawOffsetY,
+               int32_t renderWidth) {
+  if (fade == 0u || renderWidth <= 0) {
+    return {};
+  }
+  const uint8_t colour = (uint8_t)(fade << colourShift);
+  return {.visible = true,
+          .x0 = drawOffsetX,
+          .y0 = drawOffsetY + 8,
+          .x1 = drawOffsetX + renderWidth,
+          .y1 = drawOffsetY + 232,
+          .r = colour,
+          .g = colour,
+          .b = colour,
+          .blendMode = blendMode};
+}
+
+} // namespace
+
+// 0x800190D4 as reached from 0x8001E9C8 — the matching source body in
+// external/spyro-1/src/gamestates/draw.c.
+Recipe cutscene(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
+  return uniform(fade, 4u, 2u, drawOffsetX, drawOffsetY, renderWidth);
+}
+
+Recipe field(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
+  return uniform(fade, 3u, 2u, drawOffsetX, drawOffsetY, renderWidth);
+}
+
+Recipe dragon(uint32_t fade, int32_t drawOffsetX, int32_t drawOffsetY, int32_t renderWidth) {
+  return uniform(fade, 0u, 1u, drawOffsetX, drawOffsetY, renderWidth);
+}
+
+} // namespace spyro::screen_fade_recipe

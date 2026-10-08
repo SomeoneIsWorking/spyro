@@ -1,0 +1,326 @@
+#include "actor_prefix_builder.h"
+#include "actor_transform_math.h"
+#include "projection_stream.h"
+#include "wide_clip_plan.h"
+
+#include <algorithm>
+#include <cmath>
+#include <optional>
+#include <string_view>
+#include <vector>
+
+namespace spyro::actor_prefix {
+namespace {
+
+int32_t sar32(uint32_t value, uint8_t shift) {
+  return (int32_t)value >> (shift & 31u);
+}
+
+int32_t wrapSub(int32_t left, uint32_t right) {
+  return (int32_t)((uint32_t)left - right);
+}
+
+// The same rounding the framework's view sampler uses, so a record's depth key and its geometry
+// never disagree about which side of a 1-unit step a sample fell on.
+int32_t sampleScalar(int32_t previous, int32_t current, double t, bool endpointOnly) {
+  if (endpointOnly) {
+    return current;
+  }
+  return (int32_t)std::floor(std::lerp((double)previous, (double)current, t));
+}
+
+actor_model_codec::StreamResult decode(const OwnedStream &stream, uint32_t count, uint8_t shift) {
+  return actor_model_codec::decodeStream(
+      {stream.firstFull, stream.fullWords, stream.deltaWords, count, shift});
+}
+
+// One record's decoded model, before any transform: the two authored streams and the pose the
+// record's own blend factor resolves them to. Both endpoints of a sample decode through this, so
+// the blend has one implementation rather than one per endpoint.
+struct Pose {
+  std::vector<actor_model_codec::Vec3i> primary;
+  std::vector<actor_model_codec::Vec3i> alternate;
+  std::vector<actor_model_codec::Vec3i> resolved;
+};
+
+std::optional<Pose> decodePose(const Input &input) {
+  const uint16_t vertexScale = (uint16_t)((input.header & 0xff00u) >> 2);
+  const bool paired = vertexScale != 0;
+  const auto primary = decode(input.primary, input.vertexCount, input.streamShift);
+  if (primary.status != actor_model_codec::StreamStatus::Ok) {
+    return std::nullopt;
+  }
+  actor_model_codec::StreamResult alternate{};
+  if (paired) {
+    alternate = decode(input.alternate, input.vertexCount, input.streamShift);
+    if (alternate.status != actor_model_codec::StreamStatus::Ok) {
+      return std::nullopt;
+    }
+  }
+  Pose pose{};
+  pose.primary.reserve(input.vertexCount);
+  pose.alternate.reserve(input.vertexCount);
+  pose.resolved.reserve(input.vertexCount);
+  for (uint32_t i = 0; i < input.vertexCount; ++i) {
+    const auto a = primary.vertices[i];
+    const auto b = paired ? alternate.vertices[i] : actor_model_codec::Vec3i{};
+    actor_model_codec::Vec3i resolved = a;
+    if (paired) {
+      const auto blend = actor_model_codec::blendPose(a, b, (int16_t)vertexScale);
+      resolved = {blend.mac[0], blend.mac[1], blend.mac[2]};
+    }
+    pose.primary.push_back(a);
+    pose.alternate.push_back(b);
+    pose.resolved.push_back(resolved);
+  }
+  return pose;
+}
+
+psxport::native_projection::FixedAffine affineFrom(const Input &input,
+                                                   std::array<uint32_t, 16> &controls) {
+  const uint32_t c0 = input.matrixWords[0], c1 = input.matrixWords[1], c2 = input.matrixWords[2],
+                 c3 = input.matrixWords[3], c4 = input.matrixWords[4];
+  psxport::native_projection::FixedAffine affine{};
+  affine.m = psxport::native_projection::rotationFromControlWords({c0, c1, c2, c3, c4});
+  const uint8_t shift = input.transformShift & 31u;
+  // 0x8001F84C shifts the view translation into model space and then, at 0x8001F864, scales it by
+  // the Moby's own byte — the same field and the same GPF idiom the shaded renderer 0x80022A2C
+  // uses. The depth key CR14 above is deliberately taken from the UNSCALED depth, exactly as retail
+  // computes it before this ladder.
+  affine.t = actor_transform_math::scaledTranslation({{sar32((uint32_t)input.tx << 2, shift),
+                                                       sar32((uint32_t)input.ty << 2, shift),
+                                                       sar32((uint32_t)input.tz << 2, shift)}},
+                                                     (uint8_t)(input.header & 0xffu));
+  for (unsigned i = 0; i < 5; ++i) {
+    controls[i] = input.matrixWords[i];
+  }
+  // The record packs CR30 in the high half of its final matrix word. CTC2 CR4
+  // consumes only the low matrix half; CR30 is loaded separately.
+  controls[4] &= 0xffffu;
+  for (unsigned i = 0; i < 3; ++i) {
+    controls[5 + i] = (uint32_t)affine.t[i];
+  }
+  return affine;
+}
+
+psxport::native_projection::ModelVertex projectionInput(actor_model_codec::Vec3i value) {
+  const uint32_t yz = ((uint32_t)value.z << 16) + (uint32_t)value.y;
+  return {(int16_t)yz, (int16_t)(yz >> 16), (int16_t)value.x};
+}
+
+std::array<int32_t, 3> farColor(uint32_t rgb) {
+  return {
+      (int32_t)((rgb << 4) & 4080u), (int32_t)((rgb >> 4) & 4080u), (int32_t)((rgb >> 12) & 4080u)};
+}
+
+uint32_t packedSxy(const psxport::native_projection::NativeProjectedVertex &projected) {
+  return (uint16_t)projected.sx | ((uint32_t)(uint16_t)projected.sy << 16);
+}
+
+} // namespace
+
+Output build(const Input &input) {
+  return sample(input, input, 1.0);
+}
+
+Output sample(const Input &previous, const Input &current, double t) {
+  const Input &input = current;
+  if (!std::isfinite(t) || t < 0.0 || t > 1.0) {
+    return {};
+  }
+  // t=1 is the ordinary single-endpoint build, and is the only case that needs no previous pose.
+  // Every other t goes through the sampling stream, which projects an exact endpoint unchanged, so
+  // t=0 needs no special case of its own. This flag is what the rest of the function tests.
+  const bool endpointOnly = t == 1.0;
+  Output out{};
+  if (input.vertexCount == 0) {
+    out.status = Status::CountZero;
+    return out;
+  }
+  if (input.colorArm == ColorArm::NegativeBlend) {
+    out.status = Status::NegativeBlend;
+    return out;
+  }
+
+  const uint8_t coordShift = input.header >> 24;
+  const int8_t translationBias = (int8_t)(input.header >> 16);
+  const bool clipMode = (int32_t)input.header < 0;
+  const int32_t clipRight = std::max(1, input.projection.ofx >> 15);
+  int32_t cr14 = (sampleScalar((int32_t)previous.tz, (int32_t)current.tz, t, endpointOnly) >> 5) -
+                 translationBias;
+  if (cr14 < 0) {
+    cr14 = 0;
+  }
+  if (cr14 >= 272) {
+    cr14 = (int32_t)((uint32_t)cr14 + 32u);
+  }
+  const auto affine = affineFrom(input, out.controls);
+  std::array<uint32_t, 16> previousControls{};
+  const auto previousAffine = endpointOnly ? affine : affineFrom(previous, previousControls);
+  // The rotation cannot be sampled as a matrix — that is what the projection stream is for — but
+  // the view depth this ladder reads is a translation, which is linear in t. Sampling it before the
+  // wrapping subtraction below keeps a sample near the wrap from landing on the far side of it.
+  const int32_t sampledDepth = sampleScalar(previousAffine.t[2], affine.t[2], t, endpointOnly);
+  // 0x8001F8A0: having scaled the translation, retail re-tests the depth it just produced and drops
+  // the record when it passes 0xF618. Only a scaled record reaches that test, so an unscaled actor
+  // keeps whatever depth the ladder gave it.
+  if ((input.header & 0xffu) != 0u && sampledDepth > 0xF618) {
+    out.status = Status::VisibilityRejected;
+    return out;
+  }
+  out.controls[13] = (coordShift & 31u) + ((uint32_t)input.transformShift << 8);
+  out.controls[14] = (uint32_t)cr14;
+  out.controls[15] = (uint32_t)wrapSub(sampledDepth, 512u << (coordShift & 31u));
+  out.projection = input.projection;
+  out.depthOrigin = out.controls[15] << 2;
+  out.otShift = (out.controls[13] & 255u) + 4u + (clipMode ? 0x80000000u : 0u);
+
+  const auto pose = decodePose(input);
+  if (!pose) {
+    out.status = Status::Stream;
+    return out;
+  }
+  std::optional<Pose> previousPose;
+  if (!endpointOnly) {
+    previousPose = decodePose(previous);
+    if (!previousPose || previousPose->resolved.size() != pose->resolved.size()) {
+      out.status = Status::Stream;
+      return out;
+    }
+  }
+  const ProjectionStream stream =
+      endpointOnly ? ProjectionStream(affine, input.projection)
+                   : ProjectionStream(previousAffine, affine, input.projection, t);
+  out.vertices.reserve(input.vertexCount);
+  uint32_t commonStatus = 0xffffffffu;
+  for (uint32_t i = 0; i < input.vertexCount; ++i) {
+    const auto packed = projectionInput(pose->resolved[i]);
+    const auto previousPacked = previousPose ? projectionInput(previousPose->resolved[i]) : packed;
+    const auto projected = stream.project(previousPacked, packed);
+    if (!projected) {
+      // The framework declines to sample a vertex whose transform overflowed the accumulator; a
+      // model missing one vertex is not a model, so the whole record refuses and the caller keeps
+      // this actor's captured endpoint instead.
+      out.status = Status::Stream;
+      out.vertices.clear();
+      return out;
+    }
+    const uint32_t sxy = packedSxy(*projected);
+    const uint32_t scratchWord = clipMode ? spyro::wide::packedClipStatus(sxy, clipRight) : sxy;
+    commonStatus &= scratchWord;
+    out.vertices.push_back(
+        {pose->primary[i], pose->alternate[i], pose->resolved[i], packed, *projected, scratchWord});
+  }
+  out.commonStatus = clipMode ? commonStatus & 31u : 0u;
+  if (out.commonStatus != 0) {
+    out.status = Status::VisibilityRejected;
+    return out;
+  }
+
+  if (input.colorArm == ColorArm::High || input.colorArm == ColorArm::Plain) {
+    out.colors = input.primaryColors;
+  } else {
+    if (input.primaryColors.size() != input.secondaryColors.size()) {
+      out.status = Status::ColorCount;
+      out.vertices.clear();
+      return out;
+    }
+    const int16_t factor = (int16_t)((1024 - input.cr30) * 4);
+    out.fog = ((uint32_t)(uint16_t)factor >> 9) << 22;
+    out.colors.reserve(input.primaryColors.size());
+    for (size_t i = 0; i < input.primaryColors.size(); ++i) {
+      out.colors.push_back(actor_model_codec::depthCueRgb(
+                               input.primaryColors[i], farColor(input.secondaryColors[i]), factor)
+                               .rgb);
+    }
+  }
+  out.primitiveWords = input.primitiveWords;
+  for (const PrimitivePatch &patch : input.primitivePatches) {
+    if (patch.wordOffset > out.primitiveWords.size() ||
+        patch.words.size() > out.primitiveWords.size() - patch.wordOffset) {
+      out.status = Status::Expansion;
+      out.primitiveWords.clear();
+      return out;
+    }
+    std::copy(
+        patch.words.begin(), patch.words.end(), out.primitiveWords.begin() + patch.wordOffset);
+  }
+  out.status = Status::Ok;
+  return out;
+}
+
+CallBoundary classifyCall(std::span<const Output> records) {
+  CallBoundary result{};
+  result.records = (uint32_t)records.size();
+  if (records.empty()) {
+    return result;
+  }
+  for (const Output &record : records) {
+    if (record.status == Status::Ok) {
+      ++result.visibleRecords;
+    } else if (record.status == Status::VisibilityRejected) {
+      ++result.rejectedRecords;
+    } else {
+      ++result.unsupportedRecords;
+    }
+  }
+  result.status = result.unsupportedRecords == 0 ? CallStatus::Owned : CallStatus::Unsupported;
+  return result;
+}
+
+CompareResult compareOutputs(const Output &expected, const Output &actual) {
+  CompareResult result{};
+  auto mismatch = [&](bool different, const char *field) {
+    if (!different) {
+      return;
+    }
+    ++result.mismatches;
+    if (result.firstField == std::string_view{"none"}) {
+      result.firstField = field;
+    }
+  };
+  mismatch(expected.status != actual.status, "status");
+  for (size_t i = 0; i < expected.controls.size(); ++i) {
+    mismatch(expected.controls[i] != actual.controls[i], "control");
+  }
+  mismatch(expected.vertices.size() != actual.vertices.size(), "vertex_count");
+  result.vertices = (uint32_t)std::min(expected.vertices.size(), actual.vertices.size());
+  for (size_t i = 0; i < result.vertices; ++i) {
+    const Vertex &a = expected.vertices[i], &b = actual.vertices[i];
+    mismatch(a.primary.x != b.primary.x || a.primary.y != b.primary.y || a.primary.z != b.primary.z,
+             "primary_vertex");
+    mismatch(a.alternate.x != b.alternate.x || a.alternate.y != b.alternate.y ||
+                 a.alternate.z != b.alternate.z,
+             "alternate_vertex");
+    mismatch(a.resolved.x != b.resolved.x || a.resolved.y != b.resolved.y ||
+                 a.resolved.z != b.resolved.z,
+             "resolved_vertex");
+    mismatch(a.projectionInput.x != b.projectionInput.x ||
+                 a.projectionInput.y != b.projectionInput.y ||
+                 a.projectionInput.z != b.projectionInput.z,
+             "projection_input");
+    mismatch(a.projected.raw_view_fixed != b.projected.raw_view_fixed, "raw_view_fixed");
+    mismatch(a.projected.ir != b.projected.ir, "ir");
+    mismatch(a.projected.sx != b.projected.sx || a.projected.sy != b.projected.sy, "sxy");
+    mismatch(a.projected.sz != b.projected.sz, "sz");
+    mismatch(a.scratchWord != b.scratchWord, "scratch_word");
+  }
+  mismatch(expected.commonStatus != actual.commonStatus, "common_status");
+  mismatch(expected.depthOrigin != actual.depthOrigin, "depth_origin");
+  mismatch(expected.otShift != actual.otShift, "ot_shift");
+  mismatch(expected.fog != actual.fog, "fog");
+  mismatch(expected.colors.size() != actual.colors.size(), "color_count");
+  result.colors = (uint32_t)std::min(expected.colors.size(), actual.colors.size());
+  for (size_t i = 0; i < result.colors; ++i) {
+    mismatch(expected.colors[i] != actual.colors[i], "color");
+  }
+  mismatch(expected.primitiveWords.size() != actual.primitiveWords.size(), "primitive_count");
+  result.primitiveWords =
+      (uint32_t)std::min(expected.primitiveWords.size(), actual.primitiveWords.size());
+  for (size_t i = 0; i < result.primitiveWords; ++i) {
+    mismatch(expected.primitiveWords[i] != actual.primitiveWords[i], "primitive");
+  }
+  return result;
+}
+
+} // namespace spyro::actor_prefix

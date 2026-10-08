@@ -1,0 +1,170 @@
+---
+id: 129
+title: Start should cancel the "THE ADVENTURE BEGINS..." flyby card
+status: resolved
+symptom: the flyby card (Spyro arcing across black while the level loads) runs to its full 384-tick animation with no way to cancel it. TransitionSkip already cancels the level-transition tally and the return-home glide; this screen is simply absent from it
+state_items: S011
+tags: transition,skip,input,frontend
+created: 2026-09-19
+---
+
+## Requested
+
+Operator, 2026-09-19: "I want to be able to skip these screens by pressing start".
+
+## The screen
+
+`GamestateCutsceneTransition` (`external/spyro-1/src/gamestates/update.c`). Reached at
+`g_Gamestate == 13` (GS_TitleScreen) with `m_Mode == TSM_Demo` and `m_State == TSS_Active`; drawn by
+`func_8001E6B8`. `g_TitlescreenState` is at 0x80078D78, four-byte fields:
+
+| field | address |
+|---|---|
+| `m_Mode` | 0x80078D78 |
+| `m_State` | 0x80078D7C |
+| `m_Tick` | 0x80078D80 |
+| `m_DemoType` | 0x80078D94 |
+
+## Its terminal transition, recovered
+
+The level path (`m_DemoType == TSD_Level`, which is the "THE ADVENTURE BEGINS..." case):
+
+```c
+if (g_LoadStage < 13) { LoadLevel(1); }
+if (g_TitlescreenState.m_Tick >= 384 && g_LoadStage == 13) {
+    if (m_DemoType == TSD_DemoLevel) { g_DemoMode = DEMO_MODE_PLAY; g_DemoFadeTimer = 0; }
+    func_8004AC24(1);   // reset Spyro for actual gameplay
+    LoadLevel(1);
+    return;
+}
+```
+
+**Two gates, and only one of them is presentation.** `m_Tick >= 384` is the flyby animation.
+`g_LoadStage == 13` is the level actually being in memory. A skip may cancel the first and must
+honour the second — dropping the load gate would be fast-forwarding past required I/O, which is the
+thing the no-bandaid rule names outright.
+
+## The design that follows
+
+Extend `spyro1::TransitionSkip` (`titles/spyro1/core/spyro1_transition_skip.*`), which already owns
+exactly this decision for two other screens and whose header states the contract: a cancellation
+"performs exactly the terminal write the screen's own guest owner performs when that screen ends
+naturally".
+
+- New `Cancellation::CutsceneTransitionFlyby`.
+- `classify` authorises it when `stage == 13`, `m_Mode == TSM_Demo`, `m_State == TSS_Active`,
+  `m_DemoType` is a level type, **and `g_LoadStage == 13`** — so a press during the load latches and
+  fires when the load completes, rather than being dropped or jumping it.
+- `observe` dispatches the guest's own `func_8004AC24(1)` then `LoadLevel(1)`, on the
+  `ReturnHomeSequence` precedent (which dispatches guest 0x8002C664 rather than hand-copying its ten
+  globals). **Do not write `m_Tick`.** Claim C179 — "Boot-logo Start clock advancement is not a valid
+  skip route" — is already falsified in this repo, and a timer write is the same move.
+
+## UNBLOCKED: LoadLevel is 0x80015370, and the terminal pair is at 0x80033158/0x80033160
+
+`func_8004AC24` is 0x8004AC24 by its own name. `LoadLevel` is **0x80015370**, established three
+independent ways from the shipping executable rather than by assumption:
+
+1. **It owns g_LoadStage.** Of the three candidate `jal` targets inside func_8002DF9C, only
+   0x80015370 both reads AND writes 0x80075864 — twenty accesses including three `sw`
+   (`tools/re_globals.py --img scratch/assets/spyro1/SCUS_942.28 0x80015370`). 0x80037BD4 reads it
+   once and writes it never, so it is a consumer; 0x8004A7EC never touches it.
+2. **It matches the one call site already documented.** Scanning the whole 0x65800 text for
+   `jal 0x80015370` gives 8 sites, one of which is 0x8002DFE8 — inside func_8002DF9C
+   (0x8002DF9C..0x8002DFF8). That is the call `spyro1_transition_skip.cpp:71` already describes in
+   prose, arrived at here from the other direction.
+3. **It appears in the terminal pair itself**, below.
+
+The flyby's terminal route is at:
+
+```
+0x80033158   jal 0x8004AC24     # func_8004AC24(1) -- reset Spyro for actual gameplay
+0x80033160   jal 0x80015370     # LoadLevel(1)
+```
+
+Two consecutive calls eight bytes apart, exactly the decompiled `func_8004AC24(1); LoadLevel(1);
+return;`. Four of the eight `LoadLevel` call sites (0x80032D34, 0x80033104, 0x80033160, 0x800334BC)
+sit within 0x400 bytes of both a reference to `m_Tick` (0x80078D80) and an immediate 384, which is
+the `GamestateCutsceneTransition` body; only 0x80033160 is preceded by the Spyro reset.
+
+So the cancellation dispatches guest 0x8004AC24 then guest 0x80015370, each with a1/a0 = 1, on the
+`ReturnHomeSequence` precedent. Nothing is hand-copied and no timer is written.
+
+## Acceptance
+
+- Pressing Start on the card ends it no earlier than `g_LoadStage == 13`.
+- The resulting gameplay state is indistinguishable from the uncancelled route: same load stage, same
+  Spyro reset, and the oracle's decisive ranges agree with a run that let the flyby finish.
+- A press before the load completes is honoured when it completes, never dropped silently.
+- `drive.py --skip-transitions` covers this screen too, so the route is exercised by the gate.
+
+## RESOLVED 2026-09-19 — implemented, and exercised live
+
+`Cancellation::CutsceneTransitionFlyby` in `titles/spyro1/core/frame/spyro1_transition_skip.cpp`. On a
+Start or Cross edge while `GS_TitleScreen` is in `TSM_Demo`/`TSS_Active` on the `TSD_Level` path, it
+dispatches the guest's own `0x8004AC24(1)` then `0x80015370(1)` — the pair at `0x80033158`/
+`0x80033160`. Nothing is hand-copied, and `m_Tick` is not written.
+
+A press arriving while the level is still streaming is **held**, not obeyed: `flybyPressHeld_` is
+cleared the instant the card is no longer up and the cancellation still waits for the guest's own
+`g_LoadStage == 13` gate. So pressing Start the moment the card appears ends it as early as the game
+itself could, and never earlier.
+
+`TSD_DemoLevel` and `TSD_Cutscene` are deliberately left alone — their terminals are not recovered
+(two unlocated demo globals, and a different ending entirely). A press on those falls through.
+
+### Live evidence, under the user's own settings
+
+`tools/drive.py --skip-transitions` now presses Start on the flyby as well as the tally, so the
+navigator issues the press pre-arrival. Two runs, both with `psxport_settings.ini` (`aspect=3`,
+`fps60=1`) rather than the empty default agent settings:
+
+| run | arrival | wall |
+|---|---|---|
+| without the press | `GS_Playing` at frame 6360 | 43.8 s |
+| with the press | `GS_Playing` at frame **5600** | 26.1 s |
+
+    [transition] level flyby cancelled (1); guest 0x8004AC24 then 0x80015370
+                 left stage 0 load stage 4294967295 title mode 3 state 2
+
+`stage 0` is `GS_Playing` and `load stage -1` is the value `LoadLevel`'s own `case 13` writes when a
+level load completes (`external/spyro-1/src/loaders.c:1860`) — the cancellation left the game exactly
+where the natural route leaves it, 760 fields earlier.
+
+Both new unit discriminators were checked by breaking what they test: removing the `g_LoadStage`
+gate fails `testHonoursTheFlybysLoadGate`, and dropping `demoType` from `flybyCardUp` fails
+`testLeavesTheUnrecoveredFlybyPathsAlone`.
+
+Route and addresses recorded in `docs/findings/start-skip-map.md`.
+
+## 2026-09-29 finding: the boot card is TSD_DemoLevel, and the route has not been shown to fire
+
+A from-boot observation reads the card at frame 3550 with `m_DemoType = 2` (TSD_DemoLevel), so
+`flybyCardUp`'s `demoType == TSD_Level` never matches the card seen at boot. The bytes and the decomp
+agree on the terminal: update.c's level arm serves both TSD_Level and TSD_DemoLevel, and only
+TSD_DemoLevel additionally writes `g_DemoMode = 1` and `g_DemoFadeTimer = 0` (0x80033140
+`bne m_DemoType, 2` skips those two stores otherwise) before `func_8004AC24(1); LoadLevel(1)`.
+
+A predicate of `demoType != TSD_Cutscene` with those two writes conditional on TSD_DemoLevel was
+tried and NOT landed: a from-boot Start press at the card produced no `level flyby cancelled` log line
+and reached GS_Playing at the same frame (4318) as a press 400 frames later, so the route did not
+demonstrably fire. The next step is to confirm the press reaches `presentationSkipPressed()` during
+the attract flyby (the guest may consume Start there first) before changing the predicate.
+
+## 2026-09-29 correction: the DemoType=2 card at boot is the attract demo, not the new-game card
+
+The card seen from boot at frame 3550 is not the card this issue is about. Two paths reach it:
+
+- The title's idle timeout: `overlays/titlescreen.c`, SubState 5 after `m_Tick >= 990`. It fades out
+  and enters `TSM_Demo` with `m_DemoType = 2` (`TSD_DemoLevel`). That is the attract demo, whose level
+  comes from `g_DemoLevelIds` and which then plays back recorded input under `g_DemoMode`.
+- A new game: `gamestates/init.c:736-738` enters `TSM_Demo` with `m_DemoType = TSD_Level`. That is the
+  "THE ADVENTURE BEGINS" flyby the user presses Start on, and it is what
+  `Cancellation::CutsceneTransitionFlyby` handles. The route measured 2026-09-19 (arrival 760 fields
+  earlier) exercised exactly this path.
+
+So "the route did not fire at the boot card" is the expected answer, not a defect. Widening the
+predicate to `TSD_DemoLevel` would make Start load the attract demo's level as if it were a new game.
+That is a different transition from anything retail does there, so the predicate stays
+`TSD_Level`-only. What Start should do during the attract demo is the title's own concern (demo
+playback exits through `func_800334D4`), and it is not this issue.

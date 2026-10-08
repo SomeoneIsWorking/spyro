@@ -1,0 +1,52 @@
+#pragma once
+
+#include "game_runtime.h"
+#include "handoff_store_observer.h"
+#include "spyro1_boot_sequence.h"
+#include "spyro1_field_scheduler.h"
+#include "spyro1_frame_policy.h"
+#include "spyro1_transition_skip.h"
+#include "stage_update_observer.h"
+
+#include <cstdint>
+#include <memory>
+
+class Game;
+
+namespace spyro::render {
+// The one frame's picture owner, owned by this driver for the process. Defined in
+// game/render/frame_renderer.h; only the pointer's lifetime crosses this header.
+class FrameRenderer;
+} // namespace spyro::render
+
+namespace spyro1 {
+
+class Spyro1FrameDriver final : public FrameDriver {
+public:
+  Spyro1FrameDriver(Game &game, bool observeStageUpdate, bool observeHandoffStores);
+  ~Spyro1FrameDriver() override;
+
+  void initialize(Core &core);
+  void stepFrame(Core &core, std::uint32_t frame) override;
+
+  FieldScheduler &fields();
+  const FieldScheduler &fields() const;
+
+private:
+  // One retail main-loop iteration up to its draw gate: the guest update, then g_DeltaTime and
+  // g_UnprocessedFrames bookkeeping. Returns the guest's g_StateSwitch, which skips the draw.
+  bool runGuestUpdate(Core &core);
+
+  FieldScheduler fields_;
+  BootSequence boot_;
+  TransitionSkip transitions_;
+  StageUpdateObserver stageObserver_;
+  HandoffStoreObserver handoffStoreObserver_;
+  std::unique_ptr<spyro::render::FrameRenderer> renderer_;
+  std::uint32_t gameplayFrame_ = 0;
+};
+
+Spyro1FrameDriver &frameDriver(Core &core);
+const Spyro1FrameDriver &frameDriver(const Core &core);
+
+} // namespace spyro1

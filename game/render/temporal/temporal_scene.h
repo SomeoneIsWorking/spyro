@@ -1,0 +1,51 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+
+class Core;
+class Game;
+struct RenderQueue;
+class InBetweenStrategy;
+
+namespace spyro::temporal_scene {
+
+// Reusable isolated admission storage, one per game. Production source reconstruction and queue
+// validation share this sink without allocating the full queue on every logic frame.
+class Admission {
+public:
+  Admission();
+  ~Admission();
+  bool world(Core &core, bool paired);
+  // The four self-contained layer intervals, preflighted the same way and for the same reason: a
+  // midpoint the planner would refuse must be discovered before presentation depends on it, not
+  // during it. They are admitted independently, so a refusal on one layer costs only that layer's
+  // in-between faces.
+  bool actors(Core &core);
+  bool secondaryActors(Core &core);
+  bool shadedQueue(Core &core);
+  bool terrain(Core &core);
+  // The screen-space 2D overlay. Its own preflight because its queue items are RQ_HUD and the
+  // painter planner deliberately does not group them (painter_object_layer.cpp validateFace refuses
+  // anything that is not RQ_WORLD with RQ_OM_DEPTH), so a midpoint that overflows the queue or
+  // presents a degenerate bar has to be discovered here rather than during presentation.
+  bool overlay(Core &core);
+
+private:
+  // Replays one source across the interval's endpoints and its midpoint into the isolated sink,
+  // requiring each to survive the same painter planner presentation uses. `emit` reports whether
+  // the source produced that sample at all.
+  bool
+  interval(Core &core, const char *label, const std::function<bool(RenderQueue &, float)> &emit);
+
+  std::unique_ptr<RenderQueue> sink_;
+};
+
+// Captures eligibility after the complete logic-frame scene has been produced. Unowned scene
+// producers remain in the captured frame until they provide their own temporal source.
+void begin(Core &core, std::uint64_t scene, bool pairedScene, bool reference, bool active);
+void prepare(Core &core);
+std::unique_ptr<InBetweenStrategy> source(Game &game);
+
+} // namespace spyro::temporal_scene

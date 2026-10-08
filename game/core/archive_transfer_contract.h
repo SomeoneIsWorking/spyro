@@ -1,0 +1,42 @@
+#pragma once
+
+#include <cstdint>
+
+namespace spyro::archive_transfer {
+
+struct Evidence {
+  std::uint32_t requestedBytes = 0;
+  std::uint32_t movedBytes = 0;
+
+  constexpr bool complete() const {
+    return movedBytes == requestedBytes;
+  }
+
+  // Reads are sequential from byte zero, so movedBytes is the source prefix proven in guest RAM.
+  constexpr std::uint32_t coveredEnd() const {
+    return movedBytes;
+  }
+};
+
+struct Decision {
+  Evidence transfer;
+  bool refused = false;
+
+  constexpr bool accepted() const {
+    return !refused && transfer.complete();
+  }
+
+  constexpr bool completionPending() const {
+    return accepted();
+  }
+
+  constexpr std::uint32_t returnValue() const {
+    return accepted() ? 1u : 0u;
+  }
+};
+
+constexpr Decision decide(std::uint32_t requestedBytes, std::uint32_t movedBytes) {
+  return {.transfer = {.requestedBytes = requestedBytes, .movedBytes = movedBytes}};
+}
+
+} // namespace spyro::archive_transfer

@@ -171,11 +171,11 @@ The packet pools both parities allocate from lie between the words 0x80069998 an
 ```text
 guest CD call → native leaf  (game/core/cd_queue.cpp: cd_loader / cd_stream_read / cd_retry_step)
   └─ spyro::context(core).archiveTransfer   spyro::ArchiveTransfer::read → archive_transfer::decide
-  └─ spyro::image_publication::digest       the one SHA-256 digest-and-activate owner
+  └─ psx::code_module::digest               psxport's one SHA-256 digest-and-activate owner
 ```
 
-Stock framework `CdRead` landings are published by `spyro::publishStockReadLanding`
-(`game/core/stock_read_publication.*`), which each title runtime declares.
+Stock framework `CdRead` landings are published by `psx::code_module::publishStockReadLanding`
+(psxport `runtime/psx/core/guest_code_module.*`), which each title runtime calls from `stockCdReadLanded`.
 
 ### Audio
 
@@ -223,8 +223,6 @@ psx::debug::DbgServer         per session, attached in spyro::TitleSession::boot
 | `spyro_game.h` | `spyro` | — | The guest-boundary surface: the installers above, the CD queue installer, and the terrain producer's guest entry points. |
 | `cd_queue.cpp` | `spyro` | `registerCdQueue` | The title's cooperative CD loader leaves and the completion delivery. |
 | `archive_transfer.{h,cpp}`, `archive_transfer_contract.h` | `spyro`, `spyro::archive_transfer` | `ArchiveTransfer`, `archive_transfer::decide` | Bounded atomic WAD transfer with per-Core completion; the refusal decision is one pure function. |
-| `image_publication.{h,cpp}` | `spyro::image_publication` | `digest` | The one SHA-256 digest-and-activate owner for guest images. |
-| `stock_read_publication.{h,cpp}` | `spyro` | `publishStockReadLanding` | Every framework stock `CdRead` landing, published through the image owner. |
 | `content_identity.{h,cpp}` | `spyro` | `sha256` | The runtime SHA-256 owner for WAD bytes. |
 | `guest_widescreen_owner.{h,cpp}` | `spyro` | `GuestWidescreenOwner`, `GuestWidescreenFacts`, `ProjectionSite` | The one widening decision for a guest-projection title, and every place the guest restates it. |
 | `guest_widescreen_math.h` | `spyro::guest_widescreen_math` | pure functions | The horizontal arithmetic of that widening, with no Core and no GTE. |

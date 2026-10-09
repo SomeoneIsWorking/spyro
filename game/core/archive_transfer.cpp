@@ -4,7 +4,7 @@
 #include "disc.h"
 #include "execution_control.h"
 #include "game.h"
-#include "image_publication.h"
+#include "guest_code_module.h"
 
 #include <algorithm>
 #include <array>
@@ -70,15 +70,12 @@ archive_transfer::Decision ArchiveTransfer::read(Core &core,
     offset += count;
   }
   if (!bytes.empty()) {
-    const auto content = image_publication::digest(bytes);
-    if (!content) {
-      return refuse(core, request, "SHA-256 calculation failed");
-    }
+    const auto content = psx::code_module::digest(bytes);
     for (std::uint32_t offset = 0; offset < request.length; ++offset) {
       // mem_w8 owns executable invalidation and diagnostic write guards.
       core.mem_w8(request.destination + offset, bytes[offset]);
     }
-    image_publication::activate(core, "WAD", {destination, destination + request.length}, *content);
+    psx::code_module::activate(core, "WAD", {destination, destination + request.length}, content);
   }
   const auto decision = archive_transfer::decide(request.length, request.length);
   completionPending_ = deferred && decision.completionPending();

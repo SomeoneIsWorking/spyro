@@ -7,6 +7,7 @@
 #include "frame_pacer.h"
 #include "game.h"
 #include "guest_cd_stream_callback_layout.h"
+#include "guest_code_module.h"
 #include "spyro2_boot_facts.h"
 #include "spyro2_depth_bins.h"
 #include "spyro2_hud_anchor.h"
@@ -15,7 +16,6 @@
 #include "spyro2_widescreen_facts.h"
 #include "spyro_context.h"
 #include "spyro_game.h"
-#include "stock_read_publication.h"
 
 #include <memory>
 
@@ -247,7 +247,7 @@ void Spyro2Runtime::pacePresentation(Core &core, int fields, int parts) {
 
 void Spyro2Runtime::stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) {
   // The loader streams its code modules through the stock read and then calls into them.
-  spyro::publishStockReadLanding(core, landing);
+  psx::code_module::publishStockReadLanding(core, landing);
 }
 
 bool Spyro2Runtime::guestVramIsPicture(const Game &) const {

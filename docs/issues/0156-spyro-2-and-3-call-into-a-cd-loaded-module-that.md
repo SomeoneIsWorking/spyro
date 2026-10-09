@@ -57,9 +57,9 @@ bytes: LBA 676, 932, 966).
   read, after the last byte is written and reported to the invalidation owner, before the completion is
   queued, through `GameRuntime::stockCdReadLanded` (default: nothing). A read that moved no bytes, failed
   part way, or was refused announces nothing. Test: `test_cd_ready_delivery` (24/24, two new cases).
-- **Spyro.** `game/core/image_publication.*` is the ONE digest-and-activate owner; `ArchiveTransfer` (the
+- **Spyro.** psxport `runtime/psx/core/guest_code_module.*` (`psx::code_module::digest`/`activate`) is the ONE digest-and-activate owner (moved there from Spyro's `image_publication.*`); `ArchiveTransfer` (the
   Spyro 1 WAD route) was refactored onto it, so both routes share the SHA-256 identity, the name format
-  and the digest refusal. `game/core/stock_read_publication.*` is the Spyro 2/3 landing policy: digest the
+  and the digest refusal. `psx::code_module::publishStockReadLanding` (moved from Spyro's `stock_read_publication.*`) is the landing policy Spyro 2/3 call: digest the
   bytes now in RAM, activate a new generation, or request a runtime Fault when the range does not fit main
   RAM or no digest can be produced. `Spyro2Runtime`/`Spyro3Runtime` override `stockCdReadLanded` with one
   line each.

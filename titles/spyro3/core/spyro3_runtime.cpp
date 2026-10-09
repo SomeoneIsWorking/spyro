@@ -6,13 +6,13 @@
 #include "fps60.h"
 #include "frame_pacer.h"
 #include "game.h"
+#include "guest_code_module.h"
 #include "spyro3_boot_facts.h"
 #include "spyro3_hud_anchor.h"
 #include "spyro3_logo_facts.h"
 #include "spyro3_render_facts.h"
 #include "spyro3_widescreen_facts.h"
 #include "spyro_context.h"
-#include "stock_read_publication.h"
 #include "terrain_world_pass.h"
 
 #include <cstdlib>
@@ -262,7 +262,7 @@ void Spyro3Runtime::pacePresentation(Core &core, int fields, int parts) {
 
 void Spyro3Runtime::stockCdReadLanded(Core &core, const psx::cd::StockReadLanding &landing) {
   // The loader streams its code modules through the stock read and then calls into them.
-  spyro::publishStockReadLanding(core, landing);
+  psx::code_module::publishStockReadLanding(core, landing);
 }
 
 bool Spyro3Runtime::guestVramIsPicture(const Game &) const {

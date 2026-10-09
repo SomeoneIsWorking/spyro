@@ -97,6 +97,50 @@ void test_a_cut_is_a_new_game_state_or_level() {
   CHECK(!cut.isCut());
 }
 
+void setCamera(Core &core, std::uint32_t mode, std::uint32_t subState) {
+  core.mem_w32(spyro2::FrameCut::kCameraMode, mode);
+  core.mem_w32(spyro2::FrameCut::kCameraSubState, subState);
+}
+
+// A record is walked in the camera state `after`, the one before it in `before`.
+bool placementCuts(std::uint32_t mode,
+                   std::uint32_t before,
+                   std::uint32_t afterMode,
+                   std::uint32_t after) {
+  auto game = std::make_unique<Game>();
+  Core &core = game->core;
+  spyro2::FrameCut cut;
+  setScene(core, 0, 11);
+  setCamera(core, mode, before);
+  drawThenTail(cut, core);
+  setCamera(core, afterMode, after);
+  drawThenTail(cut, core);
+  return cut.isCut();
+}
+
+// The camera controller places the camera at three steps of its mode machine (FUN_8001FA58); every
+// other camera change is the follow camera moving.
+void test_a_cut_is_a_camera_placement_inside_one_scene() {
+  CHECK(placementCuts(9, 0, 9, 1));         // saved camera: the fade ended, the camera is placed
+  CHECK(placementCuts(9, 0x80, 9, 0x81));   // the same with the sub-state's bit 7 set
+  CHECK(placementCuts(9, 0, 9, 2));         // two updates between the draws
+  CHECK(placementCuts(0xB, 0, 0xB, 1));     // respawn
+  CHECK(placementCuts(10, 0, 10, 1));       // the scripted camera begins
+  CHECK(placementCuts(10, 0x80, 10, 0x81)); // the scripted camera ends
+
+  CHECK(!placementCuts(9, 0, 9, 0));    // still fading out
+  CHECK(!placementCuts(9, 0, 9, 0x80)); // a flag, not a placement
+  CHECK(!placementCuts(9, 1, 9, 2));    // after the placement
+  CHECK(!placementCuts(0xB, 1, 0xB, 1));
+  CHECK(!placementCuts(10, 1, 10, 2));    // keys of the script are the camera moving
+  CHECK(!placementCuts(10, 2, 10, 0x80)); // the script's end fade starts
+  CHECK(!placementCuts(10, 0x81, 10, 0x82));
+  CHECK(!placementCuts(10, 3, 10, 2)); // the blend into the script
+  CHECK(!placementCuts(6, 0, 0, 1));   // follow modes keep the camera where it is
+  CHECK(!placementCuts(0, 1, 1, 0));
+  CHECK(!placementCuts(0xB, 0, 9, 0)); // a mode change is not a step of the machine
+}
+
 // The scene is the one the walked table was drawn in, not the state at the tail: the update that
 // runs after the draw returns may already have moved on.
 void test_the_scene_is_sampled_when_the_table_is_walked() {
@@ -471,6 +515,7 @@ int main() {
   RUN(spyro2_replays_its_record_and_interpolates_it);
   RUN(spyro3_keeps_its_render_path);
   RUN(a_cut_is_a_new_game_state_or_level);
+  RUN(a_cut_is_a_camera_placement_inside_one_scene);
   RUN(the_scene_is_sampled_when_the_table_is_walked);
   RUN(a_fresh_runtime_seals_a_cut_first);
   RUN(the_flatten_override_assigns_each_packet_its_bin);

@@ -383,7 +383,7 @@ included by its unique basename (`"native_camera.h"`), never by a path.
 | File | Namespace | Owner | Responsibility |
 | --- | --- | --- | --- |
 | `spyro{2,3}_runtime.{h,cpp}` | `spyro2`, `spyro3` | `Spyro2Runtime`, `Spyro3Runtime` | `SCUS_944.25` / `SCUS_944.67` identity, HLE plan, CD callback layout, boot-prefix frame driver, render path (Spyro 2 Record with its packet pools and cut; Spyro 3 temporal product), logo facts, widescreen answer. |
-| `spyro2_frame_cut.{h,cpp}` | `spyro2` | `FrameCut` | Whether a sealed record is a cut: a new game state (0x800681C8) or level (0x80066F90), sampled when the draw that walked the record's table returns (`FrameTailObserver::onFrameDrawn`). |
+| `spyro2_frame_cut.{h,cpp}` | `spyro2` | `FrameCut` | Whether a sealed record is a cut: a new game state (0x800681C8) or level (0x80066F90), or a camera placement inside a scene (the camera controller's mode machine 0x80067ED0/0x80067ED4 leaving its pre-placement sub-state in mode 9, 0xB or 10), sampled when the draw that walked the record's table returns (`FrameTailObserver::onFrameDrawn`). |
 | `spyro{2,3}_boot_facts.h` | `spyro2`, `spyro3` | `kBootPrefixFacts` | The measured boot prefix, update/draw pair and field-owner facts, with the instruction bytes that give each address. |
 | `spyro{2,3}_logo_facts.h`, `spyro{2,3}_widescreen_facts.h` | `spyro2`, `spyro3` | facts | Where the disc's wordmark lands, and the image's measured projection sites and authored window. |
 | `spyro{2,3}_render_facts.h` | `spyro2`, `spyro3` | `spyro::guest_moby::Facts`, `spyro::guest_terrain::Facts`, `guest_render_globals::Globals` | One value set per image for the shared guest moby walk and terrain drawer. |

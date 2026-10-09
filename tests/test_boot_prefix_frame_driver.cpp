@@ -629,12 +629,10 @@ void test_negative_vsync_query_answers_the_derived_counter() {
   CHECK_EQ(core.r[2], 0u);
   CHECK_EQ(gVBlankQueries, 1u);
 
-  // A WRITE to the counter is discarded -- the framework's root counter 1 is derived and has no
-  // writable state -- so a value stored here does not survive. That is precisely why the field
-  // owner owns no word for this counter, and the case pins the discard instead of assuming it.
+  // A write to root counter 1 sets its value, and the query answers it.
   core.mem_w32(kVBlankCounter, 7u);
   const std::uint32_t derived = core.mem_r32(kVBlankCounter);
-  CHECK(derived != 7u);
+  CHECK_EQ(derived, 7u);
   core.r[4] = -1;
   vsyncLeaf(&core);
   CHECK_EQ(core.r[2], derived);

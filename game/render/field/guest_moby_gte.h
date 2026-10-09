@@ -6,16 +6,16 @@
 // registers whose hardware meaning it never uses: VXY1/VZ1 carry two values to the moby drawer
 // that runs next, the light-matrix words CR8..CR11 hold list cursors, and TRX..TRZ hold the
 // current moby's view-space centre. Each is named for what this routine keeps in it; the
-// hardware names are guest_gte.h's.
+// hardware names are psxport's gte_registers.h.
 #pragma once
 
-#include "guest_gte.h"
+#include "gte_registers.h"
 
 #include <cstdint>
 
 namespace spyro::guest_moby_gte {
 
-using namespace spyro::guest_gte;
+using namespace psx::gte;
 
 // L11L12: next free deferred-moby slot.
 inline constexpr std::uint32_t kDeferredCursor = kLight0;

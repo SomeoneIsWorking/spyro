@@ -1,5 +1,5 @@
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_terrain_fog.h"
 #include "guest_terrain_frame.h"
 #include "guest_terrain_passes.h"
@@ -11,7 +11,7 @@
 namespace spyro::guest_terrain {
 namespace {
 
-namespace gte = guest_gte;
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);

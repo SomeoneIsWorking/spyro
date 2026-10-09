@@ -3,7 +3,7 @@
 #include "guest_terrain_passes.h"
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_render_globals.h"
 #include "guest_terrain_fog.h"
 #include "guest_terrain_frame.h"
@@ -15,7 +15,7 @@
 namespace spyro::guest_terrain {
 namespace {
 
-namespace gte = guest_gte;
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);
@@ -83,7 +83,7 @@ private:
 
 void DetailPass::run() {
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
-    gte_write_ctrl(gte::kRotation0 + i, frame_.rotationWord(i));
+    gte_write_ctrl(gte::kRotation + i, frame_.rotationWord(i));
   }
   gte_write_ctrl(gte::kLight3, core_.mem_r32(frame_.facts.detail.fogLevel));
   frame_.primitive = frame_.primitiveBase();
@@ -212,7 +212,7 @@ ShadedVertex DetailPass::shadeVertex(std::uint32_t colourIndex, std::uint32_t de
   gte_write_ctrl(gte::kFarBlue, nearColour >> 12);
   gte_write_data(gte::kRgbc, farColour);
   gte_write_data(gte::kIr0, fade);
-  gte_op(&core_, gte::kFadeColour);
+  gte_op(&core_, gte::kDpcs);
   return ShadedVertex{gte_read_data(gte::kRgb2), fade, Shade::Faded};
 }
 
@@ -275,7 +275,7 @@ void DetailPass::drawQuad(const PackedIndices &vertices) {
   gte_write_data(gte::kSxy0, xy0);
   gte_write_data(gte::kSxy1, xy1);
   gte_write_data(gte::kSxy2, xy3);
-  gte_op(&core_, gte::kWinding);
+  gte_op(&core_, gte::kNclip);
   const bool flipped = (draw & kFlippedWinding) != 0;
   if (overflow == 0) {
     std::uint32_t winding = gte_read_data(gte::kMac0);
@@ -285,7 +285,7 @@ void DetailPass::drawQuad(const PackedIndices &vertices) {
     if (asSigned(winding) < 0) {
       // 80024B08: the other diagonal's triangle decides.
       gte_write_data(gte::kSxy0, xy2);
-      gte_op(&core_, gte::kWinding);
+      gte_op(&core_, gte::kNclip);
       if ((draw & kTwoSided) == 0) {
         const std::int32_t second = asSigned(gte_read_data(gte::kMac0));
         if (flipped ? second < 0 : second > 0) {
@@ -378,7 +378,7 @@ void DetailPass::drawTriangle(const PackedIndices &vertices) {
   gte_write_data(gte::kSxy0, xy0);
   gte_write_data(gte::kSxy1, xy1);
   gte_write_data(gte::kSxy2, xy2);
-  gte_op(&core_, gte::kWinding);
+  gte_op(&core_, gte::kNclip);
   if (((draw & kTwoSided) | overflow) == 0) {
     std::uint32_t winding = gte_read_data(gte::kMac0);
     if ((draw & kFlippedWinding) != 0) {

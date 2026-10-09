@@ -1,14 +1,15 @@
 #include "guest_terrain_mesh.h"
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_terrain_frame.h"
 
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);
@@ -125,7 +126,7 @@ void SectorProjector::store(std::uint32_t word, std::uint32_t depth) {
 // 800246B0.
 void SectorProjector::projectInside() {
   do {
-    gte_op(&core_, gte::kProject);
+    gte_op(&core_, gte::kRtps);
     advance();
     const std::uint32_t sxy = gte_read_data(gte::kSxy2);
     const std::uint32_t depth = gte_read_data(gte::kSz3);
@@ -156,7 +157,7 @@ std::uint32_t SectorProjector::edgeOutcode(std::uint32_t sxy) {
 // 80024718.
 void SectorProjector::projectEdge() {
   do {
-    gte_op(&core_, gte::kProject);
+    gte_op(&core_, gte::kRtps);
     advance();
     const std::uint32_t sxy = gte_read_data(gte::kSxy2);
     const std::uint32_t depth = gte_read_data(gte::kSz3);
@@ -169,7 +170,7 @@ void SectorProjector::projectClose() {
   std::uint32_t depthSum = 0;
   bool lastDeep = false;
   do {
-    gte_op(&core_, gte::kProject);
+    gte_op(&core_, gte::kRtps);
     const UnpackedVertex vertex = unpack(next_, origin_, pass_);
     next_ = core_.mem_r32(cursor_);
     cursor_ += 4;
@@ -191,7 +192,7 @@ void SectorProjector::projectClose() {
           asSigned(mac2 - 2 * kRefineSpan) < 0) {
         gte_write_data(gte::kVz0, gte_read_data(gte::kVz0) << 4);
         gte_write_data(gte::kVxy0, (gte_read_data(gte::kVxy0) << 4) & kRefineMask);
-        gte_op(&core_, gte::kProject);
+        gte_op(&core_, gte::kRtps);
         sxy = gte_read_data(gte::kSxy2);
       }
     }

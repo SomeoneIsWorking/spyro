@@ -1,7 +1,7 @@
 #include "guest_terrain_drawer.h"
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_terrain_frame.h"
 #include "guest_terrain_passes.h"
 #include "guest_widescreen_owner.h"
@@ -16,8 +16,9 @@
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 // The columns the presentation shows past each side of the authored window at the latched aspect.
 // This is the ONE question every horizontal cull in this render path asks, and it is answered by

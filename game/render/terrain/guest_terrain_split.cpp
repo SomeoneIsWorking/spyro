@@ -1,7 +1,7 @@
 #include "guest_terrain_split.h"
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_terrain_frame.h"
 #include "guest_terrain_polygon.h"
 
@@ -11,8 +11,9 @@
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);
@@ -130,7 +131,7 @@ void loadCornerColours(TerrainFrame &frame, std::uint32_t *colours, std::uint32_
     if (i != 0) {
       gte_write_data(gte::kRgbc, colours[i]);
     }
-    gte_op(&frame.core, gte::kFadeColour);
+    gte_op(&frame.core, gte::kDpcs);
     colours[i] = gte_read_data(gte::kRgb2);
   }
 }
@@ -146,7 +147,7 @@ void projectGrid(TerrainFrame &frame, std::uint32_t count, bool markBehind) {
   gte_write_data(gte::kVxy0, next.xy);
   std::uint32_t address = kScratchpad + kCellSize;
   do {
-    gte_op(&core, gte::kProject);
+    gte_op(&core, gte::kRtps);
     const bool scaled = next.scaled;
     next = loadGridVertex(memory, address);
     const std::uint32_t sxy = gte_read_data(gte::kSxy2);
@@ -260,13 +261,13 @@ void pullTowardPair(TerrainFrame &frame,
   gte_write_data(gte::kIr2, high(own));
   const std::uint32_t a = memory.r32(first + cell::kScreen);
   const std::uint32_t b = memory.r32(second + cell::kScreen);
-  gte_op(&core, gte::kScaleIr);
+  gte_op(&core, gte::kGpf);
   gte_write_data(gte::kIr0, pairWeight);
   gte_write_data(gte::kIr1, low(a) + low(b));
   gte_write_data(gte::kIr2, high(a) + high(b));
   const std::uint32_t ownX = gte_read_data(gte::kMac1);
   const std::uint32_t ownY = gte_read_data(gte::kMac2);
-  gte_op(&core, gte::kScaleIr);
+  gte_op(&core, gte::kGpf);
   const std::int32_t x = asSigned(ownX + gte_read_data(gte::kMac1)) >> 8;
   const std::int32_t y = asSigned(ownY + gte_read_data(gte::kMac2)) >> 8;
   memory.w32(point + cell::kScreen,
@@ -277,7 +278,7 @@ namespace {
 
 // NCLIP on SXY0..2, signed toward the camera for the polygon's winding.
 std::int32_t winding(TerrainFrame &frame, std::uint32_t draw) {
-  gte_op(&frame.core, gte::kWinding);
+  gte_op(&frame.core, gte::kNclip);
   std::uint32_t area = gte_read_data(gte::kMac0);
   if ((draw & kFlippedWinding) != 0) {
     area = 0u - area;
@@ -297,7 +298,7 @@ bool facesCamera(TerrainFrame &frame,
   gte_write_data(gte::kSxy1, second);
   gte_write_data(gte::kSxy2, third);
   if ((draw & kTwoSided) != 0) {
-    gte_op(&frame.core, gte::kWinding);
+    gte_op(&frame.core, gte::kNclip);
     return true;
   }
   if (winding(frame, draw) >= 0) {
@@ -316,7 +317,7 @@ bool triangleFacesCamera(TerrainFrame &frame,
   gte_write_data(gte::kSxy1, second);
   gte_write_data(gte::kSxy2, third);
   if ((draw & kTwoSided) != 0) {
-    gte_op(&frame.core, gte::kWinding);
+    gte_op(&frame.core, gte::kNclip);
     return true;
   }
   return winding(frame, draw) >= 0;

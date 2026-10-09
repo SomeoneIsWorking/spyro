@@ -10,7 +10,7 @@
 // too large goes back on the queue, which this pass walks until it is empty.
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_render_globals.h"
 #include "guest_terrain_frame.h"
 #include "guest_terrain_passes.h"
@@ -26,8 +26,9 @@
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 // The pieces, one word each: three cell offsets in the top three bytes and, in bit 0, "never too
 // large" (a piece between edge midpoints of a primitive that was only just too large).

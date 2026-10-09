@@ -2,7 +2,7 @@
 // (SCUS_944.25 80025434): see guest_terrain_detail.cpp, whose shape it shares.
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_terrain_frame.h"
 #include "guest_terrain_mesh.h"
 #include "guest_terrain_passes.h"
@@ -11,8 +11,9 @@
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);
@@ -135,7 +136,7 @@ void TranslucentPass::defer(bool fine, std::uint32_t sum, std::uint32_t entry) {
 
 std::uint32_t TranslucentPass::fadedColour(std::uint32_t depth) {
   gte_write_data(gte::kIr0, fadeByDepth(depth));
-  gte_op(&core_, gte::kFadeColour);
+  gte_op(&core_, gte::kDpcs);
   return gte_read_data(gte::kRgb2);
 }
 

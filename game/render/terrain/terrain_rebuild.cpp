@@ -1,6 +1,6 @@
 #include "terrain_rebuild.h"
 
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "lucent/log.h"
 #include "ordering_table.h"
 
@@ -11,7 +11,7 @@
 namespace spyro::guest_terrain {
 namespace {
 
-namespace gte = guest_gte;
+namespace gte = psx::gte;
 
 // The end of the 2 MB main-RAM window a guest packet address can name.
 constexpr std::uint32_t kMainRamEnd = psx::gpu::kKseg0Base + 0x200000u;

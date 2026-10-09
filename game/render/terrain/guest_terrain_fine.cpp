@@ -1,4 +1,4 @@
-#include "guest_gte.h"
+#include "gte_registers.h"
 // guest_terrain_fine.cpp — the fine subdivision passes of the terrain drawer of this engine family
 // (SCUS_944.25 80026C74..80028504): polygons the near passes deferred because a vertex came nearer
 // than 0x140, each cut 4x4.
@@ -23,8 +23,9 @@
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);

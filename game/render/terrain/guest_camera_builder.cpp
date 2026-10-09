@@ -2,7 +2,7 @@
 
 #include "guest_camera_builder.h"
 
-#include "guest_gte.h"
+#include "gte_registers.h"
 
 #include <algorithm>
 #include <cmath>
@@ -36,7 +36,7 @@ Element3 product(const Element3 &ir, const Element3 &matrix) {
 }
 
 // The five control words, in the packing both the drawer and the classification pass read.
-std::array<std::uint32_t, guest_gte::kRotationWords> controlWords(const Element3 &matrix) {
+std::array<std::uint32_t, psx::gte::kRotationWords> controlWords(const Element3 &matrix) {
   const auto element = [](std::int32_t value) {
     return static_cast<std::uint32_t>(static_cast<std::uint16_t>(static_cast<std::int16_t>(value)));
   };

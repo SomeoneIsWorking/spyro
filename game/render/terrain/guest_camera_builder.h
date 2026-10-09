@@ -12,7 +12,7 @@
 #pragma once
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 
 #include <array>
 #include <cstdint>
@@ -35,8 +35,8 @@ struct Angles {
 
 // Both matrices the builder writes, in the GTE's own control-register packing.
 struct Matrices {
-  std::array<std::uint32_t, guest_gte::kRotationWords> projection{};
-  std::array<std::uint32_t, guest_gte::kRotationWords> view{};
+  std::array<std::uint32_t, psx::gte::kRotationWords> projection{};
+  std::array<std::uint32_t, psx::gte::kRotationWords> view{};
 };
 
 // FUN_8001c2f8. `sinTable` and `cosTable` are the image's own (SCUS_944.25: 0x80061BD8 sine,

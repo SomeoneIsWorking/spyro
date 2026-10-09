@@ -28,13 +28,13 @@ struct Product {
 Product rotateV0(Core &core, std::uint32_t vxy0, std::uint32_t vz0) {
   gte_write_data(gte::kVxy0, vxy0);
   gte_write_data(gte::kVz0, vz0);
-  gte_op(&core, gte::kRotateV0);
+  gte_op(&core, gte::kMvmvaRtV0);
   return Product{gte_read_data(gte::kIr1), gte_read_data(gte::kIr2), gte_read_data(gte::kIr3)};
 }
 
 void load(const RotationWords &rotation) {
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
-    gte_write_ctrl(gte::kRotation0 + i, rotation[i]);
+    gte_write_ctrl(gte::kRotation + i, rotation[i]);
   }
 }
 

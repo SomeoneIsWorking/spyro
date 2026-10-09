@@ -26,7 +26,7 @@
 #pragma once
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_render_globals.h"
 #include "guest_terrain_facts.h"
 #include "guest_terrain_memory.h"
@@ -71,13 +71,13 @@ inline constexpr std::uint32_t kSplitPrimitiveCursor =
 // Each entry is ONE signed 32-bit value, not a packed pair: a GTE rotation-matrix element and a
 // world position component are each a single fixed-point word, and every pass reads them whole
 // (`asSigned(frame_.positionWord(0)) >> 4`, `gte_write_ctrl(kRotation0 + i,
-// frame_.rotationWord(i))`). The word counts are the GTE's own (guest_gte.h), not numbers written
-// twice.
+// frame_.rotationWord(i))`). The word counts are the GTE's own (psxport gte_registers.h), not
+// numbers written twice.
 struct InBetweenCamera {
-  std::uint32_t rotation[guest_gte::kRotationWords];
+  std::uint32_t rotation[psx::gte::kRotationWords];
   // The classification pass's own matrix, unscaled. Read only by `classificationRotationWord`, and
   // only when there is no guest to read the guest's from.
-  std::uint32_t viewRotation[guest_gte::kRotationWords];
+  std::uint32_t viewRotation[psx::gte::kRotationWords];
   std::uint32_t position[3];
 };
 

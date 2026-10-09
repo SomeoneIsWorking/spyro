@@ -291,13 +291,13 @@ MobyWalk::Step MobyWalk::drawCandidate(std::uint32_t rec,
                                        const MeshSlots &slots) {
   const std::uint32_t mesh = core_.mem_r32(slots.slot() + kSlotMesh);
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
-    gte_write_ctrl(gte::kRotation0 + i, camera_[i]);
+    gte_write_ctrl(gte::kRotation + i, camera_[i]);
   }
   const std::uint32_t radius = static_cast<std::uint32_t>(core_.mem_r8(mesh + kMeshRadius)) << 4;
   gte_write_data(gte::kIr3, asWord(dx));
   gte_write_data(gte::kIr1, asWord(dy));
   gte_write_data(gte::kIr2, asWord(dz));
-  gte_op(&core_, gte::kRotateIr);
+  gte_op(&core_, gte::kMvmvaRtIr);
   const ViewPoint view{asSigned(gte_read_data(gte::kMac1)),
                        asSigned(gte_read_data(gte::kMac2)),
                        asSigned(gte_read_data(gte::kMac3))};
@@ -390,7 +390,7 @@ bool MobyWalk::subSphereRejects(std::uint32_t mesh) {
   gte_write_data(gte::kIr1, asWord(-signedByte(16)));
   gte_write_data(gte::kIr2, asWord(-signedByte(8)));
   const std::uint32_t radius = (sphere & 0xFFu) << 3;
-  gte_op(&core_, gte::kRotateIrPlusTr);
+  gte_op(&core_, gte::kMvmvaRtIrTr);
   const ViewPoint view{asSigned(gte_read_data(gte::kMac1)),
                        asSigned(gte_read_data(gte::kMac2)),
                        asSigned(gte_read_data(gte::kMac3))};
@@ -473,7 +473,7 @@ MobyWalk::finishEntry(std::uint32_t rec, std::uint32_t mesh, const MeshSlots &sl
     gte_write_data(gte::kIr1, asWord(x));
     gte_write_data(gte::kIr2, asWord(y));
     gte_write_data(gte::kIr3, asWord(z));
-    gte_op(&core_, gte::kScaleIr);
+    gte_op(&core_, gte::kGpf);
     z = asSigned(gte_read_data(gte::kMac3)) >> 5;
     y = asSigned(gte_read_data(gte::kMac2)) >> 5;
     x = asSigned(gte_read_data(gte::kMac1)) >> 5;

@@ -272,7 +272,7 @@ A new module goes in the directory of the subsystem it belongs to; nothing lands
 | `frame_env.{h,cpp}` | `spyro` | The native leg's frame open/close and display environment. |
 | `guest_actor_pool.h` | `spyro::guest_actor_pool` | SCUS_942.28's actor pool: the cursor, the end, and one record's size. Four producers read or move it, so it is stated once here rather than as a literal in each. |
 | `draw_area.h`, `producer_refusal.h`, `scene_painter_order.*`, `painter_submission_preflight.*` | `spyro` | The draw-destination check, the refusal vocabulary, and the painter order and preflight shared by producers. |
-| `gpu_packet_decode.{h,cpp}`, `guest_gte.{h,cpp}`, `guest_trig.{h,cpp}`, `gte_color_ops.h`, `projection_stream.{h,cpp}`, `scene_camera_inputs.h` | `spyro::gpu_packet_decode`, `spyro::guest_gte`, `spyro::guest_trig`, `spyro::gte_color`, `spyro` | The packet and coprocessor vocabulary and the projection sampler the producers share. |
+| `gpu_packet_decode.{h,cpp}`, `guest_trig.{h,cpp}`, `gte_color_ops.h`, `projection_stream.{h,cpp}`, `scene_camera_inputs.h` | `spyro::gpu_packet_decode`, `spyro::guest_trig`, `spyro::gte_color`, `spyro` | The packet and coprocessor vocabulary and the projection sampler the producers share. |
 
 #### `game/render/field/` — the field layers
 

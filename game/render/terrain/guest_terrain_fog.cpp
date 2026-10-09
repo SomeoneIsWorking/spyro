@@ -1,11 +1,12 @@
 #include "guest_terrain_fog.h"
 
-#include "guest_gte.h"
+#include "gte_registers.h"
 
 namespace spyro::guest_terrain {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 void loadFogColour(Core &core, const Facts &facts) {
   gte_write_ctrl(gte::kFarRed, core.mem_r32(facts.fogColour));
   gte_write_ctrl(gte::kFarGreen, core.mem_r32(facts.fogColour + 4));
@@ -25,7 +26,7 @@ std::uint32_t fogColours(TerrainMemory &memory,
   from += 4;
   std::uint32_t to = facts.foggedColours;
   do {
-    gte_op(&core, gte::kFadeColour);
+    gte_op(&core, gte::kDpcs);
     const std::uint32_t next = core.mem_r32(from);
     from += 4;
     const std::uint32_t faded = gte_read_data(gte::kRgb2);

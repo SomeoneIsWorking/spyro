@@ -4,7 +4,7 @@
 #include "guest_terrain_passes.h"
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_render_globals.h"
 #include "guest_terrain_frame.h"
 
@@ -13,7 +13,7 @@
 namespace spyro::guest_terrain {
 namespace {
 
-namespace gte = guest_gte;
+namespace gte = psx::gte;
 
 constexpr std::uint32_t kGroupCopyEnd = 0xFu; // SCUS_944.25 800244FC: whole 16-byte rows
 
@@ -107,7 +107,7 @@ private:
 
 void SectorClassifier::run() {
   for (std::uint32_t i = 0; i < gte::kRotationWords; ++i) {
-    gte_write_ctrl(gte::kRotation0 + i, frame_.classificationRotationWord(i));
+    gte_write_ctrl(gte::kRotation + i, frame_.classificationRotationWord(i));
   }
   gte_write_ctrl(gte::kTranslationX, 0);
   gte_write_ctrl(gte::kTranslationY, 0);
@@ -158,7 +158,7 @@ void SectorClassifier::classify(std::uint32_t sector, std::uint32_t visibilityBy
   gte_write_data(gte::kIr2, asWord(cameraZ_ - asSigned(centreZ >> 16)));
   const std::uint32_t flags = centreZ & kFlagMask;
   const std::uint32_t r = centreZ & kRadiusMask;
-  gte_op(&core_, gte::kRotateIr);
+  gte_op(&core_, gte::kMvmvaRtIr);
   // The margins are r/cos and r*tan of the 4:3 half-angle horizontally, the 17:32 slope vertically;
   // every product wraps as the image's 32-bit `add`/`sll` do.
   const std::uint32_t horizontalLateral = (r >> 1) + (r >> 2) + (r >> 5);
@@ -313,7 +313,7 @@ void SectorClassifier::animateVectorSlot(std::uint32_t sector,
     gte_write_ctrl(gte::kFarBlue, f.z);
     near = core_.mem_r32(from);
     far = core_.mem_r32(toward);
-    gte_op(&core_, gte::kFadeVector);
+    gte_op(&core_, gte::kIntpl);
     to += 4;
     from += 4;
     toward += 4;
@@ -362,7 +362,7 @@ void SectorClassifier::animateColourSlot(std::uint32_t sector,
     gte_write_data(gte::kRgbc, near & 0xFFFFFFu);
     loadFarColour(far);
     const std::uint32_t skip = (near >> 22) & 0x3FCu;
-    gte_op(&core_, gte::kFadeColour);
+    gte_op(&core_, gte::kDpcs);
     near = core_.mem_r32(from + 4);
     far = core_.mem_r32(toward + 4);
     from += 4;
@@ -408,7 +408,7 @@ void SectorClassifier::animatePairSlot(std::uint32_t sector,
     gte_write_data(gte::kRgbc, near & 0xFFFFFFu);
     loadFarColour(far);
     const std::uint32_t skip = (near >> 22) & 0x3FCu;
-    gte_op(&core_, gte::kFadeColour);
+    gte_op(&core_, gte::kDpcs);
     near = core_.mem_r32(from + 4);
     far = core_.mem_r32(toward + 4);
     first += skip;
@@ -417,7 +417,7 @@ void SectorClassifier::animatePairSlot(std::uint32_t sector,
     loadFarColour(far);
     from += 8;
     toward += 8;
-    gte_op(&core_, gte::kFadeColour);
+    gte_op(&core_, gte::kDpcs);
     near = core_.mem_r32(from);
     far = core_.mem_r32(toward);
     second += skip;

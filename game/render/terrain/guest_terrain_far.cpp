@@ -15,7 +15,7 @@
 // the drawer stores on exit with the primitive cursor.
 
 #include "core.h"
-#include "guest_gte.h"
+#include "gte_registers.h"
 #include "guest_render_globals.h"
 #include "guest_terrain_fog.h"
 #include "guest_terrain_frame.h"
@@ -27,8 +27,9 @@
 namespace spyro::guest_terrain {
 namespace {
 
-// The GTE register and command numbers are shared vocabulary (guest_gte.h), not this pass's.
-namespace gte = guest_gte;
+// The GTE register and command numbers are shared vocabulary (psxport gte_registers.h), not this
+// pass's.
+namespace gte = psx::gte;
 
 constexpr std::int32_t asSigned(std::uint32_t value) {
   return static_cast<std::int32_t>(value);
@@ -189,7 +190,7 @@ bool FarPass::projectVertices(std::uint32_t data,
   std::uint32_t cell = kScratchpad;
   std::uint32_t shared = 0xFFFFFFFFu;
   do {
-    gte_op(&core_, gte::kProject);
+    gte_op(&core_, gte::kRtps);
     loadVertex(core_.mem_r32(next - 4));
     next += 4;
     const std::uint32_t sxy = gte_read_data(gte::kSxy2);
@@ -253,7 +254,7 @@ Sector FarPass::drawPolygon(std::uint32_t record, std::uint32_t colours, bool cl
   gte_write_data(gte::kSxy0, screens[0]);
   gte_write_data(gte::kSxy1, screens[1]);
   gte_write_data(gte::kSxy2, screens[2]);
-  gte_op(&core_, gte::kWinding);
+  gte_op(&core_, gte::kNclip);
   std::uint32_t depth = 0;
   for (std::uint32_t i = 0; i < corners; ++i) {
     depth += memory_.r32(cells[i] + 4);
@@ -273,7 +274,7 @@ Sector FarPass::drawPolygon(std::uint32_t record, std::uint32_t colours, bool cl
       const std::uint32_t area = gte_read_data(gte::kMac0);
       gte_write_data(gte::kSxy0, screens[3]);
       if (asSigned(area) <= 0) {
-        gte_op(&core_, gte::kWinding);
+        gte_op(&core_, gte::kNclip);
         if (asSigned(gte_read_data(gte::kMac0)) >= 0) {
           return Sector::Drawn;
         }
